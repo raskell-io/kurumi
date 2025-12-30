@@ -1,0 +1,179 @@
+@import 'tailwindcss';
+
+/* Custom CSS Variables for theming */
+:root {
+	--color-bg: #fafafa;
+	--color-bg-secondary: #f0f0f0;
+	--color-text: #1a1a2e;
+	--color-text-muted: #6b7280;
+	--color-accent: #6366f1;
+	--color-accent-hover: #4f46e5;
+	--color-border: #e5e7eb;
+}
+
+/* Dark theme via system preference */
+@media (prefers-color-scheme: dark) {
+	:root:not(.light) {
+		--color-bg: #1a1a2e;
+		--color-bg-secondary: #16162a;
+		--color-text: #f0f0f0;
+		--color-text-muted: #9ca3af;
+		--color-accent: #818cf8;
+		--color-accent-hover: #6366f1;
+		--color-border: #374151;
+	}
+}
+
+/* Manual dark theme override */
+:root.dark {
+	--color-bg: #1a1a2e;
+	--color-bg-secondary: #16162a;
+	--color-text: #f0f0f0;
+	--color-text-muted: #9ca3af;
+	--color-accent: #818cf8;
+	--color-accent-hover: #6366f1;
+	--color-border: #374151;
+}
+
+/* Manual light theme override */
+:root.light {
+	--color-bg: #fafafa;
+	--color-bg-secondary: #f0f0f0;
+	--color-text: #1a1a2e;
+	--color-text-muted: #6b7280;
+	--color-accent: #6366f1;
+	--color-accent-hover: #4f46e5;
+	--color-border: #e5e7eb;
+}
+
+/* Base styles */
+html {
+	font-family:
+		-apple-system,
+		BlinkMacSystemFont,
+		'SF Pro Display',
+		'Segoe UI',
+		Roboto,
+		sans-serif;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+body {
+	background-color: var(--color-bg);
+	color: var(--color-text);
+	overscroll-behavior: none;
+}
+
+/* Focus styles for accessibility */
+:focus-visible {
+	outline: 2px solid var(--color-accent);
+	outline-offset: 2px;
+}
+
+/* Smooth scrolling */
+html {
+	scroll-behavior: smooth;
+}
+
+/* Selection */
+::selection {
+	background-color: var(--color-accent);
+	color: white;
+}
+
+/* Safe area utilities for iPhone notch/home indicator */
+.safe-top {
+	padding-top: env(safe-area-inset-top, 0);
+}
+
+.safe-bottom {
+	padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.safe-left {
+	padding-left: env(safe-area-inset-left, 0);
+}
+
+.safe-right {
+	padding-right: env(safe-area-inset-right, 0);
+}
+
+/* Prevent pull-to-refresh on mobile */
+body {
+	overscroll-behavior-y: contain;
+}
+
+/* Better touch targets on mobile */
+@media (hover: none) and (pointer: coarse) {
+	button,
+	a {
+		min-height: 44px;
+		min-width: 44px;
+	}
+
+	input,
+	textarea {
+		font-size: 16px; /* Prevent zoom on iOS */
+	}
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+	background: var(--color-border);
+	border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background: var(--color-text-muted);
+}
+
+/* Hide scrollbar on mobile for cleaner look */
+@media (max-width: 768px) {
+	::-webkit-scrollbar {
+		width: 0;
+		height: 0;
+	}
+}
+
+/* Prevent text selection on UI elements */
+button,
+nav,
+header,
+aside {
+	-webkit-user-select: none;
+	user-select: none;
+}
+
+/* Allow text selection in content areas */
+main,
+article,
+.milkdown {
+	-webkit-user-select: text;
+	user-select: text;
+}
+
+/* Touch feedback */
+@media (hover: none) {
+	button:active,
+	a:active {
+		opacity: 0.7;
+	}
+}
+
+/* Disable double-tap zoom on interactive elements */
+button,
+a,
+input,
+textarea {
+	touch-action: manipulation;
+}

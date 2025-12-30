@@ -1,0 +1,50 @@
+{
+	"name": "kurumi",
+	"private": true,
+	"version": "0.0.1",
+	"type": "module",
+	"scripts": {
+		"dev": "vite dev",
+		"build": "vite build",
+		"preview": "vite preview",
+		"prepare": "svelte-kit sync || echo ''",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
+	},
+	"devDependencies": {
+		"@sveltejs/adapter-auto": "^7.0.0",
+		"@sveltejs/adapter-static": "^3.0.10",
+		"@sveltejs/kit": "^2.49.1",
+		"@sveltejs/vite-plugin-svelte": "^6.2.1",
+		"@tailwindcss/vite": "^4.1.18",
+		"@vite-pwa/sveltekit": "^1.1.0",
+		"svelte": "^5.45.6",
+		"svelte-check": "^4.3.4",
+		"tailwindcss": "^4.1.18",
+		"typescript": "^5.9.3",
+		"vite": "^7.2.6"
+	},
+	"dependencies": {
+		"@automerge/automerge": "^3.2.1",
+		"@automerge/automerge-repo": "^2.5.1",
+		"@automerge/automerge-repo-storage-indexeddb": "^2.5.1",
+		"@milkdown/core": "^7.17.3",
+		"@milkdown/ctx": "^7.17.3",
+		"@milkdown/kit": "^7.17.3",
+		"@milkdown/plugin-listener": "^7.17.3",
+		"@milkdown/preset-commonmark": "^7.17.3",
+		"@milkdown/preset-gfm": "^7.17.3",
+		"@milkdown/prose": "^7.17.3",
+		"@milkdown/theme-nord": "^7.17.3",
+		"@milkdown/transformer": "^7.17.3",
+		"force-graph": "^1.51.0",
+		"idb-keyval": "^6.2.2",
+		"minisearch": "^7.2.0",
+		"prosemirror-model": "^1.25.4",
+		"prosemirror-state": "^1.4.4",
+		"prosemirror-view": "^1.41.4",
+		"uuid": "^13.0.0",
+		"vite-plugin-top-level-await": "^1.6.0",
+		"vite-plugin-wasm": "^3.5.0"
+	}
+}
