@@ -247,13 +247,90 @@
 </script>
 
 <svelte:head>
-	<title>Kurumi</title>
-	<meta name="description" content="A local-first personal knowledge management system" />
+	<!-- Primary Meta Tags -->
+	<title>Kurumi - Your Second Brain</title>
+	<meta name="title" content="Kurumi - Your Second Brain" />
+	<meta name="description" content="A local-first personal knowledge management system. Capture, connect, and cultivate your ideas with AI-augmented note-taking that works offline." />
+	<meta name="keywords" content="note-taking, knowledge management, second brain, PKM, markdown, local-first, offline, AI, wikilinks, personal wiki" />
+	<meta name="author" content="Kurumi" />
+	<meta name="robots" content="index, follow" />
+	<meta name="language" content="English" />
 	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+	<meta name="theme-color" content="#1e1e2e" />
+
+	<!-- Open Graph / Facebook -->
+	<meta property="og:type" content="website" />
+	<meta property="og:url" content="https://kurumi.app/" />
+	<meta property="og:title" content="Kurumi - Your Second Brain" />
+	<meta property="og:description" content="A local-first personal knowledge management system. Capture, connect, and cultivate your ideas with AI-augmented note-taking that works offline." />
+	<meta property="og:image" content="https://kurumi.app/og-image.png" />
+	<meta property="og:image:width" content="1200" />
+	<meta property="og:image:height" content="630" />
+	<meta property="og:image:alt" content="Kurumi - Your Second Brain" />
+	<meta property="og:site_name" content="Kurumi" />
+	<meta property="og:locale" content="en_US" />
+
+	<!-- Twitter -->
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:url" content="https://kurumi.app/" />
+	<meta name="twitter:title" content="Kurumi - Your Second Brain" />
+	<meta name="twitter:description" content="A local-first personal knowledge management system. Capture, connect, and cultivate your ideas with AI-augmented note-taking that works offline." />
+	<meta name="twitter:image" content="https://kurumi.app/og-image.png" />
+	<meta name="twitter:image:alt" content="Kurumi - Your Second Brain" />
+
+	<!-- Apple/PWA -->
 	<meta name="apple-mobile-web-app-capable" content="yes" />
 	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+	<meta name="apple-mobile-web-app-title" content="Kurumi" />
+	<meta name="mobile-web-app-capable" content="yes" />
+	<meta name="application-name" content="Kurumi" />
+	<meta name="format-detection" content="telephone=no" />
+
+	<!-- Favicons -->
 	<link rel="icon" href="/favicon.ico" type="image/x-icon" />
+	<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+	<link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
 	<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+	<!-- Canonical -->
+	<link rel="canonical" href="https://kurumi.app/" />
+
+	<!-- JSON-LD Structured Data -->
+	{@html `<script type="application/ld+json">
+	{
+		"@context": "https://schema.org",
+		"@type": "WebApplication",
+		"name": "Kurumi",
+		"alternateName": "Kurumi - Your Second Brain",
+		"description": "A local-first personal knowledge management system. Capture, connect, and cultivate your ideas with AI-augmented note-taking that works offline.",
+		"url": "https://kurumi.app/",
+		"applicationCategory": "Productivity",
+		"operatingSystem": "Any",
+		"offers": {
+			"@type": "Offer",
+			"price": "0",
+			"priceCurrency": "USD"
+		},
+		"featureList": [
+			"Offline-first architecture",
+			"Markdown support",
+			"Wikilinks for connecting notes",
+			"AI-powered text assistance",
+			"Full-text search",
+			"Graph visualization",
+			"Cross-device sync",
+			"PWA installable"
+		],
+		"screenshot": "https://kurumi.app/og-image.png",
+		"softwareVersion": "1.0.0",
+		"author": {
+			"@type": "Organization",
+			"name": "Kurumi"
+		}
+	}
+	</script>`}
+
+	<!-- PWA Manifest -->
 	{#if pwaInfo}
 		<link rel="manifest" href={pwaInfo.webManifest.href} />
 	{/if}
@@ -286,6 +363,8 @@
 			class="fixed inset-y-0 left-0 z-50 flex w-full flex-col border-r-0 border-[var(--color-border)] bg-[var(--color-bg-secondary)] transition-transform duration-300 ease-out md:relative md:z-auto md:border-r md:pt-6 {sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}"
 			style:--sidebar-width="{sidebarWidth}px"
 			style:width={isMobile ? undefined : `${sidebarWidth}px`}
+			role="navigation"
+			aria-label="Main navigation"
 		>
 			<!-- Logo -->
 			<div
@@ -332,20 +411,23 @@
 
 			<!-- Tags Filter -->
 			{#if allTags.length > 0}
-				<div class="border-b border-[var(--color-border)] px-3 py-2">
+				<div class="border-b border-[var(--color-border)] px-3 py-2" role="region" aria-label="Tags filter">
 					<button
 						onclick={() => (showTags = !showTags)}
 						class="flex w-full items-center justify-between text-xs font-medium uppercase text-[var(--color-text-muted)]"
+						aria-expanded={showTags}
+						aria-controls="tags-list"
 					>
 						<span>Tags</span>
-						<ChevronDown class="h-4 w-4 transition-transform {showTags ? 'rotate-180' : ''}" />
+						<ChevronDown class="h-4 w-4 transition-transform {showTags ? 'rotate-180' : ''}" aria-hidden="true" />
 					</button>
 					{#if showTags}
-						<div class="mt-2 flex flex-wrap gap-1">
+						<div id="tags-list" class="mt-2 flex flex-wrap gap-1" role="listbox" aria-label="Available tags">
 							{#if selectedTag}
 								<button
 									onclick={() => (selectedTag = null)}
 									class="rounded-full bg-[var(--color-accent)] px-2 py-0.5 text-xs text-white"
+									aria-label="Clear tag filter: {selectedTag}"
 								>
 									#{selectedTag} &times;
 								</button>
@@ -355,9 +437,11 @@
 									<button
 										onclick={() => (selectedTag = tag)}
 										class="rounded-full bg-[var(--color-border)] px-2 py-0.5 text-xs text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-accent)] hover:text-white"
+										role="option"
+										aria-label="Filter by tag: {tag}, {count} notes"
 									>
 										#{tag}
-										<span class="opacity-60">({count})</span>
+										<span class="opacity-60" aria-hidden="true">({count})</span>
 									</button>
 								{/if}
 							{/each}
@@ -396,16 +480,17 @@
 			</div>
 
 			<!-- Notes List -->
-			<nav class="flex-1 overflow-y-auto overscroll-contain p-2">
+			<nav class="flex-1 overflow-y-auto overscroll-contain p-2" aria-label="Notes list">
 				{#if viewMode === 'folders'}
 					<FolderTree onNoteClick={handleNoteClick} />
 				{:else}
 					{#if selectedTag}
-						<div class="mb-2 flex items-center justify-between px-1 text-xs text-[var(--color-text-muted)]">
+						<div class="mb-2 flex items-center justify-between px-1 text-xs text-[var(--color-text-muted)]" role="status" aria-live="polite">
 							<span>Filtered by #{selectedTag}</span>
 							<button
 								onclick={() => (selectedTag = null)}
 								class="text-[var(--color-accent)] hover:underline"
+								aria-label="Clear tag filter"
 							>
 								Clear
 							</button>
@@ -418,6 +503,7 @@
 							class="mb-1 block rounded-lg px-3 py-3 transition-colors hover:bg-[var(--color-border)] active:scale-[0.98]"
 							class:bg-[var(--color-accent)]={isActive(note.id)}
 							class:text-white={isActive(note.id)}
+							aria-current={isActive(note.id) ? 'page' : undefined}
 						>
 							<div class="truncate font-medium">
 								{note.title || 'Untitled'}
@@ -531,7 +617,7 @@
 		{/if}
 
 		<!-- Main Content -->
-		<main class="relative flex flex-1 flex-col" class:overflow-hidden={!isReadMode && !isDocsPage}>
+		<main class="relative flex flex-1 flex-col" class:overflow-hidden={!isReadMode && !isDocsPage} role="main" aria-label="Main content">
 			<!-- Mobile header (hidden in read mode, docs, and on desktop) -->
 			{#if !isReadMode && !isDocsPage}
 			<header
