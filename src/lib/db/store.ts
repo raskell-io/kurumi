@@ -845,6 +845,61 @@ export function getNotesByDate(date: string): Note[] {
 	});
 }
 
+// Extract URLs from content
+export function extractUrls(content: string): string[] {
+	// Match http:// and https:// URLs, stopping at whitespace, quotes, or markdown syntax
+	const regex = /https?:\/\/[^\s\])"'<>]+/g;
+	const urls = new Set<string>();
+	let match;
+	while ((match = regex.exec(content)) !== null) {
+		// Clean up trailing punctuation that's likely not part of the URL
+		let url = match[0].replace(/[.,;:!?)]+$/, '');
+		urls.add(url);
+	}
+	return Array.from(urls);
+}
+
+// Get domain from URL for display
+export function getUrlDomain(url: string): string {
+	try {
+		const parsed = new URL(url);
+		return parsed.hostname.replace(/^www\./, '');
+	} catch {
+		return url;
+	}
+}
+
+// Get all unique URLs across notes in current vault
+export function getAllLinks(): { url: string; domain: string; count: number }[] {
+	if (!doc) return [];
+	const vaultId = getCurrentVaultId();
+	const urlCounts = new Map<string, number>();
+
+	for (const note of Object.values(doc.notes)) {
+		if (note.vaultId !== vaultId) continue;
+		const urls = extractUrls(note.content);
+		for (const url of urls) {
+			urlCounts.set(url, (urlCounts.get(url) || 0) + 1);
+		}
+	}
+
+	return Array.from(urlCounts.entries())
+		.map(([url, count]) => ({ url, domain: getUrlDomain(url), count }))
+		.sort((a, b) => b.count - a.count);
+}
+
+// Get notes containing a specific URL in current vault
+export function getNotesByLink(url: string): Note[] {
+	if (!doc) return [];
+	const vaultId = getCurrentVaultId();
+
+	return Object.values(doc.notes).filter((note) => {
+		if (note.vaultId !== vaultId) return false;
+		const urls = extractUrls(note.content);
+		return urls.includes(url);
+	});
+}
+
 // Find notes that link to a given note (in current vault)
 export function findBacklinks(noteId: string): Note[] {
 	if (!doc) return [];

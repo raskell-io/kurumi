@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { getAllTags, getAllPeople, getAllDates, getNotesByTag, getNotesByPerson, getNotesByDate, type Note } from '$lib/db';
+	import { getAllTags, getAllPeople, getAllDates, getAllLinks, getNotesByTag, getNotesByPerson, getNotesByDate, getNotesByLink, type Note } from '$lib/db';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
-	import { Tag, User, Calendar, ChevronRight } from 'lucide-svelte';
+	import { Tag, User, Calendar, Link, ChevronRight, ExternalLink } from 'lucide-svelte';
 
-	type TabType = 'tags' | 'people' | 'dates';
+	type TabType = 'tags' | 'people' | 'dates' | 'links';
 
 	// Get initial values from URL params
 	let initialTab = ($page.url.searchParams.get('tab') as TabType) || 'tags';
@@ -17,6 +17,7 @@
 	let allTags = $derived(getAllTags());
 	let allPeople = $derived(getAllPeople());
 	let allDates = $derived(getAllDates());
+	let allLinks = $derived(getAllLinks());
 
 	// Get notes for expanded item
 	let expandedNotes = $derived.by(() => {
@@ -28,6 +29,8 @@
 				return getNotesByPerson(expandedItem);
 			case 'dates':
 				return getNotesByDate(expandedItem);
+			case 'links':
+				return getNotesByLink(expandedItem);
 			default:
 				return [];
 		}
@@ -82,7 +85,7 @@
 <div class="references-page">
 	<header class="page-header">
 		<h1>References</h1>
-		<p class="subtitle">Browse all tags, people, and dates across your notes</p>
+		<p class="subtitle">Browse tags, people, dates, and links across your notes</p>
 	</header>
 
 	<div class="tabs">
@@ -112,6 +115,15 @@
 			<Calendar class="h-4 w-4" />
 			Dates
 			<span class="count">{allDates.length}</span>
+		</button>
+		<button
+			class="tab"
+			class:active={activeTab === 'links'}
+			onclick={() => { activeTab = 'links'; expandedItem = null; }}
+		>
+			<Link class="h-4 w-4" />
+			Links
+			<span class="count">{allLinks.length}</span>
 		</button>
 	</div>
 
@@ -211,6 +223,54 @@
 								<ChevronRight class="chevron {expandedItem === date.date ? 'rotated' : ''}" />
 							</button>
 							{#if expandedItem === date.date}
+								<ul class="notes-list">
+									{#each expandedNotes as note (note.id)}
+										<li>
+											<button class="note-item" onclick={() => openNote(note.id)}>
+												<span class="note-title">{note.title || 'Untitled'}</span>
+												<span class="note-preview">{getPreview(note)}</span>
+											</button>
+										</li>
+									{/each}
+								</ul>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		{:else if activeTab === 'links'}
+			{#if allLinks.length === 0}
+				<div class="empty-state">
+					<Link class="h-12 w-12" />
+					<h3>No links yet</h3>
+					<p>Add URLs in your notes to track external links</p>
+				</div>
+			{:else}
+				<ul class="items-list">
+					{#each allLinks as link (link.url)}
+						<li class="item" class:expanded={expandedItem === link.url}>
+							<button class="item-header" onclick={() => toggleExpand(link.url)}>
+								<div class="item-icon link-icon">
+									<Link class="h-4 w-4" />
+								</div>
+								<div class="link-info">
+									<span class="item-name">{link.domain}</span>
+									<span class="link-url">{link.url}</span>
+								</div>
+								<a
+									href={link.url}
+									target="_blank"
+									rel="noopener noreferrer"
+									class="external-link-btn"
+									onclick={(e) => e.stopPropagation()}
+									title="Open link"
+								>
+									<ExternalLink class="h-4 w-4" />
+								</a>
+								<span class="item-count">{link.count} {link.count === 1 ? 'note' : 'notes'}</span>
+								<ChevronRight class="chevron {expandedItem === link.url ? 'rotated' : ''}" />
+							</button>
+							{#if expandedItem === link.url}
 								<ul class="notes-list">
 									{#each expandedNotes as note (note.id)}
 										<li>
@@ -388,6 +448,42 @@
 	.date-icon {
 		background: rgba(59, 130, 246, 0.15);
 		color: #3b82f6;
+	}
+
+	.link-icon {
+		background: rgba(168, 85, 247, 0.15);
+		color: #a855f7;
+	}
+
+	.link-info {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 0.125rem;
+		min-width: 0;
+	}
+
+	.link-url {
+		font-size: 0.75rem;
+		color: var(--color-text-muted);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.external-link-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0.375rem;
+		border-radius: 0.375rem;
+		color: var(--color-text-muted);
+		transition: all 0.15s ease;
+	}
+
+	.external-link-btn:hover {
+		background: var(--color-bg-secondary);
+		color: var(--color-accent);
 	}
 
 	.item-name {
