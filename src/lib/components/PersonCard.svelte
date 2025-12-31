@@ -61,20 +61,19 @@
 
 	async function createProfile() {
 		// Create a new note with person frontmatter
-		const note = addNote(
-			person.name,
-			`---
-type: person
-email:
-phone:
-company:
----
-
-# ${person.name}
-
-`,
-			null
-		);
+		const content = [
+			'---',
+			'type: person',
+			'email: ',
+			'phone: ',
+			'company: ',
+			'---',
+			'',
+			`# ${person.name}`,
+			'',
+			''
+		].join('\n');
+		const note = addNote(person.name, content, null);
 		goto(`/note/${note.id}`);
 	}
 </script>

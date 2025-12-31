@@ -58,20 +58,19 @@
 	}
 
 	async function createEvent() {
-		const note = addNote(
-			`Event ${formatDate(dateInfo.date)}`,
-			`---
-type: event
-title:
-time:
-location:
----
-
-//${dateInfo.date}
-
-`,
-			null
-		);
+		const content = [
+			'---',
+			'type: event',
+			'title: ',
+			'time: ',
+			'location: ',
+			'---',
+			'',
+			`//${dateInfo.date}`,
+			'',
+			''
+		].join('\n');
+		const note = addNote(`Event ${formatDate(dateInfo.date)}`, content, null);
 		goto(`/note/${note.id}`);
 	}
 
