@@ -649,10 +649,88 @@ export function getDocBinary(): Uint8Array {
 	return Automerge.save(doc);
 }
 
+// Check if local document is essentially empty (no user content)
+function isDocEmpty(d: Automerge.Doc<KurumiDocument>): boolean {
+	const noteCount = Object.keys(d.notes || {}).length;
+	const folderCount = Object.keys(d.folders || {}).length;
+	return noteCount === 0 && folderCount === 0;
+}
+
 // Merge with a remote document (for sync)
+// Handles the case where documents were created independently (no shared history)
 export async function mergeDoc(remoteBinary: Uint8Array): Promise<void> {
 	const remoteDoc = Automerge.load<KurumiDocument>(remoteBinary);
-	doc = Automerge.merge(doc, remoteDoc);
+
+	// If local is empty but remote has content, adopt remote as base
+	if (isDocEmpty(doc) && !isDocEmpty(remoteDoc)) {
+		doc = Automerge.clone(remoteDoc);
+		currentVaultIdStore.set(doc.currentVaultId || DEFAULT_VAULT_ID);
+		docStore.set(doc);
+		await saveDoc();
+		return;
+	}
+
+	// Standard Automerge merge
+	const mergedDoc = Automerge.merge(doc, remoteDoc);
+
+	// Check if merge lost any data from either document
+	// This can happen when documents have no shared history
+	const localNoteIds = new Set(Object.keys(doc.notes || {}));
+	const remoteNoteIds = new Set(Object.keys(remoteDoc.notes || {}));
+	const mergedNoteIds = new Set(Object.keys(mergedDoc.notes || {}));
+
+	const localFolderIds = new Set(Object.keys(doc.folders || {}));
+	const remoteFolderIds = new Set(Object.keys(remoteDoc.folders || {}));
+	const mergedFolderIds = new Set(Object.keys(mergedDoc.folders || {}));
+
+	// Find missing items
+	const missingNotes: Note[] = [];
+	const missingFolders: Folder[] = [];
+
+	for (const id of localNoteIds) {
+		if (!mergedNoteIds.has(id) && doc.notes[id]) {
+			missingNotes.push(doc.notes[id]);
+		}
+	}
+	for (const id of remoteNoteIds) {
+		if (!mergedNoteIds.has(id) && remoteDoc.notes[id]) {
+			missingNotes.push(remoteDoc.notes[id]);
+		}
+	}
+
+	for (const id of localFolderIds) {
+		if (!mergedFolderIds.has(id) && doc.folders[id]) {
+			missingFolders.push(doc.folders[id]);
+		}
+	}
+	for (const id of remoteFolderIds) {
+		if (!mergedFolderIds.has(id) && remoteDoc.folders[id]) {
+			missingFolders.push(remoteDoc.folders[id]);
+		}
+	}
+
+	// If merge lost data, manually add it back
+	if (missingNotes.length > 0 || missingFolders.length > 0) {
+		console.log(`Sync: Recovering ${missingNotes.length} notes and ${missingFolders.length} folders lost in merge`);
+		doc = Automerge.change(mergedDoc, (d) => {
+			for (const note of missingNotes) {
+				if (!d.notes[note.id]) {
+					d.notes[note.id] = note;
+				}
+			}
+			for (const folder of missingFolders) {
+				if (!d.folders[folder.id]) {
+					d.folders[folder.id] = folder;
+				}
+			}
+		});
+	} else {
+		doc = mergedDoc;
+	}
+
+	// Update the vault ID store to match merged document
+	currentVaultIdStore.set(doc.currentVaultId || DEFAULT_VAULT_ID);
+
 	docStore.set(doc);
 	await saveDoc();
 }
