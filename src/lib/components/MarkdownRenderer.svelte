@@ -8,48 +8,69 @@
 
 	let { content }: Props = $props();
 
+	// Configure marked once
+	marked.use({
+		gfm: true,
+		breaks: true
+	});
+
 	// Custom renderer to handle special syntax
 	function renderMarkdown(markdown: string): string {
 		// First, process our custom syntax before marked parses it
+
+		// Use placeholder tokens to protect our custom elements from marked processing
+		const placeholders: string[] = [];
+		function addPlaceholder(html: string): string {
+			const index = placeholders.length;
+			placeholders.push(html);
+			return `<!--PLACEHOLDER_${index}-->`;
+		}
 
 		// Process wikilinks [[Title]] -> links to /read/[id] or show as broken link
 		let processed = markdown.replace(/\[\[([^\]]+)\]\]/g, (_, title) => {
 			const note = findNoteByTitle(title);
 			if (note) {
-				return `<a href="/read/${note.id}" class="wikilink">${title}</a>`;
+				return addPlaceholder(`<a href="/read/${note.id}" class="wikilink">${title}</a>`);
 			}
-			return `<span class="wikilink wikilink-broken">${title}</span>`;
+			return addPlaceholder(`<span class="wikilink wikilink-broken">${title}</span>`);
 		});
 
 		// Process dates //YYYY-MM-DD
 		processed = processed.replace(/\/\/(\d{4}-\d{2}-\d{2})/g, (_, date) => {
-			return `<a href="/read/date/${date}" class="date-reference">${date}</a>`;
+			return addPlaceholder(`<a href="/read/date/${date}" class="date-reference">${date}</a>`);
 		});
 
-		// Process people @Full Name
-		processed = processed.replace(/@([A-Z][a-zA-Z]+(?: [A-Z][a-zA-Z]+)*)/g, (_, name) => {
-			return `<a href="/read/person/${encodeURIComponent(name)}" class="person-reference">@${name}</a>`;
+		// Process people @Full Name (also handle lowercase after first letter)
+		processed = processed.replace(/@([A-Z][a-zA-Z]*(?: [A-Z][a-zA-Z]*)*)/g, (_, name) => {
+			return addPlaceholder(`<a href="/read/person/${encodeURIComponent(name)}" class="person-reference">@${name}</a>`);
 		});
 
-		// Process tags #tag-name (but not after @)
-		processed = processed.replace(/(?<![a-zA-Z@])#([a-zA-Z][a-zA-Z0-9_-]*)/g, (_, tag) => {
-			return `<a href="/read/tag/${tag}" class="tag-reference">#${tag}</a>`;
+		// Process tags #tag-name (but not markdown headings at start of line)
+		processed = processed.replace(/(?<=\s|^)#([a-zA-Z][a-zA-Z0-9_-]*)/gm, (match, tag, offset) => {
+			// Skip if this looks like a markdown heading (# at start of line followed by space)
+			const lineStart = processed.lastIndexOf('\n', offset - 1) + 1;
+			const textBefore = processed.slice(lineStart, offset);
+			if (textBefore.match(/^#+$/)) {
+				return match; // This is part of a heading
+			}
+			return addPlaceholder(`<a href="/read/tag/${tag}" class="tag-reference">#${tag}</a>`);
 		});
 
-		// Process URLs - mark them for special styling
+		// Process URLs - mark them for special styling (but not already in links)
 		processed = processed.replace(
-			/(https?:\/\/[^\s<>")\]]+)/g,
-			'<a href="$1" class="url-reference" target="_blank" rel="noopener noreferrer">$1</a>'
+			/(?<!\]\()(?<!")(https?:\/\/[^\s<>")\]]+)/g,
+			(url) => addPlaceholder(`<a href="${url}" class="url-reference" target="_blank" rel="noopener noreferrer">${url}</a>`)
 		);
 
-		// Configure marked
-		marked.setOptions({
-			gfm: true,
-			breaks: true
+		// Parse with marked
+		let html = marked.parse(processed) as string;
+
+		// Restore placeholders
+		html = html.replace(/<!--PLACEHOLDER_(\d+)-->/g, (_, index) => {
+			return placeholders[parseInt(index)] || '';
 		});
 
-		// Parse with marked
-		return marked.parse(processed) as string;
+		return html;
 	}
 
 	let html = $derived(renderMarkdown(content));
