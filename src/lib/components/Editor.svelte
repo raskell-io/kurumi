@@ -395,17 +395,17 @@
 		text-decoration: underline;
 	}
 
-	/* Date references //YYYY-MM-DD */
+	/* Date references //YYYY-MM-DD - Catppuccin Blue */
 	:global(.milkdown .date-reference) {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25em;
 		background: linear-gradient(
 			135deg,
-			rgba(59, 130, 246, 0.15),
-			rgba(59, 130, 246, 0.25)
+			rgba(137, 180, 250, 0.15),
+			rgba(137, 180, 250, 0.25)
 		);
-		color: #3b82f6;
+		color: #89b4fa;
 		padding: 0.1em 0.4em;
 		border-radius: 4px;
 		font-weight: 500;
@@ -417,8 +417,8 @@
 	:global(.milkdown .date-reference:hover) {
 		background: linear-gradient(
 			135deg,
-			rgba(59, 130, 246, 0.25),
-			rgba(59, 130, 246, 0.35)
+			rgba(137, 180, 250, 0.25),
+			rgba(137, 180, 250, 0.35)
 		);
 		text-decoration: underline;
 	}
@@ -428,23 +428,23 @@
 		display: inline-block;
 		width: 0.875em;
 		height: 0.875em;
-		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%233b82f6'%3E%3Cpath fill-rule='evenodd' d='M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z' clip-rule='evenodd'/%3E%3C/svg%3E");
+		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2389b4fa'%3E%3Cpath fill-rule='evenodd' d='M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z' clip-rule='evenodd'/%3E%3C/svg%3E");
 		background-size: contain;
 		background-repeat: no-repeat;
 		flex-shrink: 0;
 	}
 
-	/* Person references @Name */
+	/* Person references @Name - Catppuccin Green */
 	:global(.milkdown .person-reference) {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25em;
 		background: linear-gradient(
 			135deg,
-			rgba(34, 197, 94, 0.15),
-			rgba(34, 197, 94, 0.25)
+			rgba(166, 227, 161, 0.15),
+			rgba(166, 227, 161, 0.25)
 		);
-		color: #22c55e;
+		color: #a6e3a1;
 		padding: 0.1em 0.4em;
 		border-radius: 1em;
 		font-weight: 500;
@@ -456,8 +456,8 @@
 	:global(.milkdown .person-reference:hover) {
 		background: linear-gradient(
 			135deg,
-			rgba(34, 197, 94, 0.25),
-			rgba(34, 197, 94, 0.35)
+			rgba(166, 227, 161, 0.25),
+			rgba(166, 227, 161, 0.35)
 		);
 		text-decoration: underline;
 	}
@@ -467,23 +467,23 @@
 		display: inline-block;
 		width: 0.875em;
 		height: 0.875em;
-		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2322c55e'%3E%3Cpath fill-rule='evenodd' d='M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z' clip-rule='evenodd'/%3E%3C/svg%3E");
+		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23a6e3a1'%3E%3Cpath fill-rule='evenodd' d='M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z' clip-rule='evenodd'/%3E%3C/svg%3E");
 		background-size: contain;
 		background-repeat: no-repeat;
 		flex-shrink: 0;
 	}
 
-	/* Tag references #tag */
+	/* Tag references #tag - Catppuccin Peach */
 	:global(.milkdown .tag-reference) {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25em;
 		background: linear-gradient(
 			135deg,
-			rgba(245, 158, 11, 0.15),
-			rgba(245, 158, 11, 0.25)
+			rgba(250, 179, 135, 0.15),
+			rgba(250, 179, 135, 0.25)
 		);
-		color: #f59e0b;
+		color: #fab387;
 		padding: 0.1em 0.4em;
 		border-radius: 4px;
 		font-weight: 500;
@@ -495,8 +495,8 @@
 	:global(.milkdown .tag-reference:hover) {
 		background: linear-gradient(
 			135deg,
-			rgba(245, 158, 11, 0.25),
-			rgba(245, 158, 11, 0.35)
+			rgba(250, 179, 135, 0.25),
+			rgba(250, 179, 135, 0.35)
 		);
 		text-decoration: underline;
 	}
@@ -506,23 +506,23 @@
 		display: inline-block;
 		width: 0.875em;
 		height: 0.875em;
-		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23f59e0b'%3E%3Cpath fill-rule='evenodd' d='M17.707 9.293a1 1 0 010 1.414l-7 7a1 1 0 01-1.414 0l-7-7A.997.997 0 012 10V5a3 3 0 013-3h5c.256 0 .512.098.707.293l7 7zM5 6a1 1 0 100-2 1 1 0 000 2z' clip-rule='evenodd'/%3E%3C/svg%3E");
+		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23fab387'%3E%3Cpath fill-rule='evenodd' d='M17.707 9.293a1 1 0 010 1.414l-7 7a1 1 0 01-1.414 0l-7-7A.997.997 0 012 10V5a3 3 0 013-3h5c.256 0 .512.098.707.293l7 7zM5 6a1 1 0 100-2 1 1 0 000 2z' clip-rule='evenodd'/%3E%3C/svg%3E");
 		background-size: contain;
 		background-repeat: no-repeat;
 		flex-shrink: 0;
 	}
 
-	/* URL references */
+	/* URL references - Catppuccin Mauve */
 	:global(.milkdown .url-reference) {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25em;
 		background: linear-gradient(
 			135deg,
-			rgba(139, 92, 246, 0.15),
-			rgba(139, 92, 246, 0.25)
+			rgba(203, 166, 247, 0.15),
+			rgba(203, 166, 247, 0.25)
 		);
-		color: #8b5cf6;
+		color: #cba6f7;
 		padding: 0.1em 0.4em;
 		border-radius: 4px;
 		font-weight: 500;
@@ -535,8 +535,8 @@
 	:global(.milkdown .url-reference:hover) {
 		background: linear-gradient(
 			135deg,
-			rgba(139, 92, 246, 0.25),
-			rgba(139, 92, 246, 0.35)
+			rgba(203, 166, 247, 0.25),
+			rgba(203, 166, 247, 0.35)
 		);
 		text-decoration: underline;
 	}
@@ -546,7 +546,7 @@
 		display: inline-block;
 		width: 0.875em;
 		height: 0.875em;
-		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%238b5cf6'%3E%3Cpath fill-rule='evenodd' d='M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z' clip-rule='evenodd'/%3E%3C/svg%3E");
+		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23cba6f7'%3E%3Cpath fill-rule='evenodd' d='M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z' clip-rule='evenodd'/%3E%3C/svg%3E");
 		background-size: contain;
 		background-repeat: no-repeat;
 		flex-shrink: 0;
