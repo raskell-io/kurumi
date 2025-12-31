@@ -5,8 +5,22 @@ This guide walks you through setting up cross-device sync for Kurumi using Cloud
 ## Prerequisites
 
 - A Cloudflare account (free tier works)
-- Node.js 18+ installed
-- Wrangler CLI (`npm install -g wrangler`)
+- [mise](https://mise.jdx.dev/) installed (`brew install mise` or `curl https://mise.run | sh`)
+
+## Quick Start
+
+The worker project is included in this repo. Deploy with one command:
+
+```bash
+cd worker
+mise run setup
+```
+
+This handles everything: dependencies, Cloudflare login, R2 bucket, token, and deployment.
+
+Then configure Kurumi in Settings with your Worker URL and token.
+
+---
 
 ## Overview
 
@@ -23,39 +37,37 @@ The sync architecture is simple:
 - **PUT /sync**: Upload your merged document
 - **Bearer Token**: Simple authentication for personal use
 
-## Step 1: Create an R2 Bucket
+## Manual Setup (Step by Step)
 
-1. Log into the [Cloudflare Dashboard](https://dash.cloudflare.com)
-2. Go to **R2 Object Storage** in the sidebar
-3. Click **Create bucket**
-4. Name it `kurumi-sync` (or any name you prefer)
-5. Choose a location close to you
-6. Click **Create bucket**
-
-## Step 2: Create the Worker
-
-Create a new directory for your worker:
+If you prefer to run each step individually:
 
 ```bash
-mkdir kurumi-sync-worker
-cd kurumi-sync-worker
-npm init -y
+cd worker
+
+# Install dependencies
+mise run install
+
+# Login to Cloudflare
+mise run login
+
+# Create R2 bucket
+mise run bucket
+
+# Generate a sync token (save this!)
+mise run token
+
+# Set the token as a secret (paste the token when prompted)
+mise run secret
+
+# Deploy
+mise run deploy
 ```
 
-Create `wrangler.toml`:
+---
 
-```toml
-name = "kurumi-sync"
-main = "src/index.ts"
-compatibility_date = "2024-01-01"
+## Reference: Worker Implementation
 
-# Bind your R2 bucket
-[[r2_buckets]]
-binding = "KURUMI_BUCKET"
-bucket_name = "kurumi-sync"  # Use your bucket name from Step 1
-```
-
-Create `src/index.ts`:
+The worker code is in `worker/src/index.ts`. Here's how it works:
 
 ```typescript
 interface Env {
@@ -128,64 +140,7 @@ export default {
 };
 ```
 
-Create `tsconfig.json`:
-
-```json
-{
-  "compilerOptions": {
-    "target": "ES2021",
-    "module": "ESNext",
-    "moduleResolution": "node",
-    "strict": true,
-    "types": ["@cloudflare/workers-types"]
-  }
-}
-```
-
-Install dependencies:
-
-```bash
-npm install -D typescript @cloudflare/workers-types wrangler
-```
-
-## Step 3: Generate a Sync Token
-
-Generate a secure random token for authentication:
-
-```bash
-# Using openssl
-openssl rand -base64 32
-
-# Or using Node.js
-node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-```
-
-Save this token - you'll need it for both the Worker and Kurumi.
-
-## Step 4: Deploy the Worker
-
-1. Login to Wrangler:
-
-```bash
-wrangler login
-```
-
-2. Set your sync token as a secret:
-
-```bash
-wrangler secret put SYNC_TOKEN
-# Paste your generated token when prompted
-```
-
-3. Deploy the Worker:
-
-```bash
-wrangler deploy
-```
-
-4. Note your Worker URL (e.g., `https://kurumi-sync.your-subdomain.workers.dev`)
-
-## Step 5: Configure Kurumi
+## Configure Kurumi
 
 1. Open Kurumi and go to **Settings**
 2. In the **Cloudflare Sync** section:

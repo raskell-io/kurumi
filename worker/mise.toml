@@ -1,0 +1,72 @@
+[tools]
+node = "22"
+
+[env]
+_.path = ["./node_modules/.bin"]
+
+[tasks.install]
+description = "Install dependencies"
+run = "npm install"
+
+[tasks.login]
+description = "Login to Cloudflare"
+run = "wrangler login"
+
+[tasks.bucket]
+description = "Create R2 bucket"
+run = "wrangler r2 bucket create kurumi-sync"
+
+[tasks.token]
+description = "Generate a sync token"
+run = "openssl rand -base64 32"
+
+[tasks.secret]
+description = "Set the SYNC_TOKEN secret"
+run = "wrangler secret put SYNC_TOKEN"
+
+[tasks.deploy]
+description = "Deploy worker to Cloudflare"
+run = "wrangler deploy"
+
+[tasks.dev]
+description = "Run worker locally"
+run = "wrangler dev"
+
+[tasks.tail]
+description = "View live worker logs"
+run = "wrangler tail"
+
+[tasks.setup]
+description = "Full setup: install, login, create bucket, set secret, deploy"
+run = """
+echo "==> Installing dependencies..."
+npm install
+
+echo ""
+echo "==> Logging into Cloudflare..."
+wrangler login
+
+echo ""
+echo "==> Creating R2 bucket..."
+wrangler r2 bucket create kurumi-sync || echo "Bucket may already exist, continuing..."
+
+echo ""
+echo "==> Generating sync token..."
+TOKEN=$(openssl rand -base64 32)
+echo "Your sync token: $TOKEN"
+echo "Save this token - you'll need it for Kurumi settings!"
+
+echo ""
+echo "==> Setting SYNC_TOKEN secret..."
+echo "Paste the token above when prompted:"
+wrangler secret put SYNC_TOKEN
+
+echo ""
+echo "==> Deploying worker..."
+wrangler deploy
+
+echo ""
+echo "==> Done! Configure Kurumi with:"
+echo "    URL: https://kurumi-sync.<your-subdomain>.workers.dev/sync"
+echo "    Token: <the token shown above>"
+"""
