@@ -1,12 +1,27 @@
 <script lang="ts">
-	import { exportNotesJSON, notes } from '$lib/db';
+	import { exportNotesJSON, exportFullJSON, analyzeImport, importJSON, notes, folders, vaults, type ImportAnalysis, type ConflictResolution } from '$lib/db';
 	import { onMount } from 'svelte';
-	import { Monitor, Sun, Moon } from 'lucide-svelte';
+	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2 } from 'lucide-svelte';
 
 	let syncToken = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-token') || '' : '');
 	let syncUrl = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-url') || '' : '');
 	let showSaved = $state(false);
 	let theme = $state<'system' | 'light' | 'dark'>('system');
+
+	// Import state
+	let showImportModal = $state(false);
+	let importFileContent = $state<string | null>(null);
+	let importAnalysis = $state<ImportAnalysis | null>(null);
+	let importError = $state<string | null>(null);
+	let isImporting = $state(false);
+	let importSuccess = $state<{ vaults: number; folders: number; notes: number } | null>(null);
+	let fileInputRef: HTMLInputElement;
+
+	// Clear data state
+	let showClearConfirm1 = $state(false);
+	let showClearConfirm2 = $state(false);
+	let clearConfirmText = $state('');
+	let isClearing = $state(false);
 
 	onMount(() => {
 		const savedTheme = localStorage.getItem('kurumi-theme') as 'system' | 'light' | 'dark' | null;
@@ -34,7 +49,7 @@
 	}
 
 	function handleExport() {
-		const json = exportNotesJSON();
+		const json = exportFullJSON();
 		const blob = new Blob([json], { type: 'application/json' });
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement('a');
@@ -42,6 +57,109 @@
 		a.download = `kurumi-export-${new Date().toISOString().split('T')[0]}.json`;
 		a.click();
 		URL.revokeObjectURL(url);
+	}
+
+	function handleFileSelect(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+
+		const reader = new FileReader();
+		reader.onload = (e) => {
+			const content = e.target?.result as string;
+			importFileContent = content;
+			importError = null;
+			importSuccess = null;
+
+			const analysis = analyzeImport(content);
+			if ('error' in analysis) {
+				importError = analysis.error;
+				importAnalysis = null;
+			} else {
+				importAnalysis = analysis;
+				showImportModal = true;
+			}
+		};
+		reader.readAsText(file);
+
+		// Reset input so same file can be selected again
+		input.value = '';
+	}
+
+	async function handleImport(resolution: ConflictResolution) {
+		if (!importFileContent) return;
+
+		isImporting = true;
+		importError = null;
+
+		const result = await importJSON(importFileContent, { conflictResolution: resolution });
+
+		isImporting = false;
+
+		if (result.success && result.imported) {
+			importSuccess = result.imported;
+			showImportModal = false;
+			importFileContent = null;
+			importAnalysis = null;
+		} else {
+			importError = result.error || 'Import failed';
+		}
+	}
+
+	function closeImportModal() {
+		showImportModal = false;
+		importFileContent = null;
+		importAnalysis = null;
+		importError = null;
+	}
+
+	function triggerFileInput() {
+		fileInputRef?.click();
+	}
+
+	function startClearData() {
+		showClearConfirm1 = true;
+		showClearConfirm2 = false;
+		clearConfirmText = '';
+	}
+
+	function proceedToClearStep2() {
+		showClearConfirm1 = false;
+		showClearConfirm2 = true;
+		clearConfirmText = '';
+	}
+
+	function cancelClear() {
+		showClearConfirm1 = false;
+		showClearConfirm2 = false;
+		clearConfirmText = '';
+	}
+
+	async function confirmClearData() {
+		if (clearConfirmText !== 'DELETE ALL') return;
+
+		isClearing = true;
+		try {
+			// Delete the IndexedDB database (idb-keyval uses 'keyval-store' by default)
+			await new Promise<void>((resolve, reject) => {
+				const request = indexedDB.deleteDatabase('keyval-store');
+				request.onsuccess = () => resolve();
+				request.onerror = () => reject(request.error);
+				request.onblocked = () => resolve(); // Proceed even if blocked
+			});
+
+			// Also clear localStorage preferences
+			localStorage.removeItem('kurumi-theme');
+			localStorage.removeItem('kurumi-sync-token');
+			localStorage.removeItem('kurumi-sync-url');
+			localStorage.removeItem('kurumi-sidebar-width');
+
+			// Reload the page to reinitialize
+			location.reload();
+		} catch (e) {
+			console.error('Failed to clear data:', e);
+			isClearing = false;
+		}
 	}
 </script>
 
@@ -128,25 +246,78 @@
 			</div>
 		</section>
 
-		<!-- Export -->
+		<!-- Import/Export -->
 		<section class="mb-6 md:mb-8">
 			<h2 class="mb-3 text-base font-semibold text-[var(--color-text)] md:mb-4 md:text-lg">
-				Export Data
+				Import & Export
 			</h2>
 			<p class="mb-4 text-sm text-[var(--color-text-muted)]">
-				Export all your notes as JSON for backup or migration.
+				Import or export your data as JSON for backup or migration.
 			</p>
 
 			<div class="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+				<input
+					type="file"
+					accept=".json,application/json"
+					class="hidden"
+					bind:this={fileInputRef}
+					onchange={handleFileSelect}
+				/>
+				<button
+					onclick={triggerFileInput}
+					class="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] active:scale-[0.98] md:w-auto"
+				>
+					<Upload class="h-4 w-4" />
+					Import JSON
+				</button>
 				<button
 					onclick={handleExport}
-					class="w-full rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] active:scale-[0.98] md:w-auto"
+					class="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] active:scale-[0.98] md:w-auto"
 				>
-					Export as JSON
+					<Download class="h-4 w-4" />
+					Export JSON
 				</button>
-				<span class="text-center text-sm text-[var(--color-text-muted)] md:text-left">
-					{$notes.length} notes
-				</span>
+			</div>
+
+			<div class="mt-3 text-sm text-[var(--color-text-muted)]">
+				{$vaults.length} {$vaults.length === 1 ? 'vault' : 'vaults'} · {$folders.length} {$folders.length === 1 ? 'folder' : 'folders'} · {$notes.length} {$notes.length === 1 ? 'note' : 'notes'}
+			</div>
+
+			{#if importError && !showImportModal}
+				<div class="mt-3 flex items-center gap-2 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-500">
+					<AlertTriangle class="h-4 w-4 shrink-0" />
+					{importError}
+				</div>
+			{/if}
+
+			{#if importSuccess}
+				<div class="mt-3 flex items-center gap-2 rounded-lg bg-green-500/10 px-3 py-2 text-sm text-green-600 dark:text-green-400">
+					<Check class="h-4 w-4 shrink-0" />
+					Imported {importSuccess.vaults} {importSuccess.vaults === 1 ? 'vault' : 'vaults'}, {importSuccess.folders} {importSuccess.folders === 1 ? 'folder' : 'folders'}, {importSuccess.notes} {importSuccess.notes === 1 ? 'note' : 'notes'}
+				</div>
+			{/if}
+		</section>
+
+		<!-- Danger Zone -->
+		<section class="mb-6 md:mb-8">
+			<h2 class="mb-3 text-base font-semibold text-red-500 md:mb-4 md:text-lg">
+				Danger Zone
+			</h2>
+			<div class="rounded-lg border border-red-500/30 bg-red-500/5 p-4">
+				<div class="flex items-start justify-between gap-4">
+					<div>
+						<h3 class="font-medium text-[var(--color-text)]">Clear All Data</h3>
+						<p class="mt-1 text-sm text-[var(--color-text-muted)]">
+							Permanently delete all vaults, folders, and notes. This cannot be undone.
+						</p>
+					</div>
+					<button
+						onclick={startClearData}
+						class="shrink-0 rounded-lg border border-red-500/50 px-4 py-2 text-sm text-red-500 transition-colors hover:bg-red-500/10"
+					>
+						Clear Data
+					</button>
+				</div>
 			</div>
 		</section>
 
@@ -182,3 +353,241 @@
 		<div class="h-8 safe-bottom md:h-0"></div>
 	</div>
 </div>
+
+<!-- Import Modal -->
+{#if showImportModal && importAnalysis}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+		onclick={closeImportModal}
+		onkeydown={(e) => e.key === 'Escape' && closeImportModal()}
+		role="dialog"
+		aria-modal="true"
+		tabindex="-1"
+	>
+		<div
+			class="w-full max-w-md rounded-xl bg-[var(--color-bg)] p-6 shadow-2xl"
+			onclick={(e) => e.stopPropagation()}
+			role="document"
+		>
+			<div class="mb-4 flex items-center justify-between">
+				<h2 class="text-xl font-semibold text-[var(--color-text)]">Import Data</h2>
+				<button
+					onclick={closeImportModal}
+					class="rounded-lg p-1 text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)]"
+				>
+					<X class="h-5 w-5" />
+				</button>
+			</div>
+
+			<!-- Import summary -->
+			<div class="mb-4 rounded-lg bg-[var(--color-bg-secondary)] p-4">
+				<div class="text-sm text-[var(--color-text-muted)]">
+					<p><strong class="text-[var(--color-text)]">{importAnalysis.newVaults.length + importAnalysis.vaultConflicts.length}</strong> vaults</p>
+					<p><strong class="text-[var(--color-text)]">{importAnalysis.totalFolders}</strong> folders</p>
+					<p><strong class="text-[var(--color-text)]">{importAnalysis.totalNotes}</strong> notes</p>
+				</div>
+			</div>
+
+			{#if importAnalysis.hasConflicts}
+				<!-- Conflict warning -->
+				<div class="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
+					<div class="flex items-start gap-2">
+						<AlertTriangle class="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+						<div>
+							<p class="font-medium text-amber-600 dark:text-amber-400">Vault Conflicts Detected</p>
+							<p class="mt-1 text-sm text-[var(--color-text-muted)]">
+								{importAnalysis.vaultConflicts.length} {importAnalysis.vaultConflicts.length === 1 ? 'vault already exists' : 'vaults already exist'}:
+							</p>
+							<ul class="mt-2 space-y-1 text-sm">
+								{#each importAnalysis.vaultConflicts as conflict}
+									<li class="text-[var(--color-text)]">• {conflict.existingVault.name}</li>
+								{/each}
+							</ul>
+						</div>
+					</div>
+				</div>
+
+				<p class="mb-4 text-sm text-[var(--color-text-muted)]">
+					How would you like to handle the conflicting vaults?
+				</p>
+
+				<div class="space-y-2">
+					<button
+						onclick={() => handleImport('overwrite')}
+						disabled={isImporting}
+						class="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-bg-secondary)] disabled:opacity-50"
+					>
+						{#if isImporting}
+							<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+						{/if}
+						Overwrite existing vaults
+					</button>
+					<button
+						onclick={() => handleImport('duplicate')}
+						disabled={isImporting}
+						class="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-bg-secondary)] disabled:opacity-50"
+					>
+						{#if isImporting}
+							<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+						{/if}
+						Create duplicates with new IDs
+					</button>
+					<button
+						onclick={() => handleImport('skip')}
+						disabled={isImporting}
+						class="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-secondary)] disabled:opacity-50"
+					>
+						{#if isImporting}
+							<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+						{/if}
+						Skip conflicting vaults
+					</button>
+				</div>
+			{:else}
+				<!-- No conflicts -->
+				<p class="mb-4 text-sm text-[var(--color-text-muted)]">
+					No conflicts detected. Ready to import.
+				</p>
+
+				<button
+					onclick={() => handleImport('skip')}
+					disabled={isImporting}
+					class="flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-3 text-white transition-colors hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
+				>
+					{#if isImporting}
+						<div class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+					{/if}
+					Import Data
+				</button>
+			{/if}
+
+			{#if importError}
+				<div class="mt-4 flex items-center gap-2 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-500">
+					<AlertTriangle class="h-4 w-4 shrink-0" />
+					{importError}
+				</div>
+			{/if}
+		</div>
+	</div>
+{/if}
+
+<!-- Clear Data Confirmation Step 1 -->
+{#if showClearConfirm1}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+		onclick={cancelClear}
+		onkeydown={(e) => e.key === 'Escape' && cancelClear()}
+		role="dialog"
+		aria-modal="true"
+		tabindex="-1"
+	>
+		<div
+			class="w-full max-w-md rounded-xl bg-[var(--color-bg)] p-6 shadow-2xl"
+			onclick={(e) => e.stopPropagation()}
+			role="document"
+		>
+			<div class="mb-4 flex items-center gap-3">
+				<div class="flex h-12 w-12 items-center justify-center rounded-full bg-red-500/10">
+					<AlertTriangle class="h-6 w-6 text-red-500" />
+				</div>
+				<div>
+					<h2 class="text-xl font-semibold text-[var(--color-text)]">Clear All Data?</h2>
+					<p class="text-sm text-[var(--color-text-muted)]">First confirmation</p>
+				</div>
+			</div>
+
+			<p class="mb-4 text-[var(--color-text-muted)]">
+				You are about to permanently delete all your data, including:
+			</p>
+
+			<ul class="mb-6 space-y-2 text-sm">
+				<li class="flex items-center gap-2 text-[var(--color-text)]">
+					<Trash2 class="h-4 w-4 text-red-500" />
+					All vaults ({$vaults.length})
+				</li>
+				<li class="flex items-center gap-2 text-[var(--color-text)]">
+					<Trash2 class="h-4 w-4 text-red-500" />
+					All folders ({$folders.length})
+				</li>
+				<li class="flex items-center gap-2 text-[var(--color-text)]">
+					<Trash2 class="h-4 w-4 text-red-500" />
+					All notes ({$notes.length})
+				</li>
+			</ul>
+
+			<div class="flex gap-3">
+				<button
+					onclick={cancelClear}
+					class="flex-1 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-bg-secondary)]"
+				>
+					Cancel
+				</button>
+				<button
+					onclick={proceedToClearStep2}
+					class="flex-1 rounded-lg bg-red-500 px-4 py-3 text-white transition-colors hover:bg-red-600"
+				>
+					Continue
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Clear Data Confirmation Step 2 -->
+{#if showClearConfirm2}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+		onclick={cancelClear}
+		onkeydown={(e) => e.key === 'Escape' && cancelClear()}
+		role="dialog"
+		aria-modal="true"
+		tabindex="-1"
+	>
+		<div
+			class="w-full max-w-md rounded-xl bg-[var(--color-bg)] p-6 shadow-2xl"
+			onclick={(e) => e.stopPropagation()}
+			role="document"
+		>
+			<div class="mb-4 flex items-center gap-3">
+				<div class="flex h-12 w-12 items-center justify-center rounded-full bg-red-500/10">
+					<AlertTriangle class="h-6 w-6 text-red-500" />
+				</div>
+				<div>
+					<h2 class="text-xl font-semibold text-[var(--color-text)]">Final Confirmation</h2>
+					<p class="text-sm text-[var(--color-text-muted)]">This action cannot be undone</p>
+				</div>
+			</div>
+
+			<p class="mb-4 text-[var(--color-text-muted)]">
+				Type <strong class="text-red-500">DELETE ALL</strong> to confirm:
+			</p>
+
+			<input
+				type="text"
+				bind:value={clearConfirmText}
+				placeholder="DELETE ALL"
+				class="mb-4 w-full rounded-lg border border-red-500/30 bg-[var(--color-bg-secondary)] px-4 py-3 text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:border-red-500 focus:outline-none"
+				onkeydown={(e) => e.key === 'Enter' && clearConfirmText === 'DELETE ALL' && confirmClearData()}
+			/>
+
+			<div class="flex gap-3">
+				<button
+					onclick={cancelClear}
+					class="flex-1 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-bg-secondary)]"
+				>
+					Cancel
+				</button>
+				<button
+					onclick={confirmClearData}
+					disabled={clearConfirmText !== 'DELETE ALL' || isClearing}
+					class="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500 px-4 py-3 text-white transition-colors hover:bg-red-600 disabled:opacity-50"
+				>
+					{#if isClearing}
+						<div class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+					{/if}
+					Delete Everything
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}

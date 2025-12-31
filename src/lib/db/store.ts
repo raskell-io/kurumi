@@ -501,10 +501,207 @@ export async function mergeDoc(remoteBinary: Uint8Array): Promise<void> {
 	await saveDoc();
 }
 
-// Export all notes as JSON (for backup)
+// Export all notes as JSON (for backup) - legacy format
 export function exportNotesJSON(): string {
 	if (!doc) return '[]';
 	return JSON.stringify(Object.values(doc.notes), null, 2);
+}
+
+// Full export including vaults, folders, and notes
+export interface KurumiExport {
+	version: number;
+	exportedAt: string;
+	vaults: Vault[];
+	folders: Folder[];
+	notes: Note[];
+}
+
+export function exportFullJSON(): string {
+	if (!doc) return JSON.stringify({ version: 2, exportedAt: new Date().toISOString(), vaults: [], folders: [], notes: [] });
+	const exportData: KurumiExport = {
+		version: doc.version || 2,
+		exportedAt: new Date().toISOString(),
+		vaults: Object.values(doc.vaults || {}),
+		folders: Object.values(doc.folders || {}),
+		notes: Object.values(doc.notes || {})
+	};
+	return JSON.stringify(exportData, null, 2);
+}
+
+// Import types
+export interface VaultConflict {
+	importedVault: Vault;
+	existingVault: Vault;
+}
+
+export interface ImportAnalysis {
+	hasConflicts: boolean;
+	vaultConflicts: VaultConflict[];
+	newVaults: Vault[];
+	totalFolders: number;
+	totalNotes: number;
+}
+
+export function analyzeImport(jsonString: string): ImportAnalysis | { error: string } {
+	if (!doc) return { error: 'Database not initialized' };
+
+	try {
+		const data = JSON.parse(jsonString);
+
+		// Handle both old format (array of notes) and new format (full export)
+		let vaults: Vault[] = [];
+		let folders: Folder[] = [];
+		let notes: Note[] = [];
+
+		if (Array.isArray(data)) {
+			// Old format: array of notes, put them in current vault
+			notes = data;
+		} else if (data.vaults && data.notes) {
+			// New format
+			vaults = data.vaults || [];
+			folders = data.folders || [];
+			notes = data.notes || [];
+		} else {
+			return { error: 'Invalid import format' };
+		}
+
+		// Check for vault conflicts
+		const vaultConflicts: VaultConflict[] = [];
+		const newVaults: Vault[] = [];
+
+		for (const importedVault of vaults) {
+			const existingVault = doc.vaults?.[importedVault.id];
+			if (existingVault) {
+				vaultConflicts.push({ importedVault, existingVault });
+			} else {
+				newVaults.push(importedVault);
+			}
+		}
+
+		return {
+			hasConflicts: vaultConflicts.length > 0,
+			vaultConflicts,
+			newVaults,
+			totalFolders: folders.length,
+			totalNotes: notes.length
+		};
+	} catch {
+		return { error: 'Invalid JSON format' };
+	}
+}
+
+export type ConflictResolution = 'overwrite' | 'duplicate' | 'skip';
+
+export interface ImportOptions {
+	conflictResolution: ConflictResolution;
+}
+
+export async function importJSON(jsonString: string, options: ImportOptions): Promise<{ success: boolean; error?: string; imported?: { vaults: number; folders: number; notes: number } }> {
+	if (!doc) return { success: false, error: 'Database not initialized' };
+
+	try {
+		const data = JSON.parse(jsonString);
+
+		// Handle both old format (array of notes) and new format (full export)
+		let vaults: Vault[] = [];
+		let folders: Folder[] = [];
+		let notes: Note[] = [];
+
+		if (Array.isArray(data)) {
+			// Old format: array of notes, put them in current vault
+			notes = data.map(n => ({ ...n, vaultId: n.vaultId || doc!.currentVaultId }));
+		} else if (data.vaults && data.notes) {
+			// New format
+			vaults = data.vaults || [];
+			folders = data.folders || [];
+			notes = data.notes || [];
+		} else {
+			return { success: false, error: 'Invalid import format' };
+		}
+
+		// Track ID mappings for duplicated vaults
+		const vaultIdMap = new Map<string, string>();
+		let importedVaults = 0;
+		let importedFolders = 0;
+		let importedNotes = 0;
+
+		doc = Automerge.change(doc, (d) => {
+			// Import vaults
+			for (const vault of vaults) {
+				const existingVault = d.vaults?.[vault.id];
+
+				if (existingVault) {
+					if (options.conflictResolution === 'overwrite') {
+						d.vaults[vault.id] = vault;
+						importedVaults++;
+					} else if (options.conflictResolution === 'duplicate') {
+						const newId = generateId();
+						vaultIdMap.set(vault.id, newId);
+						d.vaults[newId] = { ...vault, id: newId, name: `${vault.name} (imported)` };
+						importedVaults++;
+					}
+					// 'skip' does nothing
+				} else {
+					d.vaults[vault.id] = vault;
+					importedVaults++;
+				}
+			}
+
+			// Import folders (with remapped vault IDs if duplicated)
+			for (const folder of folders) {
+				const targetVaultId = vaultIdMap.get(folder.vaultId) || folder.vaultId;
+
+				// Check if folder already exists
+				if (d.folders[folder.id]) {
+					if (options.conflictResolution === 'overwrite') {
+						d.folders[folder.id] = { ...folder, vaultId: targetVaultId };
+						importedFolders++;
+					} else if (options.conflictResolution === 'duplicate') {
+						const newId = generateId();
+						d.folders[newId] = { ...folder, id: newId, vaultId: targetVaultId };
+						importedFolders++;
+					}
+				} else {
+					d.folders[folder.id] = { ...folder, vaultId: targetVaultId };
+					importedFolders++;
+				}
+			}
+
+			// Import notes (with remapped vault IDs if duplicated)
+			for (const note of notes) {
+				const targetVaultId = vaultIdMap.get(note.vaultId) || note.vaultId || d.currentVaultId;
+
+				// Check if note already exists
+				if (d.notes[note.id]) {
+					if (options.conflictResolution === 'overwrite') {
+						d.notes[note.id] = { ...note, vaultId: targetVaultId };
+						importedNotes++;
+					} else if (options.conflictResolution === 'duplicate') {
+						const newId = generateId();
+						d.notes[newId] = { ...note, id: newId, vaultId: targetVaultId };
+						importedNotes++;
+					}
+				} else {
+					d.notes[note.id] = { ...note, vaultId: targetVaultId };
+					importedNotes++;
+				}
+			}
+		});
+
+		docStore.set(doc);
+		await saveDoc();
+
+		return {
+			success: true,
+			imported: {
+				vaults: importedVaults,
+				folders: importedFolders,
+				notes: importedNotes
+			}
+		};
+	} catch (e) {
+		return { success: false, error: `Import failed: ${e instanceof Error ? e.message : 'Unknown error'}` };
+	}
 }
 
 // ============ Content Extraction ============
