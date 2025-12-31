@@ -185,18 +185,17 @@
 				{/if}
 			</button>
 
-			<!-- Edit link (if viewing a note) -->
+			<!-- Edit link: show note-specific when viewing a note, general when not -->
 			{#if noteId}
 				<a href="/note/{noteId}" class="nav-btn edit-btn" title="Edit this note">
 					<Pencil class="h-5 w-5" />
 					<span class="btn-text">Edit</span>
 				</a>
+			{:else}
+				<a href="/" class="nav-btn" title="Back to editor">
+					<PenSquare class="h-5 w-5" />
+				</a>
 			{/if}
-
-			<!-- Back to app -->
-			<a href="/" class="nav-btn" title="Back to editor">
-				<PenSquare class="h-5 w-5" />
-			</a>
 		</div>
 	</div>
 </nav>
@@ -422,6 +421,10 @@
 		}
 
 		.breadcrumbs {
+			display: none;
+		}
+
+		.nav-spacer {
 			display: none;
 		}
 

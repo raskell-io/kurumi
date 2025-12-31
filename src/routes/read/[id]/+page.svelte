@@ -154,16 +154,16 @@
 		<nav class="note-nav">
 			{#if prevNext.prev}
 				<a href="/read/{prevNext.prev.id}" class="nav-link prev">
-					<span class="nav-label">Previous</span>
+					<span class="nav-label">← Previous</span>
 					<span class="nav-title">{prevNext.prev.title || 'Untitled'}</span>
 				</a>
 			{:else}
-				<div></div>
+				<div class="nav-placeholder"></div>
 			{/if}
 
 			{#if prevNext.next}
 				<a href="/read/{prevNext.next.id}" class="nav-link next">
-					<span class="nav-label">Next</span>
+					<span class="nav-label">Next →</span>
 					<span class="nav-title">{prevNext.next.title || 'Untitled'}</span>
 				</a>
 			{/if}
@@ -332,8 +332,8 @@
 
 	/* Navigation */
 	.note-nav {
-		display: flex;
-		justify-content: space-between;
+		display: grid;
+		grid-template-columns: 1fr 1fr;
 		gap: 1rem;
 		padding-top: 2rem;
 		border-top: 1px solid var(--color-border);
@@ -342,33 +342,40 @@
 	.nav-link {
 		display: flex;
 		flex-direction: column;
-		gap: 0.25rem;
-		padding: 1rem;
+		gap: 0.5rem;
+		padding: 1.25rem 1.5rem;
 		background: var(--color-bg-secondary);
-		border-radius: 0.5rem;
+		border: 1px solid var(--color-border);
+		border-radius: 0.75rem;
 		text-decoration: none;
 		transition: all 0.15s;
-		max-width: 45%;
 	}
 
 	.nav-link:hover {
 		background: var(--color-border);
+		border-color: var(--color-accent);
 	}
 
 	.nav-link.next {
 		text-align: right;
-		margin-left: auto;
+		grid-column: 2;
+	}
+
+	.nav-link.prev {
+		grid-column: 1;
 	}
 
 	.nav-label {
-		font-size: 0.75rem;
+		font-size: 0.8rem;
 		color: var(--color-text-muted);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
+		font-weight: 500;
 	}
 
 	.nav-title {
-		font-weight: 500;
+		font-size: 1.05rem;
+		font-weight: 600;
 		color: var(--color-text);
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -417,14 +424,17 @@
 		}
 
 		.note-nav {
-			flex-direction: column;
+			grid-template-columns: 1fr;
+			gap: 0.75rem;
 		}
 
 		.nav-link {
-			max-width: 100%;
+			padding: 1rem 1.25rem;
 		}
 
+		.nav-link.prev,
 		.nav-link.next {
+			grid-column: 1;
 			text-align: left;
 		}
 	}
