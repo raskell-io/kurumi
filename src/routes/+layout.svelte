@@ -4,13 +4,13 @@
 	import { onMount } from 'svelte';
 	import { initDB, notes, addNote, getAllTags, extractTags, folders } from '$lib/db';
 	import { initSearch, rebuildIndex } from '$lib/search';
-	import { setupVisibilitySync, teardownVisibilitySync } from '$lib/sync';
+	import { setupVisibilitySync, teardownVisibilitySync, syncState, isSyncConfigured } from '$lib/sync';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import FolderTree from '$lib/components/FolderTree.svelte';
 	import VaultSelector from '$lib/components/VaultSelector.svelte';
-	import { X, Plus, Search, ChevronDown, Folder, List, GitFork, BookOpen, Settings, Menu, FileText } from 'lucide-svelte';
+	import { X, Plus, Search, ChevronDown, Folder, List, GitFork, BookOpen, Settings, Menu, FileText, Cloud, RefreshCw, CheckCircle, AlertCircle } from 'lucide-svelte';
 
 	let { children } = $props();
 
@@ -32,6 +32,9 @@
 
 	// Check if we're in read mode (hide sidebar)
 	let isReadMode = $derived($page.url.pathname.startsWith('/read'));
+
+	// Sync status
+	let showSyncStatus = $derived(initialized && isSyncConfigured());
 
 	// Derived: all tags
 	let allTags = $derived(initialized ? getAllTags() : []);
@@ -441,6 +444,25 @@
 					{/each}
 				{/if}
 			</nav>
+
+			<!-- Sync Status -->
+			{#if showSyncStatus}
+				<div class="flex items-center gap-2 border-t border-[var(--color-border)] px-3 py-2">
+					{#if $syncState.status === 'syncing'}
+						<RefreshCw class="h-4 w-4 animate-spin text-[var(--color-accent)]" />
+						<span class="text-xs text-[var(--color-text-muted)]">Syncing...</span>
+					{:else if $syncState.status === 'success'}
+						<CheckCircle class="h-4 w-4 text-green-500" />
+						<span class="text-xs text-[var(--color-text-muted)]">Synced</span>
+					{:else if $syncState.status === 'error'}
+						<AlertCircle class="h-4 w-4 text-red-500" />
+						<span class="text-xs text-red-500">{$syncState.error || 'Sync failed'}</span>
+					{:else}
+						<Cloud class="h-4 w-4 text-[var(--color-text-muted)]" />
+						<span class="text-xs text-[var(--color-text-muted)]">Sync ready</span>
+					{/if}
+				</div>
+			{/if}
 
 			<!-- Footer -->
 			<div class="border-t border-[var(--color-border)] p-2 safe-bottom">
