@@ -106,21 +106,42 @@ export async function sync(): Promise<{ success: boolean; error?: string }> {
 
 	try {
 		// Step 1: Pull remote document
-		const remoteBinary = await pullRemote(config);
+		let remoteBinary: Uint8Array | null;
+		try {
+			remoteBinary = await pullRemote(config);
+		} catch (pullErr) {
+			const message = pullErr instanceof Error ? pullErr.message : 'Failed to pull';
+			setSyncError(`Pull failed: ${message}`);
+			return { success: false, error: `Pull failed: ${message}` };
+		}
 
 		// Step 2: Merge if remote exists
 		if (remoteBinary !== null) {
-			await mergeDoc(remoteBinary);
+			try {
+				await mergeDoc(remoteBinary);
+			} catch (mergeErr) {
+				const message = mergeErr instanceof Error ? mergeErr.message : 'Merge failed';
+				console.error('Sync merge error:', mergeErr);
+				setSyncError(`Merge failed: ${message}`);
+				return { success: false, error: `Merge failed: ${message}` };
+			}
 		}
 
 		// Step 3: Get merged local state and push
-		const localBinary = getDocBinary();
-		await pushToRemote(config, localBinary);
+		try {
+			const localBinary = getDocBinary();
+			await pushToRemote(config, localBinary);
+		} catch (pushErr) {
+			const message = pushErr instanceof Error ? pushErr.message : 'Failed to push';
+			setSyncError(`Push failed: ${message}`);
+			return { success: false, error: `Push failed: ${message}` };
+		}
 
 		setSyncSuccess();
 		return { success: true };
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Sync failed';
+		console.error('Sync error:', err);
 		setSyncError(message);
 		return { success: false, error: message };
 	}

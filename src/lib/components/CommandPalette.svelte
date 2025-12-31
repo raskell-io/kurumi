@@ -229,7 +229,7 @@
 </script>
 
 <div
-	class="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[15vh]"
+	class="animate-backdrop fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[15vh]"
 	onclick={onClose}
 	onkeydown={handleKeydown}
 	role="dialog"
@@ -238,7 +238,7 @@
 >
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
-		class="w-full max-w-xl overflow-hidden rounded-xl bg-[var(--color-bg)] shadow-2xl"
+		class="animate-modal w-full max-w-xl overflow-hidden rounded-xl bg-[var(--color-bg)] shadow-2xl"
 		onclick={(e) => e.stopPropagation()}
 		onkeydown={(e) => e.stopPropagation()}
 		role="search"

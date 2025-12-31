@@ -659,7 +659,14 @@ function isDocEmpty(d: Automerge.Doc<KurumiDocument>): boolean {
 // Merge with a remote document (for sync)
 // Handles the case where documents were created independently (no shared history)
 export async function mergeDoc(remoteBinary: Uint8Array): Promise<void> {
-	const remoteDoc = Automerge.load<KurumiDocument>(remoteBinary);
+	let remoteDoc: Automerge.Doc<KurumiDocument>;
+
+	try {
+		remoteDoc = Automerge.load<KurumiDocument>(remoteBinary);
+	} catch (loadError) {
+		console.error('Failed to load remote document:', loadError);
+		throw new Error(`Failed to load remote document: ${loadError instanceof Error ? loadError.message : 'Unknown error'}`);
+	}
 
 	// If local is empty but remote has content, adopt remote as base
 	if (isDocEmpty(doc) && !isDocEmpty(remoteDoc)) {
@@ -670,8 +677,32 @@ export async function mergeDoc(remoteBinary: Uint8Array): Promise<void> {
 		return;
 	}
 
-	// Standard Automerge merge
-	const mergedDoc = Automerge.merge(doc, remoteDoc);
+	// Standard Automerge merge - wrap in try-catch for better error messages
+	let mergedDoc: Automerge.Doc<KurumiDocument>;
+	try {
+		mergedDoc = Automerge.merge(doc, remoteDoc);
+	} catch (mergeError) {
+		console.error('Automerge merge failed:', mergeError);
+		console.log('Local doc actor:', Automerge.getActorId(doc));
+		console.log('Remote doc actor:', Automerge.getActorId(remoteDoc));
+
+		// If merge fails, try to recover by taking the document with more content
+		const localCount = Object.keys(doc.notes || {}).length + Object.keys(doc.folders || {}).length;
+		const remoteCount = Object.keys(remoteDoc.notes || {}).length + Object.keys(remoteDoc.folders || {}).length;
+
+		if (remoteCount > localCount) {
+			console.log('Merge failed - adopting remote document with more content');
+			doc = Automerge.clone(remoteDoc);
+			currentVaultIdStore.set(doc.currentVaultId || DEFAULT_VAULT_ID);
+			docStore.set(doc);
+			await saveDoc();
+			return;
+		} else {
+			console.log('Merge failed - keeping local document with more content');
+			// Just keep local and push it
+			return;
+		}
+	}
 
 	// Check if merge lost any data from either document
 	// This can happen when documents have no shared history

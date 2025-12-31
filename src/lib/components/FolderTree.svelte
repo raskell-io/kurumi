@@ -886,7 +886,7 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
-		class="fixed z-[100] min-w-[160px] rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] py-1 shadow-lg"
+		class="animate-menu fixed z-[100] min-w-[160px] rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] py-1 shadow-lg"
 		style="left: {contextMenuPosition.x}px; top: {contextMenuPosition.y}px;"
 		onclick={(e) => e.stopPropagation()}
 		role="menu"
@@ -962,7 +962,7 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
-		class="fixed z-[100] min-w-[160px] rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] py-1 shadow-lg"
+		class="animate-menu fixed z-[100] min-w-[160px] rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] py-1 shadow-lg"
 		style="left: {contextMenuPosition.x}px; top: {contextMenuPosition.y}px;"
 		onclick={(e) => e.stopPropagation()}
 		role="menu"

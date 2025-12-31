@@ -351,7 +351,7 @@
 		<!-- Mobile overlay (hidden in read mode) -->
 		{#if !isReadMode && isMobile && sidebarOpen}
 			<button
-				class="fixed inset-0 z-40 bg-black/50"
+				class="animate-backdrop fixed inset-0 z-40 bg-black/50"
 				onclick={() => (sidebarOpen = false)}
 				aria-label="Close sidebar"
 			></button>
@@ -360,9 +360,8 @@
 		<!-- Sidebar (hidden in read mode) -->
 		{#if !isReadMode}
 		<aside
-			class="fixed inset-y-0 left-0 z-50 flex w-full flex-col border-r-0 border-[var(--color-border)] bg-[var(--color-bg-secondary)] transition-transform duration-300 ease-out md:relative md:z-auto md:border-r md:pt-6 {sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}"
-			style:--sidebar-width="{sidebarWidth}px"
-			style:width={isMobile ? undefined : `${sidebarWidth}px`}
+			class="fixed inset-y-0 left-0 z-50 flex w-full flex-col border-r-0 border-[var(--color-border)] bg-[var(--color-bg-secondary)] md:relative md:z-auto md:border-r md:pt-6 {sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}"
+			style="transition: transform 250ms cubic-bezier(0.4, 0, 0.2, 1); --sidebar-width: {sidebarWidth}px; width: {isMobile ? undefined : `${sidebarWidth}px`};"
 			role="navigation"
 			aria-label="Main navigation"
 		>
@@ -647,18 +646,6 @@
 
 		<!-- Main Content -->
 		<main class="relative flex flex-1 flex-col" class:overflow-hidden={!isReadMode && !isDocsPage} role="main" aria-label="Main content">
-			<!-- Mobile FAB for new note (hidden in read mode, docs, and on desktop) -->
-			{#if !isReadMode && !isDocsPage}
-			<button
-				onclick={handleNewNote}
-				class="fixed bottom-6 right-6 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-accent)] text-white shadow-lg transition-all hover:bg-[var(--color-accent-hover)] hover:shadow-xl active:scale-95 safe-bottom md:hidden"
-				aria-label="New note"
-				title="New note"
-			>
-				<Plus class="h-6 w-6" />
-			</button>
-			{/if}
-
 			<!-- Mobile header (hidden in read mode, docs, and on desktop) -->
 			{#if !isReadMode && !isDocsPage}
 			<header
@@ -677,14 +664,24 @@
 						<span class="font-semibold text-[var(--color-text)]">Kurumi</span>
 					</div>
 				</div>
-				<a
-					href="/read"
-					class="rounded-lg p-2 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
-					aria-label="Read mode"
-					title="Read mode"
-				>
-					<BookOpen class="h-6 w-6" />
-				</a>
+				<div class="flex items-center gap-1">
+					<button
+						onclick={handleNewNote}
+						class="rounded-lg p-2 text-[var(--color-accent)] transition-colors hover:bg-[var(--color-border)]"
+						aria-label="New note"
+						title="New note"
+					>
+						<Plus class="h-6 w-6" />
+					</button>
+					<a
+						href="/read"
+						class="rounded-lg p-2 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
+						aria-label="Read mode"
+						title="Read mode"
+					>
+						<BookOpen class="h-6 w-6" />
+					</a>
+				</div>
 			</header>
 			{/if}
 
