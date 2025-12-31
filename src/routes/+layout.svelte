@@ -261,8 +261,9 @@
 {#if !initialized}
 	<div class="flex h-[100dvh] items-center justify-center bg-[var(--color-bg)]">
 		<div class="text-center">
+			<img src="/icon-192.avif" alt="Kurumi" class="mx-auto mb-6 h-24 w-24 rounded-2xl" />
 			<div
-				class="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-[var(--color-accent)] border-t-transparent"
+				class="mx-auto mb-4 h-6 w-6 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent"
 			></div>
 			<p class="text-[var(--color-text-muted)]">Loading Kurumi...</p>
 		</div>

@@ -754,28 +754,33 @@
 	/* Mobile: larger font for better readability */
 	@media (max-width: 768px) {
 		:global(.milkdown .ProseMirror) {
-			font-size: 1.125rem;
-			line-height: 1.75;
+			font-size: 1.25rem;
+			line-height: 1.8;
 		}
 
 		:global(.milkdown h1) {
-			font-size: 1.75em;
+			font-size: 1.875em;
 		}
 
 		:global(.milkdown h2) {
-			font-size: 1.375em;
+			font-size: 1.5em;
 		}
 
 		:global(.milkdown h3) {
-			font-size: 1.125em;
+			font-size: 1.25em;
+		}
+
+		:global(.milkdown p) {
+			margin-bottom: 1em;
 		}
 
 		:global(.milkdown code) {
-			font-size: 0.875em;
+			font-size: 0.9em;
+			padding: 0.25em 0.5em;
 		}
 
 		:global(.milkdown pre:first-child code) {
-			font-size: 0.8em;
+			font-size: 0.85em;
 		}
 	}
 </style>
