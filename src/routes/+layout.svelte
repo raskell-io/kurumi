@@ -9,7 +9,7 @@
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import FolderTree from '$lib/components/FolderTree.svelte';
 	import VaultSelector from '$lib/components/VaultSelector.svelte';
-	import { X, Plus, Search, ChevronDown, Folder, List, GitFork, BookOpen, Settings, Menu } from 'lucide-svelte';
+	import { X, Plus, Search, ChevronDown, Folder, List, GitFork, BookOpen, Settings, Menu, FileText } from 'lucide-svelte';
 
 	let { children } = $props();
 
@@ -441,7 +441,7 @@
 
 			<!-- Footer -->
 			<div class="border-t border-[var(--color-border)] p-2 safe-bottom">
-				<div class="grid grid-cols-3 gap-1">
+				<div class="grid grid-cols-4 gap-1">
 					<a
 						href="/graph"
 						onclick={handleNoteClick}
@@ -457,6 +457,14 @@
 					>
 						<BookOpen class="h-5 w-5" />
 						<span class="text-xs">Refs</span>
+					</a>
+					<a
+						href="/docs"
+						onclick={handleNoteClick}
+						class="flex flex-col items-center gap-1 rounded-lg px-2 py-2 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
+					>
+						<FileText class="h-5 w-5" />
+						<span class="text-xs">Docs</span>
 					</a>
 					<a
 						href="/settings"
