@@ -4,6 +4,7 @@
 	import { onMount } from 'svelte';
 	import { initDB, notes, addNote, getAllTags, extractTags, folders } from '$lib/db';
 	import { initSearch, rebuildIndex } from '$lib/search';
+	import { setupVisibilitySync, teardownVisibilitySync } from '$lib/sync';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
@@ -145,6 +146,7 @@
 		// Initialize async stuff
 		initDB().then(() => {
 			initSearch();
+			setupVisibilitySync();
 			initialized = true;
 		});
 
@@ -155,6 +157,7 @@
 		return () => {
 			window.removeEventListener('resize', checkMobile);
 			window.removeEventListener('keydown', handleKeydown);
+			teardownVisibilitySync();
 		};
 	});
 

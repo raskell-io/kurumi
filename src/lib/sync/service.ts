@@ -1,8 +1,10 @@
 import { getDocBinary, mergeDoc } from '$lib/db';
-import { setSyncing, setSyncSuccess, setSyncError } from './status';
+import { setSyncing, setSyncSuccess, setSyncError, syncState } from './status';
+import { get } from 'svelte/store';
 
 const SYNC_URL_KEY = 'kurumi-sync-url';
 const SYNC_TOKEN_KEY = 'kurumi-sync-token';
+const MIN_SYNC_INTERVAL_MS = 10000; // Don't sync more than once every 10 seconds
 
 interface SyncConfig {
 	url: string;
@@ -122,4 +124,46 @@ export async function sync(): Promise<{ success: boolean; error?: string }> {
 		setSyncError(message);
 		return { success: false, error: message };
 	}
+}
+
+// Visibility change sync
+let visibilityListenerAdded = false;
+
+function shouldSync(): boolean {
+	if (!isSyncConfigured()) return false;
+
+	const state = get(syncState);
+
+	// Don't sync if already syncing
+	if (state.status === 'syncing') return false;
+
+	// Don't sync too frequently
+	if (state.lastSyncedAt) {
+		const timeSinceLastSync = Date.now() - state.lastSyncedAt;
+		if (timeSinceLastSync < MIN_SYNC_INTERVAL_MS) return false;
+	}
+
+	return true;
+}
+
+function handleVisibilityChange(): void {
+	if (document.visibilityState === 'visible' && shouldSync()) {
+		sync().catch(console.error);
+	}
+}
+
+export function setupVisibilitySync(): void {
+	if (typeof document === 'undefined') return;
+	if (visibilityListenerAdded) return;
+
+	document.addEventListener('visibilitychange', handleVisibilityChange);
+	visibilityListenerAdded = true;
+}
+
+export function teardownVisibilitySync(): void {
+	if (typeof document === 'undefined') return;
+	if (!visibilityListenerAdded) return;
+
+	document.removeEventListener('visibilitychange', handleVisibilityChange);
+	visibilityListenerAdded = false;
 }
