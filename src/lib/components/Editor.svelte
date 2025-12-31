@@ -750,4 +750,32 @@
 		border-radius: 8px;
 		margin: 1em 0;
 	}
+
+	/* Mobile: larger font for better readability */
+	@media (max-width: 768px) {
+		:global(.milkdown .ProseMirror) {
+			font-size: 1.125rem;
+			line-height: 1.75;
+		}
+
+		:global(.milkdown h1) {
+			font-size: 1.75em;
+		}
+
+		:global(.milkdown h2) {
+			font-size: 1.375em;
+		}
+
+		:global(.milkdown h3) {
+			font-size: 1.125em;
+		}
+
+		:global(.milkdown code) {
+			font-size: 0.875em;
+		}
+
+		:global(.milkdown pre:first-child code) {
+			font-size: 0.8em;
+		}
+	}
 </style>
