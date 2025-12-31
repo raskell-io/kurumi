@@ -58,7 +58,7 @@
 	}
 
 	async function createEvent() {
-		const noteId = addNote(
+		const note = addNote(
 			`Event ${formatDate(dateInfo.date)}`,
 			`---
 type: event
@@ -72,7 +72,7 @@ location:
 `,
 			null
 		);
-		goto(`/note/${noteId}`);
+		goto(`/note/${note.id}`);
 	}
 
 	// Get first event metadata for display

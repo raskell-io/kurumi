@@ -61,7 +61,7 @@
 
 	async function createProfile() {
 		// Create a new note with person frontmatter
-		const noteId = addNote(
+		const note = addNote(
 			person.name,
 			`---
 type: person
@@ -75,7 +75,7 @@ company:
 `,
 			null
 		);
-		goto(`/note/${noteId}`);
+		goto(`/note/${note.id}`);
 	}
 </script>
 
