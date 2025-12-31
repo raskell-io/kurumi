@@ -12,6 +12,10 @@
 	import { wikilinkPlugin, setWikilinkClickHandler } from '$lib/editor/wikilink';
 	import { trailingPlugin } from '$lib/editor/trailing';
 	import {
+		frontmatterToCodeBlock,
+		codeBlockToFrontmatter
+	} from '$lib/editor/frontmatter';
+	import {
 		wikilinkAutocompletePlugin,
 		setAutocompleteCallbacks,
 		completeWikilink
@@ -162,15 +166,19 @@
 			}
 		});
 
+		// Transform frontmatter to code block for display
+		const displayContent = frontmatterToCodeBlock(content || '');
+
 		editor = await Editor.make()
 			.config((ctx) => {
 				ctx.set(rootCtx, editorContainer);
-				ctx.set(defaultValueCtx, content || '');
+				ctx.set(defaultValueCtx, displayContent);
 
-				// Listen for changes
+				// Listen for changes - transform code block back to frontmatter for storage
 				ctx.get(listenerCtx).markdownUpdated((_, markdown) => {
 					if (onchange) {
-						onchange(markdown);
+						const storageContent = codeBlockToFrontmatter(markdown);
+						onchange(storageContent);
 					}
 				});
 			})
@@ -582,6 +590,40 @@
 		border: none;
 		border-top: 2px solid var(--color-border);
 		margin: 1.5em 0;
+	}
+
+	/* Frontmatter code block - styled as Properties panel */
+	:global(.milkdown pre:first-child) {
+		background: linear-gradient(
+			135deg,
+			rgba(99, 102, 241, 0.08),
+			rgba(99, 102, 241, 0.12)
+		);
+		border: 1px solid rgba(99, 102, 241, 0.2);
+		border-radius: 8px;
+		padding: 1em;
+		margin-bottom: 1.5em;
+		position: relative;
+	}
+
+	:global(.milkdown pre:first-child::before) {
+		content: 'Properties';
+		position: absolute;
+		top: -0.6em;
+		left: 1em;
+		background: var(--color-bg);
+		padding: 0 0.5em;
+		font-size: 0.7em;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: #6366f1;
+	}
+
+	:global(.milkdown pre:first-child code) {
+		color: var(--color-text);
+		font-size: 0.85em;
+		line-height: 1.6;
 	}
 
 	/* Strong and emphasis */
