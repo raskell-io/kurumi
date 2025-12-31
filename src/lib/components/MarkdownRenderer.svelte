@@ -26,13 +26,14 @@
 			return `<!--PLACEHOLDER_${index}-->`;
 		}
 
-		// Process wikilinks [[Title]] -> links to /read/[id] or show as broken link
+		// Process wikilinks [[Title]] -> links to /read/[id] or search if not found
 		let processed = markdown.replace(/\[\[([^\]]+)\]\]/g, (_, title) => {
 			const note = findNoteByTitle(title);
 			if (note) {
 				return addPlaceholder(`<a href="/read/${note.id}" class="wikilink">${title}</a>`);
 			}
-			return addPlaceholder(`<span class="wikilink wikilink-broken">${title}</span>`);
+			// Link to search for notes that don't exist yet
+			return addPlaceholder(`<a href="/?search=${encodeURIComponent(title)}" class="wikilink wikilink-broken">${title}</a>`);
 		});
 
 		// Process dates //YYYY-MM-DD
@@ -150,6 +151,8 @@
 		border-radius: 4px;
 		font-weight: 500;
 		transition: all 0.15s ease;
+		cursor: pointer;
+		text-decoration: none;
 	}
 
 	.markdown-content :global(.wikilink:hover) {
@@ -158,12 +161,12 @@
 			color-mix(in srgb, var(--color-accent) 25%, transparent),
 			color-mix(in srgb, var(--color-accent) 35%, transparent)
 		);
-		text-decoration: none;
+		text-decoration: underline;
 	}
 
 	.markdown-content :global(.wikilink-broken) {
 		opacity: 0.6;
-		text-decoration: line-through;
+		font-style: italic;
 	}
 
 	/* Date references */
