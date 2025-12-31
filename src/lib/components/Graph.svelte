@@ -133,6 +133,35 @@
 		return content.trim().split(/\s+/).filter(Boolean).length;
 	}
 
+	function getPreviewText(content: string, maxLength: number = 120): string {
+		let text = content
+			// Remove HTML tags
+			.replace(/<[^>]+>/g, ' ')
+			// Remove markdown headings (# ## ### etc)
+			.replace(/^#{1,6}\s+/gm, '')
+			// Remove markdown links [text](url)
+			.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+			// Remove raw URLs
+			.replace(/https?:\/\/[^\s]+/g, '')
+			// Remove wikilinks [[text]]
+			.replace(/\[\[([^\]]+)\]\]/g, '$1')
+			// Clean up @mentions (keep the name)
+			.replace(/@(\w+)/g, '@$1')
+			// Clean up //dates (keep the date)
+			.replace(/\/\/(\d{4}-\d{2}-\d{2})/g, '$1')
+			// Remove standalone # that aren't tags
+			.replace(/(?<!\S)#+(?!\w)/g, '')
+			// Collapse multiple whitespace/newlines
+			.replace(/\s+/g, ' ')
+			.trim();
+
+		if (text.length > maxLength) {
+			text = text.slice(0, maxLength).trim() + '...';
+		}
+
+		return text || 'No content';
+	}
+
 	function initGraph() {
 		if (!containerRef || graph) return;
 
@@ -499,7 +528,7 @@
 			</div>
 
 			<div class="popup-preview">
-				{hoveredNode.content.slice(0, 120).trim() || 'No content'}{hoveredNode.content.length > 120 ? '...' : ''}
+				{getPreviewText(hoveredNode.content)}
 			</div>
 
 			<div class="popup-footer">
