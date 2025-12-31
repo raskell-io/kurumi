@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { getAllPeople } from '$lib/db';
+	import { User, UserPlus } from 'lucide-svelte';
 
 	interface Props {
 		position: { x: number; y: number };
@@ -80,9 +81,7 @@
 	onkeydown={handleKeydown}
 >
 	<div class="search-input">
-		<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-[var(--color-text-muted)]" viewBox="0 0 20 20" fill="currentColor">
-			<path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
-		</svg>
+		<User class="h-4 w-4 text-[var(--color-text-muted)]" />
 		<input
 			bind:this={inputRef}
 			bind:value={query}
@@ -104,9 +103,7 @@
 				class="result-item selected"
 				onclick={() => onSelect(formatName(query.trim()))}
 			>
-				<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" viewBox="0 0 20 20" fill="currentColor">
-					<path d="M8 9a3 3 0 100-6 3 3 0 000 6zM8 11a6 6 0 016 6H2a6 6 0 016-6zM16 7a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1V7z" />
-				</svg>
+				<UserPlus class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
 				<span class="person-name">Add @{formatName(query.trim())}</span>
 			</button>
 		{:else}
@@ -117,9 +114,7 @@
 					onclick={() => onSelect(person.name)}
 					onmouseenter={() => selectedIndex = i}
 				>
-					<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-green-500" viewBox="0 0 20 20" fill="currentColor">
-						<path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
-					</svg>
+					<User class="h-4 w-4 shrink-0 text-green-500" />
 					<span class="person-name">@{person.name}</span>
 					<span class="person-count">{person.count}</span>
 				</button>
@@ -131,9 +126,7 @@
 					onclick={() => onSelect(formatName(query.trim()))}
 					onmouseenter={() => selectedIndex = filteredPeople.length}
 				>
-					<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" viewBox="0 0 20 20" fill="currentColor">
-						<path d="M8 9a3 3 0 100-6 3 3 0 000 6zM8 11a6 6 0 016 6H2a6 6 0 016-6zM16 7a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1V7z" />
-					</svg>
+					<UserPlus class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
 					<span class="person-name">Add @{formatName(query.trim())}</span>
 					<span class="new-badge">New</span>
 				</button>

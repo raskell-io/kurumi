@@ -5,6 +5,7 @@
 	import { get } from 'svelte/store';
 	import Editor from '$lib/components/Editor.svelte';
 	import { untrack } from 'svelte';
+	import { Trash2 } from 'lucide-svelte';
 
 	let note = $state<ReturnType<typeof getNote>>(undefined);
 	let title = $state('');
@@ -75,45 +76,26 @@
 	}
 
 	function formatDate(timestamp: number): string {
-		return new Date(timestamp).toLocaleDateString('en-US', {
-			month: 'short',
-			day: 'numeric',
-			hour: '2-digit',
-			minute: '2-digit'
-		});
+		const date = new Date(timestamp);
+		const year = date.getFullYear();
+		const month = String(date.getMonth() + 1).padStart(2, '0');
+		const day = String(date.getDate()).padStart(2, '0');
+		const hours = String(date.getHours()).padStart(2, '0');
+		const minutes = String(date.getMinutes()).padStart(2, '0');
+		return `${year}-${month}-${day} ${hours}:${minutes}`;
 	}
 </script>
 
 {#if note}
-	<div class="flex h-full flex-col">
-		<!-- Header -->
-		<header
-			class="flex items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-2 md:px-6 md:py-3"
+	<div class="group/note relative flex h-full flex-col">
+		<!-- Delete button (appears on hover) -->
+		<button
+			onclick={() => (showDeleteConfirm = true)}
+			class="absolute bottom-4 right-4 z-10 rounded-lg p-2 text-[var(--color-text-muted)] opacity-0 transition-all hover:bg-red-100 hover:text-red-600 active:scale-95 group-hover/note:opacity-100 dark:hover:bg-red-900/30 md:bottom-6 md:right-6"
+			title="Delete note"
 		>
-			<div class="text-xs text-[var(--color-text-muted)] md:text-sm">
-				{formatDate(note.modified)}
-			</div>
-			<div class="flex items-center gap-1">
-				<button
-					onclick={() => (showDeleteConfirm = true)}
-					class="rounded-lg p-2 text-[var(--color-text-muted)] transition-colors hover:bg-red-100 hover:text-red-600 active:scale-95 dark:hover:bg-red-900/30"
-					title="Delete note"
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						class="h-5 w-5"
-						viewBox="0 0 20 20"
-						fill="currentColor"
-					>
-						<path
-							fill-rule="evenodd"
-							d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
-							clip-rule="evenodd"
-						/>
-					</svg>
-				</button>
-			</div>
-		</header>
+			<Trash2 class="h-5 w-5" />
+		</button>
 
 		<!-- Editor -->
 		<div class="flex-1 overflow-y-auto overscroll-contain p-4 md:p-6">
@@ -162,6 +144,11 @@
 						</div>
 					</div>
 				{/if}
+
+				<!-- Last modified -->
+				<div class="mt-12 text-xs text-[var(--color-text-muted)] opacity-40">
+					Last modified: {formatDate(note.modified)}
+				</div>
 
 				<!-- Bottom safe area spacer -->
 				<div class="h-8 md:h-0 safe-bottom"></div>

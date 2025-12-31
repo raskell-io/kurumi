@@ -2,6 +2,7 @@
 	import { notes, folders, getSubfolders, getNotesInFolder, getAllTags } from '$lib/db';
 	import ReadNav from '$lib/components/ReadNav.svelte';
 	import NoteCard from '$lib/components/NoteCard.svelte';
+	import { FileText, Folder, ChevronRight } from 'lucide-svelte';
 
 	type SortOption = 'recent' | 'alphabetical' | 'oldest';
 	type ViewOption = 'all' | 'folders';
@@ -145,9 +146,7 @@
 			{#if rootNotes.length > 0}
 				<div class="folder-group">
 					<h2 class="folder-title">
-						<svg xmlns="http://www.w3.org/2000/svg" class="folder-icon" viewBox="0 0 20 20" fill="currentColor">
-							<path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd" />
-						</svg>
+						<FileText class="folder-icon" />
 						Unfiled Notes
 						<span class="folder-count">{rootNotes.length}</span>
 					</h2>
@@ -167,18 +166,8 @@
 
 				<div class="folder-group">
 					<button class="folder-header" onclick={() => toggleFolder(folder.id)}>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							class="chevron"
-							class:expanded={isExpanded}
-							viewBox="0 0 20 20"
-							fill="currentColor"
-						>
-							<path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
-						</svg>
-						<svg xmlns="http://www.w3.org/2000/svg" class="folder-icon" viewBox="0 0 20 20" fill="currentColor">
-							<path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-						</svg>
+						<ChevronRight class="chevron {isExpanded ? 'expanded' : ''}" />
+						<Folder class="folder-icon" />
 						<span class="folder-name">{folder.name}</span>
 						<span class="folder-count">{folderNotes.length} notes</span>
 					</button>

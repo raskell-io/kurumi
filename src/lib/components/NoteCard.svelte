@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getFolder, extractTags } from '$lib/db';
 	import type { Note } from '$lib/db';
+	import { Folder } from 'lucide-svelte';
 
 	interface Props {
 		note: Note;
@@ -75,9 +76,7 @@
 
 			{#if showFolder && folderName}
 				<a href="/read/folder/{note.folderId}" class="note-folder" onclick={(e) => e.stopPropagation()}>
-					<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
-						<path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-					</svg>
+					<Folder class="h-3 w-3" />
 					{folderName}
 				</a>
 			{/if}

@@ -3,6 +3,7 @@
 	import { getNotesByPerson } from '$lib/db';
 	import ReadNav from '$lib/components/ReadNav.svelte';
 	import NoteCard from '$lib/components/NoteCard.svelte';
+	import { User } from 'lucide-svelte';
 
 	let name = $derived(decodeURIComponent($page.params.name));
 	let notes = $derived(getNotesByPerson(name));
@@ -19,9 +20,7 @@
 <main class="filter-page">
 	<header class="page-header">
 		<div class="header-icon person-icon">
-			<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-				<path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
-			</svg>
+			<User />
 		</div>
 		<h1>@{name}</h1>
 		<p class="count">{notes.length} note{notes.length === 1 ? '' : 's'} mentioning this person</p>

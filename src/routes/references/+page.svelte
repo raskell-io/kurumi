@@ -2,6 +2,7 @@
 	import { getAllTags, getAllPeople, getAllDates, getNotesByTag, getNotesByPerson, getNotesByDate, type Note } from '$lib/db';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
+	import { Tag, User, Calendar, ChevronRight } from 'lucide-svelte';
 
 	type TabType = 'tags' | 'people' | 'dates';
 
@@ -90,9 +91,7 @@
 			class:active={activeTab === 'tags'}
 			onclick={() => { activeTab = 'tags'; expandedItem = null; }}
 		>
-			<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-				<path fill-rule="evenodd" d="M17.707 9.293a1 1 0 010 1.414l-7 7a1 1 0 01-1.414 0l-7-7A.997.997 0 012 10V5a3 3 0 013-3h5c.256 0 .512.098.707.293l7 7zM5 6a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
-			</svg>
+			<Tag class="h-4 w-4" />
 			Tags
 			<span class="count">{allTags.length}</span>
 		</button>
@@ -101,9 +100,7 @@
 			class:active={activeTab === 'people'}
 			onclick={() => { activeTab = 'people'; expandedItem = null; }}
 		>
-			<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-				<path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
-			</svg>
+			<User class="h-4 w-4" />
 			People
 			<span class="count">{allPeople.length}</span>
 		</button>
@@ -112,9 +109,7 @@
 			class:active={activeTab === 'dates'}
 			onclick={() => { activeTab = 'dates'; expandedItem = null; }}
 		>
-			<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-				<path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd" />
-			</svg>
+			<Calendar class="h-4 w-4" />
 			Dates
 			<span class="count">{allDates.length}</span>
 		</button>
@@ -124,9 +119,7 @@
 		{#if activeTab === 'tags'}
 			{#if allTags.length === 0}
 				<div class="empty-state">
-					<svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12" viewBox="0 0 20 20" fill="currentColor">
-						<path fill-rule="evenodd" d="M17.707 9.293a1 1 0 010 1.414l-7 7a1 1 0 01-1.414 0l-7-7A.997.997 0 012 10V5a3 3 0 013-3h5c.256 0 .512.098.707.293l7 7zM5 6a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
-					</svg>
+					<Tag class="h-12 w-12" />
 					<h3>No tags yet</h3>
 					<p>Use #tag in your notes to create tags</p>
 				</div>
@@ -136,15 +129,11 @@
 						<li class="item" class:expanded={expandedItem === tag.tag}>
 							<button class="item-header" onclick={() => toggleExpand(tag.tag)}>
 								<div class="item-icon tag-icon">
-									<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-										<path fill-rule="evenodd" d="M17.707 9.293a1 1 0 010 1.414l-7 7a1 1 0 01-1.414 0l-7-7A.997.997 0 012 10V5a3 3 0 013-3h5c.256 0 .512.098.707.293l7 7zM5 6a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
-									</svg>
+									<Tag class="h-4 w-4" />
 								</div>
 								<span class="item-name">#{tag.tag}</span>
 								<span class="item-count">{tag.count} {tag.count === 1 ? 'note' : 'notes'}</span>
-								<svg class="chevron" class:rotated={expandedItem === tag.tag} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-									<path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
-								</svg>
+								<ChevronRight class="chevron {expandedItem === tag.tag ? 'rotated' : ''}" />
 							</button>
 							{#if expandedItem === tag.tag}
 								<ul class="notes-list">
@@ -165,9 +154,7 @@
 		{:else if activeTab === 'people'}
 			{#if allPeople.length === 0}
 				<div class="empty-state">
-					<svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12" viewBox="0 0 20 20" fill="currentColor">
-						<path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
-					</svg>
+					<User class="h-12 w-12" />
 					<h3>No people yet</h3>
 					<p>Use @Full Name in your notes to mention people</p>
 				</div>
@@ -177,15 +164,11 @@
 						<li class="item" class:expanded={expandedItem === person.name}>
 							<button class="item-header" onclick={() => toggleExpand(person.name)}>
 								<div class="item-icon person-icon">
-									<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-										<path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
-									</svg>
+									<User class="h-4 w-4" />
 								</div>
 								<span class="item-name">@{person.name}</span>
 								<span class="item-count">{person.count} {person.count === 1 ? 'note' : 'notes'}</span>
-								<svg class="chevron" class:rotated={expandedItem === person.name} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-									<path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
-								</svg>
+								<ChevronRight class="chevron {expandedItem === person.name ? 'rotated' : ''}" />
 							</button>
 							{#if expandedItem === person.name}
 								<ul class="notes-list">
@@ -206,9 +189,7 @@
 		{:else if activeTab === 'dates'}
 			{#if allDates.length === 0}
 				<div class="empty-state">
-					<svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12" viewBox="0 0 20 20" fill="currentColor">
-						<path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd" />
-					</svg>
+					<Calendar class="h-12 w-12" />
 					<h3>No dates yet</h3>
 					<p>Use //YYYY-MM-DD in your notes to reference dates</p>
 				</div>
@@ -218,9 +199,7 @@
 						<li class="item" class:expanded={expandedItem === date.date}>
 							<button class="item-header" onclick={() => toggleExpand(date.date)}>
 								<div class="item-icon date-icon">
-									<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-										<path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd" />
-									</svg>
+									<Calendar class="h-4 w-4" />
 								</div>
 								<div class="date-info">
 									<span class="item-name">{formatDate(date.date)}</span>
@@ -229,9 +208,7 @@
 									{/if}
 								</div>
 								<span class="item-count">{date.count} {date.count === 1 ? 'note' : 'notes'}</span>
-								<svg class="chevron" class:rotated={expandedItem === date.date} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-									<path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
-								</svg>
+								<ChevronRight class="chevron {expandedItem === date.date ? 'rotated' : ''}" />
 							</button>
 							{#if expandedItem === date.date}
 								<ul class="notes-list">

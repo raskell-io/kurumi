@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { addNote, folders, vaults, currentVaultId, setCurrentVault, addVault } from '$lib/db';
 	import { getIconById } from '$lib/icons/vault-icons';
+	import { Search } from 'lucide-svelte';
 
 	interface Props {
 		onClose: () => void;
@@ -244,18 +245,7 @@
 	>
 		<!-- Input -->
 		<div class="flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
-			<svg
-				xmlns="http://www.w3.org/2000/svg"
-				class="h-5 w-5 text-[var(--color-text-muted)]"
-				viewBox="0 0 20 20"
-				fill="currentColor"
-			>
-				<path
-					fill-rule="evenodd"
-					d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
-					clip-rule="evenodd"
-				/>
-			</svg>
+			<Search class="h-5 w-5 text-[var(--color-text-muted)]" />
 			<input
 				bind:this={inputRef}
 				bind:value={query}

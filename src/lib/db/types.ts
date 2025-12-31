@@ -1,5 +1,18 @@
 export const DEFAULT_VAULT_ID = 'default-vault';
 
+// Compact ID generator - 12 chars of base62 (~71 bits of entropy)
+const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+
+export function generateId(length: number = 12): string {
+	const bytes = new Uint8Array(length);
+	crypto.getRandomValues(bytes);
+	let id = '';
+	for (let i = 0; i < length; i++) {
+		id += BASE62[bytes[i] % 62];
+	}
+	return id;
+}
+
 export interface Vault {
 	id: string;
 	name: string;
@@ -49,7 +62,7 @@ export function createDefaultVault(): Vault {
 export function createVault(name: string, icon?: string): Vault {
 	const now = Date.now();
 	return {
-		id: crypto.randomUUID(),
+		id: generateId(),
 		name,
 		icon,
 		created: now,
@@ -76,7 +89,7 @@ export function createNote(
 ): Note {
 	const now = Date.now();
 	return {
-		id: crypto.randomUUID(),
+		id: generateId(),
 		title,
 		content,
 		tags: [],
@@ -94,7 +107,7 @@ export function createFolder(
 ): Folder {
 	const now = Date.now();
 	return {
-		id: crypto.randomUUID(),
+		id: generateId(),
 		name,
 		parentId,
 		vaultId,

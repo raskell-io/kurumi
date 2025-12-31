@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { notes, folders, type Note, type Folder } from '$lib/db';
+	import { Search, FileText } from 'lucide-svelte';
 
 	interface Props {
 		currentFolderId: string | null;
@@ -123,9 +124,7 @@
 	onkeydown={handleKeydown}
 >
 	<div class="search-input">
-		<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-[var(--color-text-muted)]" viewBox="0 0 20 20" fill="currentColor">
-			<path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" />
-		</svg>
+		<Search class="h-4 w-4 text-[var(--color-text-muted)]" />
 		<input
 			bind:this={inputRef}
 			bind:value={query}
@@ -154,9 +153,7 @@
 					onclick={() => handleSelect(note)}
 					onmouseenter={() => selectedIndex = i}
 				>
-					<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" viewBox="0 0 20 20" fill="currentColor">
-						<path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd" />
-					</svg>
+					<FileText class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
 					<div class="note-info">
 						<span class="note-title">{note.title || 'Untitled'}</span>
 						{#if note.folderId}

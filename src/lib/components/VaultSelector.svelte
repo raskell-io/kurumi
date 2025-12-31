@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { vaultIcons, searchIcons, getIconById, type VaultIcon } from '$lib/icons/vault-icons';
 	import type { Vault } from '$lib/db/types';
+	import { ChevronDown, Plus, Pencil, Check, X, Search, Archive } from 'lucide-svelte';
 
 	let showDropdown = $state(false);
 	let showCreateModal = $state(false);
@@ -165,19 +166,9 @@
 		<span class="font-semibold text-[var(--color-text)]">
 			{$currentVault?.name || 'Select Vault'}
 		</span>
-		<svg
-			xmlns="http://www.w3.org/2000/svg"
-			class="h-4 w-4 text-[var(--color-text-muted)] transition-transform"
-			class:rotate-180={showDropdown}
-			viewBox="0 0 20 20"
-			fill="currentColor"
-		>
-			<path
-				fill-rule="evenodd"
-				d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-				clip-rule="evenodd"
-			/>
-		</svg>
+		<ChevronDown
+			class="h-4 w-4 text-[var(--color-text-muted)] transition-transform {showDropdown ? 'rotate-180' : ''}"
+		/>
 	</button>
 
 	<!-- Dropdown Menu -->
@@ -208,15 +199,9 @@
 									<path fill-rule="evenodd" d={vaultIcon.path} clip-rule="evenodd" />
 								</svg>
 							{:else}
-								<svg
-									xmlns="http://www.w3.org/2000/svg"
-									class="h-5 w-5 shrink-0"
-									class:text-[var(--color-text-muted)]={vault.id !== $currentVaultId}
-									viewBox="0 0 20 20"
-									fill="currentColor"
-								>
-									<path d="M4 3a2 2 0 100 4h12a2 2 0 100-4H4zM3 8h14v7a2 2 0 01-2 2H5a2 2 0 01-2-2V8zm5 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
-								</svg>
+								<Archive
+									class="h-5 w-5 shrink-0 {vault.id !== $currentVaultId ? 'text-[var(--color-text-muted)]' : ''}"
+								/>
 							{/if}
 							<span class="flex-1 truncate">{vault.name}</span>
 						</button>
@@ -225,29 +210,12 @@
 							class="rounded p-1 transition-opacity {vault.id === $currentVaultId ? 'hover:bg-white/20' : 'opacity-0 group-hover:opacity-100 hover:bg-[var(--color-border)]'}"
 							title="Edit vault"
 						>
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								class="h-3.5 w-3.5"
-								class:text-[var(--color-text-muted)]={vault.id !== $currentVaultId}
-								viewBox="0 0 20 20"
-								fill="currentColor"
-							>
-								<path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-							</svg>
+							<Pencil
+								class="h-3.5 w-3.5 {vault.id !== $currentVaultId ? 'text-[var(--color-text-muted)]' : ''}"
+							/>
 						</button>
 						{#if vault.id === $currentVaultId}
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								class="h-4 w-4 shrink-0"
-								viewBox="0 0 20 20"
-								fill="currentColor"
-							>
-								<path
-									fill-rule="evenodd"
-									d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-									clip-rule="evenodd"
-								/>
-							</svg>
+							<Check class="h-4 w-4 shrink-0" />
 						{/if}
 					</div>
 				{/each}
@@ -258,13 +226,7 @@
 					onclick={openCreateModal}
 					class="flex w-full items-center gap-2 px-3 py-2 text-left text-[var(--color-accent)] transition-colors hover:bg-[var(--color-bg-secondary)]"
 				>
-					<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-						<path
-							fill-rule="evenodd"
-							d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
-							clip-rule="evenodd"
-						/>
-					</svg>
+					<Plus class="h-5 w-5" />
 					<span>Create Vault</span>
 				</button>
 			</div>
@@ -336,34 +298,15 @@
 									}}
 									class="rounded p-0.5 text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
 								>
-									<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-										<path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-									</svg>
+									<X class="h-4 w-4" />
 								</button>
 							{:else}
-								<svg
-									xmlns="http://www.w3.org/2000/svg"
-									class="h-5 w-5 text-[var(--color-text-muted)]"
-									viewBox="0 0 20 20"
-									fill="currentColor"
-								>
-									<path d="M4 3a2 2 0 100 4h12a2 2 0 100-4H4zM3 8h14v7a2 2 0 01-2 2H5a2 2 0 01-2-2V8zm5 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
-								</svg>
+								<Archive class="h-5 w-5 text-[var(--color-text-muted)]" />
 								<span class="flex-1 text-[var(--color-text-muted)]">Choose an icon...</span>
 							{/if}
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								class="h-4 w-4 text-[var(--color-text-muted)] transition-transform"
-								class:rotate-180={showIconPicker}
-								viewBox="0 0 20 20"
-								fill="currentColor"
-							>
-								<path
-									fill-rule="evenodd"
-									d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-									clip-rule="evenodd"
-								/>
-							</svg>
+							<ChevronDown
+								class="h-4 w-4 text-[var(--color-text-muted)] transition-transform {showIconPicker ? 'rotate-180' : ''}"
+							/>
 						</button>
 
 						{#if showIconPicker}
@@ -373,18 +316,7 @@
 								<!-- Search Input -->
 								<div class="border-b border-[var(--color-border)] p-2">
 									<div class="flex items-center gap-2 rounded-md bg-[var(--color-bg-secondary)] px-2 py-1.5">
-										<svg
-											xmlns="http://www.w3.org/2000/svg"
-											class="h-4 w-4 text-[var(--color-text-muted)]"
-											viewBox="0 0 20 20"
-											fill="currentColor"
-										>
-											<path
-												fill-rule="evenodd"
-												d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
-												clip-rule="evenodd"
-											/>
-										</svg>
+										<Search class="h-4 w-4 text-[var(--color-text-muted)]" />
 										<input
 											type="text"
 											bind:value={iconSearchQuery}

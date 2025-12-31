@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Graph from '$lib/components/Graph.svelte';
 	import { notes, extractWikilinks } from '$lib/db';
+	import { Link2 } from 'lucide-svelte';
 
 	// Count total links across all notes
 	let linkCount = $derived.by(() => {
@@ -34,20 +35,7 @@
 		{#if $notes.length === 0}
 			<div class="flex h-full items-center justify-center">
 				<div class="text-center">
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						class="mx-auto mb-4 h-16 w-16 text-[var(--color-text-muted)]"
-						fill="none"
-						viewBox="0 0 24 24"
-						stroke="currentColor"
-					>
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="1.5"
-							d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
-						/>
-					</svg>
+					<Link2 class="mx-auto mb-4 h-16 w-16 text-[var(--color-text-muted)]" />
 					<p class="text-lg text-[var(--color-text-muted)]">No notes yet</p>
 					<p class="mt-2 text-sm text-[var(--color-text-muted)]">
 						Create notes and link them with [[wikilinks]]

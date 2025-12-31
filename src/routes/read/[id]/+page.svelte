@@ -5,6 +5,7 @@
 	import ReadNav from '$lib/components/ReadNav.svelte';
 	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
 	import type { Note } from '$lib/db';
+	import { Clock, Folder, Link2 } from 'lucide-svelte';
 
 	// Get current note
 	let note = $derived(getNote($page.params.id));
@@ -79,17 +80,13 @@
 
 			<div class="note-meta">
 				<span class="meta-item" title={formatDate(note.modified)}>
-					<svg xmlns="http://www.w3.org/2000/svg" class="meta-icon" viewBox="0 0 20 20" fill="currentColor">
-						<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd" />
-					</svg>
+					<Clock class="meta-icon" />
 					{formatRelative(note.modified)}
 				</span>
 
 				{#if folder}
 					<a href="/read/folder/{folder.id}" class="meta-item meta-link">
-						<svg xmlns="http://www.w3.org/2000/svg" class="meta-icon" viewBox="0 0 20 20" fill="currentColor">
-							<path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-						</svg>
+						<Folder class="meta-icon" />
 						{folder.name}
 					</a>
 				{/if}
@@ -113,9 +110,7 @@
 		{#if backlinks.length > 0}
 			<aside class="backlinks">
 				<h2 class="backlinks-title">
-					<svg xmlns="http://www.w3.org/2000/svg" class="backlinks-icon" viewBox="0 0 20 20" fill="currentColor">
-						<path fill-rule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clip-rule="evenodd" />
-					</svg>
+					<Link2 class="backlinks-icon" />
 					{backlinks.length} Backlink{backlinks.length === 1 ? '' : 's'}
 				</h2>
 				<ul class="backlinks-list">

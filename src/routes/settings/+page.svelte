@@ -1,9 +1,30 @@
 <script lang="ts">
 	import { exportNotesJSON, notes } from '$lib/db';
+	import { onMount } from 'svelte';
+	import { Monitor, Sun, Moon } from 'lucide-svelte';
 
 	let syncToken = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-token') || '' : '');
 	let syncUrl = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-url') || '' : '');
 	let showSaved = $state(false);
+	let theme = $state<'system' | 'light' | 'dark'>('system');
+
+	onMount(() => {
+		const savedTheme = localStorage.getItem('kurumi-theme') as 'system' | 'light' | 'dark' | null;
+		if (savedTheme) {
+			theme = savedTheme;
+		}
+	});
+
+	function setTheme(t: 'system' | 'light' | 'dark') {
+		theme = t;
+		localStorage.setItem('kurumi-theme', t);
+		if (t === 'system') {
+			document.documentElement.classList.remove('light', 'dark');
+		} else {
+			document.documentElement.classList.remove('light', 'dark');
+			document.documentElement.classList.add(t);
+		}
+	}
 
 	function saveSyncSettings() {
 		localStorage.setItem('kurumi-sync-token', syncToken);
@@ -27,6 +48,40 @@
 <div class="h-full overflow-y-auto overscroll-contain p-4 md:p-6">
 	<div class="mx-auto max-w-2xl">
 		<h1 class="mb-6 text-xl font-bold text-[var(--color-text)] md:mb-8 md:text-2xl">Settings</h1>
+
+		<!-- Theme -->
+		<section class="mb-6 md:mb-8">
+			<h2 class="mb-3 text-base font-semibold text-[var(--color-text)] md:mb-4 md:text-lg">
+				Theme
+			</h2>
+			<p class="mb-4 text-sm text-[var(--color-text-muted)]">
+				Choose your preferred color scheme.
+			</p>
+
+			<div class="flex flex-wrap gap-2">
+				<button
+					onclick={() => setTheme('system')}
+					class="flex items-center gap-2 rounded-lg border px-4 py-3 transition-colors {theme === 'system' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'}"
+				>
+					<Monitor class="h-5 w-5" />
+					System
+				</button>
+				<button
+					onclick={() => setTheme('light')}
+					class="flex items-center gap-2 rounded-lg border px-4 py-3 transition-colors {theme === 'light' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'}"
+				>
+					<Sun class="h-5 w-5" />
+					Light
+				</button>
+				<button
+					onclick={() => setTheme('dark')}
+					class="flex items-center gap-2 rounded-lg border px-4 py-3 transition-colors {theme === 'dark' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'}"
+				>
+					<Moon class="h-5 w-5" />
+					Dark
+				</button>
+			</div>
+		</section>
 
 		<!-- Sync Settings -->
 		<section class="mb-6 md:mb-8">

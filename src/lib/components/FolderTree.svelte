@@ -16,6 +16,18 @@
 		moveNoteToVault,
 		moveFolderToVault
 	} from '$lib/db';
+	import {
+		ChevronRight,
+		Folder,
+		FolderOpen,
+		FolderPlus,
+		FilePlus,
+		FileText,
+		Pencil,
+		Trash2,
+		FolderInput,
+		FolderSymlink
+	} from 'lucide-svelte';
 
 	type Props = {
 		onNoteClick?: () => void;
@@ -483,13 +495,7 @@
 		onclick={() => handleCreateFolder(null)}
 		class="mb-2 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
 	>
-		<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-			<path
-				fill-rule="evenodd"
-				d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V8a2 2 0 00-2-2h-5L9 4H4zm7 5a1 1 0 10-2 0v1H8a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1V9z"
-				clip-rule="evenodd"
-			/>
-		</svg>
+		<FolderPlus class="h-4 w-4" />
 		New Folder
 	</button>
 
@@ -539,36 +545,13 @@
 				role="treeitem"
 			>
 				<button onclick={() => toggleFolder(folder.id)} class="mr-1 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						class="h-3 w-3 transition-transform"
-						class:rotate-90={isExpanded}
-						viewBox="0 0 20 20"
-						fill="currentColor"
-					>
-						<path
-							fill-rule="evenodd"
-							d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-							clip-rule="evenodd"
-						/>
-					</svg>
+					<ChevronRight class="h-3 w-3 transition-transform {isExpanded ? 'rotate-90' : ''}" />
 				</button>
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					class="mr-2 h-4 w-4 text-[var(--color-accent)]"
-					viewBox="0 0 20 20"
-					fill="currentColor"
-				>
-					{#if isExpanded && hasContents}
-						<path
-							fill-rule="evenodd"
-							d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"
-							clip-rule="evenodd"
-						/>
-					{:else}
-						<path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-					{/if}
-				</svg>
+				{#if isExpanded && hasContents}
+					<FolderOpen class="mr-2 h-4 w-4 text-[var(--color-accent)]" />
+				{:else}
+					<Folder class="mr-2 h-4 w-4 text-[var(--color-accent)]" />
+				{/if}
 				{#if renamingFolder === folder.id}
 					<input
 						type="text"
@@ -641,36 +624,13 @@
 								role="treeitem"
 							>
 								<button onclick={() => toggleFolder(subfolder.id)} class="mr-1 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
-									<svg
-										xmlns="http://www.w3.org/2000/svg"
-										class="h-3 w-3 transition-transform"
-										class:rotate-90={isSubExpanded}
-										viewBox="0 0 20 20"
-										fill="currentColor"
-									>
-										<path
-											fill-rule="evenodd"
-											d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-											clip-rule="evenodd"
-										/>
-									</svg>
+									<ChevronRight class="h-3 w-3 transition-transform {isSubExpanded ? 'rotate-90' : ''}" />
 								</button>
-								<svg
-									xmlns="http://www.w3.org/2000/svg"
-									class="mr-2 h-4 w-4 text-[var(--color-accent)]"
-									viewBox="0 0 20 20"
-									fill="currentColor"
-								>
-									{#if isSubExpanded && hasSubContents}
-										<path
-											fill-rule="evenodd"
-											d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"
-											clip-rule="evenodd"
-										/>
-									{:else}
-										<path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-									{/if}
-								</svg>
+								{#if isSubExpanded && hasSubContents}
+									<FolderOpen class="mr-2 h-4 w-4 text-[var(--color-accent)]" />
+								{:else}
+									<Folder class="mr-2 h-4 w-4 text-[var(--color-accent)]" />
+								{/if}
 								{#if renamingFolder === subfolder.id}
 									<input
 										type="text"
@@ -722,28 +682,9 @@
 												role="treeitem"
 											>
 												<button onclick={() => toggleFolder(subSubfolder.id)} class="mr-1 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
-													<svg
-														xmlns="http://www.w3.org/2000/svg"
-														class="h-3 w-3 transition-transform"
-														class:rotate-90={isSubSubExpanded}
-														viewBox="0 0 20 20"
-														fill="currentColor"
-													>
-														<path
-															fill-rule="evenodd"
-															d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-															clip-rule="evenodd"
-														/>
-													</svg>
+													<ChevronRight class="h-3 w-3 transition-transform {isSubSubExpanded ? 'rotate-90' : ''}" />
 												</button>
-												<svg
-													xmlns="http://www.w3.org/2000/svg"
-													class="mr-2 h-4 w-4 text-[var(--color-accent)]"
-													viewBox="0 0 20 20"
-													fill="currentColor"
-												>
-													<path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-												</svg>
+												<Folder class="mr-2 h-4 w-4 text-[var(--color-accent)]" />
 												{#if renamingFolder === subSubfolder.id}
 													<input
 														type="text"
@@ -785,19 +726,7 @@
 															ontouchmove={handleTouchMove}
 															ontouchend={handleTouchEnd}
 														>
-															<svg
-																xmlns="http://www.w3.org/2000/svg"
-																class="mr-2 h-4 w-4 shrink-0"
-																class:text-[var(--color-text-muted)]={!isNoteActive(note.id)}
-																viewBox="0 0 20 20"
-																fill="currentColor"
-															>
-																<path
-																	fill-rule="evenodd"
-																	d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"
-																	clip-rule="evenodd"
-																/>
-															</svg>
+															<FileText class="mr-2 h-4 w-4 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
 															{#if renamingNote === note.id}
 																<input
 																	type="text"
@@ -840,19 +769,7 @@
 											ontouchmove={handleTouchMove}
 											ontouchend={handleTouchEnd}
 										>
-											<svg
-												xmlns="http://www.w3.org/2000/svg"
-												class="mr-2 h-4 w-4 shrink-0"
-												class:text-[var(--color-text-muted)]={!isNoteActive(note.id)}
-												viewBox="0 0 20 20"
-												fill="currentColor"
-											>
-												<path
-													fill-rule="evenodd"
-													d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"
-													clip-rule="evenodd"
-												/>
-											</svg>
+											<FileText class="mr-2 h-4 w-4 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
 											{#if renamingNote === note.id}
 												<input
 													type="text"
@@ -896,19 +813,7 @@
 							ontouchmove={handleTouchMove}
 							ontouchend={handleTouchEnd}
 						>
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								class="mr-2 h-4 w-4 shrink-0"
-								class:text-[var(--color-text-muted)]={!isNoteActive(note.id)}
-								viewBox="0 0 20 20"
-								fill="currentColor"
-							>
-								<path
-									fill-rule="evenodd"
-									d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"
-									clip-rule="evenodd"
-								/>
-							</svg>
+							<FileText class="mr-2 h-4 w-4 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
 							{#if renamingNote === note.id}
 								<input
 									type="text"
@@ -952,19 +857,7 @@
 			ontouchmove={handleTouchMove}
 			ontouchend={handleTouchEnd}
 		>
-			<svg
-				xmlns="http://www.w3.org/2000/svg"
-				class="mr-2 h-4 w-4 shrink-0"
-				class:text-[var(--color-text-muted)]={!isNoteActive(note.id)}
-				viewBox="0 0 20 20"
-				fill="currentColor"
-			>
-				<path
-					fill-rule="evenodd"
-					d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"
-					clip-rule="evenodd"
-				/>
-			</svg>
+			<FileText class="mr-2 h-4 w-4 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
 			{#if renamingNote === note.id}
 				<input
 					type="text"
@@ -1002,26 +895,14 @@
 			onclick={() => handleCreateNote(contextMenuFolder)}
 			class="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-border)]"
 		>
-			<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-				<path
-					fill-rule="evenodd"
-					d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
-					clip-rule="evenodd"
-				/>
-			</svg>
+			<FilePlus class="h-4 w-4" />
 			New Note
 		</button>
 		<button
 			onclick={() => handleCreateFolder(contextMenuFolder)}
 			class="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-border)]"
 		>
-			<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-				<path
-					fill-rule="evenodd"
-					d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V8a2 2 0 00-2-2h-5L9 4H4zm7 5a1 1 0 10-2 0v1H8a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1V9z"
-					clip-rule="evenodd"
-				/>
-			</svg>
+			<FolderPlus class="h-4 w-4" />
 			New Subfolder
 		</button>
 		<div class="my-1 border-t border-[var(--color-border)]"></div>
@@ -1029,22 +910,14 @@
 			onclick={() => handleRenameFolder(contextMenuFolder!)}
 			class="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-border)]"
 		>
-			<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-				<path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-			</svg>
+			<Pencil class="h-4 w-4" />
 			Rename
 		</button>
 		<button
 			onclick={() => handleDeleteFolder(contextMenuFolder!)}
 			class="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
 		>
-			<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-				<path
-					fill-rule="evenodd"
-					d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
-					clip-rule="evenodd"
-				/>
-			</svg>
+			<Trash2 class="h-4 w-4" />
 			Delete
 		</button>
 		{#if $vaults.length > 1}
@@ -1055,14 +928,10 @@
 					class="flex w-full items-center justify-between gap-2 px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-border)]"
 				>
 					<div class="flex items-center gap-2">
-						<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-							<path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-						</svg>
+						<FolderInput class="h-4 w-4" />
 						Move to Vault
 					</div>
-					<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-						<path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
-					</svg>
+					<ChevronRight class="h-4 w-4" />
 				</button>
 				{#if showVaultSubmenu}
 					<div class="absolute left-full top-0 ml-1 min-w-[140px] rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] py-1 shadow-lg">
@@ -1103,13 +972,7 @@
 				onclick={handleMoveNoteToRoot}
 				class="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-border)]"
 			>
-				<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-					<path
-						fill-rule="evenodd"
-						d="M3 3a1 1 0 00-1 1v12a1 1 0 001 1h14a1 1 0 001-1V7.414A2 2 0 0017.414 6L14 2.586A2 2 0 0012.586 2H4a2 2 0 00-2 2v11z"
-						clip-rule="evenodd"
-					/>
-				</svg>
+				<FolderSymlink class="h-4 w-4" />
 				Move to Root
 			</button>
 		{/if}
@@ -1123,14 +986,10 @@
 					class="flex w-full items-center justify-between gap-2 px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-border)]"
 				>
 					<div class="flex items-center gap-2">
-						<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-							<path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-						</svg>
+						<FolderInput class="h-4 w-4" />
 						Move to Vault
 					</div>
-					<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-						<path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
-					</svg>
+					<ChevronRight class="h-4 w-4" />
 				</button>
 				{#if showVaultSubmenu}
 					<div class="absolute left-full top-0 ml-1 min-w-[140px] rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] py-1 shadow-lg">

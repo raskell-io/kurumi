@@ -3,6 +3,7 @@
 	import { getFolder, getFolderPath, getNotesInFolder, getSubfolders } from '$lib/db';
 	import ReadNav from '$lib/components/ReadNav.svelte';
 	import NoteCard from '$lib/components/NoteCard.svelte';
+	import { Folder } from 'lucide-svelte';
 
 	let folder = $derived(getFolder($page.params.id));
 	let folderPath = $derived(getFolderPath($page.params.id));
@@ -24,9 +25,7 @@
 	<main class="filter-page">
 		<header class="page-header">
 			<div class="header-icon folder-icon">
-				<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-					<path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-				</svg>
+				<Folder />
 			</div>
 			<h1>{folder.name}</h1>
 			<p class="count">{notes.length} note{notes.length === 1 ? '' : 's'}</p>
@@ -38,9 +37,7 @@
 				<div class="subfolder-list">
 					{#each subfolders as subfolder (subfolder.id)}
 						<a href="/read/folder/{subfolder.id}" class="subfolder-card">
-							<svg xmlns="http://www.w3.org/2000/svg" class="subfolder-icon" viewBox="0 0 20 20" fill="currentColor">
-								<path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-							</svg>
+							<Folder class="subfolder-icon" />
 							<span>{subfolder.name}</span>
 						</a>
 					{/each}

@@ -4,6 +4,7 @@
 	import { search } from '$lib/search';
 	import { currentVault } from '$lib/db';
 	import { getIconById } from '$lib/icons/vault-icons';
+	import { Search, FileText, Sun, Moon, Monitor, Pencil, ArrowLeft } from 'lucide-svelte';
 
 	interface Props {
 		noteId?: string;
@@ -138,9 +139,7 @@
 		<!-- Search -->
 		<div class="search-container">
 			<div class="search-wrapper">
-				<svg xmlns="http://www.w3.org/2000/svg" class="search-icon" viewBox="0 0 20 20" fill="currentColor">
-					<path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" />
-				</svg>
+				<Search class="search-icon" />
 				<input
 					bind:this={searchInputRef}
 					bind:value={searchQuery}
@@ -165,9 +164,7 @@
 							class:selected={i === selectedIndex}
 							onclick={() => { searchOpen = false; searchQuery = ''; }}
 						>
-							<svg xmlns="http://www.w3.org/2000/svg" class="result-icon" viewBox="0 0 20 20" fill="currentColor">
-								<path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd" />
-							</svg>
+							<FileText class="result-icon" />
 							{result.title || 'Untitled'}
 						</a>
 					{/each}
@@ -180,35 +177,25 @@
 			<!-- Theme toggle -->
 			<button onclick={cycleTheme} class="nav-btn" title="Theme: {theme}">
 				{#if theme === 'light'}
-					<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-						<path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd" />
-					</svg>
+					<Sun class="h-5 w-5" />
 				{:else if theme === 'dark'}
-					<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-						<path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-					</svg>
+					<Moon class="h-5 w-5" />
 				{:else}
-					<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-						<path fill-rule="evenodd" d="M3 5a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2h-2.22l.123.489.804.321A.75.75 0 0113 17H7a.75.75 0 01-.191-1.475l.119-.029.166-.412a.75.75 0 01.138-.25L7.22 15H5a2 2 0 01-2-2V5zm2 0h10v8H5V5z" clip-rule="evenodd" />
-					</svg>
+					<Monitor class="h-5 w-5" />
 				{/if}
 			</button>
 
 			<!-- Edit link (if viewing a note) -->
 			{#if noteId}
 				<a href="/note/{noteId}" class="nav-btn edit-btn" title="Edit this note">
-					<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-						<path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-					</svg>
+					<Pencil class="h-5 w-5" />
 					<span class="btn-text">Edit</span>
 				</a>
 			{/if}
 
 			<!-- Back to app -->
 			<a href="/" class="nav-btn" title="Back to editor">
-				<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-					<path fill-rule="evenodd" d="M3 3a1 1 0 011 1v12a1 1 0 11-2 0V4a1 1 0 011-1zm7.707 3.293a1 1 0 010 1.414L9.414 9H17a1 1 0 110 2H9.414l1.293 1.293a1 1 0 01-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0z" clip-rule="evenodd" />
-				</svg>
+				<ArrowLeft class="h-5 w-5" />
 			</a>
 		</div>
 	</div>

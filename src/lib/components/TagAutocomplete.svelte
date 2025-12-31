@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { getAllTags } from '$lib/db';
+	import { Tag, Plus } from 'lucide-svelte';
 
 	interface Props {
 		position: { x: number; y: number };
@@ -76,9 +77,7 @@
 	onkeydown={handleKeydown}
 >
 	<div class="search-input">
-		<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-[var(--color-text-muted)]" viewBox="0 0 20 20" fill="currentColor">
-			<path fill-rule="evenodd" d="M17.707 9.293a1 1 0 010 1.414l-7 7a1 1 0 01-1.414 0l-7-7A.997.997 0 012 10V5a3 3 0 013-3h5c.256 0 .512.098.707.293l7 7zM5 6a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
-		</svg>
+		<Tag class="h-4 w-4 text-[var(--color-text-muted)]" />
 		<input
 			bind:this={inputRef}
 			bind:value={query}
@@ -100,9 +99,7 @@
 				class="result-item selected"
 				onclick={() => onSelect(formatTag(query.trim()))}
 			>
-				<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="currentColor">
-					<path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
-				</svg>
+				<Plus class="h-4 w-4 shrink-0" />
 				<span class="tag-name">Create #{formatTag(query.trim())}</span>
 			</button>
 		{:else}
@@ -113,9 +110,7 @@
 					onclick={() => onSelect(tag.tag)}
 					onmouseenter={() => selectedIndex = i}
 				>
-					<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-amber-500" viewBox="0 0 20 20" fill="currentColor">
-						<path fill-rule="evenodd" d="M17.707 9.293a1 1 0 010 1.414l-7 7a1 1 0 01-1.414 0l-7-7A.997.997 0 012 10V5a3 3 0 013-3h5c.256 0 .512.098.707.293l7 7zM5 6a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
-					</svg>
+					<Tag class="h-4 w-4 shrink-0 text-amber-500" />
 					<span class="tag-name">#{tag.tag}</span>
 					<span class="tag-count">{tag.count}</span>
 				</button>
@@ -127,9 +122,7 @@
 					onclick={() => onSelect(formatTag(query.trim()))}
 					onmouseenter={() => selectedIndex = filteredTags.length}
 				>
-					<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-[var(--color-accent)]" viewBox="0 0 20 20" fill="currentColor">
-						<path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
-					</svg>
+					<Plus class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
 					<span class="tag-name">Create #{formatTag(query.trim())}</span>
 					<span class="new-badge">New</span>
 				</button>
