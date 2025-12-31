@@ -1,14 +1,17 @@
 <script lang="ts">
-	import { vaults, currentVault, currentVaultId, setCurrentVault, addVault, updateVault } from '$lib/db';
+	import { vaults, currentVault, currentVaultId, setCurrentVault, addVault, updateVault, deleteVault } from '$lib/db';
 	import { goto } from '$app/navigation';
 	import { vaultIcons, searchIcons, getIconById, type VaultIcon } from '$lib/icons/vault-icons';
 	import type { Vault } from '$lib/db/types';
-	import { ChevronDown, Plus, Pencil, Check, X, Search, Archive } from 'lucide-svelte';
+	import { ChevronDown, Plus, Pencil, Check, X, Search, Archive, Trash2, AlertTriangle } from 'lucide-svelte';
 
 	let showDropdown = $state(false);
 	let showCreateModal = $state(false);
 	let showEditModal = $state(false);
 	let editingVault = $state<Vault | null>(null);
+	let showDeleteConfirm = $state(false);
+	let deleteConfirmName = $state('');
+	let deleteError = $state<string | null>(null);
 
 	// Form state (shared between create and edit)
 	let formName = $state('');
@@ -68,11 +71,34 @@
 		}
 	}
 
+	function handleDeleteVault() {
+		if (!editingVault) return;
+
+		// Verify name matches
+		if (deleteConfirmName.trim() !== editingVault.name) {
+			deleteError = 'Vault name does not match';
+			return;
+		}
+
+		const result = deleteVault(editingVault.id);
+		if (result.success) {
+			resetForm();
+			showEditModal = false;
+			editingVault = null;
+			goto('/');
+		} else {
+			deleteError = result.error || 'Failed to delete vault';
+		}
+	}
+
 	function resetForm() {
 		formName = '';
 		formIconId = null;
 		iconSearchQuery = '';
 		showIconPicker = false;
+		showDeleteConfirm = false;
+		deleteConfirmName = '';
+		deleteError = null;
 	}
 
 	function closeModals() {
@@ -362,6 +388,65 @@
 					</div>
 				</div>
 			</div>
+
+			{#if showEditModal && editingVault}
+				<!-- Danger Zone -->
+				<div class="mt-6 border-t border-[var(--color-border)] pt-6">
+					{#if !showDeleteConfirm}
+						<button
+							onclick={() => (showDeleteConfirm = true)}
+							class="flex items-center gap-2 text-sm text-red-500 transition-colors hover:text-red-600"
+						>
+							<Trash2 class="h-4 w-4" />
+							Delete this vault
+						</button>
+					{:else}
+						<div class="rounded-lg border border-red-500/30 bg-red-500/10 p-4">
+							<div class="mb-3 flex items-start gap-2">
+								<AlertTriangle class="mt-0.5 h-5 w-5 shrink-0 text-red-500" />
+								<div>
+									<p class="font-medium text-red-500">Delete Vault</p>
+									<p class="mt-1 text-sm text-[var(--color-text-muted)]">
+										This action cannot be undone. Type <strong class="text-[var(--color-text)]">{editingVault.name}</strong> to confirm.
+									</p>
+								</div>
+							</div>
+
+							<input
+								type="text"
+								bind:value={deleteConfirmName}
+								placeholder="Type vault name to confirm"
+								class="mb-3 w-full rounded-lg border border-red-500/30 bg-[var(--color-bg)] px-3 py-2 text-[var(--color-text)] placeholder-[var(--color-text-muted)] outline-none focus:border-red-500"
+								onkeydown={(e) => e.key === 'Enter' && handleDeleteVault()}
+							/>
+
+							{#if deleteError}
+								<p class="mb-3 text-sm text-red-500">{deleteError}</p>
+							{/if}
+
+							<div class="flex gap-2">
+								<button
+									onclick={() => {
+										showDeleteConfirm = false;
+										deleteConfirmName = '';
+										deleteError = null;
+									}}
+									class="rounded-lg px-3 py-1.5 text-sm text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-secondary)]"
+								>
+									Cancel
+								</button>
+								<button
+									onclick={handleDeleteVault}
+									disabled={deleteConfirmName.trim() !== editingVault.name}
+									class="rounded-lg bg-red-500 px-3 py-1.5 text-sm text-white transition-colors hover:bg-red-600 disabled:opacity-50"
+								>
+									Delete Vault
+								</button>
+							</div>
+						</div>
+					{/if}
+				</div>
+			{/if}
 
 			<div class="mt-6 flex justify-end gap-3">
 				<button

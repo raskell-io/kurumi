@@ -22,6 +22,13 @@
 	let theme = $state<'light' | 'dark' | 'system'>('system');
 	let viewMode = $state<'list' | 'folders'>('folders');
 
+	// Sidebar resizing (desktop only)
+	const MIN_SIDEBAR_WIDTH = 200;
+	const MAX_SIDEBAR_WIDTH = 480;
+	const DEFAULT_SIDEBAR_WIDTH = 256;
+	let sidebarWidth = $state(DEFAULT_SIDEBAR_WIDTH);
+	let isResizing = $state(false);
+
 	// Check if we're in read mode (hide sidebar)
 	let isReadMode = $derived($page.url.pathname.startsWith('/read'));
 
@@ -126,6 +133,15 @@
 			applyTheme(savedTheme);
 		}
 
+		// Load sidebar width from localStorage
+		const savedWidth = localStorage.getItem('kurumi-sidebar-width');
+		if (savedWidth) {
+			const width = parseInt(savedWidth, 10);
+			if (width >= MIN_SIDEBAR_WIDTH && width <= MAX_SIDEBAR_WIDTH) {
+				sidebarWidth = width;
+			}
+		}
+
 		// Initialize async stuff
 		initDB().then(() => {
 			initSearch();
@@ -177,6 +193,48 @@
 	function closeSearch() {
 		showSearch = false;
 	}
+
+	// Sidebar resize handlers
+	function startResize(e: MouseEvent) {
+		if (isMobile) return;
+		e.preventDefault();
+		isResizing = true;
+		document.body.style.cursor = 'col-resize';
+		document.body.style.userSelect = 'none';
+	}
+
+	function handleResizeMove(e: MouseEvent) {
+		if (!isResizing) return;
+		const newWidth = Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, e.clientX));
+		sidebarWidth = newWidth;
+	}
+
+	function handleResizeEnd() {
+		if (!isResizing) return;
+		isResizing = false;
+		document.body.style.cursor = '';
+		document.body.style.userSelect = '';
+		// Save to localStorage
+		localStorage.setItem('kurumi-sidebar-width', String(sidebarWidth));
+	}
+
+	// Use effect to manage global mouse events during resize
+	$effect(() => {
+		if (isResizing) {
+			const onMove = (e: MouseEvent) => handleResizeMove(e);
+			const onUp = () => handleResizeEnd();
+
+			window.addEventListener('mousemove', onMove);
+			window.addEventListener('mouseup', onUp);
+			window.addEventListener('mouseleave', onUp);
+
+			return () => {
+				window.removeEventListener('mousemove', onMove);
+				window.removeEventListener('mouseup', onUp);
+				window.removeEventListener('mouseleave', onUp);
+			};
+		}
+	});
 </script>
 
 <svelte:head>
@@ -214,11 +272,13 @@
 		<!-- Sidebar (hidden in read mode) -->
 		{#if !isReadMode}
 		<aside
-			class="fixed inset-y-0 left-0 z-50 flex w-full flex-col border-r-0 border-[var(--color-border)] bg-[var(--color-bg-secondary)] transition-transform duration-300 ease-out md:relative md:z-auto md:w-64 md:border-r {sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}"
+			class="fixed inset-y-0 left-0 z-50 flex w-full flex-col border-r-0 border-[var(--color-border)] bg-[var(--color-bg-secondary)] transition-transform duration-300 ease-out md:relative md:z-auto md:border-r md:pt-6 {sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}"
+			style:--sidebar-width="{sidebarWidth}px"
+			style:width={isMobile ? undefined : `${sidebarWidth}px`}
 		>
 			<!-- Logo -->
 			<div
-				class="flex items-center justify-between border-b border-[var(--color-border)] p-4 safe-top"
+				class="flex items-center justify-between border-b border-[var(--color-border)] px-4 pb-4 safe-top"
 			>
 				<div class="flex items-center gap-2">
 					<img src="/icon-192.avif" alt="Kurumi" class="h-8 w-8 rounded" />
@@ -408,7 +468,23 @@
 					</a>
 				</div>
 			</div>
+
 		</aside>
+
+		<!-- Resize handle (desktop only) -->
+		{#if !isMobile}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div
+				class="group flex w-3 shrink-0 cursor-col-resize items-center justify-center"
+				onmousedown={startResize}
+			>
+				<div
+					class="h-full w-0.5 rounded-full transition-colors group-hover:bg-[var(--color-accent)]"
+					class:bg-[var(--color-accent)]={isResizing}
+					class:bg-transparent={!isResizing}
+				></div>
+			</div>
+		{/if}
 		{/if}
 
 		<!-- Main Content -->
@@ -442,11 +518,11 @@
 			</header>
 			{/if}
 
-			<!-- Read button - desktop only (appears on hover) -->
+			<!-- Read button - desktop only -->
 			{#if !isReadMode}
 			<a
 				href="/read"
-				class="absolute right-6 top-6 z-10 hidden rounded-lg p-2 text-[var(--color-text-muted)] opacity-0 transition-all hover:bg-[var(--color-border)] hover:text-[var(--color-text)] md:block md:opacity-30 md:hover:opacity-100"
+				class="absolute right-6 top-6 z-10 hidden rounded-lg p-2 text-[var(--color-text-muted)] transition-all hover:bg-[var(--color-border)] hover:text-[var(--color-text)] md:block"
 				aria-label="Read mode"
 				title="Read mode"
 			>
