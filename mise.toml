@@ -1,0 +1,84 @@
+[tools]
+node = "22"
+
+[env]
+_.path = ["./node_modules/.bin"]
+
+# =============================================================================
+# Development
+# =============================================================================
+
+[tasks.install]
+description = "Install dependencies"
+run = "npm install"
+
+[tasks.dev]
+description = "Start development server"
+run = "vite dev"
+
+[tasks.dev-host]
+description = "Start development server (exposed to network)"
+run = "vite dev --host"
+
+# =============================================================================
+# Build & Preview
+# =============================================================================
+
+[tasks.build]
+description = "Build for production"
+run = "vite build"
+
+[tasks.preview]
+description = "Preview production build"
+run = "vite preview"
+
+[tasks.preview-host]
+description = "Preview production build (exposed to network)"
+run = "vite preview --host"
+
+# =============================================================================
+# Type Checking & Linting
+# =============================================================================
+
+[tasks.check]
+description = "Run type checking"
+run = "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
+
+[tasks.check-watch]
+description = "Run type checking in watch mode"
+run = "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
+
+[tasks.sync]
+description = "Sync SvelteKit types"
+run = "svelte-kit sync"
+
+# =============================================================================
+# Shortcuts
+# =============================================================================
+
+[tasks.setup]
+description = "Install dependencies and sync types"
+run = """
+echo "==> Installing dependencies..."
+npm install
+
+echo ""
+echo "==> Syncing SvelteKit types..."
+svelte-kit sync
+
+echo ""
+echo "==> Done! Run 'mise run dev' to start developing."
+"""
+
+[tasks.clean]
+description = "Clean build artifacts"
+run = """
+rm -rf .svelte-kit
+rm -rf build
+rm -rf node_modules/.vite
+echo "Cleaned .svelte-kit, build, and vite cache"
+"""
+
+[tasks.rebuild]
+description = "Clean and rebuild"
+depends = ["clean", "build"]
