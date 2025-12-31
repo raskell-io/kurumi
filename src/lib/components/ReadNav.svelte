@@ -209,6 +209,8 @@
 		background: var(--color-bg);
 		border-bottom: 1px solid var(--color-border);
 		backdrop-filter: blur(8px);
+		max-width: 100vw;
+		overflow-x: hidden;
 	}
 
 	.nav-content {
@@ -217,7 +219,8 @@
 		gap: 1rem;
 		max-width: 1200px;
 		margin: 0 auto;
-		padding: 0.75rem 1.5rem;
+		padding: 0.75rem 1rem;
+		box-sizing: border-box;
 	}
 
 	.nav-logo {
@@ -410,7 +413,8 @@
 
 	@media (max-width: 768px) {
 		.nav-content {
-			padding: 0.625rem 1rem;
+			padding: 0.5rem 0.75rem;
+			gap: 0.5rem;
 		}
 
 		.logo-text {
@@ -424,10 +428,27 @@
 		.search-container {
 			max-width: none;
 			flex: 1;
+			min-width: 0;
+		}
+
+		.search-wrapper {
+			padding: 0.375rem 0.5rem;
 		}
 
 		.search-kbd {
 			display: none;
+		}
+
+		.nav-actions {
+			gap: 0.25rem;
+		}
+
+		.nav-btn {
+			padding: 0.375rem;
+		}
+
+		.edit-btn {
+			padding: 0.375rem 0.5rem;
 		}
 
 		.btn-text {
