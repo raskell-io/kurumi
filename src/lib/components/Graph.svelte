@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { notes, folders, extractWikilinks, type Note } from '$lib/db';
+	import { get } from 'svelte/store';
+	import { notes, folders, extractWikilinks, type Note, type Folder } from '$lib/db';
 	import { goto } from '$app/navigation';
 	import ForceGraph from 'force-graph';
 	import { Search, X, XCircle, ArrowRight } from 'lucide-svelte';
@@ -13,6 +14,19 @@
 
 	let containerRef: HTMLDivElement;
 	let graph: ReturnType<typeof ForceGraph> | null = null;
+
+	// Store subscriptions for Svelte 5 runes mode
+	let notesData = $state<Note[]>(get(notes));
+	let foldersData = $state<Folder[]>(get(folders));
+
+	$effect(() => {
+		const unsubNotes = notes.subscribe((n) => (notesData = n));
+		const unsubFolders = folders.subscribe((f) => (foldersData = f));
+		return () => {
+			unsubNotes();
+			unsubFolders();
+		};
+	});
 
 	// Hover popup state
 	let hoveredNode = $state<GraphNode | null>(null);
@@ -49,7 +63,7 @@
 	}
 
 	function buildGraphData(): { nodes: GraphNode[]; links: GraphLink[] } {
-		const allNotes = $notes;
+		const allNotes = notesData;
 		const noteMap = new Map(allNotes.map((n) => [n.title.toLowerCase(), n.id]));
 
 		// Calculate backlinks for each note
@@ -97,7 +111,7 @@
 
 	function getFolderName(folderId: string | null): string {
 		if (!folderId) return 'No folder';
-		const folder = $folders.find((f) => f.id === folderId);
+		const folder = foldersData.find((f) => f.id === folderId);
 		return folder?.name || 'Unknown';
 	}
 
@@ -223,7 +237,7 @@
 
 	$effect(() => {
 		// Re-render when notes change
-		if (graph && $notes) {
+		if (graph && notesData.length > 0) {
 			const { nodes, links } = buildGraphData();
 			graph.graphData({ nodes, links });
 		}
@@ -351,7 +365,7 @@
 	// Count matching nodes
 	let matchCount = $derived.by(() => {
 		if (!searchQuery.trim()) return 0;
-		return $notes.filter(n => {
+		return notesData.filter(n => {
 			const q = searchQuery.toLowerCase();
 			return n.title.toLowerCase().includes(q) || n.content.toLowerCase().includes(q);
 		}).length;
