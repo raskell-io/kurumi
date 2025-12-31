@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { exportNotesJSON, exportFullJSON, analyzeImport, importJSON, notes, folders, vaults, type ImportAnalysis, type ConflictResolution } from '$lib/db';
+	import { syncState, initSyncState, sync, testConnection, isSyncConfigured } from '$lib/sync';
 	import { onMount } from 'svelte';
-	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2 } from 'lucide-svelte';
+	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2, RefreshCw, CheckCircle, XCircle, Wifi } from 'lucide-svelte';
 
 	let syncToken = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-token') || '' : '');
 	let syncUrl = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-url') || '' : '');
@@ -23,11 +24,16 @@
 	let clearConfirmText = $state('');
 	let isClearing = $state(false);
 
+	// Sync test state
+	let isTesting = $state(false);
+	let testResult = $state<{ success: boolean; error?: string } | null>(null);
+
 	onMount(() => {
 		const savedTheme = localStorage.getItem('kurumi-theme') as 'system' | 'light' | 'dark' | null;
 		if (savedTheme) {
 			theme = savedTheme;
 		}
+		initSyncState();
 	});
 
 	function setTheme(t: 'system' | 'light' | 'dark') {
@@ -46,6 +52,34 @@
 		localStorage.setItem('kurumi-sync-url', syncUrl);
 		showSaved = true;
 		setTimeout(() => (showSaved = false), 2000);
+	}
+
+	async function handleTestConnection() {
+		isTesting = true;
+		testResult = null;
+		saveSyncSettings();
+		testResult = await testConnection();
+		isTesting = false;
+	}
+
+	async function handleSync() {
+		await sync();
+	}
+
+	function formatTimestamp(timestamp: number): string {
+		const date = new Date(timestamp);
+		const now = new Date();
+		const diffMs = now.getTime() - date.getTime();
+		const diffMins = Math.floor(diffMs / 60000);
+		const diffHours = Math.floor(diffMs / 3600000);
+		const diffDays = Math.floor(diffMs / 86400000);
+
+		if (diffMins < 1) return 'Just now';
+		if (diffMins < 60) return `${diffMins} minute${diffMins === 1 ? '' : 's'} ago`;
+		if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
+		if (diffDays < 7) return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
+
+		return date.toLocaleDateString();
 	}
 
 	function handleExport() {
@@ -237,14 +271,85 @@
 					/>
 				</div>
 
-				<button
-					onclick={saveSyncSettings}
-					class="w-full rounded-lg bg-[var(--color-accent)] px-4 py-3 text-white transition-colors hover:bg-[var(--color-accent-hover)] active:scale-[0.98] md:w-auto"
-				>
-					{showSaved ? 'Saved!' : 'Save Sync Settings'}
-				</button>
+				<div class="flex flex-col gap-3 md:flex-row">
+					<button
+						onclick={saveSyncSettings}
+						class="rounded-lg bg-[var(--color-accent)] px-4 py-3 text-white transition-colors hover:bg-[var(--color-accent-hover)] active:scale-[0.98]"
+					>
+						{showSaved ? 'Saved!' : 'Save Settings'}
+					</button>
+
+					<button
+						onclick={handleTestConnection}
+						disabled={isTesting || !syncUrl || !syncToken}
+						class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] disabled:opacity-50"
+					>
+						{#if isTesting}
+							<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+						{:else}
+							<Wifi class="h-4 w-4" />
+						{/if}
+						Test Connection
+					</button>
+				</div>
+
+				{#if testResult}
+					<div class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm {testResult.success ? 'bg-green-500/10 text-green-600 dark:text-green-400' : 'bg-red-500/10 text-red-500'}">
+						{#if testResult.success}
+							<CheckCircle class="h-4 w-4" />
+							Connection successful
+						{:else}
+							<XCircle class="h-4 w-4" />
+							{testResult.error || 'Connection failed'}
+						{/if}
+					</div>
+				{/if}
 			</div>
 		</section>
+
+		<!-- Sync Status -->
+		{#if isSyncConfigured()}
+			<section class="mb-6 md:mb-8">
+				<h2 class="mb-3 text-base font-semibold text-[var(--color-text)] md:mb-4 md:text-lg">
+					Sync Status
+				</h2>
+
+				<div class="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
+					<div class="flex items-center justify-between">
+						<div class="flex items-center gap-3">
+							{#if $syncState.status === 'syncing'}
+								<div class="h-3 w-3 animate-pulse rounded-full bg-amber-500"></div>
+								<span class="text-[var(--color-text)]">Syncing...</span>
+							{:else if $syncState.status === 'success'}
+								<div class="h-3 w-3 rounded-full bg-green-500"></div>
+								<span class="text-[var(--color-text)]">Synced</span>
+							{:else if $syncState.status === 'error'}
+								<div class="h-3 w-3 rounded-full bg-red-500"></div>
+								<span class="text-red-500">{$syncState.error || 'Sync failed'}</span>
+							{:else}
+								<div class="h-3 w-3 rounded-full bg-[var(--color-text-muted)]"></div>
+								<span class="text-[var(--color-text-muted)]">Ready to sync</span>
+							{/if}
+						</div>
+
+						<button
+							onclick={handleSync}
+							disabled={$syncState.status === 'syncing'}
+							class="flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-white transition-colors hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
+						>
+							<RefreshCw class="h-4 w-4 {$syncState.status === 'syncing' ? 'animate-spin' : ''}" />
+							Sync Now
+						</button>
+					</div>
+
+					{#if $syncState.lastSyncedAt}
+						<div class="mt-3 text-sm text-[var(--color-text-muted)]">
+							Last synced: {formatTimestamp($syncState.lastSyncedAt)}
+						</div>
+					{/if}
+				</div>
+			</section>
+		{/if}
 
 		<!-- Import/Export -->
 		<section class="mb-6 md:mb-8">
