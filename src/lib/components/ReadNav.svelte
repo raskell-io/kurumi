@@ -4,7 +4,7 @@
 	import { search } from '$lib/search';
 	import { currentVault } from '$lib/db';
 	import { getIconById } from '$lib/icons/vault-icons';
-	import { Search, FileText, Sun, Moon, Monitor, Pencil, PenSquare } from 'lucide-svelte';
+	import { Search, FileText, Sun, Moon, Pencil, PenSquare } from 'lucide-svelte';
 
 	interface Props {
 		noteId?: string;
@@ -31,15 +31,12 @@
 	});
 
 	function cycleTheme() {
-		const next = theme === 'system' ? 'light' : theme === 'light' ? 'dark' : 'system';
+		// In read mode, only toggle between light and dark (system is in settings)
+		const next = theme === 'light' || theme === 'system' ? 'dark' : 'light';
 		theme = next;
 		localStorage.setItem('kurumi-theme', next);
-		if (next === 'system') {
-			document.documentElement.classList.remove('light', 'dark');
-		} else {
-			document.documentElement.classList.remove('light', 'dark');
-			document.documentElement.classList.add(next);
-		}
+		document.documentElement.classList.remove('light', 'dark');
+		document.documentElement.classList.add(next);
 	}
 
 	$effect(() => {
@@ -174,14 +171,12 @@
 
 		<!-- Actions -->
 		<div class="nav-actions">
-			<!-- Theme toggle -->
-			<button onclick={cycleTheme} class="nav-btn" title="Theme: {theme}">
-				{#if theme === 'light'}
-					<Sun class="h-5 w-5" />
-				{:else if theme === 'dark'}
+			<!-- Theme toggle (light/dark only in read mode) -->
+			<button onclick={cycleTheme} class="nav-btn" title="Toggle theme">
+				{#if theme === 'dark'}
 					<Moon class="h-5 w-5" />
 				{:else}
-					<Monitor class="h-5 w-5" />
+					<Sun class="h-5 w-5" />
 				{/if}
 			</button>
 
@@ -233,9 +228,9 @@
 	}
 
 	.logo-icon {
-		width: 1.75rem;
-		height: 1.75rem;
-		border-radius: 4px;
+		width: 2.25rem;
+		height: 2.25rem;
+		border-radius: 6px;
 	}
 
 	.logo-text {

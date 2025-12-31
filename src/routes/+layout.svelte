@@ -384,8 +384,8 @@
 				</button>
 			</div>
 
-			<!-- New Note & Search Buttons -->
-			<div class="space-y-2 p-3">
+			<!-- New Note Button (desktop only) -->
+			<div class="hidden space-y-2 p-3 md:block">
 				<button
 					onclick={handleNewNote}
 					class="flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-3 text-white transition-colors hover:bg-[var(--color-accent-hover)] active:scale-[0.98]"
@@ -393,9 +393,13 @@
 					<Plus class="h-5 w-5" />
 					New Note
 				</button>
+			</div>
+
+			<!-- Search & View Toggle Row -->
+			<div class="flex items-center gap-2 p-3 pt-0 md:pt-3">
 				<button
 					onclick={openSearch}
-					class="flex w-full items-center justify-between rounded-lg border border-[var(--color-border)] px-4 py-2.5 text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
+					class="flex flex-1 items-center justify-between rounded-lg border border-[var(--color-border)] px-3 py-2 text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
 				>
 					<div class="flex items-center gap-2">
 						<Search class="h-4 w-4" />
@@ -407,6 +411,31 @@
 						{navigator?.platform?.includes('Mac') ? '⌘' : 'Ctrl'}K
 					</kbd>
 				</button>
+				<!-- View toggle (mobile: inline with search, desktop: hidden here) -->
+				<div class="flex rounded-lg bg-[var(--color-bg)] p-0.5 md:hidden">
+					<button
+						onclick={() => (viewMode = 'folders')}
+						class="rounded-md px-2 py-1.5 transition-colors"
+						class:bg-[var(--color-accent)]={viewMode === 'folders'}
+						class:text-white={viewMode === 'folders'}
+						class:text-[var(--color-text-muted)]={viewMode !== 'folders'}
+						aria-label="Folder view"
+						title="Folder view"
+					>
+						<Folder class="h-4 w-4" />
+					</button>
+					<button
+						onclick={() => (viewMode = 'list')}
+						class="rounded-md px-2 py-1.5 transition-colors"
+						class:bg-[var(--color-accent)]={viewMode === 'list'}
+						class:text-white={viewMode === 'list'}
+						class:text-[var(--color-text-muted)]={viewMode !== 'list'}
+						aria-label="List view"
+						title="List view"
+					>
+						<List class="h-4 w-4" />
+					</button>
+				</div>
 			</div>
 
 			<!-- Tags Filter -->
@@ -450,8 +479,8 @@
 				</div>
 			{/if}
 
-			<!-- View Mode Toggle -->
-			<div class="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2">
+			<!-- View Mode Toggle (desktop only - mobile is in search row) -->
+			<div class="hidden items-center justify-between border-b border-[var(--color-border)] px-3 py-2 md:flex">
 				<span class="text-xs font-medium uppercase text-[var(--color-text-muted)]">View</span>
 				<div class="flex rounded-lg bg-[var(--color-bg)] p-0.5">
 					<button
@@ -618,6 +647,18 @@
 
 		<!-- Main Content -->
 		<main class="relative flex flex-1 flex-col" class:overflow-hidden={!isReadMode && !isDocsPage} role="main" aria-label="Main content">
+			<!-- Mobile FAB for new note (hidden in read mode, docs, and on desktop) -->
+			{#if !isReadMode && !isDocsPage}
+			<button
+				onclick={handleNewNote}
+				class="fixed bottom-6 right-6 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-accent)] text-white shadow-lg transition-all hover:bg-[var(--color-accent-hover)] hover:shadow-xl active:scale-95 safe-bottom md:hidden"
+				aria-label="New note"
+				title="New note"
+			>
+				<Plus class="h-6 w-6" />
+			</button>
+			{/if}
+
 			<!-- Mobile header (hidden in read mode, docs, and on desktop) -->
 			{#if !isReadMode && !isDocsPage}
 			<header

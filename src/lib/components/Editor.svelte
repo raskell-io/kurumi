@@ -563,7 +563,7 @@
 
 	/* Headings */
 	:global(.milkdown h1) {
-		font-size: 2em;
+		font-size: 1.75em;
 		font-weight: 700;
 		margin-top: 1em;
 		margin-bottom: 0.5em;
@@ -759,7 +759,7 @@
 		}
 
 		:global(.milkdown h1) {
-			font-size: 1.875em;
+			font-size: 1.5em;
 		}
 
 		:global(.milkdown h2) {

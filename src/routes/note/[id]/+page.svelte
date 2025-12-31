@@ -106,7 +106,7 @@
 					value={title}
 					oninput={handleTitleChange}
 					placeholder="Untitled"
-					class="mb-4 w-full border-none bg-transparent text-2xl font-bold text-[var(--color-text)] placeholder-[var(--color-text-muted)] outline-none md:mb-6 md:text-3xl"
+					class="mb-4 w-full border-none bg-transparent text-3xl font-bold text-[var(--color-text)] placeholder-[var(--color-text-muted)] outline-none md:mb-6 md:text-4xl"
 					style="font-family: var(--font-editor);"
 				/>
 
