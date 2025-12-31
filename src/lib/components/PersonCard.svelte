@@ -11,11 +11,12 @@
 		Plus,
 		Copy,
 		ExternalLink,
-		Download
+		Download,
+		Pencil
 	} from 'lucide-svelte';
 	import type { PersonWithMetadata } from '$lib/db/store';
+	import { addPerson } from '$lib/db';
 	import { downloadPersonVCard } from '$lib/utils/export';
-	import { addNote } from '$lib/db';
 
 	interface Props {
 		person: PersonWithMetadata;
@@ -25,21 +26,17 @@
 
 	let { person, expanded, onToggle }: Props = $props();
 
-	// Known field icons
-	const fieldIcons: Record<string, typeof Mail> = {
-		email: Mail,
-		phone: Phone,
-		company: Building,
-		title: Briefcase
-	};
+	// Editing state
+	let isEditing = $state(false);
+	let editEmail = $state('');
+	let editPhone = $state('');
+	let editCompany = $state('');
+	let editTitle = $state('');
 
 	// Get custom fields (exclude known ones)
 	let customFields = $derived(
-		person.metadata
-			? Object.entries(person.metadata).filter(
-					([key, value]) =>
-						!['type', 'email', 'phone', 'company', 'title'].includes(key) && value
-				)
+		person.person?.customFields
+			? Object.entries(person.person.customFields).filter(([_, value]) => value)
 			: []
 	);
 
@@ -59,22 +56,36 @@
 		await navigator.clipboard.writeText(text);
 	}
 
-	async function createProfile() {
-		// Create a new note with person frontmatter
-		const content = [
-			'---',
-			'type: person',
-			'email: ',
-			'phone: ',
-			'company: ',
-			'---',
-			'',
-			`# ${person.name}`,
-			'',
-			''
-		].join('\n');
-		const note = addNote(person.name, content, null);
-		goto(`/note/${note.id}`);
+	function createProfile() {
+		// Create a new Person object - reactivity is handled by store subscription in parent
+		addPerson(person.name);
+	}
+
+	function startEditing() {
+		editEmail = person.person?.email || '';
+		editPhone = person.person?.phone || '';
+		editCompany = person.person?.company || '';
+		editTitle = person.person?.title || '';
+		isEditing = true;
+	}
+
+	function saveEdits() {
+		if (person.person) {
+			// Import updatePerson dynamically to avoid circular deps
+			import('$lib/db').then(({ updatePerson }) => {
+				updatePerson(person.person!.id, {
+					email: editEmail || undefined,
+					phone: editPhone || undefined,
+					company: editCompany || undefined,
+					title: editTitle || undefined
+				});
+			});
+		}
+		isEditing = false;
+	}
+
+	function cancelEditing() {
+		isEditing = false;
 	}
 </script>
 
@@ -84,8 +95,8 @@
 			<User class="h-4 w-4" />
 		</div>
 		<span class="person-name">@{person.name}</span>
-		{#if person.metadata?.email}
-			<span class="quick-info">{person.metadata.email}</span>
+		{#if person.person?.email}
+			<span class="quick-info">{person.person.email}</span>
 		{/if}
 		<span class="mention-count">{person.count} {person.count === 1 ? 'note' : 'notes'}</span>
 		<ChevronRight class="chevron {expanded ? 'rotated' : ''}" />
@@ -94,72 +105,117 @@
 	{#if expanded}
 		<div class="card-content">
 			<!-- Metadata Section -->
-			{#if person.metadata || person.definitionNote}
+			{#if person.person}
 				<div class="metadata-section">
-					{#if person.metadata?.email}
-						<div class="metadata-field">
-							<Mail class="field-icon" />
-							<span class="field-value">{person.metadata.email}</span>
-							<button
-								class="field-action"
-								onclick={() => copyToClipboard(String(person.metadata?.email))}
-								title="Copy email"
-							>
-								<Copy class="h-3.5 w-3.5" />
-							</button>
-							<a
-								href="mailto:{person.metadata.email}"
-								class="field-action"
-								title="Send email"
-							>
-								<ExternalLink class="h-3.5 w-3.5" />
-							</a>
+					{#if isEditing}
+						<!-- Edit Mode -->
+						<div class="edit-form">
+							<div class="edit-field">
+								<Mail class="field-icon" />
+								<input
+									type="email"
+									placeholder="Email"
+									bind:value={editEmail}
+									class="edit-input"
+								/>
+							</div>
+							<div class="edit-field">
+								<Phone class="field-icon" />
+								<input
+									type="tel"
+									placeholder="Phone"
+									bind:value={editPhone}
+									class="edit-input"
+								/>
+							</div>
+							<div class="edit-field">
+								<Building class="field-icon" />
+								<input
+									type="text"
+									placeholder="Company"
+									bind:value={editCompany}
+									class="edit-input"
+								/>
+							</div>
+							<div class="edit-field">
+								<Briefcase class="field-icon" />
+								<input
+									type="text"
+									placeholder="Title"
+									bind:value={editTitle}
+									class="edit-input"
+								/>
+							</div>
+							<div class="edit-actions">
+								<button class="save-btn" onclick={saveEdits}>Save</button>
+								<button class="cancel-btn" onclick={cancelEditing}>Cancel</button>
+							</div>
 						</div>
-					{/if}
+					{:else}
+						<!-- View Mode -->
+						{#if person.person.email}
+							<div class="metadata-field">
+								<Mail class="field-icon" />
+								<span class="field-value">{person.person.email}</span>
+								<button
+									class="field-action"
+									onclick={() => copyToClipboard(person.person?.email || '')}
+									title="Copy email"
+								>
+									<Copy class="h-3.5 w-3.5" />
+								</button>
+								<a
+									href="mailto:{person.person.email}"
+									class="field-action"
+									title="Send email"
+								>
+									<ExternalLink class="h-3.5 w-3.5" />
+								</a>
+							</div>
+						{/if}
 
-					{#if person.metadata?.phone}
-						<div class="metadata-field">
-							<Phone class="field-icon" />
-							<span class="field-value">{person.metadata.phone}</span>
-							<button
-								class="field-action"
-								onclick={() => copyToClipboard(String(person.metadata?.phone))}
-								title="Copy phone"
-							>
-								<Copy class="h-3.5 w-3.5" />
-							</button>
-							<a href="tel:{person.metadata.phone}" class="field-action" title="Call">
-								<ExternalLink class="h-3.5 w-3.5" />
-							</a>
-						</div>
-					{/if}
+						{#if person.person.phone}
+							<div class="metadata-field">
+								<Phone class="field-icon" />
+								<span class="field-value">{person.person.phone}</span>
+								<button
+									class="field-action"
+									onclick={() => copyToClipboard(person.person?.phone || '')}
+									title="Copy phone"
+								>
+									<Copy class="h-3.5 w-3.5" />
+								</button>
+								<a href="tel:{person.person.phone}" class="field-action" title="Call">
+									<ExternalLink class="h-3.5 w-3.5" />
+								</a>
+							</div>
+						{/if}
 
-					{#if person.metadata?.company}
-						<div class="metadata-field">
-							<Building class="field-icon" />
-							<span class="field-value">{person.metadata.company}</span>
-						</div>
-					{/if}
+						{#if person.person.company}
+							<div class="metadata-field">
+								<Building class="field-icon" />
+								<span class="field-value">{person.person.company}</span>
+							</div>
+						{/if}
 
-					{#if person.metadata?.title}
-						<div class="metadata-field">
-							<Briefcase class="field-icon" />
-							<span class="field-value">{person.metadata.title}</span>
-						</div>
-					{/if}
+						{#if person.person.title}
+							<div class="metadata-field">
+								<Briefcase class="field-icon" />
+								<span class="field-value">{person.person.title}</span>
+							</div>
+						{/if}
 
-					{#each customFields as [key, value]}
-						<div class="metadata-field custom">
-							<span class="field-key">{key}:</span>
-							<span class="field-value">{value}</span>
-						</div>
-					{/each}
+						{#each customFields as [key, value]}
+							<div class="metadata-field custom">
+								<span class="field-key">{key}:</span>
+								<span class="field-value">{value}</span>
+							</div>
+						{/each}
 
-					{#if person.definitionNote}
 						<div class="profile-actions">
-							<button class="action-btn" onclick={() => openNote(person.definitionNote!.id)}>
-								<FileText class="h-4 w-4" />
-								Edit Profile
+							<button class="action-btn" onclick={startEditing}>
+								<Pencil class="h-4 w-4" />
+								Edit
 							</button>
 							<button class="action-btn" onclick={() => downloadPersonVCard(person)}>
 								<Download class="h-4 w-4" />
@@ -170,7 +226,7 @@
 				</div>
 			{:else}
 				<div class="no-profile">
-					<p>No profile note found</p>
+					<p>No profile created yet</p>
 					<button class="create-profile-btn" onclick={createProfile}>
 						<Plus class="h-4 w-4" />
 						Create Profile
@@ -179,22 +235,24 @@
 			{/if}
 
 			<!-- Mentioning Notes -->
-			<div class="notes-section">
-				<h4>Mentioned in</h4>
-				<ul class="notes-list">
-					{#each person.mentioningNotes as note (note.id)}
-						<li>
-							<button class="note-item" onclick={() => openNote(note.id)}>
-								<FileText class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
-								<div class="note-info">
-									<span class="note-title">{note.title || 'Untitled'}</span>
-									<span class="note-preview">{getPreview(note.content)}</span>
-								</div>
-							</button>
-						</li>
-					{/each}
-				</ul>
-			</div>
+			{#if person.mentioningNotes.length > 0}
+				<div class="notes-section">
+					<h4>Mentioned in</h4>
+					<ul class="notes-list">
+						{#each person.mentioningNotes as note (note.id)}
+							<li>
+								<button class="note-item" onclick={() => openNote(note.id)}>
+									<FileText class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
+									<div class="note-info">
+										<span class="note-title">{note.title || 'Untitled'}</span>
+										<span class="note-preview">{getPreview(note.content)}</span>
+									</div>
+								</button>
+							</li>
+						{/each}
+					</ul>
+				</div>
+			{/if}
 		</div>
 	{/if}
 </li>
@@ -383,6 +441,70 @@
 
 	.create-profile-btn:hover {
 		background: var(--color-accent-hover);
+	}
+
+	/* Edit form styles */
+	.edit-form {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.edit-field {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.edit-input {
+		flex: 1;
+		padding: 0.5rem;
+		font-size: 0.875rem;
+		color: var(--color-text);
+		background: var(--color-bg);
+		border: 1px solid var(--color-border);
+		border-radius: 0.375rem;
+		outline: none;
+	}
+
+	.edit-input:focus {
+		border-color: var(--color-accent);
+	}
+
+	.edit-actions {
+		display: flex;
+		gap: 0.5rem;
+		margin-top: 0.5rem;
+	}
+
+	.save-btn {
+		padding: 0.5rem 1rem;
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: white;
+		background: var(--color-accent);
+		border: none;
+		border-radius: 0.375rem;
+		cursor: pointer;
+	}
+
+	.save-btn:hover {
+		background: var(--color-accent-hover);
+	}
+
+	.cancel-btn {
+		padding: 0.5rem 1rem;
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: var(--color-text);
+		background: transparent;
+		border: 1px solid var(--color-border);
+		border-radius: 0.375rem;
+		cursor: pointer;
+	}
+
+	.cancel-btn:hover {
+		border-color: var(--color-text-muted);
 	}
 
 	.notes-section {

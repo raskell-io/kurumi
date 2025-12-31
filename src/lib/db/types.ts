@@ -41,10 +41,40 @@ export interface Folder {
 	modified: number;
 }
 
+// Reference objects - first-class entities for people and events
+export interface Person {
+	id: string;
+	name: string; // The @Name reference
+	email?: string;
+	phone?: string;
+	company?: string;
+	title?: string;
+	customFields?: Record<string, string>;
+	vaultId: string;
+	created: number;
+	modified: number;
+}
+
+export interface Event {
+	id: string;
+	date: string; // The //YYYY-MM-DD reference
+	title?: string;
+	time?: string;
+	duration?: string;
+	location?: string;
+	attendees?: string[];
+	customFields?: Record<string, string>;
+	vaultId: string;
+	created: number;
+	modified: number;
+}
+
 export interface KurumiDocument {
 	notes: Record<string, Note>;
 	folders: Record<string, Folder>;
 	vaults: Record<string, Vault>;
+	people: Record<string, Person>;
+	events: Record<string, Event>;
 	currentVaultId: string;
 	version: number;
 }
@@ -76,8 +106,10 @@ export function createEmptyDocument(): KurumiDocument {
 		notes: {},
 		folders: {},
 		vaults: { [DEFAULT_VAULT_ID]: defaultVault },
+		people: {},
+		events: {},
 		currentVaultId: DEFAULT_VAULT_ID,
-		version: 2
+		version: 3
 	};
 }
 
@@ -113,5 +145,37 @@ export function createFolder(
 		vaultId,
 		created: now,
 		modified: now
+	};
+}
+
+export function createPerson(
+	name: string,
+	vaultId: string = DEFAULT_VAULT_ID,
+	fields?: Partial<Omit<Person, 'id' | 'name' | 'vaultId' | 'created' | 'modified'>>
+): Person {
+	const now = Date.now();
+	return {
+		id: generateId(),
+		name,
+		vaultId,
+		created: now,
+		modified: now,
+		...fields
+	};
+}
+
+export function createEvent(
+	date: string,
+	vaultId: string = DEFAULT_VAULT_ID,
+	fields?: Partial<Omit<Event, 'id' | 'date' | 'vaultId' | 'created' | 'modified'>>
+): Event {
+	const now = Date.now();
+	return {
+		id: generateId(),
+		date,
+		vaultId,
+		created: now,
+		modified: now,
+		...fields
 	};
 }

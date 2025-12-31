@@ -153,6 +153,13 @@
 				if (node) {
 					// Show popup immediately when hovering a node
 					hoveredNode = node;
+					// Set initial position using node's screen coordinates
+					if (node.x !== undefined && node.y !== undefined) {
+						const screenCoords = graph?.graph2ScreenCoords(node.x, node.y);
+						if (screenCoords) {
+							hoverPosition = { x: screenCoords.x, y: screenCoords.y };
+						}
+					}
 				} else if (!isHoveringPopup) {
 					// Delay hiding popup to allow mouse to move to it
 					hidePopupTimeout = setTimeout(() => {
@@ -197,11 +204,9 @@
 				graph?.zoomToFit(400, 50);
 			});
 
-		// Track mouse position for hover popup
+		// Track mouse position for hover popup - always update so it's ready when needed
 		containerRef.addEventListener('mousemove', (e) => {
-			if (hoveredNode) {
-				hoverPosition = { x: e.clientX, y: e.clientY };
-			}
+			hoverPosition = { x: e.clientX, y: e.clientY };
 		});
 
 		// Handle resize

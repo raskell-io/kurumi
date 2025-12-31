@@ -3,7 +3,8 @@
  * Frontend-only - these don't modify the database
  */
 
-import type { PersonWithMetadata, DateWithEvents, Note } from '../db/store';
+import type { PersonWithMetadata, DateWithEvents } from '../db/store';
+import type { Event } from '../db/types';
 
 // ============ vCard Export ============
 
@@ -34,29 +35,31 @@ export function personToVCard(person: PersonWithMetadata): string {
 		lines.push(`N:${escapeVCardValue(person.name)};;;;`);
 	}
 
-	if (person.metadata) {
-		if (person.metadata.email) {
-			lines.push(`EMAIL:${escapeVCardValue(String(person.metadata.email))}`);
+	if (person.person) {
+		if (person.person.email) {
+			lines.push(`EMAIL:${escapeVCardValue(person.person.email)}`);
 		}
-		if (person.metadata.phone) {
-			lines.push(`TEL:${escapeVCardValue(String(person.metadata.phone))}`);
+		if (person.person.phone) {
+			lines.push(`TEL:${escapeVCardValue(person.person.phone)}`);
 		}
-		if (person.metadata.company) {
-			lines.push(`ORG:${escapeVCardValue(String(person.metadata.company))}`);
+		if (person.person.company) {
+			lines.push(`ORG:${escapeVCardValue(person.person.company)}`);
 		}
-		if (person.metadata.title) {
-			lines.push(`TITLE:${escapeVCardValue(String(person.metadata.title))}`);
+		if (person.person.title) {
+			lines.push(`TITLE:${escapeVCardValue(person.person.title)}`);
 		}
 
 		// Custom fields as NOTE
-		const customFields: string[] = [];
-		for (const [key, value] of Object.entries(person.metadata)) {
-			if (!['type', 'email', 'phone', 'company', 'title'].includes(key) && value) {
-				customFields.push(`${key}: ${value}`);
+		if (person.person.customFields) {
+			const customFields: string[] = [];
+			for (const [key, value] of Object.entries(person.person.customFields)) {
+				if (value) {
+					customFields.push(`${key}: ${value}`);
+				}
 			}
-		}
-		if (customFields.length > 0) {
-			lines.push(`NOTE:${escapeVCardValue(customFields.join('\\n'))}`);
+			if (customFields.length > 0) {
+				lines.push(`NOTE:${escapeVCardValue(customFields.join('\\n'))}`);
+			}
 		}
 	}
 
@@ -89,13 +92,13 @@ export function eventsToICal(dates: DateWithEvents[]): string {
 
 	for (const dateInfo of dates) {
 		for (const event of dateInfo.events) {
-			lines.push(eventToVEvent(dateInfo.date, event.note, event.metadata));
+			lines.push(eventToVEvent(event));
 		}
 
 		// If no events but date is mentioned, create a basic all-day event
 		if (dateInfo.events.length === 0 && dateInfo.mentioningNotes.length > 0) {
 			const note = dateInfo.mentioningNotes[0];
-			lines.push(eventToVEvent(dateInfo.date, note, null));
+			lines.push(createAllDayVEvent(dateInfo.date, note.id, note.title || 'Event'));
 		}
 	}
 
@@ -103,13 +106,9 @@ export function eventsToICal(dates: DateWithEvents[]): string {
 	return lines.join('\r\n');
 }
 
-function eventToVEvent(
-	date: string,
-	note: Note,
-	metadata: { title?: string; time?: string; duration?: string; location?: string; [key: string]: unknown } | null
-): string {
-	const dateFormatted = date.replace(/-/g, '');
-	const uid = `${note.id}@kurumi.app`;
+function eventToVEvent(event: Event): string {
+	const dateFormatted = event.date.replace(/-/g, '');
+	const uid = `${event.id}@kurumi.app`;
 	const now = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
 
 	const lines: string[] = [
@@ -119,13 +118,13 @@ function eventToVEvent(
 	];
 
 	// Handle time if provided
-	if (metadata?.time) {
-		const time = String(metadata.time).replace(':', '');
+	if (event.time) {
+		const time = event.time.replace(':', '');
 		lines.push(`DTSTART:${dateFormatted}T${time}00`);
 
 		// Handle duration
-		if (metadata.duration) {
-			const durationMatch = String(metadata.duration).match(/(\d+)h?/);
+		if (event.duration) {
+			const durationMatch = event.duration.match(/(\d+)h?/);
 			if (durationMatch) {
 				const hours = parseInt(durationMatch[1]);
 				lines.push(`DURATION:PT${hours}H`);
@@ -140,23 +139,37 @@ function eventToVEvent(
 	}
 
 	// Title
-	const title = metadata?.title || note.title || 'Event';
-	lines.push(`SUMMARY:${escapeICalValue(title)}`);
+	lines.push(`SUMMARY:${escapeICalValue(event.title || 'Event')}`);
 
 	// Location
-	if (metadata?.location) {
-		lines.push(`LOCATION:${escapeICalValue(String(metadata.location))}`);
+	if (event.location) {
+		lines.push(`LOCATION:${escapeICalValue(event.location)}`);
 	}
 
-	// Description from note content
-	const description = note.content
-		.replace(/^---[\s\S]*?---\n?/, '') // Remove frontmatter
-		.slice(0, 500); // Limit length
-	if (description.trim()) {
-		lines.push(`DESCRIPTION:${escapeICalValue(description)}`);
+	// Attendees
+	if (event.attendees && event.attendees.length > 0) {
+		lines.push(`DESCRIPTION:${escapeICalValue('Attendees: ' + event.attendees.join(', '))}`);
 	}
 
 	lines.push('END:VEVENT');
+	return lines.join('\r\n');
+}
+
+function createAllDayVEvent(date: string, id: string, title: string): string {
+	const dateFormatted = date.replace(/-/g, '');
+	const uid = `${id}@kurumi.app`;
+	const now = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+
+	const lines: string[] = [
+		'BEGIN:VEVENT',
+		`UID:${uid}`,
+		`DTSTAMP:${now}`,
+		`DTSTART;VALUE=DATE:${dateFormatted}`,
+		`DTEND;VALUE=DATE:${dateFormatted}`,
+		`SUMMARY:${escapeICalValue(title)}`,
+		'END:VEVENT'
+	];
+
 	return lines.join('\r\n');
 }
 
@@ -192,27 +205,29 @@ function escapeCSVValue(value: string): string {
  * Export people to CSV
  */
 export function peopleToCSV(people: PersonWithMetadata[]): string {
-	// Collect all unique metadata keys
-	const metadataKeys = new Set<string>();
+	// Collect all unique custom field keys
+	const customKeys = new Set<string>();
 	for (const person of people) {
-		if (person.metadata) {
-			for (const key of Object.keys(person.metadata)) {
-				if (key !== 'type') {
-					metadataKeys.add(key);
-				}
+		if (person.person?.customFields) {
+			for (const key of Object.keys(person.person.customFields)) {
+				customKeys.add(key);
 			}
 		}
 	}
 
-	const columns = ['name', 'mentions', ...Array.from(metadataKeys)];
+	const columns = ['name', 'mentions', 'email', 'phone', 'company', 'title', ...Array.from(customKeys)];
 	const data = people.map((person) => {
 		const row: Record<string, unknown> = {
 			name: person.name,
-			mentions: person.count
+			mentions: person.count,
+			email: person.person?.email ?? '',
+			phone: person.person?.phone ?? '',
+			company: person.person?.company ?? '',
+			title: person.person?.title ?? ''
 		};
-		if (person.metadata) {
-			for (const key of metadataKeys) {
-				row[key] = person.metadata[key] ?? '';
+		if (person.person?.customFields) {
+			for (const key of customKeys) {
+				row[key] = person.person.customFields[key] ?? '';
 			}
 		}
 		return row;
@@ -231,11 +246,12 @@ export function eventsToCSV(dates: DateWithEvents[]): string {
 		if (dateInfo.events.length > 0) {
 			for (const event of dateInfo.events) {
 				data.push({
-					date: dateInfo.date,
-					title: event.metadata?.title || event.note.title || '',
-					time: event.metadata?.time || '',
-					duration: event.metadata?.duration || '',
-					location: event.metadata?.location || '',
+					date: event.date,
+					title: event.title || '',
+					time: event.time || '',
+					duration: event.duration || '',
+					location: event.location || '',
+					attendees: event.attendees?.join(', ') || '',
 					notes: dateInfo.mentioningNotes.length
 				});
 			}
@@ -246,12 +262,13 @@ export function eventsToCSV(dates: DateWithEvents[]): string {
 				time: '',
 				duration: '',
 				location: '',
+				attendees: '',
 				notes: dateInfo.mentioningNotes.length
 			});
 		}
 	}
 
-	return toCSV(data, ['date', 'title', 'time', 'duration', 'location', 'notes']);
+	return toCSV(data, ['date', 'title', 'time', 'duration', 'location', 'attendees', 'notes']);
 }
 
 /**

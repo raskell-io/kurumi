@@ -6,11 +6,14 @@
 		getAllDatesWithEvents,
 		getNotesByTag,
 		getNotesByLink,
+		people as peopleStore,
+		events as eventsStore,
 		type Note
 	} from '$lib/db';
+	import { get } from 'svelte/store';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
-	import { Tag, User, Calendar, Link, ChevronRight, ExternalLink } from 'lucide-svelte';
+	import { Tag, User, Calendar, Link, ChevronRight, ChevronDown, ExternalLink, Globe } from 'lucide-svelte';
 	import PersonCard from '$lib/components/PersonCard.svelte';
 	import AgendaView from '$lib/components/AgendaView.svelte';
 	import ExportMenu from '$lib/components/ExportMenu.svelte';
@@ -24,11 +27,60 @@
 	let activeTab = $state<TabType>(initialTab);
 	let expandedItem = $state<string | null>(initialItem);
 
-	// Get all data with metadata
+	// Subscribe to stores to trigger reactivity
+	let peopleData = $state(get(peopleStore));
+	let eventsData = $state(get(eventsStore));
+	$effect(() => {
+		const unsubPeople = peopleStore.subscribe((p) => (peopleData = p));
+		const unsubEvents = eventsStore.subscribe((e) => (eventsData = e));
+		return () => {
+			unsubPeople();
+			unsubEvents();
+		};
+	});
+
+	// Get all data with metadata - depends on store subscriptions for reactivity
 	let allTags = $derived(getAllTags());
-	let allPeople = $derived(getAllPeopleWithMetadata());
-	let allDates = $derived(getAllDatesWithEvents());
+	let allPeople = $derived.by(() => {
+		void peopleData; // Dependency trigger
+		return getAllPeopleWithMetadata();
+	});
+	let allDates = $derived.by(() => {
+		void eventsData; // Dependency trigger
+		return getAllDatesWithEvents();
+	});
 	let allLinks = $derived(getAllLinks());
+
+	// Group links by domain for categorized display
+	let linksByDomain = $derived.by(() => {
+		const grouped = new Map<string, { url: string; domain: string; count: number }[]>();
+		for (const link of allLinks) {
+			const existing = grouped.get(link.domain) || [];
+			existing.push(link);
+			grouped.set(link.domain, existing);
+		}
+		// Sort domains by total link count
+		return Array.from(grouped.entries())
+			.map(([domain, links]) => ({
+				domain,
+				links,
+				totalCount: links.reduce((sum, l) => sum + l.count, 0)
+			}))
+			.sort((a, b) => b.totalCount - a.totalCount);
+	});
+
+	// Track expanded domains
+	let expandedDomains = $state<Set<string>>(new Set());
+
+	function toggleDomain(domain: string) {
+		const newSet = new Set(expandedDomains);
+		if (newSet.has(domain)) {
+			newSet.delete(domain);
+		} else {
+			newSet.add(domain);
+		}
+		expandedDomains = newSet;
+	}
 
 	// Get notes for expanded item (tags and links only)
 	let expandedNotes = $derived.by(() => {
@@ -207,45 +259,54 @@
 					<p>Add URLs in your notes to track external links</p>
 				</div>
 			{:else}
-				<ul class="items-list">
-					{#each allLinks as link (link.url)}
-						<li class="item" class:expanded={expandedItem === link.url}>
-							<button class="item-header" onclick={() => toggleExpand(link.url)}>
-								<div class="item-icon link-icon">
-									<Link class="h-4 w-4" />
-								</div>
-								<div class="link-info">
-									<span class="item-name">{link.domain}</span>
-									<span class="link-url">{link.url}</span>
-								</div>
-								<a
-									href={link.url}
-									target="_blank"
-									rel="noopener noreferrer"
-									class="external-link-btn"
-									onclick={(e) => e.stopPropagation()}
-									title="Open link"
-								>
-									<ExternalLink class="h-4 w-4" />
-								</a>
-								<span class="item-count">{link.count} {link.count === 1 ? 'note' : 'notes'}</span>
-								<ChevronRight class="chevron {expandedItem === link.url ? 'rotated' : ''}" />
+				<div class="links-by-domain">
+					{#each linksByDomain as domainGroup (domainGroup.domain)}
+						<div class="domain-group">
+							<button class="domain-header" onclick={() => toggleDomain(domainGroup.domain)}>
+								<Globe class="domain-icon" />
+								<span class="domain-name">{domainGroup.domain}</span>
+								<span class="domain-count">{domainGroup.links.length} {domainGroup.links.length === 1 ? 'link' : 'links'}</span>
+								<ChevronDown class="domain-chevron {expandedDomains.has(domainGroup.domain) ? 'rotated' : ''}" />
 							</button>
-							{#if expandedItem === link.url}
-								<ul class="notes-list">
-									{#each expandedNotes as note (note.id)}
-										<li>
-											<button class="note-item" onclick={() => openNote(note.id)}>
-												<span class="note-title">{note.title || 'Untitled'}</span>
-												<span class="note-preview">{getPreview(note)}</span>
+							{#if expandedDomains.has(domainGroup.domain)}
+								<ul class="domain-links">
+									{#each domainGroup.links as link (link.url)}
+										<li class="link-item" class:expanded={expandedItem === link.url}>
+											<button class="link-header" onclick={() => toggleExpand(link.url)}>
+												<Link class="link-icon-small" />
+												<span class="link-url-text">{link.url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}</span>
+												<a
+													href={link.url}
+													target="_blank"
+													rel="noopener noreferrer"
+													class="external-link-btn"
+													onclick={(e) => e.stopPropagation()}
+													title="Open link"
+												>
+													<ExternalLink class="h-3.5 w-3.5" />
+												</a>
+												<span class="link-note-count">{link.count}</span>
+												<ChevronRight class="link-chevron {expandedItem === link.url ? 'rotated' : ''}" />
 											</button>
+											{#if expandedItem === link.url}
+												<ul class="notes-list">
+													{#each expandedNotes as note (note.id)}
+														<li>
+															<button class="note-item" onclick={() => openNote(note.id)}>
+																<span class="note-title">{note.title || 'Untitled'}</span>
+																<span class="note-preview">{getPreview(note)}</span>
+															</button>
+														</li>
+													{/each}
+												</ul>
+											{/if}
 										</li>
 									{/each}
 								</ul>
 							{/if}
-						</li>
+						</div>
 					{/each}
-				</ul>
+				</div>
 			{/if}
 		{/if}
 	</div>
@@ -515,6 +576,145 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	/* Links grouped by domain */
+	.links-by-domain {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.domain-group {
+		border: 1px solid var(--color-border);
+		border-radius: 0.5rem;
+		overflow: hidden;
+	}
+
+	.domain-header {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		width: 100%;
+		padding: 0.75rem 1rem;
+		background: var(--color-bg);
+		border: none;
+		cursor: pointer;
+		text-align: left;
+		transition: background 0.1s;
+	}
+
+	.domain-header:hover {
+		background: var(--color-bg-secondary);
+	}
+
+	.domain-icon {
+		width: 1.25rem;
+		height: 1.25rem;
+		color: #a855f7;
+	}
+
+	.domain-name {
+		flex: 1;
+		font-weight: 600;
+		color: var(--color-text);
+	}
+
+	.domain-count {
+		font-size: 0.75rem;
+		color: var(--color-text-muted);
+		background: var(--color-bg-secondary);
+		padding: 0.25rem 0.5rem;
+		border-radius: 1rem;
+	}
+
+	.domain-chevron {
+		width: 1.25rem;
+		height: 1.25rem;
+		color: var(--color-text-muted);
+		transition: transform 0.15s ease;
+	}
+
+	.domain-chevron.rotated {
+		transform: rotate(180deg);
+	}
+
+	.domain-links {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		border-top: 1px solid var(--color-border);
+		background: var(--color-bg-secondary);
+	}
+
+	.link-item {
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.link-item:last-child {
+		border-bottom: none;
+	}
+
+	.link-header {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		width: 100%;
+		padding: 0.625rem 1rem;
+		background: transparent;
+		border: none;
+		cursor: pointer;
+		text-align: left;
+		transition: background 0.1s;
+	}
+
+	.link-header:hover {
+		background: var(--color-bg);
+	}
+
+	.link-icon-small {
+		width: 1rem;
+		height: 1rem;
+		color: var(--color-text-muted);
+		flex-shrink: 0;
+	}
+
+	.link-url-text {
+		flex: 1;
+		font-size: 0.875rem;
+		color: var(--color-text);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.link-note-count {
+		font-size: 0.75rem;
+		color: var(--color-text-muted);
+		background: var(--color-bg);
+		padding: 0.125rem 0.375rem;
+		border-radius: 0.25rem;
+		min-width: 1.25rem;
+		text-align: center;
+	}
+
+	.link-chevron {
+		width: 1rem;
+		height: 1rem;
+		color: var(--color-text-muted);
+		transition: transform 0.15s ease;
+	}
+
+	.link-chevron.rotated {
+		transform: rotate(90deg);
+	}
+
+	.link-item .notes-list {
+		padding-left: 1.5rem;
+	}
+
+	.link-item .note-item {
+		padding-left: 2rem;
 	}
 
 	@media (max-width: 640px) {

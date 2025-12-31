@@ -4,7 +4,7 @@
 	import { search } from '$lib/search';
 	import { currentVault } from '$lib/db';
 	import { getIconById } from '$lib/icons/vault-icons';
-	import { Search, FileText, Sun, Moon, Monitor, Pencil, ArrowLeft } from 'lucide-svelte';
+	import { Search, FileText, Sun, Moon, Monitor, Pencil, PenSquare } from 'lucide-svelte';
 
 	interface Props {
 		noteId?: string;
@@ -195,7 +195,7 @@
 
 			<!-- Back to app -->
 			<a href="/" class="nav-btn" title="Back to editor">
-				<ArrowLeft class="h-5 w-5" />
+				<PenSquare class="h-5 w-5" />
 			</a>
 		</div>
 	</div>

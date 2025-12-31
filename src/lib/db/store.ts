@@ -7,13 +7,16 @@ import {
 	createFolder,
 	createVault,
 	createDefaultVault,
+	createPerson,
+	createEvent,
 	DEFAULT_VAULT_ID,
 	type KurumiDocument,
 	type Note,
 	type Folder,
-	type Vault
+	type Vault,
+	type Person,
+	type Event
 } from './types';
-import { parseFrontmatter, type Frontmatter } from '../utils/frontmatter';
 
 const STORAGE_KEY = 'kurumi-doc';
 
@@ -71,6 +74,28 @@ export const folders: Readable<Folder[]> = derived(
 		return Object.values($doc.folders)
 			.filter((folder) => folder.vaultId === $vaultId)
 			.sort((a, b) => a.name.localeCompare(b.name));
+	}
+);
+
+// Derived store for people (sorted by name) - filtered by current vault
+export const people: Readable<Person[]> = derived(
+	[docStore, currentVaultId],
+	([$doc, $vaultId]) => {
+		if (!$doc || !$doc.people) return [];
+		return Object.values($doc.people)
+			.filter((person) => person.vaultId === $vaultId)
+			.sort((a, b) => a.name.localeCompare(b.name));
+	}
+);
+
+// Derived store for events (sorted by date) - filtered by current vault
+export const events: Readable<Event[]> = derived(
+	[docStore, currentVaultId],
+	([$doc, $vaultId]) => {
+		if (!$doc || !$doc.events) return [];
+		return Object.values($doc.events)
+			.filter((event) => event.vaultId === $vaultId)
+			.sort((a, b) => a.date.localeCompare(b.date));
 	}
 );
 
@@ -136,6 +161,16 @@ export async function initDB(): Promise<void> {
 
 					// Update version
 					d.version = 2;
+				});
+				await saveDoc();
+			}
+
+			// Migrate: add people and events collections (version 2 -> version 3)
+			if (!doc.people || !doc.events) {
+				doc = Automerge.change(doc, (d) => {
+					if (!d.people) d.people = {};
+					if (!d.events) d.events = {};
+					d.version = 3;
 				});
 				await saveDoc();
 			}
@@ -487,6 +522,125 @@ export function getFolderPath(folderId: string | null): Folder[] {
 	return path;
 }
 
+// ============ People CRUD Operations ============
+
+export function addPerson(
+	name: string,
+	fields?: Partial<Omit<Person, 'id' | 'name' | 'vaultId' | 'created' | 'modified'>>
+): Person {
+	if (!doc) {
+		console.error('Cannot add person: database not initialized');
+		doc = Automerge.from<KurumiDocument>(createEmptyDocument());
+		docStore.set(doc);
+	}
+	const vaultId = getCurrentVaultId();
+	const person = createPerson(name, vaultId, fields);
+	updateDoc((d) => {
+		if (!d.people) d.people = {};
+		d.people[person.id] = person;
+	});
+	return person;
+}
+
+export function getPerson(id: string): Person | undefined {
+	return doc?.people?.[id];
+}
+
+export function getPersonByName(name: string): Person | undefined {
+	if (!doc?.people) return undefined;
+	const vaultId = getCurrentVaultId();
+	return Object.values(doc.people).find((p) => p.name === name && p.vaultId === vaultId);
+}
+
+export function updatePerson(
+	id: string,
+	updates: Partial<Omit<Person, 'id' | 'created' | 'vaultId'>>
+): void {
+	updateDoc((d) => {
+		const person = d.people?.[id];
+		if (person) {
+			if (updates.name !== undefined) person.name = updates.name;
+			if (updates.email !== undefined) person.email = updates.email;
+			if (updates.phone !== undefined) person.phone = updates.phone;
+			if (updates.company !== undefined) person.company = updates.company;
+			if (updates.title !== undefined) person.title = updates.title;
+			if (updates.customFields !== undefined) person.customFields = updates.customFields;
+			person.modified = Date.now();
+		}
+	});
+}
+
+export function deletePerson(id: string): void {
+	updateDoc((d) => {
+		if (d.people) {
+			delete d.people[id];
+		}
+	});
+}
+
+// ============ Events CRUD Operations ============
+
+export function addEvent(
+	date: string,
+	fields?: Partial<Omit<Event, 'id' | 'date' | 'vaultId' | 'created' | 'modified'>>
+): Event {
+	if (!doc) {
+		console.error('Cannot add event: database not initialized');
+		doc = Automerge.from<KurumiDocument>(createEmptyDocument());
+		docStore.set(doc);
+	}
+	const vaultId = getCurrentVaultId();
+	const event = createEvent(date, vaultId, fields);
+	updateDoc((d) => {
+		if (!d.events) d.events = {};
+		d.events[event.id] = event;
+	});
+	return event;
+}
+
+export function getEvent(id: string): Event | undefined {
+	return doc?.events?.[id];
+}
+
+export function getEventByDate(date: string): Event | undefined {
+	if (!doc?.events) return undefined;
+	const vaultId = getCurrentVaultId();
+	return Object.values(doc.events).find((e) => e.date === date && e.vaultId === vaultId);
+}
+
+export function getEventsByDate(date: string): Event[] {
+	if (!doc?.events) return [];
+	const vaultId = getCurrentVaultId();
+	return Object.values(doc.events).filter((e) => e.date === date && e.vaultId === vaultId);
+}
+
+export function updateEvent(
+	id: string,
+	updates: Partial<Omit<Event, 'id' | 'created' | 'vaultId'>>
+): void {
+	updateDoc((d) => {
+		const event = d.events?.[id];
+		if (event) {
+			if (updates.date !== undefined) event.date = updates.date;
+			if (updates.title !== undefined) event.title = updates.title;
+			if (updates.time !== undefined) event.time = updates.time;
+			if (updates.duration !== undefined) event.duration = updates.duration;
+			if (updates.location !== undefined) event.location = updates.location;
+			if (updates.attendees !== undefined) event.attendees = updates.attendees;
+			if (updates.customFields !== undefined) event.customFields = updates.customFields;
+			event.modified = Date.now();
+		}
+	});
+}
+
+export function deleteEvent(id: string): void {
+	updateDoc((d) => {
+		if (d.events) {
+			delete d.events[id];
+		}
+	});
+}
+
 // ============ Sync Operations ============
 
 // Get the raw Automerge document for sync
@@ -508,23 +662,27 @@ export function exportNotesJSON(): string {
 	return JSON.stringify(Object.values(doc.notes), null, 2);
 }
 
-// Full export including vaults, folders, and notes
+// Full export including vaults, folders, notes, people, and events
 export interface KurumiExport {
 	version: number;
 	exportedAt: string;
 	vaults: Vault[];
 	folders: Folder[];
 	notes: Note[];
+	people: Person[];
+	events: Event[];
 }
 
 export function exportFullJSON(): string {
-	if (!doc) return JSON.stringify({ version: 2, exportedAt: new Date().toISOString(), vaults: [], folders: [], notes: [] });
+	if (!doc) return JSON.stringify({ version: 3, exportedAt: new Date().toISOString(), vaults: [], folders: [], notes: [], people: [], events: [] });
 	const exportData: KurumiExport = {
-		version: doc.version || 2,
+		version: doc.version || 3,
 		exportedAt: new Date().toISOString(),
 		vaults: Object.values(doc.vaults || {}),
 		folders: Object.values(doc.folders || {}),
-		notes: Object.values(doc.notes || {})
+		notes: Object.values(doc.notes || {}),
+		people: Object.values(doc.people || {}),
+		events: Object.values(doc.events || {})
 	};
 	return JSON.stringify(exportData, null, 2);
 }
@@ -928,128 +1086,65 @@ export function findNoteByTitle(title: string): Note | undefined {
 	);
 }
 
-// ============ Metadata Types ============
-
-export interface PersonMetadata extends Frontmatter {
-	type: 'person';
-	email?: string;
-	phone?: string;
-	company?: string;
-	title?: string;
-	[key: string]: unknown;
-}
-
-export interface EventMetadata extends Frontmatter {
-	type: 'event';
-	title?: string;
-	time?: string;
-	duration?: string;
-	location?: string;
-	attendees?: string[];
-	[key: string]: unknown;
-}
+// ============ Reference Types ============
 
 export interface PersonWithMetadata {
 	name: string;
 	count: number;
-	definitionNote: Note | null;
-	metadata: PersonMetadata | null;
+	person: Person | null; // The Person object if exists
 	mentioningNotes: Note[];
 }
 
 export interface DateWithEvents {
 	date: string;
-	events: {
-		note: Note;
-		metadata: EventMetadata | null;
-	}[];
+	events: Event[]; // Event objects for this date
 	mentioningNotes: Note[];
 }
 
-// ============ Metadata Query Functions ============
-
 /**
- * Find a definition note for a person (note titled with their name)
- */
-export function getPersonDefinition(name: string): { note: Note; metadata: PersonMetadata } | null {
-	const note = findNoteByTitle(name);
-	if (!note) return null;
-
-	const { frontmatter } = parseFrontmatter(note.content);
-	if (frontmatter.type !== 'person') {
-		// Check if note is implicitly about a person (title matches @mention pattern)
-		return {
-			note,
-			metadata: { type: 'person', ...frontmatter } as PersonMetadata
-		};
-	}
-
-	return {
-		note,
-		metadata: frontmatter as PersonMetadata
-	};
-}
-
-/**
- * Find event definition notes for a date
- */
-export function getDateEvents(date: string): { note: Note; metadata: EventMetadata }[] {
-	if (!doc) return [];
-	const vaultId = getCurrentVaultId();
-	const results: { note: Note; metadata: EventMetadata }[] = [];
-
-	for (const note of Object.values(doc.notes)) {
-		if (note.vaultId !== vaultId) continue;
-
-		const { frontmatter } = parseFrontmatter(note.content);
-
-		// Check if note has the date in content and is typed as event
-		if (frontmatter.type === 'event' && note.content.includes(`//${date}`)) {
-			results.push({
-				note,
-				metadata: frontmatter as EventMetadata
-			});
-		}
-	}
-
-	return results;
-}
-
-/**
- * Get all people with their metadata merged from definition notes
+ * Get all people with their metadata from Person objects
  */
 export function getAllPeopleWithMetadata(): PersonWithMetadata[] {
 	if (!doc) return [];
 	const vaultId = getCurrentVaultId();
 	const peopleMap = new Map<string, PersonWithMetadata>();
 
-	// First pass: collect all mentions
+	// First pass: collect all mentions from notes
 	for (const note of Object.values(doc.notes)) {
 		if (note.vaultId !== vaultId) continue;
-		const people = extractPeople(note.content);
+		const peopleNames = extractPeople(note.content);
 
-		for (const name of people) {
+		for (const name of peopleNames) {
 			if (!peopleMap.has(name)) {
 				peopleMap.set(name, {
 					name,
 					count: 0,
-					definitionNote: null,
-					metadata: null,
+					person: null,
 					mentioningNotes: []
 				});
 			}
-			const person = peopleMap.get(name)!;
-			person.count++;
-			person.mentioningNotes.push(note);
+			const personData = peopleMap.get(name)!;
+			personData.count++;
+			personData.mentioningNotes.push(note);
 		}
 	}
 
-	// Second pass: find definition notes
-	for (const [name, person] of peopleMap) {
-		const definition = getPersonDefinition(name);
-		if (definition) {
-			person.definitionNote = definition.note;
-			person.metadata = definition.metadata;
+	// Second pass: link Person objects
+	if (doc.people) {
+		for (const personObj of Object.values(doc.people)) {
+			if (personObj.vaultId !== vaultId) continue;
+
+			if (peopleMap.has(personObj.name)) {
+				peopleMap.get(personObj.name)!.person = personObj;
+			} else {
+				// Person exists but has no mentions
+				peopleMap.set(personObj.name, {
+					name: personObj.name,
+					count: 0,
+					person: personObj,
+					mentioningNotes: []
+				});
+			}
 		}
 	}
 
@@ -1057,14 +1152,14 @@ export function getAllPeopleWithMetadata(): PersonWithMetadata[] {
 }
 
 /**
- * Get all dates with their events and metadata
+ * Get all dates with their events
  */
 export function getAllDatesWithEvents(): DateWithEvents[] {
 	if (!doc) return [];
 	const vaultId = getCurrentVaultId();
 	const datesMap = new Map<string, DateWithEvents>();
 
-	// First pass: collect all date mentions
+	// First pass: collect all date mentions from notes
 	for (const note of Object.values(doc.notes)) {
 		if (note.vaultId !== vaultId) continue;
 		const dates = extractDates(note.content);
@@ -1079,13 +1174,22 @@ export function getAllDatesWithEvents(): DateWithEvents[] {
 			}
 			const dateInfo = datesMap.get(date)!;
 			dateInfo.mentioningNotes.push(note);
+		}
+	}
 
-			// Check if this note is an event definition
-			const { frontmatter } = parseFrontmatter(note.content);
-			if (frontmatter.type === 'event') {
-				dateInfo.events.push({
-					note,
-					metadata: frontmatter as EventMetadata
+	// Second pass: link Event objects
+	if (doc.events) {
+		for (const event of Object.values(doc.events)) {
+			if (event.vaultId !== vaultId) continue;
+
+			if (datesMap.has(event.date)) {
+				datesMap.get(event.date)!.events.push(event);
+			} else {
+				// Event exists but date has no mentions
+				datesMap.set(event.date, {
+					date: event.date,
+					events: [event],
+					mentioningNotes: []
 				});
 			}
 		}

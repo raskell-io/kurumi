@@ -8,10 +8,11 @@
 		FileText,
 		Plus,
 		ChevronRight,
-		Download
+		Pencil
 	} from 'lucide-svelte';
 	import type { DateWithEvents } from '$lib/db/store';
-	import { addNote } from '$lib/db';
+	import { addEvent } from '$lib/db';
+	import type { Event } from '$lib/db/types';
 
 	interface Props {
 		dateInfo: DateWithEvents;
@@ -21,6 +22,12 @@
 	}
 
 	let { dateInfo, expanded, onToggle, showDate = true }: Props = $props();
+
+	// Editing state
+	let editingEventId = $state<string | null>(null);
+	let editTitle = $state('');
+	let editTime = $state('');
+	let editLocation = $state('');
 
 	function formatDate(dateStr: string): string {
 		const date = new Date(dateStr + 'T00:00:00');
@@ -57,28 +64,38 @@
 			.slice(0, 100);
 	}
 
-	async function createEvent() {
-		const content = [
-			'---',
-			'type: event',
-			'title: ',
-			'time: ',
-			'location: ',
-			'---',
-			'',
-			`//${dateInfo.date}`,
-			'',
-			''
-		].join('\n');
-		const note = addNote(`Event ${formatDate(dateInfo.date)}`, content, null);
-		goto(`/note/${note.id}`);
+	function createEventHandler() {
+		// Create a new Event object - reactivity is handled by store subscription in parent
+		addEvent(dateInfo.date, { title: 'New Event' });
 	}
 
-	// Get first event metadata for display
+	function startEditing(event: Event) {
+		editingEventId = event.id;
+		editTitle = event.title || '';
+		editTime = event.time || '';
+		editLocation = event.location || '';
+	}
+
+	function saveEdits(eventId: string) {
+		import('$lib/db').then(({ updateEvent }) => {
+			updateEvent(eventId, {
+				title: editTitle || undefined,
+				time: editTime || undefined,
+				location: editLocation || undefined
+			});
+		});
+		editingEventId = null;
+	}
+
+	function cancelEditing() {
+		editingEventId = null;
+	}
+
+	// Get first event for display
 	let primaryEvent = $derived(dateInfo.events[0] || null);
-	let eventTitle = $derived(primaryEvent?.metadata?.title || '');
-	let eventTime = $derived(primaryEvent?.metadata?.time || '');
-	let eventLocation = $derived(primaryEvent?.metadata?.location || '');
+	let eventTitle = $derived(primaryEvent?.title || '');
+	let eventTime = $derived(primaryEvent?.time || '');
+	let eventLocation = $derived(primaryEvent?.location || '');
 </script>
 
 <li class="event-card" class:expanded>
@@ -122,46 +139,79 @@
 			{#if dateInfo.events.length > 0}
 				<div class="events-section">
 					<h4>Events</h4>
-					{#each dateInfo.events as event (event.note.id)}
+					{#each dateInfo.events as event (event.id)}
 						<div class="event-detail">
-							<div class="event-header">
-								<span class="event-detail-title"
-									>{event.metadata?.title || event.note.title || 'Event'}</span
-								>
-								<button class="edit-btn" onclick={() => openNote(event.note.id)}>
-									<FileText class="h-3.5 w-3.5" />
-									Edit
-								</button>
-							</div>
-							{#if event.metadata?.time}
-								<div class="event-meta">
-									<Clock class="h-3.5 w-3.5" />
-									<span
-										>{event.metadata.time}{event.metadata.duration
-											? ` (${event.metadata.duration})`
-											: ''}</span
-									>
+							{#if editingEventId === event.id}
+								<!-- Edit Mode -->
+								<div class="edit-form">
+									<input
+										type="text"
+										placeholder="Event title"
+										bind:value={editTitle}
+										class="edit-input"
+									/>
+									<div class="edit-row">
+										<Clock class="field-icon" />
+										<input
+											type="text"
+											placeholder="Time (e.g., 14:00)"
+											bind:value={editTime}
+											class="edit-input"
+										/>
+									</div>
+									<div class="edit-row">
+										<MapPin class="field-icon" />
+										<input
+											type="text"
+											placeholder="Location"
+											bind:value={editLocation}
+											class="edit-input"
+										/>
+									</div>
+									<div class="edit-actions">
+										<button class="save-btn" onclick={() => saveEdits(event.id)}>Save</button>
+										<button class="cancel-btn" onclick={cancelEditing}>Cancel</button>
+									</div>
 								</div>
-							{/if}
-							{#if event.metadata?.location}
-								<div class="event-meta">
-									<MapPin class="h-3.5 w-3.5" />
-									<span>{event.metadata.location}</span>
+							{:else}
+								<!-- View Mode -->
+								<div class="event-header">
+									<span class="event-detail-title">{event.title || 'Untitled Event'}</span>
+									<button class="edit-btn" onclick={() => startEditing(event)}>
+										<Pencil class="h-3.5 w-3.5" />
+										Edit
+									</button>
 								</div>
-							{/if}
-							{#if event.metadata?.attendees && Array.isArray(event.metadata.attendees)}
-								<div class="event-meta">
-									<Users class="h-3.5 w-3.5" />
-									<span>{event.metadata.attendees.join(', ')}</span>
-								</div>
+								{#if event.time}
+									<div class="event-meta">
+										<Clock class="h-3.5 w-3.5" />
+										<span
+											>{event.time}{event.duration
+												? ` (${event.duration})`
+												: ''}</span
+										>
+									</div>
+								{/if}
+								{#if event.location}
+									<div class="event-meta">
+										<MapPin class="h-3.5 w-3.5" />
+										<span>{event.location}</span>
+									</div>
+								{/if}
+								{#if event.attendees && event.attendees.length > 0}
+									<div class="event-meta">
+										<Users class="h-3.5 w-3.5" />
+										<span>{event.attendees.join(', ')}</span>
+									</div>
+								{/if}
 							{/if}
 						</div>
 					{/each}
 				</div>
 			{:else}
 				<div class="no-events">
-					<p>No event details for this date</p>
-					<button class="create-event-btn" onclick={createEvent}>
+					<p>No events for this date</p>
+					<button class="create-event-btn" onclick={createEventHandler}>
 						<Plus class="h-4 w-4" />
 						Create Event
 					</button>
@@ -169,22 +219,24 @@
 			{/if}
 
 			<!-- Notes Section -->
-			<div class="notes-section">
-				<h4>Related Notes</h4>
-				<ul class="notes-list">
-					{#each dateInfo.mentioningNotes as note (note.id)}
-						<li>
-							<button class="note-item" onclick={() => openNote(note.id)}>
-								<FileText class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
-								<div class="note-info">
-									<span class="note-title">{note.title || 'Untitled'}</span>
-									<span class="note-preview">{getPreview(note.content)}</span>
-								</div>
-							</button>
-						</li>
-					{/each}
-				</ul>
-			</div>
+			{#if dateInfo.mentioningNotes.length > 0}
+				<div class="notes-section">
+					<h4>Related Notes</h4>
+					<ul class="notes-list">
+						{#each dateInfo.mentioningNotes as note (note.id)}
+							<li>
+								<button class="note-item" onclick={() => openNote(note.id)}>
+									<FileText class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
+									<div class="note-info">
+										<span class="note-title">{note.title || 'Untitled'}</span>
+										<span class="note-preview">{getPreview(note.content)}</span>
+									</div>
+								</button>
+							</li>
+						{/each}
+					</ul>
+				</div>
+			{/if}
 		</div>
 	{/if}
 </li>
@@ -387,6 +439,77 @@
 
 	.create-event-btn:hover {
 		background: var(--color-accent-hover);
+	}
+
+	/* Edit form styles */
+	.edit-form {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.edit-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.field-icon {
+		width: 1rem;
+		height: 1rem;
+		color: var(--color-text-muted);
+		flex-shrink: 0;
+	}
+
+	.edit-input {
+		flex: 1;
+		padding: 0.5rem;
+		font-size: 0.875rem;
+		color: var(--color-text);
+		background: var(--color-bg-secondary);
+		border: 1px solid var(--color-border);
+		border-radius: 0.375rem;
+		outline: none;
+	}
+
+	.edit-input:focus {
+		border-color: var(--color-accent);
+	}
+
+	.edit-actions {
+		display: flex;
+		gap: 0.5rem;
+		margin-top: 0.5rem;
+	}
+
+	.save-btn {
+		padding: 0.5rem 1rem;
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: white;
+		background: var(--color-accent);
+		border: none;
+		border-radius: 0.375rem;
+		cursor: pointer;
+	}
+
+	.save-btn:hover {
+		background: var(--color-accent-hover);
+	}
+
+	.cancel-btn {
+		padding: 0.5rem 1rem;
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: var(--color-text);
+		background: transparent;
+		border: 1px solid var(--color-border);
+		border-radius: 0.375rem;
+		cursor: pointer;
+	}
+
+	.cancel-btn:hover {
+		border-color: var(--color-text-muted);
 	}
 
 	.notes-section {
