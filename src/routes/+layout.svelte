@@ -4,7 +4,7 @@
 	import { onMount } from 'svelte';
 	import { initDB, notes, addNote, getAllTags, extractTags, folders } from '$lib/db';
 	import { initSearch, rebuildIndex } from '$lib/search';
-	import { setupVisibilitySync, teardownVisibilitySync, syncState, isSyncConfigured } from '$lib/sync';
+	import { setupVisibilitySync, teardownVisibilitySync, syncState, isSyncConfigured, sync } from '$lib/sync';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
@@ -445,9 +445,14 @@
 				{/if}
 			</nav>
 
-			<!-- Sync Status -->
+			<!-- Sync Status (clickable to force sync) -->
 			{#if showSyncStatus}
-				<div class="flex items-center gap-2 border-t border-[var(--color-border)] px-3 py-2">
+				<button
+					onclick={() => sync()}
+					disabled={$syncState.status === 'syncing'}
+					class="flex w-full items-center gap-2 border-t border-[var(--color-border)] px-3 py-2 text-left transition-colors hover:bg-[var(--color-border)] disabled:opacity-70"
+					title="Click to sync"
+				>
 					{#if $syncState.status === 'syncing'}
 						<RefreshCw class="h-4 w-4 animate-spin text-[var(--color-accent)]" />
 						<span class="text-xs text-[var(--color-text-muted)]">Syncing...</span>
@@ -461,7 +466,7 @@
 						<Cloud class="h-4 w-4 text-[var(--color-text-muted)]" />
 						<span class="text-xs text-[var(--color-text-muted)]">Sync ready</span>
 					{/if}
-				</div>
+				</button>
 			{/if}
 
 			<!-- Footer -->
