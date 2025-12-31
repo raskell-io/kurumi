@@ -63,6 +63,8 @@
 		min-height: 100dvh;
 		background: var(--color-bg);
 		gap: 1rem;
+		max-width: 100vw;
+		overflow-x: hidden;
 	}
 
 	.spinner {
@@ -88,5 +90,7 @@
 	.read-layout {
 		min-height: 100dvh;
 		background: var(--color-bg);
+		max-width: 100vw;
+		overflow-x: hidden;
 	}
 </style>

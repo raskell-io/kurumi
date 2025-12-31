@@ -80,6 +80,9 @@
 	.markdown-content {
 		line-height: 1.8;
 		font-size: 1.0625rem;
+		overflow-wrap: break-word;
+		word-wrap: break-word;
+		max-width: 100%;
 	}
 
 	/* Headings */
@@ -164,13 +167,13 @@
 		font-style: italic;
 	}
 
-	/* Date references */
+	/* Date references - Catppuccin Blue */
 	.markdown-content :global(.date-reference) {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25em;
-		background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(59, 130, 246, 0.25));
-		color: #3b82f6;
+		background: linear-gradient(135deg, rgba(137, 180, 250, 0.15), rgba(137, 180, 250, 0.25));
+		color: #89b4fa;
 		padding: 0.1em 0.4em;
 		border: none;
 		border-radius: 4px;
@@ -182,16 +185,16 @@
 	}
 
 	.markdown-content :global(.date-reference:hover) {
-		background: linear-gradient(135deg, rgba(59, 130, 246, 0.25), rgba(59, 130, 246, 0.35));
+		background: linear-gradient(135deg, rgba(137, 180, 250, 0.25), rgba(137, 180, 250, 0.35));
 	}
 
-	/* Person references */
+	/* Person references - Catppuccin Green */
 	.markdown-content :global(.person-reference) {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25em;
-		background: linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(34, 197, 94, 0.25));
-		color: #22c55e;
+		background: linear-gradient(135deg, rgba(166, 227, 161, 0.15), rgba(166, 227, 161, 0.25));
+		color: #a6e3a1;
 		padding: 0.1em 0.4em;
 		border: none;
 		border-radius: 1em;
@@ -203,16 +206,16 @@
 	}
 
 	.markdown-content :global(.person-reference:hover) {
-		background: linear-gradient(135deg, rgba(34, 197, 94, 0.25), rgba(34, 197, 94, 0.35));
+		background: linear-gradient(135deg, rgba(166, 227, 161, 0.25), rgba(166, 227, 161, 0.35));
 	}
 
-	/* Tag references */
+	/* Tag references - Catppuccin Peach */
 	.markdown-content :global(.tag-reference) {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25em;
-		background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(245, 158, 11, 0.25));
-		color: #f59e0b;
+		background: linear-gradient(135deg, rgba(250, 179, 135, 0.15), rgba(250, 179, 135, 0.25));
+		color: #fab387;
 		padding: 0.1em 0.4em;
 		border: none;
 		border-radius: 4px;
@@ -224,16 +227,16 @@
 	}
 
 	.markdown-content :global(.tag-reference:hover) {
-		background: linear-gradient(135deg, rgba(245, 158, 11, 0.25), rgba(245, 158, 11, 0.35));
+		background: linear-gradient(135deg, rgba(250, 179, 135, 0.25), rgba(250, 179, 135, 0.35));
 	}
 
-	/* URL references */
+	/* URL references - Catppuccin Mauve */
 	.markdown-content :global(.url-reference) {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25em;
-		background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(139, 92, 246, 0.25));
-		color: #8b5cf6;
+		background: linear-gradient(135deg, rgba(203, 166, 247, 0.15), rgba(203, 166, 247, 0.25));
+		color: #cba6f7;
 		padding: 0.1em 0.4em;
 		border-radius: 4px;
 		font-weight: 500;
@@ -242,7 +245,7 @@
 	}
 
 	.markdown-content :global(.url-reference:hover) {
-		background: linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(139, 92, 246, 0.35));
+		background: linear-gradient(135deg, rgba(203, 166, 247, 0.25), rgba(203, 166, 247, 0.35));
 		text-decoration: none;
 	}
 
@@ -260,7 +263,9 @@
 		padding: 1em;
 		border-radius: 8px;
 		overflow-x: auto;
+		-webkit-overflow-scrolling: touch;
 		margin: 1.5em 0;
+		max-width: 100%;
 	}
 
 	.markdown-content :global(pre code) {
@@ -314,11 +319,14 @@
 		accent-color: var(--color-accent);
 	}
 
-	/* Tables */
+	/* Tables - wrap in scrollable container on mobile */
 	.markdown-content :global(table) {
 		border-collapse: collapse;
 		width: 100%;
 		margin: 1.5em 0;
+		display: block;
+		overflow-x: auto;
+		-webkit-overflow-scrolling: touch;
 	}
 
 	.markdown-content :global(th),
@@ -326,6 +334,7 @@
 		border: 1px solid var(--color-border);
 		padding: 0.5em 1em;
 		text-align: left;
+		white-space: nowrap;
 	}
 
 	.markdown-content :global(th) {

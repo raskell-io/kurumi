@@ -318,8 +318,8 @@
 		align-items: center;
 		gap: 0.375rem;
 		padding: 0.375rem 0.75rem;
-		background: rgba(245, 158, 11, 0.15);
-		color: #f59e0b;
+		background: rgba(250, 179, 135, 0.15);
+		color: #fab387;
 		border-radius: 1rem;
 		font-size: 0.875rem;
 		text-decoration: none;
@@ -327,7 +327,7 @@
 	}
 
 	.tag-pill:hover {
-		background: rgba(245, 158, 11, 0.25);
+		background: rgba(250, 179, 135, 0.25);
 	}
 
 	.tag-count {

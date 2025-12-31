@@ -251,16 +251,16 @@
 	}
 
 	.meta-tag {
-		color: #f59e0b;
+		color: #fab387;
 		text-decoration: none;
 		padding: 0.25rem 0.5rem;
-		background: rgba(245, 158, 11, 0.15);
+		background: rgba(250, 179, 135, 0.15);
 		border-radius: 0.25rem;
 		transition: all 0.15s;
 	}
 
 	.meta-tag:hover {
-		background: rgba(245, 158, 11, 0.25);
+		background: rgba(250, 179, 135, 0.25);
 	}
 
 	/* Content */
