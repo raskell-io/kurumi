@@ -13,6 +13,7 @@ import {
 	type Folder,
 	type Vault
 } from './types';
+import { parseFrontmatter, type Frontmatter } from '../utils/frontmatter';
 
 const STORAGE_KEY = 'kurumi-doc';
 
@@ -925,4 +926,237 @@ export function findNoteByTitle(title: string): Note | undefined {
 	return Object.values(doc.notes).find(
 		(note) => note.vaultId === vaultId && note.title.toLowerCase() === lowerTitle
 	);
+}
+
+// ============ Metadata Types ============
+
+export interface PersonMetadata extends Frontmatter {
+	type: 'person';
+	email?: string;
+	phone?: string;
+	company?: string;
+	title?: string;
+	[key: string]: unknown;
+}
+
+export interface EventMetadata extends Frontmatter {
+	type: 'event';
+	title?: string;
+	time?: string;
+	duration?: string;
+	location?: string;
+	attendees?: string[];
+	[key: string]: unknown;
+}
+
+export interface PersonWithMetadata {
+	name: string;
+	count: number;
+	definitionNote: Note | null;
+	metadata: PersonMetadata | null;
+	mentioningNotes: Note[];
+}
+
+export interface DateWithEvents {
+	date: string;
+	events: {
+		note: Note;
+		metadata: EventMetadata | null;
+	}[];
+	mentioningNotes: Note[];
+}
+
+// ============ Metadata Query Functions ============
+
+/**
+ * Find a definition note for a person (note titled with their name)
+ */
+export function getPersonDefinition(name: string): { note: Note; metadata: PersonMetadata } | null {
+	const note = findNoteByTitle(name);
+	if (!note) return null;
+
+	const { frontmatter } = parseFrontmatter(note.content);
+	if (frontmatter.type !== 'person') {
+		// Check if note is implicitly about a person (title matches @mention pattern)
+		return {
+			note,
+			metadata: { type: 'person', ...frontmatter } as PersonMetadata
+		};
+	}
+
+	return {
+		note,
+		metadata: frontmatter as PersonMetadata
+	};
+}
+
+/**
+ * Find event definition notes for a date
+ */
+export function getDateEvents(date: string): { note: Note; metadata: EventMetadata }[] {
+	if (!doc) return [];
+	const vaultId = getCurrentVaultId();
+	const results: { note: Note; metadata: EventMetadata }[] = [];
+
+	for (const note of Object.values(doc.notes)) {
+		if (note.vaultId !== vaultId) continue;
+
+		const { frontmatter } = parseFrontmatter(note.content);
+
+		// Check if note has the date in content and is typed as event
+		if (frontmatter.type === 'event' && note.content.includes(`//${date}`)) {
+			results.push({
+				note,
+				metadata: frontmatter as EventMetadata
+			});
+		}
+	}
+
+	return results;
+}
+
+/**
+ * Get all people with their metadata merged from definition notes
+ */
+export function getAllPeopleWithMetadata(): PersonWithMetadata[] {
+	if (!doc) return [];
+	const vaultId = getCurrentVaultId();
+	const peopleMap = new Map<string, PersonWithMetadata>();
+
+	// First pass: collect all mentions
+	for (const note of Object.values(doc.notes)) {
+		if (note.vaultId !== vaultId) continue;
+		const people = extractPeople(note.content);
+
+		for (const name of people) {
+			if (!peopleMap.has(name)) {
+				peopleMap.set(name, {
+					name,
+					count: 0,
+					definitionNote: null,
+					metadata: null,
+					mentioningNotes: []
+				});
+			}
+			const person = peopleMap.get(name)!;
+			person.count++;
+			person.mentioningNotes.push(note);
+		}
+	}
+
+	// Second pass: find definition notes
+	for (const [name, person] of peopleMap) {
+		const definition = getPersonDefinition(name);
+		if (definition) {
+			person.definitionNote = definition.note;
+			person.metadata = definition.metadata;
+		}
+	}
+
+	return Array.from(peopleMap.values()).sort((a, b) => b.count - a.count);
+}
+
+/**
+ * Get all dates with their events and metadata
+ */
+export function getAllDatesWithEvents(): DateWithEvents[] {
+	if (!doc) return [];
+	const vaultId = getCurrentVaultId();
+	const datesMap = new Map<string, DateWithEvents>();
+
+	// First pass: collect all date mentions
+	for (const note of Object.values(doc.notes)) {
+		if (note.vaultId !== vaultId) continue;
+		const dates = extractDates(note.content);
+
+		for (const date of dates) {
+			if (!datesMap.has(date)) {
+				datesMap.set(date, {
+					date,
+					events: [],
+					mentioningNotes: []
+				});
+			}
+			const dateInfo = datesMap.get(date)!;
+			dateInfo.mentioningNotes.push(note);
+
+			// Check if this note is an event definition
+			const { frontmatter } = parseFrontmatter(note.content);
+			if (frontmatter.type === 'event') {
+				dateInfo.events.push({
+					note,
+					metadata: frontmatter as EventMetadata
+				});
+			}
+		}
+	}
+
+	return Array.from(datesMap.values()).sort((a, b) => b.date.localeCompare(a.date));
+}
+
+/**
+ * Group dates by relative time periods for agenda view
+ */
+export function groupDatesByPeriod(dates: DateWithEvents[]): {
+	overdue: DateWithEvents[];
+	today: DateWithEvents[];
+	tomorrow: DateWithEvents[];
+	thisWeek: DateWithEvents[];
+	nextWeek: DateWithEvents[];
+	thisMonth: DateWithEvents[];
+	later: DateWithEvents[];
+} {
+	const today = new Date();
+	today.setHours(0, 0, 0, 0);
+
+	const tomorrow = new Date(today);
+	tomorrow.setDate(tomorrow.getDate() + 1);
+
+	const endOfWeek = new Date(today);
+	endOfWeek.setDate(endOfWeek.getDate() + (7 - endOfWeek.getDay()));
+
+	const endOfNextWeek = new Date(endOfWeek);
+	endOfNextWeek.setDate(endOfNextWeek.getDate() + 7);
+
+	const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+
+	const groups = {
+		overdue: [] as DateWithEvents[],
+		today: [] as DateWithEvents[],
+		tomorrow: [] as DateWithEvents[],
+		thisWeek: [] as DateWithEvents[],
+		nextWeek: [] as DateWithEvents[],
+		thisMonth: [] as DateWithEvents[],
+		later: [] as DateWithEvents[]
+	};
+
+	for (const dateInfo of dates) {
+		const date = new Date(dateInfo.date + 'T00:00:00');
+
+		if (date < today) {
+			groups.overdue.push(dateInfo);
+		} else if (date.getTime() === today.getTime()) {
+			groups.today.push(dateInfo);
+		} else if (date.getTime() === tomorrow.getTime()) {
+			groups.tomorrow.push(dateInfo);
+		} else if (date <= endOfWeek) {
+			groups.thisWeek.push(dateInfo);
+		} else if (date <= endOfNextWeek) {
+			groups.nextWeek.push(dateInfo);
+		} else if (date <= endOfMonth) {
+			groups.thisMonth.push(dateInfo);
+		} else {
+			groups.later.push(dateInfo);
+		}
+	}
+
+	// Sort each group chronologically
+	for (const group of Object.values(groups)) {
+		group.sort((a, b) => a.date.localeCompare(b.date));
+	}
+
+	// Except overdue: reverse (most recent first)
+	groups.overdue.reverse();
+
+	return groups;
 }

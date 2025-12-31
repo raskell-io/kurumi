@@ -1,8 +1,19 @@
 <script lang="ts">
-	import { getAllTags, getAllPeople, getAllDates, getAllLinks, getNotesByTag, getNotesByPerson, getNotesByDate, getNotesByLink, type Note } from '$lib/db';
+	import {
+		getAllTags,
+		getAllLinks,
+		getAllPeopleWithMetadata,
+		getAllDatesWithEvents,
+		getNotesByTag,
+		getNotesByLink,
+		type Note
+	} from '$lib/db';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { Tag, User, Calendar, Link, ChevronRight, ExternalLink } from 'lucide-svelte';
+	import PersonCard from '$lib/components/PersonCard.svelte';
+	import AgendaView from '$lib/components/AgendaView.svelte';
+	import ExportMenu from '$lib/components/ExportMenu.svelte';
 
 	type TabType = 'tags' | 'people' | 'dates' | 'links';
 
@@ -13,22 +24,18 @@
 	let activeTab = $state<TabType>(initialTab);
 	let expandedItem = $state<string | null>(initialItem);
 
-	// Get all data
+	// Get all data with metadata
 	let allTags = $derived(getAllTags());
-	let allPeople = $derived(getAllPeople());
-	let allDates = $derived(getAllDates());
+	let allPeople = $derived(getAllPeopleWithMetadata());
+	let allDates = $derived(getAllDatesWithEvents());
 	let allLinks = $derived(getAllLinks());
 
-	// Get notes for expanded item
+	// Get notes for expanded item (tags and links only)
 	let expandedNotes = $derived.by(() => {
 		if (!expandedItem) return [];
 		switch (activeTab) {
 			case 'tags':
 				return getNotesByTag(expandedItem);
-			case 'people':
-				return getNotesByPerson(expandedItem);
-			case 'dates':
-				return getNotesByDate(expandedItem);
 			case 'links':
 				return getNotesByLink(expandedItem);
 			default:
@@ -44,36 +51,11 @@
 		goto(`/note/${noteId}`);
 	}
 
-	function formatDate(dateStr: string): string {
-		try {
-			const date = new Date(dateStr + 'T00:00:00');
-			return date.toLocaleDateString('en-US', {
-				weekday: 'short',
-				year: 'numeric',
-				month: 'short',
-				day: 'numeric'
-			});
-		} catch {
-			return dateStr;
-		}
-	}
-
-	function getRelativeDate(dateStr: string): string {
-		const today = new Date();
-		today.setHours(0, 0, 0, 0);
-		const date = new Date(dateStr + 'T00:00:00');
-		const diffDays = Math.floor((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-
-		if (diffDays === 0) return 'Today';
-		if (diffDays === 1) return 'Tomorrow';
-		if (diffDays === -1) return 'Yesterday';
-		if (diffDays > 1 && diffDays <= 7) return `In ${diffDays} days`;
-		if (diffDays < -1 && diffDays >= -7) return `${Math.abs(diffDays)} days ago`;
-		return '';
-	}
-
 	function getPreview(note: Note): string {
-		const content = note.content.replace(/[#@\/\[\]]/g, '').trim();
+		const content = note.content
+			.replace(/^---[\s\S]*?---\n?/, '') // Remove frontmatter
+			.replace(/[#@\/\[\]]/g, '')
+			.trim();
 		return content.slice(0, 100) + (content.length > 100 ? '...' : '');
 	}
 </script>
@@ -88,46 +70,74 @@
 		<p class="subtitle">Browse tags, people, dates, and links across your notes</p>
 	</header>
 
-	<div class="tabs">
-		<button
-			class="tab"
-			class:active={activeTab === 'tags'}
-			onclick={() => { activeTab = 'tags'; expandedItem = null; }}
-		>
-			<Tag class="h-4 w-4" />
-			Tags
-			<span class="count">{allTags.length}</span>
-		</button>
-		<button
-			class="tab"
-			class:active={activeTab === 'people'}
-			onclick={() => { activeTab = 'people'; expandedItem = null; }}
-		>
-			<User class="h-4 w-4" />
-			People
-			<span class="count">{allPeople.length}</span>
-		</button>
-		<button
-			class="tab"
-			class:active={activeTab === 'dates'}
-			onclick={() => { activeTab = 'dates'; expandedItem = null; }}
-		>
-			<Calendar class="h-4 w-4" />
-			Dates
-			<span class="count">{allDates.length}</span>
-		</button>
-		<button
-			class="tab"
-			class:active={activeTab === 'links'}
-			onclick={() => { activeTab = 'links'; expandedItem = null; }}
-		>
-			<Link class="h-4 w-4" />
-			Links
-			<span class="count">{allLinks.length}</span>
-		</button>
+	<div class="tabs-container">
+		<div class="tabs">
+			<button
+				class="tab"
+				class:active={activeTab === 'tags'}
+				onclick={() => {
+					activeTab = 'tags';
+					expandedItem = null;
+				}}
+			>
+				<Tag class="h-4 w-4" />
+				Tags
+				<span class="count">{allTags.length}</span>
+			</button>
+			<button
+				class="tab"
+				class:active={activeTab === 'people'}
+				onclick={() => {
+					activeTab = 'people';
+					expandedItem = null;
+				}}
+			>
+				<User class="h-4 w-4" />
+				People
+				<span class="count">{allPeople.length}</span>
+			</button>
+			<button
+				class="tab"
+				class:active={activeTab === 'dates'}
+				onclick={() => {
+					activeTab = 'dates';
+					expandedItem = null;
+				}}
+			>
+				<Calendar class="h-4 w-4" />
+				Dates
+				<span class="count">{allDates.length}</span>
+			</button>
+			<button
+				class="tab"
+				class:active={activeTab === 'links'}
+				onclick={() => {
+					activeTab = 'links';
+					expandedItem = null;
+				}}
+			>
+				<Link class="h-4 w-4" />
+				Links
+				<span class="count">{allLinks.length}</span>
+			</button>
+		</div>
+
+		<!-- Export button -->
+		<div class="tab-actions">
+			{#if activeTab === 'tags'}
+				<ExportMenu type="tags" tags={allTags} />
+			{:else if activeTab === 'people'}
+				<ExportMenu type="people" people={allPeople} />
+			{:else if activeTab === 'dates'}
+				<ExportMenu type="dates" dates={allDates} />
+			{:else if activeTab === 'links'}
+				<ExportMenu type="links" links={allLinks} />
+			{/if}
+		</div>
 	</div>
 
 	<div class="content">
+		<!-- Tags Tab -->
 		{#if activeTab === 'tags'}
 			{#if allTags.length === 0}
 				<div class="empty-state">
@@ -163,6 +173,8 @@
 					{/each}
 				</ul>
 			{/if}
+
+			<!-- People Tab - Using PersonCard -->
 		{:else if activeTab === 'people'}
 			{#if allPeople.length === 0}
 				<div class="empty-state">
@@ -173,71 +185,20 @@
 			{:else}
 				<ul class="items-list">
 					{#each allPeople as person (person.name)}
-						<li class="item" class:expanded={expandedItem === person.name}>
-							<button class="item-header" onclick={() => toggleExpand(person.name)}>
-								<div class="item-icon person-icon">
-									<User class="h-4 w-4" />
-								</div>
-								<span class="item-name">@{person.name}</span>
-								<span class="item-count">{person.count} {person.count === 1 ? 'note' : 'notes'}</span>
-								<ChevronRight class="chevron {expandedItem === person.name ? 'rotated' : ''}" />
-							</button>
-							{#if expandedItem === person.name}
-								<ul class="notes-list">
-									{#each expandedNotes as note (note.id)}
-										<li>
-											<button class="note-item" onclick={() => openNote(note.id)}>
-												<span class="note-title">{note.title || 'Untitled'}</span>
-												<span class="note-preview">{getPreview(note)}</span>
-											</button>
-										</li>
-									{/each}
-								</ul>
-							{/if}
-						</li>
+						<PersonCard
+							{person}
+							expanded={expandedItem === person.name}
+							onToggle={() => toggleExpand(person.name)}
+						/>
 					{/each}
 				</ul>
 			{/if}
+
+			<!-- Dates Tab - Using AgendaView -->
 		{:else if activeTab === 'dates'}
-			{#if allDates.length === 0}
-				<div class="empty-state">
-					<Calendar class="h-12 w-12" />
-					<h3>No dates yet</h3>
-					<p>Use //YYYY-MM-DD in your notes to reference dates</p>
-				</div>
-			{:else}
-				<ul class="items-list">
-					{#each allDates as date (date.date)}
-						<li class="item" class:expanded={expandedItem === date.date}>
-							<button class="item-header" onclick={() => toggleExpand(date.date)}>
-								<div class="item-icon date-icon">
-									<Calendar class="h-4 w-4" />
-								</div>
-								<div class="date-info">
-									<span class="item-name">{formatDate(date.date)}</span>
-									{#if getRelativeDate(date.date)}
-										<span class="relative-date">{getRelativeDate(date.date)}</span>
-									{/if}
-								</div>
-								<span class="item-count">{date.count} {date.count === 1 ? 'note' : 'notes'}</span>
-								<ChevronRight class="chevron {expandedItem === date.date ? 'rotated' : ''}" />
-							</button>
-							{#if expandedItem === date.date}
-								<ul class="notes-list">
-									{#each expandedNotes as note (note.id)}
-										<li>
-											<button class="note-item" onclick={() => openNote(note.id)}>
-												<span class="note-title">{note.title || 'Untitled'}</span>
-												<span class="note-preview">{getPreview(note)}</span>
-											</button>
-										</li>
-									{/each}
-								</ul>
-							{/if}
-						</li>
-					{/each}
-				</ul>
-			{/if}
+			<AgendaView dates={allDates} />
+
+			<!-- Links Tab -->
 		{:else if activeTab === 'links'}
 			{#if allLinks.length === 0}
 				<div class="empty-state">
@@ -313,12 +274,24 @@
 		font-size: 0.875rem;
 	}
 
-	.tabs {
+	.tabs-container {
 		display: flex;
-		gap: 0.5rem;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
 		margin-bottom: 1.5rem;
 		border-bottom: 1px solid var(--color-border);
 		padding-bottom: 0.5rem;
+	}
+
+	.tabs {
+		display: flex;
+		gap: 0.5rem;
+		overflow-x: auto;
+	}
+
+	.tab-actions {
+		flex-shrink: 0;
 	}
 
 	.tab {
@@ -334,6 +307,7 @@
 		font-weight: 500;
 		cursor: pointer;
 		transition: all 0.15s ease;
+		white-space: nowrap;
 	}
 
 	.tab:hover {
@@ -371,16 +345,11 @@
 		color: var(--color-text-muted);
 	}
 
-	.empty-state svg {
-		margin-bottom: 1rem;
-		opacity: 0.5;
-	}
-
 	.empty-state h3 {
 		font-size: 1.125rem;
 		font-weight: 600;
 		color: var(--color-text);
-		margin-bottom: 0.5rem;
+		margin: 1rem 0 0.5rem;
 	}
 
 	.empty-state p {
@@ -440,16 +409,6 @@
 		color: #f59e0b;
 	}
 
-	.person-icon {
-		background: rgba(34, 197, 94, 0.15);
-		color: #22c55e;
-	}
-
-	.date-icon {
-		background: rgba(59, 130, 246, 0.15);
-		color: #3b82f6;
-	}
-
 	.link-icon {
 		background: rgba(168, 85, 247, 0.15);
 		color: #a855f7;
@@ -490,18 +449,6 @@
 		flex: 1;
 		font-weight: 500;
 		color: var(--color-text);
-	}
-
-	.date-info {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		gap: 0.125rem;
-	}
-
-	.relative-date {
-		font-size: 0.75rem;
-		color: var(--color-text-muted);
 	}
 
 	.item-count {
@@ -575,12 +522,17 @@
 			padding: 1rem;
 		}
 
+		.tabs-container {
+			flex-direction: column;
+			align-items: stretch;
+		}
+
 		.tabs {
 			overflow-x: auto;
 		}
 
-		.tab {
-			white-space: nowrap;
+		.tab-actions {
+			align-self: flex-end;
 		}
 	}
 </style>
