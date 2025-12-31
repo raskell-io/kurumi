@@ -171,12 +171,18 @@ function getAutocompleteState(view: EditorView): AutocompleteState | null {
 		};
 	}
 
-	// Check for tag trigger: #
-	const tagMatch = textBefore.match(/#([a-zA-Z0-9_-]*)$/);
+	// Check for tag trigger: # (but not at start of line - that's a markdown heading)
+	// Only match # when preceded by whitespace
+	const tagMatch = textBefore.match(/(?:^|\s)#([a-zA-Z0-9_-]*)$/);
 	if (tagMatch) {
 		const blockStart = pos - $pos.parentOffset;
-		const from = blockStart + tagMatch.index!;
+		// Adjust index: if matched with leading space, add 1 to skip the space
+		const matchStart = tagMatch.index! + (tagMatch[0].startsWith('#') ? 0 : 1);
+		const from = blockStart + matchStart;
 		const query = tagMatch[1] || '';
+
+		// Don't trigger at start of line (markdown heading)
+		if (matchStart === 0) return null;
 
 		return {
 			type: 'tag',
