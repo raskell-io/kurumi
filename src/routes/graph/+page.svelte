@@ -1,13 +1,24 @@
 <script lang="ts">
 	import Graph from '$lib/components/Graph.svelte';
-	import { notes, extractWikilinks } from '$lib/db';
+	import { notes, extractWikilinks, type Note } from '$lib/db';
+	import { get } from 'svelte/store';
 	import { Link2 } from 'lucide-svelte';
+
+	// Store subscription for Svelte 5 runes mode
+	let notesData = $state<Note[]>([]);
+
+	$effect(() => {
+		const unsub = notes.subscribe((n) => {
+			notesData = n;
+		});
+		return unsub;
+	});
 
 	// Count total links across all notes
 	let linkCount = $derived.by(() => {
-		const noteMap = new Map($notes.map(n => [n.title.toLowerCase(), n.id]));
+		const noteMap = new Map(notesData.map(n => [n.title.toLowerCase(), n.id]));
 		let count = 0;
-		for (const note of $notes) {
+		for (const note of notesData) {
 			const wikilinks = extractWikilinks(note.content);
 			for (const link of wikilinks) {
 				if (noteMap.has(link.toLowerCase())) {
@@ -26,13 +37,13 @@
 	>
 		<h1 class="text-lg font-semibold text-[var(--color-text)]">Knowledge Graph</h1>
 		<span class="text-sm text-[var(--color-text-muted)]">
-			{$notes.length} {$notes.length === 1 ? 'note' : 'notes'} · {linkCount} {linkCount === 1 ? 'link' : 'links'}
+			{notesData.length} {notesData.length === 1 ? 'note' : 'notes'} · {linkCount} {linkCount === 1 ? 'link' : 'links'}
 		</span>
 	</header>
 
 	<!-- Graph -->
 	<div class="relative flex-1 bg-[var(--color-bg)]">
-		{#if $notes.length === 0}
+		{#if notesData.length === 0}
 			<div class="flex h-full items-center justify-center">
 				<div class="text-center">
 					<Link2 class="mx-auto mb-4 h-16 w-16 text-[var(--color-text-muted)]" />

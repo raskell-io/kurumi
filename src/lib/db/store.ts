@@ -9,6 +9,7 @@ import {
 	createDefaultVault,
 	createPerson,
 	createEvent,
+	generateId,
 	DEFAULT_VAULT_ID,
 	type KurumiDocument,
 	type Note,

@@ -16,12 +16,18 @@
 	let graph: ReturnType<typeof ForceGraph> | null = null;
 
 	// Store subscriptions for Svelte 5 runes mode
-	let notesData = $state<Note[]>(get(notes));
-	let foldersData = $state<Folder[]>(get(folders));
+	let notesData = $state<Note[]>([]);
+	let foldersData = $state<Folder[]>([]);
+	let mounted = $state(false);
 
+	// Subscribe to stores and update state
 	$effect(() => {
-		const unsubNotes = notes.subscribe((n) => (notesData = n));
-		const unsubFolders = folders.subscribe((f) => (foldersData = f));
+		const unsubNotes = notes.subscribe((n) => {
+			notesData = n;
+		});
+		const unsubFolders = folders.subscribe((f) => {
+			foldersData = f;
+		});
 		return () => {
 			unsubNotes();
 			unsubFolders();
@@ -235,17 +241,30 @@
 		return () => resizeObserver.disconnect();
 	}
 
+	// Initialize or update graph when data changes
 	$effect(() => {
-		// Re-render when notes change
-		if (graph && notesData.length > 0) {
+		// Only proceed after mount and when we have a container
+		if (!mounted || !containerRef) return;
+
+		// Initialize graph if not yet created and we have data
+		if (!graph && notesData.length > 0) {
+			initGraph();
+		}
+		// Update existing graph when data changes
+		else if (graph) {
 			const { nodes, links } = buildGraphData();
 			graph.graphData({ nodes, links });
 		}
 	});
 
 	onMount(() => {
-		const cleanup = initGraph();
-		return cleanup;
+		mounted = true;
+		// Small delay to ensure container is ready
+		requestAnimationFrame(() => {
+			if (notesData.length > 0 && containerRef && !graph) {
+				initGraph();
+			}
+		});
 	});
 
 	onDestroy(() => {

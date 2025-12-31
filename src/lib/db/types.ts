@@ -77,6 +77,7 @@ export interface KurumiDocument {
 	events: Record<string, Event>;
 	currentVaultId: string;
 	version: number;
+	[key: string]: unknown; // Required for Automerge compatibility
 }
 
 export function createDefaultVault(): Vault {
