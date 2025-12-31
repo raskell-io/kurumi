@@ -1,0 +1,9 @@
+name = "kurumi-sync"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+# Bind your R2 bucket
+# Make sure to create the bucket first: wrangler r2 bucket create kurumi-sync
+[[r2_buckets]]
+binding = "KURUMI_BUCKET"
+bucket_name = "kurumi-sync"
