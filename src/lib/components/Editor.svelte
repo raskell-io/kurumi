@@ -38,6 +38,9 @@
 	import DatePicker from './DatePicker.svelte';
 	import PersonInput from './PersonInput.svelte';
 	import TagAutocomplete from './TagAutocomplete.svelte';
+	import AIActionMenu from './AIActionMenu.svelte';
+	import { isAIConfigured } from '$lib/ai';
+	import { editorViewCtx } from '@milkdown/kit/core';
 
 	interface Props {
 		content: string;
@@ -68,6 +71,13 @@
 	let showTagAutocomplete = $state(false);
 	let datePeoplePosition = $state<{ x: number; y: number }>({ x: 0, y: 0 });
 	let datePeopleQuery = $state('');
+
+	// AI action menu state
+	let showAIMenu = $state(false);
+	let aiMenuPosition = $state<{ x: number; y: number }>({ x: 0, y: 0 });
+	let selectedText = $state('');
+	let selectionFrom = $state(0);
+	let selectionTo = $state(0);
 
 	function handleAutocompleteSelect(noteTitle: string) {
 		completeWikilink(noteTitle);
@@ -103,6 +113,64 @@
 
 	function handleTagClose() {
 		showTagAutocomplete = false;
+	}
+
+	function handleAIResult(newText: string) {
+		// Replace the selected text with the AI result
+		if (editor) {
+			try {
+				const view = editor.ctx.get(editorViewCtx);
+				const { state } = view;
+				const tr = state.tr.replaceWith(
+					selectionFrom,
+					selectionTo,
+					state.schema.text(newText)
+				);
+				view.dispatch(tr);
+			} catch (e) {
+				console.error('Failed to replace text:', e);
+			}
+		}
+		showAIMenu = false;
+	}
+
+	function handleAIClose() {
+		showAIMenu = false;
+	}
+
+	function checkSelection() {
+		if (!editor || !isAIConfigured()) return;
+
+		try {
+			const view = editor.ctx.get(editorViewCtx);
+			const { state } = view;
+			const { from, to } = state.selection;
+
+			if (from !== to) {
+				// Get the selected text
+				const text = state.doc.textBetween(from, to, ' ');
+				if (text.trim().length > 0) {
+					selectedText = text;
+					selectionFrom = from;
+					selectionTo = to;
+
+					// Get position for the menu
+					const start = view.coordsAtPos(from);
+					const end = view.coordsAtPos(to);
+					const x = (start.left + end.left) / 2;
+					const y = start.top - 10; // Position above selection
+
+					aiMenuPosition = { x, y };
+					showAIMenu = true;
+				} else {
+					showAIMenu = false;
+				}
+			} else {
+				showAIMenu = false;
+			}
+		} catch (e) {
+			// Editor not ready
+		}
 	}
 
 	onMount(async () => {
@@ -194,9 +262,16 @@
 			.use(datePeopleAutocompletePlugin)
 			.use(trailingPlugin)
 			.create();
+
+		// Add mouseup listener to check for text selection
+		editorContainer.addEventListener('mouseup', checkSelection);
 	});
 
 	onDestroy(() => {
+		// Remove mouseup listener
+		if (editorContainer) {
+			editorContainer.removeEventListener('mouseup', checkSelection);
+		}
 		editor?.destroy();
 		setWikilinkClickHandler(() => {});
 		setTagClickHandler(() => {});
@@ -251,6 +326,15 @@
 			initialQuery={datePeopleQuery}
 			onSelect={handleTagSelect}
 			onClose={handleTagClose}
+		/>
+	{/if}
+
+	{#if showAIMenu}
+		<AIActionMenu
+			position={aiMenuPosition}
+			{selectedText}
+			onResult={handleAIResult}
+			onClose={handleAIClose}
 		/>
 	{/if}
 </div>

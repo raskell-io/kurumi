@@ -1,8 +1,19 @@
 <script lang="ts">
 	import { exportNotesJSON, exportFullJSON, analyzeImport, importJSON, notes, folders, vaults, type ImportAnalysis, type ConflictResolution } from '$lib/db';
 	import { syncState, initSyncState, sync, testConnection, isSyncConfigured } from '$lib/sync';
+	import {
+		type AIProvider,
+		AVAILABLE_MODELS,
+		DEFAULT_MODELS,
+		getStoredProvider,
+		getStoredModel,
+		getStoredApiKey,
+		saveAISettings,
+		isAIConfigured,
+		testConnection as testAIConnection
+	} from '$lib/ai';
 	import { onMount } from 'svelte';
-	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2, RefreshCw, CheckCircle, XCircle, Wifi } from 'lucide-svelte';
+	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2, RefreshCw, CheckCircle, XCircle, Wifi, Sparkles, Bot } from 'lucide-svelte';
 
 	let syncToken = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-token') || '' : '');
 	let syncUrl = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-url') || '' : '');
@@ -28,12 +39,27 @@
 	let isTesting = $state(false);
 	let testResult = $state<{ success: boolean; error?: string } | null>(null);
 
+	// AI settings state
+	let aiProvider = $state<AIProvider>('openai');
+	let openaiKey = $state('');
+	let anthropicKey = $state('');
+	let aiModel = $state('');
+	let showAISaved = $state(false);
+	let isTestingAI = $state(false);
+	let aiTestResult = $state<{ success: boolean; error?: string } | null>(null);
+
 	onMount(() => {
 		const savedTheme = localStorage.getItem('kurumi-theme') as 'system' | 'light' | 'dark' | null;
 		if (savedTheme) {
 			theme = savedTheme;
 		}
 		initSyncState();
+
+		// Load AI settings
+		aiProvider = getStoredProvider();
+		openaiKey = getStoredApiKey('openai');
+		anthropicKey = getStoredApiKey('anthropic');
+		aiModel = getStoredModel();
 	});
 
 	function setTheme(t: 'system' | 'light' | 'dark') {
@@ -65,6 +91,30 @@
 	async function handleSync() {
 		await sync();
 	}
+
+	function handleProviderChange(provider: AIProvider) {
+		aiProvider = provider;
+		// Update model to default for the new provider
+		aiModel = DEFAULT_MODELS[provider];
+	}
+
+	function handleSaveAISettings() {
+		saveAISettings(aiProvider, openaiKey, anthropicKey, aiModel);
+		showAISaved = true;
+		setTimeout(() => (showAISaved = false), 2000);
+	}
+
+	async function handleTestAI() {
+		isTestingAI = true;
+		aiTestResult = null;
+		handleSaveAISettings();
+		aiTestResult = await testAIConnection();
+		isTestingAI = false;
+	}
+
+	// Derived: current API key based on provider
+	let currentApiKey = $derived(aiProvider === 'openai' ? openaiKey : anthropicKey);
+	let availableModels = $derived(AVAILABLE_MODELS[aiProvider]);
 
 	function formatTimestamp(timestamp: number): string {
 		const date = new Date(timestamp);
@@ -350,6 +400,126 @@
 				</div>
 			</section>
 		{/if}
+
+		<!-- AI Assistant -->
+		<section class="mb-6 md:mb-8">
+			<h2 class="mb-3 text-base font-semibold text-[var(--color-text)] md:mb-4 md:text-lg">
+				<span class="flex items-center gap-2">
+					<Sparkles class="h-5 w-5 text-[var(--color-accent)]" />
+					AI Assistant
+				</span>
+			</h2>
+			<p class="mb-4 text-sm text-[var(--color-text-muted)]">
+				Enable AI-powered text assistance. Select text in the editor to improve, expand, summarize, or translate.
+			</p>
+
+			<div class="space-y-4">
+				<!-- Provider Selection -->
+				<div>
+					<label class="mb-2 block text-sm font-medium text-[var(--color-text)]">
+						AI Provider
+					</label>
+					<div class="flex gap-2">
+						<button
+							onclick={() => handleProviderChange('openai')}
+							class="flex flex-1 items-center justify-center gap-2 rounded-lg border px-4 py-3 transition-colors {aiProvider === 'openai' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-border)]'}"
+						>
+							<Bot class="h-4 w-4" />
+							OpenAI
+						</button>
+						<button
+							onclick={() => handleProviderChange('anthropic')}
+							class="flex flex-1 items-center justify-center gap-2 rounded-lg border px-4 py-3 transition-colors {aiProvider === 'anthropic' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-border)]'}"
+						>
+							<Sparkles class="h-4 w-4" />
+							Anthropic
+						</button>
+					</div>
+				</div>
+
+				<!-- API Key Input -->
+				<div>
+					<label for="aiApiKey" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+						{aiProvider === 'openai' ? 'OpenAI' : 'Anthropic'} API Key
+					</label>
+					{#if aiProvider === 'openai'}
+						<input
+							id="aiApiKey"
+							type="password"
+							bind:value={openaiKey}
+							placeholder="sk-..."
+							class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:border-[var(--color-accent)] focus:outline-none"
+						/>
+					{:else}
+						<input
+							id="aiApiKey"
+							type="password"
+							bind:value={anthropicKey}
+							placeholder="sk-ant-..."
+							class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:border-[var(--color-accent)] focus:outline-none"
+						/>
+					{/if}
+					<p class="mt-1 text-xs text-[var(--color-text-muted)]">
+						{#if aiProvider === 'openai'}
+							Get your API key from <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" class="text-[var(--color-accent)] hover:underline">OpenAI Dashboard</a>
+						{:else}
+							Get your API key from <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener" class="text-[var(--color-accent)] hover:underline">Anthropic Console</a>
+						{/if}
+					</p>
+				</div>
+
+				<!-- Model Selection -->
+				<div>
+					<label for="aiModel" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+						Model
+					</label>
+					<select
+						id="aiModel"
+						bind:value={aiModel}
+						class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-[var(--color-text)] focus:border-[var(--color-accent)] focus:outline-none"
+					>
+						{#each availableModels as model}
+							<option value={model.id}>{model.name}</option>
+						{/each}
+					</select>
+				</div>
+
+				<!-- Action Buttons -->
+				<div class="flex flex-col gap-3 md:flex-row">
+					<button
+						onclick={handleSaveAISettings}
+						class="rounded-lg bg-[var(--color-accent)] px-4 py-3 text-white transition-colors hover:bg-[var(--color-accent-hover)] active:scale-[0.98]"
+					>
+						{showAISaved ? 'Saved!' : 'Save Settings'}
+					</button>
+
+					<button
+						onclick={handleTestAI}
+						disabled={isTestingAI || !currentApiKey}
+						class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] disabled:opacity-50"
+					>
+						{#if isTestingAI}
+							<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+						{:else}
+							<Sparkles class="h-4 w-4" />
+						{/if}
+						Test Connection
+					</button>
+				</div>
+
+				{#if aiTestResult}
+					<div class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm {aiTestResult.success ? 'bg-green-500/10 text-green-600 dark:text-green-400' : 'bg-red-500/10 text-red-500'}">
+						{#if aiTestResult.success}
+							<CheckCircle class="h-4 w-4" />
+							Connection successful
+						{:else}
+							<XCircle class="h-4 w-4" />
+							{aiTestResult.error || 'Connection failed'}
+						{/if}
+					</div>
+				{/if}
+			</div>
+		</section>
 
 		<!-- Import/Export -->
 		<section class="mb-6 md:mb-8">
