@@ -8,68 +8,48 @@
 
 	let { content }: Props = $props();
 
-	// Configure marked once
-	marked.use({
-		gfm: true,
-		breaks: true
-	});
-
-	// Custom renderer to handle special syntax
-	function renderMarkdown(markdown: string): string {
-		// First, process our custom syntax before marked parses it
-
-		// Use placeholder tokens to protect our custom elements from marked processing
-		const placeholders: string[] = [];
-		function addPlaceholder(html: string): string {
-			const index = placeholders.length;
-			placeholders.push(html);
-			return `<!--PLACEHOLDER_${index}-->`;
-		}
-
-		// Process wikilinks [[Title]] -> links to /read/[id] or search if not found
-		let processed = markdown.replace(/\[\[([^\]]+)\]\]/g, (_, title) => {
+	// Process custom syntax AFTER marked has rendered
+	function postProcessHtml(html: string): string {
+		// Process wikilinks [[Title]]
+		html = html.replace(/\[\[([^\]]+)\]\]/g, (_, title) => {
 			const note = findNoteByTitle(title);
 			if (note) {
-				return addPlaceholder(`<a href="/read/${note.id}" class="wikilink">${title}</a>`);
+				return `<a href="/read/${note.id}" class="wikilink">${title}</a>`;
 			}
-			// Link to search for notes that don't exist yet
-			return addPlaceholder(`<a href="/?search=${encodeURIComponent(title)}" class="wikilink wikilink-broken">${title}</a>`);
+			return `<a href="/?search=${encodeURIComponent(title)}" class="wikilink wikilink-broken">${title}</a>`;
 		});
 
 		// Process dates //YYYY-MM-DD
-		processed = processed.replace(/\/\/(\d{4}-\d{2}-\d{2})/g, (_, date) => {
-			return addPlaceholder(`<a href="/read/date/${date}" class="date-reference">${date}</a>`);
+		html = html.replace(/\/\/(\d{4}-\d{2}-\d{2})/g, (_, date) => {
+			return `<a href="/read/date/${date}" class="date-reference">${date}</a>`;
 		});
 
-		// Process people @Full Name (also handle lowercase after first letter)
-		processed = processed.replace(/@([A-Z][a-zA-Z]*(?: [A-Z][a-zA-Z]*)*)/g, (_, name) => {
-			return addPlaceholder(`<a href="/read/person/${encodeURIComponent(name)}" class="person-reference">@${name}</a>`);
+		// Process people @Full Name
+		html = html.replace(/@([A-Z][a-zA-Z]*(?: [A-Z][a-zA-Z]*)*)/g, (_, name) => {
+			return `<a href="/read/person/${encodeURIComponent(name)}" class="person-reference">@${name}</a>`;
 		});
 
-		// Process tags #tag-name (but not markdown headings at start of line)
-		processed = processed.replace(/(?<=\s|^)#([a-zA-Z][a-zA-Z0-9_-]*)/gm, (match, tag, offset) => {
-			// Skip if this looks like a markdown heading (# at start of line followed by space)
-			const lineStart = processed.lastIndexOf('\n', offset - 1) + 1;
-			const textBefore = processed.slice(lineStart, offset);
-			if (textBefore.match(/^#+$/)) {
-				return match; // This is part of a heading
-			}
-			return addPlaceholder(`<a href="/read/tag/${tag}" class="tag-reference">#${tag}</a>`);
+		// Process tags #tag-name (avoid headings by checking it's not after < which would be inside a tag)
+		html = html.replace(/(?<![<\w])#([a-zA-Z][a-zA-Z0-9_-]*)/g, (_, tag) => {
+			return `<a href="/read/tag/${tag}" class="tag-reference">#${tag}</a>`;
 		});
 
-		// Process URLs - mark them for special styling (but not already in links)
-		processed = processed.replace(
-			/(?<!\]\()(?<!")(https?:\/\/[^\s<>")\]]+)/g,
-			(url) => addPlaceholder(`<a href="${url}" class="url-reference" target="_blank" rel="noopener noreferrer">${url}</a>`)
-		);
-
-		// Parse with marked
-		let html = marked.parse(processed) as string;
-
-		// Restore placeholders
-		html = html.replace(/<!--PLACEHOLDER_(\d+)-->/g, (_, index) => {
-			return placeholders[parseInt(index)] || '';
+		// Process URLs that aren't already in href attributes
+		html = html.replace(/(?<!href=["'])(?<!src=["'])(https?:\/\/[^\s<>"]+)/g, (url) => {
+			return `<a href="${url}" class="url-reference" target="_blank" rel="noopener noreferrer">${url}</a>`;
 		});
+
+		return html;
+	}
+
+	function renderMarkdown(markdown: string): string {
+		if (!markdown) return '';
+
+		// First parse with marked
+		let html = marked.parse(markdown, { gfm: true, breaks: true }) as string;
+
+		// Then process our custom syntax
+		html = postProcessHtml(html);
 
 		return html;
 	}
