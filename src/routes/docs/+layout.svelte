@@ -41,7 +41,7 @@
 <style>
 	.docs-layout {
 		display: flex;
-		min-height: 100vh;
+		min-height: 100dvh;
 		background: var(--color-bg);
 	}
 
@@ -52,7 +52,7 @@
 		background: var(--color-bg-secondary);
 		position: sticky;
 		top: 0;
-		height: 100vh;
+		height: 100dvh;
 		overflow-y: auto;
 	}
 
@@ -106,6 +106,8 @@
 		padding: 2rem 3rem;
 		max-width: 800px;
 		margin: 0 auto;
+		overflow-y: auto;
+		-webkit-overflow-scrolling: touch;
 	}
 
 	@media (max-width: 768px) {

@@ -33,6 +33,9 @@
 	// Check if we're in read mode (hide sidebar)
 	let isReadMode = $derived($page.url.pathname.startsWith('/read'));
 
+	// Check if we're in docs (needs scrolling, no sidebar)
+	let isDocsPage = $derived($page.url.pathname.startsWith('/docs'));
+
 	// Sync status
 	let showSyncStatus = $derived(initialized && isSyncConfigured());
 
@@ -526,9 +529,9 @@
 		{/if}
 
 		<!-- Main Content -->
-		<main class="relative flex flex-1 flex-col" class:overflow-hidden={!isReadMode}>
-			<!-- Mobile header (hidden in read mode and on desktop) -->
-			{#if !isReadMode}
+		<main class="relative flex flex-1 flex-col" class:overflow-hidden={!isReadMode && !isDocsPage}>
+			<!-- Mobile header (hidden in read mode, docs, and on desktop) -->
+			{#if !isReadMode && !isDocsPage}
 			<header
 				class="flex items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-3 safe-top md:hidden"
 			>
@@ -556,8 +559,8 @@
 			</header>
 			{/if}
 
-			<!-- Read button - desktop only -->
-			{#if !isReadMode}
+			<!-- Read button - desktop only (hidden in read mode and docs) -->
+			{#if !isReadMode && !isDocsPage}
 			<a
 				href="/read"
 				class="absolute right-6 top-6 z-10 hidden rounded-lg p-2 text-[var(--color-text-muted)] transition-all hover:bg-[var(--color-border)] hover:text-[var(--color-text)] md:block"
@@ -568,7 +571,7 @@
 			</a>
 			{/if}
 
-			<div class="flex-1" class:overflow-hidden={!isReadMode} class:overflow-auto={isReadMode}>
+			<div class="flex-1" class:overflow-hidden={!isReadMode && !isDocsPage} class:overflow-auto={isReadMode || isDocsPage}>
 				{@render children()}
 			</div>
 		</main>
