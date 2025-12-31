@@ -147,10 +147,9 @@
 			.nodeLabel(() => '') // Disable default tooltip, we use custom
 			.nodeColor((node: GraphNode) => node.color || (isDark ? '#9ca3af' : '#6b7280'))
 			.nodeVal((node: GraphNode) => node.val)
-			// Links - solid visible colors
-			.linkColor(isDark ? '#818cf8' : '#6366f1')
+			// Links - use rgba for opacity
+			.linkColor(isDark ? 'rgba(129, 140, 248, 0.8)' : 'rgba(99, 102, 241, 0.8)')
 			.linkWidth(2)
-			.linkOpacity(0.8)
 			.linkDirectionalParticles(2)
 			.linkDirectionalParticleWidth(3)
 			.linkDirectionalParticleSpeed(0.005)
@@ -191,7 +190,7 @@
 
 				// Highlight connected links on hover
 				if (graph) {
-					const defaultColor = isDark ? '#818cf8' : '#6366f1';
+					const defaultColor = isDark ? 'rgba(129, 140, 248, 0.8)' : 'rgba(99, 102, 241, 0.8)';
 					graph
 						.linkWidth((link: any) => {
 							if (!node) return 2;
