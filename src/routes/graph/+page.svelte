@@ -1,6 +1,21 @@
 <script lang="ts">
 	import Graph from '$lib/components/Graph.svelte';
-	import { notes } from '$lib/db';
+	import { notes, extractWikilinks } from '$lib/db';
+
+	// Count total links across all notes
+	let linkCount = $derived.by(() => {
+		const noteMap = new Map($notes.map(n => [n.title.toLowerCase(), n.id]));
+		let count = 0;
+		for (const note of $notes) {
+			const wikilinks = extractWikilinks(note.content);
+			for (const link of wikilinks) {
+				if (noteMap.has(link.toLowerCase())) {
+					count++;
+				}
+			}
+		}
+		return count;
+	});
 </script>
 
 <div class="flex h-full flex-col">
@@ -10,7 +25,7 @@
 	>
 		<h1 class="text-lg font-semibold text-[var(--color-text)]">Knowledge Graph</h1>
 		<span class="text-sm text-[var(--color-text-muted)]">
-			{$notes.length} {$notes.length === 1 ? 'note' : 'notes'}
+			{$notes.length} {$notes.length === 1 ? 'note' : 'notes'} · {linkCount} {linkCount === 1 ? 'link' : 'links'}
 		</span>
 	</header>
 

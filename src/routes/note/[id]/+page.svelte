@@ -125,6 +125,7 @@
 					oninput={handleTitleChange}
 					placeholder="Untitled"
 					class="mb-4 w-full border-none bg-transparent text-2xl font-bold text-[var(--color-text)] placeholder-[var(--color-text-muted)] outline-none md:mb-6 md:text-3xl"
+					style="font-family: var(--font-editor);"
 				/>
 
 				<!-- Milkdown Editor -->
@@ -134,6 +135,7 @@
 						onchange={handleContentChange}
 						onWikilinkClick={handleWikilinkClick}
 						placeholder="Start writing... Use [[Note Title]] to link to other notes."
+						currentFolderId={note.folderId}
 					/>
 				{/key}
 

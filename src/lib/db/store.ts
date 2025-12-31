@@ -1,29 +1,82 @@
 import * as Automerge from '@automerge/automerge';
 import { get, set } from 'idb-keyval';
 import { writable, derived, type Readable } from 'svelte/store';
-import { createEmptyDocument, createNote, createFolder, type KurumiDocument, type Note, type Folder } from './types';
+import {
+	createEmptyDocument,
+	createNote,
+	createFolder,
+	createVault,
+	createDefaultVault,
+	DEFAULT_VAULT_ID,
+	type KurumiDocument,
+	type Note,
+	type Folder,
+	type Vault
+} from './types';
 
 const STORAGE_KEY = 'kurumi-doc';
 
 // The Automerge document
 let doc: Automerge.Doc<KurumiDocument>;
 
+// Internal store for current vault ID (for derived stores to use)
+const currentVaultIdStore = writable<string>(DEFAULT_VAULT_ID);
+
 // Svelte store for reactive updates
 const docStore = writable<Automerge.Doc<KurumiDocument> | null>(null);
 
-// Derived store for notes array (sorted by modified date)
-export const notes: Readable<Note[]> = derived(docStore, ($doc) => {
-	if (!$doc) return [];
-	return Object.values($doc.notes).sort((a, b) => b.modified - a.modified);
+// Derived store for all vaults
+export const vaults: Readable<Vault[]> = derived(docStore, ($doc) => {
+	if (!$doc || !$doc.vaults) return [];
+	return Object.values($doc.vaults).sort((a, b) => a.created - b.created);
 });
+
+// Export current vault ID as readable store
+export const currentVaultId: Readable<string> = derived(
+	[docStore, currentVaultIdStore],
+	([$doc, $vaultId]) => {
+		return $doc?.currentVaultId || $vaultId || DEFAULT_VAULT_ID;
+	}
+);
+
+// Current vault object
+export const currentVault: Readable<Vault | undefined> = derived(
+	[docStore, currentVaultId],
+	([$doc, $vaultId]) => {
+		if (!$doc?.vaults) return undefined;
+		return $doc.vaults[$vaultId];
+	}
+);
+
+// Derived store for notes array (sorted by modified date) - filtered by current vault
+export const notes: Readable<Note[]> = derived(
+	[docStore, currentVaultId],
+	([$doc, $vaultId]) => {
+		if (!$doc) return [];
+		return Object.values($doc.notes)
+			.filter((note) => note.vaultId === $vaultId)
+			.sort((a, b) => b.modified - a.modified);
+	}
+);
 
 // Derived store for notes count
 export const notesCount: Readable<number> = derived(notes, ($notes) => $notes.length);
 
-// Derived store for folders (sorted by name)
-export const folders: Readable<Folder[]> = derived(docStore, ($doc) => {
-	if (!$doc || !$doc.folders) return [];
-	return Object.values($doc.folders).sort((a, b) => a.name.localeCompare(b.name));
+// Derived store for folders (sorted by name) - filtered by current vault
+export const folders: Readable<Folder[]> = derived(
+	[docStore, currentVaultId],
+	([$doc, $vaultId]) => {
+		if (!$doc || !$doc.folders) return [];
+		return Object.values($doc.folders)
+			.filter((folder) => folder.vaultId === $vaultId)
+			.sort((a, b) => a.name.localeCompare(b.name));
+	}
+);
+
+// All notes across all vaults (for cross-vault operations)
+export const allNotes: Readable<Note[]> = derived(docStore, ($doc) => {
+	if (!$doc) return [];
+	return Object.values($doc.notes).sort((a, b) => b.modified - a.modified);
 });
 
 // Initialize the database
@@ -33,15 +86,19 @@ export async function initDB(): Promise<void> {
 
 		if (savedData) {
 			doc = Automerge.load<KurumiDocument>(savedData);
+
 			// Migrate: add folders object if missing
 			if (!doc.folders) {
 				doc = Automerge.change(doc, (d) => {
 					d.folders = {};
 				});
 			}
+
 			// Migrate: add folderId to existing notes if missing
-			const needsMigration = Object.values(doc.notes).some((note) => note.folderId === undefined);
-			if (needsMigration) {
+			const needsFolderIdMigration = Object.values(doc.notes).some(
+				(note) => note.folderId === undefined
+			);
+			if (needsFolderIdMigration) {
 				doc = Automerge.change(doc, (d) => {
 					for (const note of Object.values(d.notes)) {
 						if (note.folderId === undefined) {
@@ -49,10 +106,44 @@ export async function initDB(): Promise<void> {
 						}
 					}
 				});
+			}
+
+			// Migrate: add vaults if missing (version 1 -> version 2)
+			if (!doc.vaults) {
+				doc = Automerge.change(doc, (d) => {
+					// Create vaults collection with default vault
+					d.vaults = {};
+					const defaultVault = createDefaultVault();
+					d.vaults[DEFAULT_VAULT_ID] = defaultVault;
+
+					// Set current vault
+					d.currentVaultId = DEFAULT_VAULT_ID;
+
+					// Migrate all existing notes to default vault
+					for (const note of Object.values(d.notes)) {
+						if (note.vaultId === undefined) {
+							(note as Note).vaultId = DEFAULT_VAULT_ID;
+						}
+					}
+
+					// Migrate all existing folders to default vault
+					for (const folder of Object.values(d.folders)) {
+						if (folder.vaultId === undefined) {
+							(folder as Folder).vaultId = DEFAULT_VAULT_ID;
+						}
+					}
+
+					// Update version
+					d.version = 2;
+				});
 				await saveDoc();
 			}
+
+			// Update internal vault ID store
+			currentVaultIdStore.set(doc.currentVaultId || DEFAULT_VAULT_ID);
 		} else {
 			doc = Automerge.from<KurumiDocument>(createEmptyDocument());
+			currentVaultIdStore.set(DEFAULT_VAULT_ID);
 			await saveDoc();
 		}
 
@@ -61,6 +152,7 @@ export async function initDB(): Promise<void> {
 		console.error('Failed to initialize database:', error);
 		// Start fresh if there's a corruption
 		doc = Automerge.from<KurumiDocument>(createEmptyDocument());
+		currentVaultIdStore.set(DEFAULT_VAULT_ID);
 		docStore.set(doc);
 		await saveDoc();
 	}
@@ -83,16 +175,154 @@ function updateDoc(changeFn: (doc: KurumiDocument) => void): void {
 	saveDoc(); // Fire and forget, we have local state
 }
 
-// CRUD Operations
+// Get current vault ID synchronously
+function getCurrentVaultId(): string {
+	return doc?.currentVaultId || DEFAULT_VAULT_ID;
+}
+
+// ============ Vault Operations ============
+
+export function setCurrentVault(vaultId: string): void {
+	if (!doc?.vaults?.[vaultId]) {
+		console.error('Vault not found:', vaultId);
+		return;
+	}
+	updateDoc((d) => {
+		d.currentVaultId = vaultId;
+	});
+	currentVaultIdStore.set(vaultId);
+}
+
+export function addVault(name: string, icon?: string): Vault {
+	if (!doc) {
+		doc = Automerge.from<KurumiDocument>(createEmptyDocument());
+		docStore.set(doc);
+	}
+	const vault = createVault(name, icon);
+	updateDoc((d) => {
+		d.vaults[vault.id] = vault;
+	});
+	return vault;
+}
+
+export function getVault(id: string): Vault | undefined {
+	return doc?.vaults?.[id];
+}
+
+export function updateVault(id: string, updates: Partial<Omit<Vault, 'id' | 'created'>>): void {
+	updateDoc((d) => {
+		const vault = d.vaults[id];
+		if (vault) {
+			if (updates.name !== undefined) vault.name = updates.name;
+			if (updates.icon !== undefined) vault.icon = updates.icon;
+			vault.modified = Date.now();
+		}
+	});
+}
+
+export function deleteVault(id: string): { success: boolean; error?: string } {
+	if (!doc?.vaults) return { success: false, error: 'Database not initialized' };
+
+	const vaultList = Object.values(doc.vaults);
+	if (vaultList.length <= 1) {
+		return { success: false, error: 'Cannot delete the last vault' };
+	}
+
+	const notesInVault = Object.values(doc.notes).filter((n) => n.vaultId === id);
+	const foldersInVault = Object.values(doc.folders).filter((f) => f.vaultId === id);
+
+	if (notesInVault.length > 0 || foldersInVault.length > 0) {
+		return { success: false, error: 'Vault contains notes or folders. Move or delete them first.' };
+	}
+
+	const wasCurrentVault = doc.currentVaultId === id;
+
+	updateDoc((d) => {
+		delete d.vaults[id];
+		// Switch to another vault if deleting current
+		if (wasCurrentVault) {
+			d.currentVaultId = Object.keys(d.vaults)[0];
+		}
+	});
+
+	if (wasCurrentVault) {
+		currentVaultIdStore.set(doc.currentVaultId);
+	}
+
+	return { success: true };
+}
+
+// Move note to a different vault
+export function moveNoteToVault(noteId: string, targetVaultId: string): void {
+	if (!doc?.vaults?.[targetVaultId]) {
+		console.error('Target vault not found:', targetVaultId);
+		return;
+	}
+	updateDoc((d) => {
+		const note = d.notes[noteId];
+		if (note) {
+			note.vaultId = targetVaultId;
+			note.folderId = null; // Reset folder since folders don't cross vaults
+			note.modified = Date.now();
+		}
+	});
+}
+
+// Move folder to a different vault (including all nested content)
+export function moveFolderToVault(folderId: string, targetVaultId: string): void {
+	if (!doc?.vaults?.[targetVaultId]) {
+		console.error('Target vault not found:', targetVaultId);
+		return;
+	}
+
+	updateDoc((d) => {
+		const folder = d.folders[folderId];
+		if (!folder) return;
+
+		// Collect all subfolder IDs recursively
+		const folderIds = new Set<string>([folderId]);
+		function collectSubfolders(parentId: string) {
+			for (const f of Object.values(d.folders)) {
+				if (f.parentId === parentId && !folderIds.has(f.id)) {
+					folderIds.add(f.id);
+					collectSubfolders(f.id);
+				}
+			}
+		}
+		collectSubfolders(folderId);
+
+		// Move all collected folders
+		for (const id of folderIds) {
+			const f = d.folders[id];
+			if (f) {
+				f.vaultId = targetVaultId;
+				f.modified = Date.now();
+			}
+		}
+
+		// Move root folder to root level in new vault
+		folder.parentId = null;
+
+		// Move all notes in these folders
+		for (const note of Object.values(d.notes)) {
+			if (note.folderId && folderIds.has(note.folderId)) {
+				note.vaultId = targetVaultId;
+				note.modified = Date.now();
+			}
+		}
+	});
+}
+
+// ============ Note CRUD Operations ============
 
 export function addNote(title?: string, content?: string, folderId?: string | null): Note {
 	if (!doc) {
 		console.error('Cannot add note: database not initialized');
-		// Initialize synchronously as fallback
 		doc = Automerge.from<KurumiDocument>(createEmptyDocument());
 		docStore.set(doc);
 	}
-	const note = createNote(title, content, folderId ?? null);
+	const vaultId = getCurrentVaultId();
+	const note = createNote(title, content, folderId ?? null, vaultId);
 	updateDoc((d) => {
 		d.notes[note.id] = note;
 	});
@@ -125,7 +355,7 @@ export function deleteNote(id: string): void {
 	});
 }
 
-// Folder CRUD Operations
+// ============ Folder CRUD Operations ============
 
 export function addFolder(name: string, parentId?: string | null): Folder {
 	if (!doc) {
@@ -133,7 +363,8 @@ export function addFolder(name: string, parentId?: string | null): Folder {
 		doc = Automerge.from<KurumiDocument>(createEmptyDocument());
 		docStore.set(doc);
 	}
-	const folder = createFolder(name, parentId ?? null);
+	const vaultId = getCurrentVaultId();
+	const folder = createFolder(name, parentId ?? null, vaultId);
 	updateDoc((d) => {
 		d.folders[folder.id] = folder;
 	});
@@ -230,15 +461,17 @@ function isDescendantFolder(ancestorId: string, descendantId: string): boolean {
 
 export function getNotesInFolder(folderId: string | null): Note[] {
 	if (!doc) return [];
+	const vaultId = getCurrentVaultId();
 	return Object.values(doc.notes)
-		.filter((note) => note.folderId === folderId)
+		.filter((note) => note.folderId === folderId && note.vaultId === vaultId)
 		.sort((a, b) => b.modified - a.modified);
 }
 
 export function getSubfolders(parentId: string | null): Folder[] {
 	if (!doc?.folders) return [];
+	const vaultId = getCurrentVaultId();
 	return Object.values(doc.folders)
-		.filter((folder) => folder.parentId === parentId)
+		.filter((folder) => folder.parentId === parentId && folder.vaultId === vaultId)
 		.sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -252,6 +485,8 @@ export function getFolderPath(folderId: string | null): Folder[] {
 	}
 	return path;
 }
+
+// ============ Sync Operations ============
 
 // Get the raw Automerge document for sync
 export function getDocBinary(): Uint8Array {
@@ -271,6 +506,8 @@ export function exportNotesJSON(): string {
 	if (!doc) return '[]';
 	return JSON.stringify(Object.values(doc.notes), null, 2);
 }
+
+// ============ Content Extraction ============
 
 // Extract wikilinks from content
 export function extractWikilinks(content: string): string[] {
@@ -295,12 +532,14 @@ export function extractTags(content: string): string[] {
 	return Array.from(tags);
 }
 
-// Get all unique tags across all notes
+// Get all unique tags across notes in current vault
 export function getAllTags(): { tag: string; count: number }[] {
 	if (!doc) return [];
+	const vaultId = getCurrentVaultId();
 	const tagCounts = new Map<string, number>();
 
 	for (const note of Object.values(doc.notes)) {
+		if (note.vaultId !== vaultId) continue;
 		const tags = extractTags(note.content);
 		for (const tag of tags) {
 			tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
@@ -312,28 +551,126 @@ export function getAllTags(): { tag: string; count: number }[] {
 		.sort((a, b) => b.count - a.count);
 }
 
-// Get notes with a specific tag
+// Get notes with a specific tag in current vault
 export function getNotesByTag(tag: string): Note[] {
 	if (!doc) return [];
+	const vaultId = getCurrentVaultId();
 	const lowerTag = tag.toLowerCase();
 
 	return Object.values(doc.notes).filter((note) => {
+		if (note.vaultId !== vaultId) return false;
 		const tags = extractTags(note.content);
 		return tags.includes(lowerTag);
 	});
 }
 
-// Find notes that link to a given note
+// Extract people mentions from content (@Full Name)
+export function extractPeople(content: string): string[] {
+	const regex = /@([A-Z][a-zA-Z]+(?: [A-Z][a-zA-Z]+)*)/g;
+	const people = new Set<string>();
+	let match;
+	while ((match = regex.exec(content)) !== null) {
+		people.add(match[1]);
+	}
+	return Array.from(people);
+}
+
+// Get all unique people across notes in current vault
+export function getAllPeople(): { name: string; count: number }[] {
+	if (!doc) return [];
+	const vaultId = getCurrentVaultId();
+	const peopleCounts = new Map<string, number>();
+
+	for (const note of Object.values(doc.notes)) {
+		if (note.vaultId !== vaultId) continue;
+		const people = extractPeople(note.content);
+		for (const person of people) {
+			peopleCounts.set(person, (peopleCounts.get(person) || 0) + 1);
+		}
+	}
+
+	return Array.from(peopleCounts.entries())
+		.map(([name, count]) => ({ name, count }))
+		.sort((a, b) => b.count - a.count);
+}
+
+// Get notes mentioning a specific person in current vault
+export function getNotesByPerson(name: string): Note[] {
+	if (!doc) return [];
+	const vaultId = getCurrentVaultId();
+
+	return Object.values(doc.notes).filter((note) => {
+		if (note.vaultId !== vaultId) return false;
+		const people = extractPeople(note.content);
+		return people.some((p) => p.toLowerCase() === name.toLowerCase());
+	});
+}
+
+// Extract dates from content (//YYYY-MM-DD)
+export function extractDates(content: string): string[] {
+	const regex = /\/\/(\d{4}-\d{2}-\d{2})/g;
+	const dates = new Set<string>();
+	let match;
+	while ((match = regex.exec(content)) !== null) {
+		dates.add(match[1]);
+	}
+	return Array.from(dates);
+}
+
+// Get all unique dates across notes in current vault
+export function getAllDates(): { date: string; count: number }[] {
+	if (!doc) return [];
+	const vaultId = getCurrentVaultId();
+	const dateCounts = new Map<string, number>();
+
+	for (const note of Object.values(doc.notes)) {
+		if (note.vaultId !== vaultId) continue;
+		const dates = extractDates(note.content);
+		for (const date of dates) {
+			dateCounts.set(date, (dateCounts.get(date) || 0) + 1);
+		}
+	}
+
+	return Array.from(dateCounts.entries())
+		.map(([date, count]) => ({ date, count }))
+		.sort((a, b) => b.date.localeCompare(a.date)); // Sort by date descending
+}
+
+// Get notes with a specific date in current vault
+export function getNotesByDate(date: string): Note[] {
+	if (!doc) return [];
+	const vaultId = getCurrentVaultId();
+
+	return Object.values(doc.notes).filter((note) => {
+		if (note.vaultId !== vaultId) return false;
+		const dates = extractDates(note.content);
+		return dates.includes(date);
+	});
+}
+
+// Find notes that link to a given note (in current vault)
 export function findBacklinks(noteId: string): Note[] {
 	if (!doc) return [];
 	const targetNote = doc.notes[noteId];
 	if (!targetNote) return [];
 
+	const vaultId = targetNote.vaultId;
 	const targetTitle = targetNote.title.toLowerCase();
 
 	return Object.values(doc.notes).filter((note) => {
 		if (note.id === noteId) return false;
+		if (note.vaultId !== vaultId) return false;
 		const links = extractWikilinks(note.content);
 		return links.some((link) => link.toLowerCase() === targetTitle);
 	});
+}
+
+// Find a note by its title in current vault (case-insensitive)
+export function findNoteByTitle(title: string): Note | undefined {
+	if (!doc) return undefined;
+	const vaultId = getCurrentVaultId();
+	const lowerTitle = title.toLowerCase();
+	return Object.values(doc.notes).find(
+		(note) => note.vaultId === vaultId && note.title.toLowerCase() === lowerTitle
+	);
 }

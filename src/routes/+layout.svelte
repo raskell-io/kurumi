@@ -8,6 +8,7 @@
 	import { page } from '$app/stores';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import FolderTree from '$lib/components/FolderTree.svelte';
+	import VaultSelector from '$lib/components/VaultSelector.svelte';
 
 	let { children } = $props();
 
@@ -19,6 +20,9 @@
 	let showTags = $state(false);
 	let theme = $state<'light' | 'dark' | 'system'>('system');
 	let viewMode = $state<'list' | 'folders'>('folders');
+
+	// Check if we're in read mode (hide sidebar)
+	let isReadMode = $derived($page.url.pathname.startsWith('/read'));
 
 	// Derived: all tags
 	let allTags = $derived(initialized ? getAllTags() : []);
@@ -71,6 +75,14 @@
 		}
 
 		if (e.metaKey || e.ctrlKey) {
+			// Cmd+Shift shortcuts
+			if (e.shiftKey && e.key === 'r') {
+				e.preventDefault();
+				goto('/read');
+				if (isMobile) sidebarOpen = false;
+				return;
+			}
+
 			switch (e.key) {
 				case 'k':
 					e.preventDefault();
@@ -83,6 +95,11 @@
 				case 'g':
 					e.preventDefault();
 					goto('/graph');
+					if (isMobile) sidebarOpen = false;
+					break;
+				case 'r':
+					e.preventDefault();
+					goto('/references');
 					if (isMobile) sidebarOpen = false;
 					break;
 				case ',':
@@ -184,8 +201,8 @@
 	</div>
 {:else}
 	<div class="flex h-[100dvh] bg-[var(--color-bg)]">
-		<!-- Mobile overlay -->
-		{#if isMobile && sidebarOpen}
+		<!-- Mobile overlay (hidden in read mode) -->
+		{#if !isReadMode && isMobile && sidebarOpen}
 			<button
 				class="fixed inset-0 z-40 bg-black/50"
 				onclick={() => (sidebarOpen = false)}
@@ -193,7 +210,8 @@
 			></button>
 		{/if}
 
-		<!-- Sidebar -->
+		<!-- Sidebar (hidden in read mode) -->
+		{#if !isReadMode}
 		<aside
 			class="fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-[var(--color-border)] bg-[var(--color-bg-secondary)] transition-transform duration-300 ease-out md:relative md:z-auto md:w-64 md:translate-x-0"
 			class:-translate-x-full={!sidebarOpen}
@@ -202,9 +220,9 @@
 			<div
 				class="flex items-center justify-between border-b border-[var(--color-border)] p-4 safe-top"
 			>
-				<div class="flex items-center gap-3">
+				<div class="flex items-center gap-2">
 					<img src="/icon-192.avif" alt="Kurumi" class="h-8 w-8 rounded" />
-					<span class="text-lg font-semibold text-[var(--color-text)]">Kurumi</span>
+					<VaultSelector />
 				</div>
 				<!-- Close button (mobile only) -->
 				<button
@@ -432,6 +450,37 @@
 						</svg>
 						Graph
 					</a>
+					<a
+						href="/references"
+						onclick={handleNoteClick}
+						class="flex flex-1 items-center gap-2 rounded-lg px-3 py-3 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
+					>
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							class="h-5 w-5"
+							viewBox="0 0 20 20"
+							fill="currentColor"
+						>
+							<path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z" />
+						</svg>
+						Refs
+					</a>
+					<a
+						href="/read"
+						onclick={handleNoteClick}
+						class="flex flex-1 items-center gap-2 rounded-lg px-3 py-3 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
+						title="Read Mode"
+					>
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							class="h-5 w-5"
+							viewBox="0 0 20 20"
+							fill="currentColor"
+						>
+							<path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z" />
+						</svg>
+						Read
+					</a>
 					<button
 						onclick={cycleTheme}
 						class="rounded-lg p-3 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
@@ -473,10 +522,12 @@
 				</a>
 			</div>
 		</aside>
+		{/if}
 
 		<!-- Main Content -->
-		<main class="flex flex-1 flex-col overflow-hidden">
-			<!-- Mobile header -->
+		<main class="flex flex-1 flex-col" class:overflow-hidden={!isReadMode}>
+			<!-- Mobile header (hidden in read mode) -->
+			{#if !isReadMode}
 			<header
 				class="flex items-center gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-3 safe-top md:hidden"
 			>
@@ -505,8 +556,9 @@
 					<span class="font-semibold text-[var(--color-text)]">Kurumi</span>
 				</div>
 			</header>
+			{/if}
 
-			<div class="flex-1 overflow-hidden">
+			<div class="flex-1" class:overflow-hidden={!isReadMode} class:overflow-auto={isReadMode}>
 				{@render children()}
 			</div>
 		</main>

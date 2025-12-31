@@ -15,6 +15,9 @@ const config = {
 		}),
 		paths: {
 			base: ''
+		},
+		prerender: {
+			handleUnseenRoutes: 'ignore' // Dynamic routes handled by SPA fallback
 		}
 	}
 };
