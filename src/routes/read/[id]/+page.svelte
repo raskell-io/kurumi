@@ -4,8 +4,30 @@
 	import { getNote, getFolder, getFolderPath, findBacklinks, extractTags, notes } from '$lib/db';
 	import ReadNav from '$lib/components/ReadNav.svelte';
 	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
+	import RefPopup from '$lib/components/RefPopup.svelte';
 	import type { Note } from '$lib/db';
 	import { Clock, Folder, Link2 } from 'lucide-svelte';
+
+	// Ref popup state
+	let showRefPopup = $state(false);
+	let refPopupType = $state<'person' | 'date' | 'tag'>('person');
+	let refPopupValue = $state('');
+	let refPopupPosition = $state({ x: 0, y: 0 });
+
+	function handleRefClick(type: 'person' | 'date' | 'tag', value: string, position: { x: number; y: number }) {
+		refPopupType = type;
+		refPopupValue = value;
+		refPopupPosition = position;
+		showRefPopup = true;
+	}
+
+	function handleRefPopupClose() {
+		showRefPopup = false;
+	}
+
+	function handleRefNavigate(href: string) {
+		goto(href);
+	}
 
 	// Get current note
 	let note = $derived(getNote($page.params.id));
@@ -103,7 +125,7 @@
 
 		<!-- Content -->
 		<div class="note-content">
-			<MarkdownRenderer content={note.content} />
+			<MarkdownRenderer content={note.content} onRefClick={handleRefClick} />
 		</div>
 
 		<!-- Backlinks -->
@@ -153,6 +175,16 @@
 		<p>This note doesn't exist or has been deleted.</p>
 		<a href="/read" class="back-link">Back to all notes</a>
 	</div>
+{/if}
+
+{#if showRefPopup}
+	<RefPopup
+		type={refPopupType}
+		value={refPopupValue}
+		position={refPopupPosition}
+		onClose={handleRefPopupClose}
+		onNavigate={handleRefNavigate}
+	/>
 {/if}
 
 <style>

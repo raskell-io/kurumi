@@ -4,9 +4,10 @@
 
 	interface Props {
 		content: string;
+		onRefClick?: (type: 'person' | 'date' | 'tag', value: string, position: { x: number; y: number }) => void;
 	}
 
-	let { content }: Props = $props();
+	let { content, onRefClick }: Props = $props();
 
 	// Process custom syntax AFTER marked has rendered
 	function postProcessHtml(html: string): string {
@@ -19,19 +20,19 @@
 			return `<a href="/?search=${encodeURIComponent(title)}" class="wikilink wikilink-broken">${title}</a>`;
 		});
 
-		// Process dates //YYYY-MM-DD
+		// Process dates //YYYY-MM-DD - use data attributes for popup
 		html = html.replace(/\/\/(\d{4}-\d{2}-\d{2})/g, (_, date) => {
-			return `<a href="/read/date/${date}" class="date-reference">${date}</a>`;
+			return `<button type="button" class="date-reference" data-ref-type="date" data-ref-value="${date}">${date}</button>`;
 		});
 
-		// Process people @Full Name
+		// Process people @Full Name - use data attributes for popup
 		html = html.replace(/@([A-Z][a-zA-Z]*(?: [A-Z][a-zA-Z]*)*)/g, (_, name) => {
-			return `<a href="/read/person/${encodeURIComponent(name)}" class="person-reference">@${name}</a>`;
+			return `<button type="button" class="person-reference" data-ref-type="person" data-ref-value="${name}">@${name}</button>`;
 		});
 
-		// Process tags #tag-name (avoid headings by checking it's not after < which would be inside a tag)
+		// Process tags #tag-name - use data attributes for popup
 		html = html.replace(/(?<![<\w])#([a-zA-Z][a-zA-Z0-9_-]*)/g, (_, tag) => {
-			return `<a href="/read/tag/${tag}" class="tag-reference">#${tag}</a>`;
+			return `<button type="button" class="tag-reference" data-ref-type="tag" data-ref-value="${tag}">#${tag}</button>`;
 		});
 
 		// Process URLs that aren't already in href attributes
@@ -55,9 +56,23 @@
 	}
 
 	let html = $derived(renderMarkdown(content));
+
+	function handleClick(e: MouseEvent) {
+		const target = e.target as HTMLElement;
+		const refType = target.dataset.refType as 'person' | 'date' | 'tag' | undefined;
+		const refValue = target.dataset.refValue;
+
+		if (refType && refValue && onRefClick) {
+			e.preventDefault();
+			e.stopPropagation();
+			onRefClick(refType, refValue, { x: e.clientX, y: e.clientY });
+		}
+	}
 </script>
 
-<div class="markdown-content">
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="markdown-content" onclick={handleClick}>
 	{@html html}
 </div>
 
@@ -157,14 +172,17 @@
 		background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(59, 130, 246, 0.25));
 		color: #3b82f6;
 		padding: 0.1em 0.4em;
+		border: none;
 		border-radius: 4px;
 		font-weight: 500;
+		font-size: inherit;
+		font-family: inherit;
+		cursor: pointer;
 		transition: all 0.15s ease;
 	}
 
 	.markdown-content :global(.date-reference:hover) {
 		background: linear-gradient(135deg, rgba(59, 130, 246, 0.25), rgba(59, 130, 246, 0.35));
-		text-decoration: none;
 	}
 
 	/* Person references */
@@ -175,14 +193,17 @@
 		background: linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(34, 197, 94, 0.25));
 		color: #22c55e;
 		padding: 0.1em 0.4em;
+		border: none;
 		border-radius: 1em;
 		font-weight: 500;
+		font-size: inherit;
+		font-family: inherit;
+		cursor: pointer;
 		transition: all 0.15s ease;
 	}
 
 	.markdown-content :global(.person-reference:hover) {
 		background: linear-gradient(135deg, rgba(34, 197, 94, 0.25), rgba(34, 197, 94, 0.35));
-		text-decoration: none;
 	}
 
 	/* Tag references */
@@ -193,14 +214,17 @@
 		background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(245, 158, 11, 0.25));
 		color: #f59e0b;
 		padding: 0.1em 0.4em;
+		border: none;
 		border-radius: 4px;
 		font-weight: 500;
+		font-size: inherit;
+		font-family: inherit;
+		cursor: pointer;
 		transition: all 0.15s ease;
 	}
 
 	.markdown-content :global(.tag-reference:hover) {
 		background: linear-gradient(135deg, rgba(245, 158, 11, 0.25), rgba(245, 158, 11, 0.35));
-		text-decoration: none;
 	}
 
 	/* URL references */
