@@ -6,7 +6,7 @@
 	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
 	import RefPopup from '$lib/components/RefPopup.svelte';
 	import type { Note } from '$lib/db';
-	import { Clock, Folder, Link2 } from 'lucide-svelte';
+	import { Folder, Link2 } from 'lucide-svelte';
 
 	// Ref popup state
 	let showRefPopup = $state(false);
@@ -62,30 +62,6 @@
 		};
 	});
 
-	// Format date
-	function formatDate(timestamp: number): string {
-		return new Date(timestamp).toLocaleDateString('en-US', {
-			weekday: 'long',
-			year: 'numeric',
-			month: 'long',
-			day: 'numeric'
-		});
-	}
-
-	// Format relative time
-	function formatRelative(timestamp: number): string {
-		const now = Date.now();
-		const diffMs = now - timestamp;
-		const diffMins = Math.floor(diffMs / (1000 * 60));
-		const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-		const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-		if (diffMins < 1) return 'Just now';
-		if (diffMins < 60) return `${diffMins} minute${diffMins === 1 ? '' : 's'} ago`;
-		if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
-		if (diffDays < 7) return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
-		return formatDate(timestamp);
-	}
 </script>
 
 <svelte:head>
@@ -101,11 +77,6 @@
 			<h1 class="note-title">{note.title || 'Untitled'}</h1>
 
 			<div class="note-meta">
-				<span class="meta-item" title={formatDate(note.modified)}>
-					<Clock class="meta-icon" />
-					{formatRelative(note.modified)}
-				</span>
-
 				{#if folder}
 					<a href="/read/folder/{folder.id}" class="meta-item meta-link">
 						<Folder class="meta-icon" />
