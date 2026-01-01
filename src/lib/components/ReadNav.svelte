@@ -4,7 +4,7 @@
 	import { search } from '$lib/search';
 	import { currentVault } from '$lib/db';
 	import { getIconById } from '$lib/icons/vault-icons';
-	import { Search, FileText, Sun, Moon, Pencil, PenSquare } from 'lucide-svelte';
+	import { Search, NotebookText, Sun, Moon, Pencil, PenSquare } from 'lucide-svelte';
 
 	interface Props {
 		noteId?: string;
@@ -161,7 +161,7 @@
 							class:selected={i === selectedIndex}
 							onclick={() => { searchOpen = false; searchQuery = ''; }}
 						>
-							<FileText class="result-icon" />
+							<NotebookText class="result-icon" />
 							{result.title || 'Untitled'}
 						</a>
 					{/each}

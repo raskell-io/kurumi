@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { Plus, Check, AlertCircle, Info, X, FileText, Folder, Archive } from 'lucide-svelte';
-	import { resourceColors, type ResourceType } from '$lib/types/resources';
+	import { X } from 'lucide-svelte';
+	import { resourceColors, getResourceIcon, type ResourceType } from '$lib/types/resources';
 
 	interface Props {
 		message: string;
@@ -19,18 +19,7 @@
 		return () => clearTimeout(timer);
 	});
 
-	// Get icon based on resource type
-	function getIconComponent() {
-		switch (resourceType) {
-			case 'note': return FileText;
-			case 'folder': return Folder;
-			case 'vault': return Archive;
-			case 'action': return Check;
-			default: return Info;
-		}
-	}
-
-	const IconComponent = $derived(getIconComponent());
+	const IconComponent = $derived(getResourceIcon(resourceType));
 	const colors = $derived(resourceType ? resourceColors[resourceType] : null);
 </script>
 

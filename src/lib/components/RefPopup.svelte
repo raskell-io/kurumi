@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { getPersonByName, getEventsByDate, getNotesByPerson, getNotesByDate, getNotesByTag } from '$lib/db';
 	import type { Person, Event, Note } from '$lib/db';
-	import { X, User, Calendar, Hash, Mail, Phone, Building, Briefcase, MapPin, Clock, Users, FileText } from 'lucide-svelte';
+	import { X, User, Calendar, Hash, Mail, Phone, Building, Briefcase, MapPin, Clock, Users, NotebookText } from 'lucide-svelte';
 
 	interface Props {
 		type: 'person' | 'date' | 'tag';
@@ -159,7 +159,7 @@
 		{#if relatedNotes.length > 0}
 			<div class="notes-section">
 				<div class="section-title">
-					<FileText class="h-4 w-4" />
+					<NotebookText class="h-4 w-4" />
 					<span>{relatedNotes.length} {relatedNotes.length === 1 ? 'note' : 'notes'}</span>
 				</div>
 				<div class="notes-list">

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { notes, folders, type Note, type Folder } from '$lib/db';
-	import { Search, FileText } from 'lucide-svelte';
+	import { Search, NotebookText } from 'lucide-svelte';
 
 	interface Props {
 		currentFolderId: string | null;
@@ -153,7 +153,7 @@
 					onclick={() => handleSelect(note)}
 					onmouseenter={() => selectedIndex = i}
 				>
-					<FileText class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
+					<NotebookText class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
 					<div class="note-info">
 						<span class="note-title">{note.title || 'Untitled'}</span>
 						{#if note.folderId}

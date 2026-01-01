@@ -2,7 +2,7 @@
 	import { notes, folders, getSubfolders, getNotesInFolder, getAllTags } from '$lib/db';
 	import ReadNav from '$lib/components/ReadNav.svelte';
 	import NoteCard from '$lib/components/NoteCard.svelte';
-	import { FileText, Folder, ChevronRight } from 'lucide-svelte';
+	import { NotebookText, Folder, ChevronRight } from 'lucide-svelte';
 
 	type SortOption = 'recent' | 'alphabetical' | 'oldest';
 	type ViewOption = 'all' | 'folders';
@@ -146,7 +146,7 @@
 			{#if rootNotes.length > 0}
 				<div class="folder-group">
 					<h2 class="folder-title">
-						<FileText class="folder-icon" />
+						<NotebookText class="folder-icon" />
 						Unfiled Notes
 						<span class="folder-count">{rootNotes.length}</span>
 					</h2>

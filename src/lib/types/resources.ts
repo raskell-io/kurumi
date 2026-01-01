@@ -1,3 +1,6 @@
+import { NotebookText, Folder, Archive, Check, Info } from 'lucide-svelte';
+import type { ComponentType } from 'svelte';
+
 // Catppuccin Mocha color palette for resource types
 export const resourceColors = {
 	note: {
@@ -22,4 +25,17 @@ export type ResourceType = keyof typeof resourceColors;
 
 export function getResourceColor(type: ResourceType) {
 	return resourceColors[type];
+}
+
+// Icons for each resource type
+export const resourceIcons: Record<ResourceType | 'default', ComponentType> = {
+	note: NotebookText,
+	folder: Folder,
+	vault: Archive,
+	action: Check,
+	default: Info,
+};
+
+export function getResourceIcon(type: ResourceType | null): ComponentType {
+	return type ? resourceIcons[type] : resourceIcons.default;
 }

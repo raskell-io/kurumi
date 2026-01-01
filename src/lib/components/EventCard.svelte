@@ -5,7 +5,7 @@
 		Clock,
 		MapPin,
 		Users,
-		FileText,
+		NotebookText,
 		Plus,
 		ChevronRight,
 		Pencil
@@ -226,7 +226,7 @@
 						{#each dateInfo.mentioningNotes as note (note.id)}
 							<li>
 								<button class="note-item" onclick={() => openNote(note.id)}>
-									<FileText class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
+									<NotebookText class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
 									<div class="note-info">
 										<span class="note-title">{note.title || 'Untitled'}</span>
 										<span class="note-preview">{getPreview(note.content)}</span>

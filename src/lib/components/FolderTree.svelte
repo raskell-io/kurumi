@@ -23,7 +23,7 @@
 		FolderOpen,
 		FolderPlus,
 		FilePlus,
-		FileText,
+		NotebookText,
 		Pencil,
 		Trash2,
 		FolderInput,
@@ -1140,7 +1140,7 @@
 																ondragstart={(e) => handleDragStart(e, { type: 'note', id: note.id })}
 																ondragend={handleDragEnd}
 															>
-																<FileText class="mr-2 h-5 w-5 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
+																<NotebookText class="mr-2 h-5 w-5 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
 																{#if renamingNote === note.id}
 																	<input
 																		type="text"
@@ -1195,7 +1195,7 @@
 												ondragstart={(e) => handleDragStart(e, { type: 'note', id: note.id })}
 												ondragend={handleDragEnd}
 											>
-												<FileText class="mr-2 h-5 w-5 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
+												<NotebookText class="mr-2 h-5 w-5 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
 												{#if renamingNote === note.id}
 													<input
 														type="text"
@@ -1251,7 +1251,7 @@
 								ondragstart={(e) => handleDragStart(e, { type: 'note', id: note.id })}
 								ondragend={handleDragEnd}
 							>
-								<FileText class="mr-2 h-5 w-5 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
+								<NotebookText class="mr-2 h-5 w-5 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
 								{#if renamingNote === note.id}
 									<input
 										type="text"
@@ -1309,7 +1309,7 @@
 				ondragstart={(e) => handleDragStart(e, { type: 'note', id: note.id })}
 				ondragend={handleDragEnd}
 			>
-				<FileText class="mr-2 h-5 w-5 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
+				<NotebookText class="mr-2 h-5 w-5 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
 				{#if renamingNote === note.id}
 					<input
 						type="text"
