@@ -189,6 +189,60 @@ export async function testConnection(): Promise<{ success: boolean; error?: stri
 		return { success: false, error: 'AI not configured' };
 	}
 
-	const result = await runAction('improve', 'Hello world');
-	return { success: result.success, error: result.error };
+	try {
+		if (config.provider === 'openai') {
+			// Use models endpoint to verify API key without consuming tokens
+			const response = await fetch('https://api.openai.com/v1/models', {
+				method: 'GET',
+				headers: {
+					Authorization: `Bearer ${config.apiKey}`
+				}
+			});
+
+			if (!response.ok) {
+				if (response.status === 401) {
+					return { success: false, error: 'Invalid API key' };
+				}
+				if (response.status === 429) {
+					return { success: false, error: 'Rate limit exceeded. Try again later.' };
+				}
+				return { success: false, error: `API error: ${response.status}` };
+			}
+
+			return { success: true };
+		} else {
+			// Anthropic: make a minimal request with very low max_tokens
+			const response = await fetch('https://api.anthropic.com/v1/messages', {
+				method: 'POST',
+				headers: {
+					'x-api-key': config.apiKey,
+					'anthropic-version': '2023-06-01',
+					'anthropic-dangerous-direct-browser-access': 'true',
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					model: config.model,
+					max_tokens: 1,
+					messages: [{ role: 'user', content: 'Hi' }]
+				})
+			});
+
+			if (!response.ok) {
+				if (response.status === 401) {
+					return { success: false, error: 'Invalid API key' };
+				}
+				if (response.status === 429) {
+					return { success: false, error: 'Rate limit exceeded. Try again later.' };
+				}
+				const data = await response.json().catch(() => ({}));
+				const errorMsg = data.error?.message || `API error: ${response.status}`;
+				return { success: false, error: errorMsg };
+			}
+
+			return { success: true };
+		}
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Network error';
+		return { success: false, error: message };
+	}
 }

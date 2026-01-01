@@ -59,6 +59,7 @@
 	--font-sans: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 	--font-mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 	--font-editor: 'iA Writer Quattro S', Georgia, 'Times New Roman', serif;
+	--font-size-editor: 1.0625rem;
 
 	/* Colors - Catppuccin Latte with white background */
 	--color-bg: #ffffff;
@@ -112,6 +113,19 @@
 
 :root.font-geist {
 	--font-editor: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Editor font size options */
+:root.font-size-small {
+	--font-size-editor: 0.9375rem; /* 15px */
+}
+
+:root.font-size-medium {
+	--font-size-editor: 1.0625rem; /* 17px - default */
+}
+
+:root.font-size-large {
+	--font-size-editor: 1.1875rem; /* 19px */
 }
 
 /* Base styles */
@@ -422,7 +436,7 @@ textarea {
 /* Editor uses iA Writer Quattro S */
 .milkdown {
 	font-family: var(--font-editor);
-	font-size: 1.0625rem;
+	font-size: var(--font-size-editor);
 	line-height: 1.75;
 }
 

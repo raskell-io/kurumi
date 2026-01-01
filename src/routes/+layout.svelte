@@ -11,8 +11,8 @@
 	import FolderTree from '$lib/components/FolderTree.svelte';
 	import VaultSelector from '$lib/components/VaultSelector.svelte';
 	import Snackbar from '$lib/components/Snackbar.svelte';
-	import { X, Plus, Search, ChevronDown, GitFork, BookOpen, Settings, Menu, Cloud, RefreshCw, CheckCircle, AlertCircle, Pencil, Tag } from 'lucide-svelte';
-	import { showNewNoteSnackbar } from '$lib/stores/snackbar';
+	import { X, Plus, Search, ChevronDown, GitFork, BookOpen, Settings, ListTree, Cloud, RefreshCw, CheckCircle, AlertCircle, Pencil, Tag } from 'lucide-svelte';
+	import { showNewNoteSnackbar, triggerSearch } from '$lib/stores/snackbar';
 
 	let { children } = $props();
 
@@ -34,6 +34,17 @@
 			if (value) {
 				showNewNoteAnimation = true;
 				showNewNoteSnackbar.set(false);
+			}
+		});
+		return unsubscribe;
+	});
+
+	// Subscribe to search trigger from other pages
+	$effect(() => {
+		const unsubscribe = triggerSearch.subscribe(value => {
+			if (value) {
+				showSearch = true;
+				triggerSearch.set(false);
 			}
 		});
 		return unsubscribe;
@@ -186,6 +197,15 @@
 		} else {
 			// Default to quattro
 			document.documentElement.classList.add('font-quattro');
+		}
+
+		// Load editor font size from localStorage
+		const savedFontSize = localStorage.getItem('kurumi-editor-font-size') as 'small' | 'medium' | 'large' | null;
+		if (savedFontSize) {
+			document.documentElement.classList.add(`font-size-${savedFontSize}`);
+		} else {
+			// Default to medium
+			document.documentElement.classList.add('font-size-medium');
 		}
 
 		// Load sidebar width from localStorage
@@ -623,7 +643,7 @@
 						class="shrink-0 rounded-lg p-2 text-[var(--color-text-muted)] hover:bg-[var(--color-border)]"
 						aria-label="Open sidebar"
 					>
-						<Menu class="h-6 w-6" />
+						<ListTree class="h-6 w-6" />
 					</button>
 					{#if breadcrumb && breadcrumb.length > 0}
 						<div class="flex min-w-0 items-center gap-1 text-sm text-[var(--color-text-muted)]">
@@ -640,12 +660,12 @@
 				</div>
 				<button
 					type="button"
-					onclick={handleNewNote}
+					onclick={openSearch}
 					class="rounded-lg p-2 text-[var(--color-accent)] transition-colors hover:bg-[var(--color-border)]"
-					aria-label="New note"
-					title="New note"
+					aria-label="Search"
+					title="Search"
 				>
-					<Plus class="h-6 w-6" />
+					<Search class="h-6 w-6" />
 				</button>
 			</header>
 			{/if}

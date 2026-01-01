@@ -13,13 +13,14 @@
 		testConnection as testAIConnection
 	} from '$lib/ai';
 	import { onMount } from 'svelte';
-	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2, RefreshCw, CheckCircle, XCircle, Wifi, Sparkles, Bot, ChevronDown, Database, Cloud, Lock, Shield, BookOpen, Palette, HardDrive, Info, Type } from 'lucide-svelte';
+	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2, RefreshCw, CheckCircle, XCircle, Wifi, Sparkles, ChevronDown, Database, Cloud, Lock, Shield, BookOpen, Palette, HardDrive, Info, Type } from 'lucide-svelte';
 
 	let syncToken = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-token') || '' : '');
 	let syncUrl = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-url') || '' : '');
 	let showSaved = $state(false);
 	let theme = $state<'system' | 'light' | 'dark'>('system');
 	let editorFont = $state<'quattro' | 'geist'>('quattro');
+	let editorFontSize = $state<'small' | 'medium' | 'large'>('medium');
 
 	// Import state
 	let showImportModal = $state(false);
@@ -79,6 +80,12 @@
 			editorFont = savedFont;
 		}
 
+		// Load editor font size
+		const savedFontSize = localStorage.getItem('kurumi-editor-font-size') as 'small' | 'medium' | 'large' | null;
+		if (savedFontSize) {
+			editorFontSize = savedFontSize;
+		}
+
 		initSyncState();
 
 		// Load AI settings
@@ -104,6 +111,13 @@
 		localStorage.setItem('kurumi-editor-font', f);
 		document.documentElement.classList.remove('font-quattro', 'font-geist');
 		document.documentElement.classList.add(`font-${f}`);
+	}
+
+	function setEditorFontSize(s: 'small' | 'medium' | 'large') {
+		editorFontSize = s;
+		localStorage.setItem('kurumi-editor-font-size', s);
+		document.documentElement.classList.remove('font-size-small', 'font-size-medium', 'font-size-large');
+		document.documentElement.classList.add(`font-size-${s}`);
 	}
 
 	function saveSyncSettings() {
@@ -352,6 +366,34 @@
 							</button>
 						</div>
 					</div>
+
+					<!-- Editor Font Size -->
+					<div class="mt-6 pt-4 border-t border-[var(--color-border)]">
+						<h3 class="mb-2 text-sm font-medium text-[var(--color-text)]">Editor Font Size</h3>
+						<p class="mb-4 text-sm text-[var(--color-text-muted)]">
+							Adjust the text size in the editor.
+						</p>
+						<div class="flex flex-wrap gap-2">
+							<button
+								onclick={() => setEditorFontSize('small')}
+								class="flex items-center gap-2 rounded-lg border px-4 py-3 transition-colors {editorFontSize === 'small' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'}"
+							>
+								<span class="text-sm">Small</span>
+							</button>
+							<button
+								onclick={() => setEditorFontSize('medium')}
+								class="flex items-center gap-2 rounded-lg border px-4 py-3 transition-colors {editorFontSize === 'medium' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'}"
+							>
+								<span>Medium</span>
+							</button>
+							<button
+								onclick={() => setEditorFontSize('large')}
+								class="flex items-center gap-2 rounded-lg border px-4 py-3 transition-colors {editorFontSize === 'large' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'}"
+							>
+								<span class="text-lg">Large</span>
+							</button>
+						</div>
+					</div>
 				</div>
 			{/if}
 		</section>
@@ -525,14 +567,20 @@
 									onclick={() => handleProviderChange('openai')}
 									class="flex flex-1 items-center justify-center gap-2 rounded-lg border px-4 py-3 transition-colors {aiProvider === 'openai' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-border)]'}"
 								>
-									<Bot class="h-4 w-4" />
+									<!-- OpenAI Logo -->
+									<svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+										<path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073zM13.26 22.43a4.476 4.476 0 0 1-2.876-1.04l.141-.081 4.779-2.758a.795.795 0 0 0 .392-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.494 4.494zM3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646zM2.34 7.896a4.485 4.485 0 0 1 2.366-1.973V11.6a.766.766 0 0 0 .388.676l5.815 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.786A4.504 4.504 0 0 1 2.34 7.872zm16.597 3.855l-5.833-3.387L15.119 7.2a.076.076 0 0 1 .071 0l4.83 2.791a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.407-.667zm2.01-3.023l-.141-.085-4.774-2.782a.776.776 0 0 0-.785 0L9.409 9.23V6.897a.066.066 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.68 4.66zm-12.64 4.135l-2.02-1.164a.08.08 0 0 1-.038-.057V6.075a4.5 4.5 0 0 1 7.375-3.453l-.142.08L8.704 5.46a.795.795 0 0 0-.393.681zm1.097-2.365l2.602-1.5 2.607 1.5v2.999l-2.597 1.5-2.607-1.5z"/>
+									</svg>
 									OpenAI
 								</button>
 								<button
 									onclick={() => handleProviderChange('anthropic')}
 									class="flex flex-1 items-center justify-center gap-2 rounded-lg border px-4 py-3 transition-colors {aiProvider === 'anthropic' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-border)]'}"
 								>
-									<Sparkles class="h-4 w-4" />
+									<!-- Anthropic Logo -->
+									<svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+										<path d="M13.827 3.52h3.603L24 20.48h-3.603l-6.57-16.96zm-7.258 0h3.767L16.906 20.48h-3.674l-1.343-3.461H5.017l-1.344 3.46H0L6.57 3.522zm1.04 3.781L5.246 14.14h4.726L7.609 7.301z"/>
+									</svg>
 									Anthropic
 								</button>
 							</div>
