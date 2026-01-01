@@ -4,7 +4,7 @@
 	import { search } from '$lib/search';
 	import { currentVault } from '$lib/db';
 	import { getIconById } from '$lib/icons/vault-icons';
-	import { Search, NotebookText, Sun, Moon, Pencil, PenSquare } from 'lucide-svelte';
+	import { Search, NotebookText, Pencil, PenSquare } from 'lucide-svelte';
 
 	interface Props {
 		noteId?: string;
@@ -20,25 +20,6 @@
 	let searchResults = $state<{ id: string; title: string }[]>([]);
 	let selectedIndex = $state(0);
 	let searchInputRef: HTMLInputElement;
-
-	// Theme state
-	let theme = $state<'light' | 'dark' | 'system'>('system');
-
-	$effect(() => {
-		const savedTheme = localStorage.getItem('kurumi-theme') as 'light' | 'dark' | 'system' | null;
-		if (savedTheme) {
-			theme = savedTheme;
-		}
-	});
-
-	function cycleTheme() {
-		// In read mode, only toggle between light and dark (system is in settings)
-		const next = theme === 'light' || theme === 'system' ? 'dark' : 'light';
-		theme = next;
-		localStorage.setItem('kurumi-theme', next);
-		document.documentElement.classList.remove('light', 'dark');
-		document.documentElement.classList.add(next);
-	}
 
 	$effect(() => {
 		if (searchQuery.trim()) {
@@ -174,15 +155,6 @@
 
 		<!-- Actions -->
 		<div class="nav-actions">
-			<!-- Theme toggle (light/dark only in read mode) -->
-			<button onclick={cycleTheme} class="nav-btn" title="Toggle theme">
-				{#if theme === 'dark'}
-					<Moon class="h-5 w-5" />
-				{:else}
-					<Sun class="h-5 w-5" />
-				{/if}
-			</button>
-
 			<!-- Edit link: show note-specific when viewing a note, general when not -->
 			{#if noteId}
 				<a href="/note/{noteId}" class="nav-btn edit-btn" title="Edit this note">
