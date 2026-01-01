@@ -26,14 +26,20 @@
 		Pencil,
 		Trash2,
 		FolderInput,
-		FolderSymlink
+		FolderSymlink,
+		SquarePen,
+		ArrowUpNarrowWide,
+		AlignVerticalSpaceAround,
+		ChevronsDownUp
 	} from 'lucide-svelte';
 
 	type Props = {
 		onNoteClick?: () => void;
+		onNoteCreate?: () => void;
+		onFolderCreate?: () => void;
 	};
 
-	let { onNoteClick }: Props = $props();
+	let { onNoteClick, onNoteCreate, onFolderCreate }: Props = $props();
 
 	// Track which folders are expanded
 	let expandedFolders = $state<Set<string>>(new Set());
@@ -67,9 +73,39 @@
 	const LONG_PRESS_DURATION = 300; // ms to trigger drag
 	const DRAG_THRESHOLD = 10; // pixels to move before canceling long press
 
+	// Sort order state
+	type SortOrder = 'name-asc' | 'name-desc' | 'modified-desc' | 'modified-asc';
+	let sortOrder = $state<SortOrder>('name-asc');
+
+	// Sort function
+	function sortItems<T extends { name?: string; title?: string; modified: number }>(items: T[]): T[] {
+		return [...items].sort((a, b) => {
+			const nameA = ('name' in a ? a.name : a.title) || '';
+			const nameB = ('name' in b ? b.name : b.title) || '';
+			switch (sortOrder) {
+				case 'name-asc':
+					return nameA.localeCompare(nameB);
+				case 'name-desc':
+					return nameB.localeCompare(nameA);
+				case 'modified-desc':
+					return b.modified - a.modified;
+				case 'modified-asc':
+					return a.modified - b.modified;
+				default:
+					return 0;
+			}
+		});
+	}
+
+	function cycleSortOrder() {
+		const orders: SortOrder[] = ['name-asc', 'name-desc', 'modified-desc', 'modified-asc'];
+		const currentIndex = orders.indexOf(sortOrder);
+		sortOrder = orders[(currentIndex + 1) % orders.length];
+	}
+
 	// Get root folders and notes (must depend on reactive stores)
-	let rootFolders = $derived($folders.filter((f) => f.parentId === null));
-	let rootNotes = $derived($notes.filter((n) => n.folderId === null));
+	let rootFolders = $derived(sortItems($folders.filter((f) => f.parentId === null)));
+	let rootNotes = $derived(sortItems($notes.filter((n) => n.folderId === null)));
 
 	function toggleFolder(folderId: string) {
 		const newSet = new Set(expandedFolders);
@@ -111,17 +147,19 @@
 		}
 	}
 
-	function handleCreateNote(folderId: string | null) {
+	async function handleCreateNote(folderId: string | null) {
 		closeContextMenu();
 		const note = addNote(undefined, undefined, folderId);
-		goto(`/note/${note.id}`);
 		onNoteClick?.();
+		await goto(`/note/${note.id}`);
+		onNoteCreate?.();
 	}
 
 	function submitNewFolder() {
 		if (newFolderName.trim()) {
 			const parentId = creatingFolderIn === 'root' ? null : creatingFolderIn;
 			addFolder(newFolderName.trim(), parentId);
+			onFolderCreate?.();
 		}
 		creatingFolderIn = null;
 		newFolderName = '';
@@ -465,6 +503,57 @@
 			return folder?.name || 'Folder';
 		}
 	}
+
+	// Reveal current file in tree
+	function revealCurrentFile() {
+		const match = $page.url.pathname.match(/^\/note\/(.+)$/);
+		if (!match) return;
+
+		const noteId = match[1];
+		const note = $notes.find((n) => n.id === noteId);
+		if (!note) return;
+
+		// If note is in a folder, expand all parent folders
+		if (note.folderId) {
+			const foldersToExpand = new Set<string>();
+			let currentFolderId: string | null = note.folderId;
+
+			while (currentFolderId) {
+				foldersToExpand.add(currentFolderId);
+				const folder = $folders.find((f) => f.id === currentFolderId);
+				currentFolderId = folder?.parentId ?? null;
+			}
+
+			expandedFolders = new Set([...expandedFolders, ...foldersToExpand]);
+		}
+
+		// Scroll to the note element
+		setTimeout(() => {
+			const noteElement = document.querySelector(`a[href="/note/${noteId}"]`);
+			noteElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		}, 100);
+	}
+
+	// Collapse all folders
+	function collapseAll() {
+		expandedFolders = new Set();
+	}
+
+	// Get sort order tooltip
+	function getSortTooltip(): string {
+		switch (sortOrder) {
+			case 'name-asc':
+				return 'Sort: Name A-Z';
+			case 'name-desc':
+				return 'Sort: Name Z-A';
+			case 'modified-desc':
+				return 'Sort: Newest first';
+			case 'modified-asc':
+				return 'Sort: Oldest first';
+			default:
+				return 'Change sort order';
+		}
+	}
 </script>
 
 <svelte:window
@@ -490,14 +579,44 @@
 	class:drop-target-root={dropTargetRoot}
 	role="tree"
 >
-	<!-- Create folder at root button -->
-	<button
-		onclick={() => handleCreateFolder(null)}
-		class="mb-2 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
-	>
-		<FolderPlus class="h-4 w-4" />
-		New Folder
-	</button>
+	<!-- Toolbar -->
+	<div class="mb-3 flex items-center justify-center gap-3">
+		<button
+			onclick={() => handleCreateNote(null)}
+			class="rounded-lg p-3 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
+			title="Add note"
+		>
+			<SquarePen class="h-6 w-6" />
+		</button>
+		<button
+			onclick={() => handleCreateFolder(null)}
+			class="rounded-lg p-3 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
+			title="New folder"
+		>
+			<FolderPlus class="h-6 w-6" />
+		</button>
+		<button
+			onclick={cycleSortOrder}
+			class="rounded-lg p-3 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
+			title={getSortTooltip()}
+		>
+			<ArrowUpNarrowWide class="h-6 w-6" />
+		</button>
+		<button
+			onclick={revealCurrentFile}
+			class="rounded-lg p-3 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
+			title="Reveal current file"
+		>
+			<AlignVerticalSpaceAround class="h-6 w-6" />
+		</button>
+		<button
+			onclick={collapseAll}
+			class="rounded-lg p-3 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
+			title="Collapse all"
+		>
+			<ChevronsDownUp class="h-6 w-6" />
+		</button>
+	</div>
 
 	<!-- New folder input at root -->
 	{#if creatingFolderIn === 'root'}
@@ -528,7 +647,7 @@
 			<!-- Folder header -->
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
-				class="group flex items-center rounded-lg px-2 py-1.5 transition-colors hover:bg-[var(--color-border)]"
+				class="group flex items-center rounded-lg px-2 py-2 transition-colors hover:bg-[var(--color-border)]"
 				class:drop-target={isDraggedOver(folder.id)}
 				class:dragging={draggedItem?.type === 'folder' && draggedItem.id === folder.id}
 				data-folder-id={folder.id}
@@ -544,13 +663,10 @@
 				oncontextmenu={(e) => handleFolderContextMenu(e, folder.id)}
 				role="treeitem"
 			>
-				<button onclick={() => toggleFolder(folder.id)} class="mr-1 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
-					<ChevronRight class="h-3 w-3 transition-transform {isExpanded ? 'rotate-90' : ''}" />
-				</button>
 				{#if isExpanded && hasContents}
-					<FolderOpen class="mr-2 h-4 w-4 text-[var(--color-accent)]" />
+					<FolderOpen class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
 				{:else}
-					<Folder class="mr-2 h-4 w-4 text-[var(--color-accent)]" />
+					<Folder class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
 				{/if}
 				{#if renamingFolder === folder.id}
 					<input
@@ -561,19 +677,22 @@
 							if (e.key === 'Escape') cancelRename();
 						}}
 						onblur={submitRename}
-						class="flex-1 rounded bg-[var(--color-bg)] px-1 text-sm text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
+						class="flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
 						autofocus
 						onclick={(e) => e.stopPropagation()}
 					/>
 				{:else}
 					<span
-						class="flex-1 truncate text-sm text-[var(--color-text)]"
+						class="flex-1 truncate text-base text-[var(--color-text)]"
 						ondblclick={(e) => handleDoubleClick(e, 'folder', folder.id)}
 					>{folder.name}</span>
 				{/if}
 				<span class="ml-1 text-xs text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100">
 					{folderNotes.length}
 				</span>
+				<button onclick={() => toggleFolder(folder.id)} class="ml-1 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
+					<ChevronRight class="h-4 w-4 transition-transform {isExpanded ? 'rotate-90' : ''}" />
+				</button>
 			</div>
 
 			<!-- Folder contents -->
@@ -607,7 +726,7 @@
 						<div class="subfolder-item">
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
 							<div
-								class="group flex items-center rounded-lg px-2 py-1.5 transition-colors hover:bg-[var(--color-border)]"
+								class="group flex items-center rounded-lg px-2 py-2 transition-colors hover:bg-[var(--color-border)]"
 								class:drop-target={isDraggedOver(subfolder.id)}
 								class:dragging={draggedItem?.type === 'folder' && draggedItem.id === subfolder.id}
 								data-folder-id={subfolder.id}
@@ -623,13 +742,10 @@
 								oncontextmenu={(e) => handleFolderContextMenu(e, subfolder.id)}
 								role="treeitem"
 							>
-								<button onclick={() => toggleFolder(subfolder.id)} class="mr-1 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
-									<ChevronRight class="h-3 w-3 transition-transform {isSubExpanded ? 'rotate-90' : ''}" />
-								</button>
 								{#if isSubExpanded && hasSubContents}
-									<FolderOpen class="mr-2 h-4 w-4 text-[var(--color-accent)]" />
+									<FolderOpen class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
 								{:else}
-									<Folder class="mr-2 h-4 w-4 text-[var(--color-accent)]" />
+									<Folder class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
 								{/if}
 								{#if renamingFolder === subfolder.id}
 									<input
@@ -640,19 +756,22 @@
 											if (e.key === 'Escape') cancelRename();
 										}}
 										onblur={submitRename}
-										class="flex-1 rounded bg-[var(--color-bg)] px-1 text-sm text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
+										class="flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
 										autofocus
 										onclick={(e) => e.stopPropagation()}
 									/>
 								{:else}
 									<span
-										class="flex-1 truncate text-sm text-[var(--color-text)]"
+										class="flex-1 truncate text-base text-[var(--color-text)]"
 										ondblclick={(e) => handleDoubleClick(e, 'folder', subfolder.id)}
 									>{subfolder.name}</span>
 								{/if}
 								<span class="ml-1 text-xs text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100">
 									{subFolderNotes.length}
 								</span>
+								<button onclick={() => toggleFolder(subfolder.id)} class="ml-1 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
+									<ChevronRight class="h-4 w-4 transition-transform {isSubExpanded ? 'rotate-90' : ''}" />
+								</button>
 							</div>
 
 							<!-- Subfolder contents -->
@@ -665,7 +784,7 @@
 										<div class="subfolder-item">
 											<!-- svelte-ignore a11y_no_static_element_interactions -->
 											<div
-												class="group flex items-center rounded-lg px-2 py-1.5 transition-colors hover:bg-[var(--color-border)]"
+												class="group flex items-center rounded-lg px-2 py-2 transition-colors hover:bg-[var(--color-border)]"
 												class:drop-target={isDraggedOver(subSubfolder.id)}
 												class:dragging={draggedItem?.type === 'folder' && draggedItem.id === subSubfolder.id}
 												data-folder-id={subSubfolder.id}
@@ -681,10 +800,11 @@
 												oncontextmenu={(e) => handleFolderContextMenu(e, subSubfolder.id)}
 												role="treeitem"
 											>
-												<button onclick={() => toggleFolder(subSubfolder.id)} class="mr-1 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
-													<ChevronRight class="h-3 w-3 transition-transform {isSubSubExpanded ? 'rotate-90' : ''}" />
-												</button>
-												<Folder class="mr-2 h-4 w-4 text-[var(--color-accent)]" />
+												{#if isSubSubExpanded && subSubFolderNotes.length > 0}
+													<FolderOpen class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
+												{:else}
+													<Folder class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
+												{/if}
 												{#if renamingFolder === subSubfolder.id}
 													<input
 														type="text"
@@ -694,19 +814,22 @@
 															if (e.key === 'Escape') cancelRename();
 														}}
 														onblur={submitRename}
-														class="flex-1 rounded bg-[var(--color-bg)] px-1 text-sm text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
+														class="flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
 														autofocus
 														onclick={(e) => e.stopPropagation()}
 													/>
 												{:else}
 													<span
-														class="flex-1 truncate text-sm text-[var(--color-text)]"
+														class="flex-1 truncate text-base text-[var(--color-text)]"
 														ondblclick={(e) => handleDoubleClick(e, 'folder', subSubfolder.id)}
 													>{subSubfolder.name}</span>
 												{/if}
 												<span class="ml-1 text-xs text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100">
 													{subSubFolderNotes.length}
 												</span>
+												<button onclick={() => toggleFolder(subSubfolder.id)} class="ml-1 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
+													<ChevronRight class="h-4 w-4 transition-transform {isSubSubExpanded ? 'rotate-90' : ''}" />
+												</button>
 											</div>
 											{#if isSubSubExpanded}
 												<div class="ml-4 border-l border-[var(--color-border)] pl-2">
@@ -715,7 +838,7 @@
 															href="/note/{note.id}"
 															onclick={handleNoteClick}
 															oncontextmenu={(e) => handleNoteContextMenu(e, note.id)}
-															class="mb-0.5 flex items-center rounded-lg px-2 py-1.5 transition-colors hover:bg-[var(--color-border)]"
+															class="mb-0.5 flex items-center rounded-lg px-2 py-2 transition-colors hover:bg-[var(--color-border)]"
 															class:bg-[var(--color-accent)]={isNoteActive(note.id)}
 															class:text-white={isNoteActive(note.id)}
 															class:dragging={draggedItem?.type === 'note' && draggedItem.id === note.id}
@@ -726,7 +849,7 @@
 															ontouchmove={handleTouchMove}
 															ontouchend={handleTouchEnd}
 														>
-															<FileText class="mr-2 h-4 w-4 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
+															<FileText class="mr-2 h-5 w-5 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
 															{#if renamingNote === note.id}
 																<input
 																	type="text"
@@ -737,12 +860,12 @@
 																	}}
 																	onblur={submitNoteRename}
 																	onclick={(e) => e.preventDefault()}
-																	class="flex-1 rounded bg-[var(--color-bg)] px-1 text-sm text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
+																	class="flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
 																	autofocus
 																/>
 															{:else}
 																<span
-																	class="truncate text-sm"
+																	class="truncate text-base"
 																	ondblclick={(e) => handleDoubleClick(e, 'note', note.id)}
 																>{note.title || 'Untitled'}</span>
 															{/if}
@@ -758,7 +881,7 @@
 											href="/note/{note.id}"
 											onclick={handleNoteClick}
 											oncontextmenu={(e) => handleNoteContextMenu(e, note.id)}
-											class="mb-0.5 flex items-center rounded-lg px-2 py-1.5 transition-colors hover:bg-[var(--color-border)]"
+											class="mb-0.5 flex items-center rounded-lg px-2 py-2 transition-colors hover:bg-[var(--color-border)]"
 											class:bg-[var(--color-accent)]={isNoteActive(note.id)}
 											class:text-white={isNoteActive(note.id)}
 											class:dragging={draggedItem?.type === 'note' && draggedItem.id === note.id}
@@ -769,7 +892,7 @@
 											ontouchmove={handleTouchMove}
 											ontouchend={handleTouchEnd}
 										>
-											<FileText class="mr-2 h-4 w-4 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
+											<FileText class="mr-2 h-5 w-5 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
 											{#if renamingNote === note.id}
 												<input
 													type="text"
@@ -780,12 +903,12 @@
 													}}
 													onblur={submitNoteRename}
 													onclick={(e) => e.preventDefault()}
-													class="flex-1 rounded bg-[var(--color-bg)] px-1 text-sm text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
+													class="flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
 													autofocus
 												/>
 											{:else}
 												<span
-													class="truncate text-sm"
+													class="truncate text-base"
 													ondblclick={(e) => handleDoubleClick(e, 'note', note.id)}
 												>{note.title || 'Untitled'}</span>
 											{/if}
@@ -802,7 +925,7 @@
 							href="/note/{note.id}"
 							onclick={handleNoteClick}
 							oncontextmenu={(e) => handleNoteContextMenu(e, note.id)}
-							class="mb-0.5 flex items-center rounded-lg px-2 py-1.5 transition-colors hover:bg-[var(--color-border)]"
+							class="mb-0.5 flex items-center rounded-lg px-2 py-2 transition-colors hover:bg-[var(--color-border)]"
 							class:bg-[var(--color-accent)]={isNoteActive(note.id)}
 							class:text-white={isNoteActive(note.id)}
 							class:dragging={draggedItem?.type === 'note' && draggedItem.id === note.id}
@@ -813,7 +936,7 @@
 							ontouchmove={handleTouchMove}
 							ontouchend={handleTouchEnd}
 						>
-							<FileText class="mr-2 h-4 w-4 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
+							<FileText class="mr-2 h-5 w-5 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
 							{#if renamingNote === note.id}
 								<input
 									type="text"
@@ -824,12 +947,12 @@
 									}}
 									onblur={submitNoteRename}
 									onclick={(e) => e.preventDefault()}
-									class="flex-1 rounded bg-[var(--color-bg)] px-1 text-sm text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
+									class="flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
 									autofocus
 								/>
 							{:else}
 								<span
-									class="truncate text-sm"
+									class="truncate text-base"
 									ondblclick={(e) => handleDoubleClick(e, 'note', note.id)}
 								>{note.title || 'Untitled'}</span>
 							{/if}
@@ -846,7 +969,7 @@
 			href="/note/{note.id}"
 			onclick={handleNoteClick}
 			oncontextmenu={(e) => handleNoteContextMenu(e, note.id)}
-			class="mb-0.5 flex items-center rounded-lg px-2 py-1.5 transition-colors hover:bg-[var(--color-border)]"
+			class="mb-0.5 flex items-center rounded-lg px-2 py-2 transition-colors hover:bg-[var(--color-border)]"
 			class:bg-[var(--color-accent)]={isNoteActive(note.id)}
 			class:text-white={isNoteActive(note.id)}
 			class:dragging={draggedItem?.type === 'note' && draggedItem.id === note.id}
@@ -857,7 +980,7 @@
 			ontouchmove={handleTouchMove}
 			ontouchend={handleTouchEnd}
 		>
-			<FileText class="mr-2 h-4 w-4 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
+			<FileText class="mr-2 h-5 w-5 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
 			{#if renamingNote === note.id}
 				<input
 					type="text"
@@ -868,12 +991,12 @@
 					}}
 					onblur={submitNoteRename}
 					onclick={(e) => e.preventDefault()}
-					class="flex-1 rounded bg-[var(--color-bg)] px-1 text-sm text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
+					class="flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
 					autofocus
 				/>
 			{:else}
 				<span
-					class="truncate text-sm"
+					class="truncate text-base"
 					ondblclick={(e) => handleDoubleClick(e, 'note', note.id)}
 				>{note.title || 'Untitled'}</span>
 			{/if}

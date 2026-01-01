@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { search, type SearchResult } from '$lib/search';
 	import { goto } from '$app/navigation';
-	import { addNote, folders, vaults, currentVaultId, setCurrentVault, addVault } from '$lib/db';
+	import { addNote, folders, notes, vaults, currentVaultId, setCurrentVault, addVault } from '$lib/db';
 	import { getIconById } from '$lib/icons/vault-icons';
-	import { Search } from 'lucide-svelte';
+	import { syncState } from '$lib/sync/status';
+	import { resourceColors } from '$lib/types/resources';
+	import { Search, Cloud, CloudOff } from 'lucide-svelte';
 
 	interface Props {
 		onClose: () => void;
@@ -99,14 +101,72 @@
 	let selectedIndex = $state(0);
 	let inputRef: HTMLInputElement;
 
+	// Strip HTML tags and clean up content for preview
+	function stripHtml(html: string): string {
+		return html
+			.replace(/<[^>]*>/g, ' ')      // Remove HTML tags
+			.replace(/\[\[([^\]|]+)(\|[^\]]+)?\]\]/g, '$1')  // Convert [[link]] or [[link|text]] to just the link/text
+			.replace(/&nbsp;/g, ' ')       // Replace &nbsp;
+			.replace(/&amp;/g, '&')        // Replace &amp;
+			.replace(/&lt;/g, '<')         // Replace &lt;
+			.replace(/&gt;/g, '>')         // Replace &gt;
+			.replace(/#{1,6}\s*/g, '')     // Remove markdown headings
+			.replace(/\*\*([^*]+)\*\*/g, '$1')  // Remove bold markers
+			.replace(/\*([^*]+)\*/g, '$1')      // Remove italic markers
+			.replace(/`([^`]+)`/g, '$1')        // Remove inline code markers
+			.replace(/\s+/g, ' ')          // Collapse whitespace
+			.trim();
+	}
+
 	$effect(() => {
 		const q = query.toLowerCase().trim();
 
 		if (!q) {
-			// Show actions when empty
-			results = actions;
+			// Show recent folders and notes sorted by modified date (actions only with > prefix)
+			const recentFolders: Command[] = $folders
+				.sort((a, b) => b.modified - a.modified)
+				.slice(0, 5)
+				.map((f) => ({
+					id: f.id,
+					type: 'folder' as const,
+					title: f.name,
+					icon: 'folder',
+					action: () => {
+						onClose();
+					}
+				}));
+
+			const recentNotes: Command[] = $notes
+				.sort((a, b) => b.modified - a.modified)
+				.slice(0, 10)
+				.map((n) => ({
+					id: n.id,
+					type: 'note' as const,
+					title: n.title || 'Untitled',
+					icon: 'note',
+					description: stripHtml(n.content).slice(0, 60),
+					action: () => {
+						goto(`/note/${n.id}`);
+						onClose();
+					}
+				}));
+
+			// Combine folders and notes, sort by modified date
+			const recentItems = [...recentFolders, ...recentNotes]
+				.sort((a, b) => {
+					const aItem = a.type === 'folder'
+						? $folders.find(f => f.id === a.id)
+						: $notes.find(n => n.id === a.id);
+					const bItem = b.type === 'folder'
+						? $folders.find(f => f.id === b.id)
+						: $notes.find(n => n.id === b.id);
+					return (bItem?.modified ?? 0) - (aItem?.modified ?? 0);
+				})
+				.slice(0, 10);
+
+			results = recentItems;
 		} else if (q.startsWith('>')) {
-			// Command mode - only show actions
+			// Action mode - only show actions
 			const actionQuery = q.slice(1).trim();
 			results = actions.filter(
 				(a) =>
@@ -114,12 +174,8 @@
 					a.description?.toLowerCase().includes(actionQuery)
 			);
 		} else {
-			// Search notes, folders, vaults, and filter actions
+			// Search notes, folders, and vaults (actions only with > prefix)
 			const noteResults = search(q);
-			const matchingActions = actions.filter(
-				(a) =>
-					a.title.toLowerCase().includes(q) || a.description?.toLowerCase().includes(q)
-			);
 
 			// Search folders by name
 			const matchingFolders = $folders.filter((f) =>
@@ -161,14 +217,14 @@
 				type: 'note',
 				title: r.title,
 				icon: 'note',
-				description: r.content.slice(0, 60),
+				description: stripHtml(r.content).slice(0, 60),
 				action: () => {
 					goto(`/note/${r.id}`);
 					onClose();
 				}
 			}));
 
-			results = [...matchingActions, ...vaultCommands, ...folderCommands, ...noteCommands];
+			results = [...vaultCommands, ...folderCommands, ...noteCommands];
 		}
 
 		selectedIndex = 0;
@@ -229,7 +285,7 @@
 </script>
 
 <div
-	class="animate-backdrop fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[15vh]"
+	class="animate-backdrop fixed inset-0 z-50 flex items-stretch justify-center bg-black/50 p-0 md:items-start md:p-4 md:pt-[15vh]"
 	onclick={onClose}
 	onkeydown={handleKeydown}
 	role="dialog"
@@ -238,31 +294,46 @@
 >
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
-		class="animate-modal w-full max-w-xl overflow-hidden rounded-xl bg-[var(--color-bg)] shadow-2xl"
+		class="animate-modal flex h-full w-full max-w-none flex-col overflow-hidden rounded-none bg-[var(--color-bg)] shadow-2xl md:h-auto md:max-w-xl md:rounded-xl"
 		onclick={(e) => e.stopPropagation()}
 		onkeydown={(e) => e.stopPropagation()}
 		role="search"
 	>
 		<!-- Input -->
-		<div class="flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
-			<Search class="h-5 w-5 text-[var(--color-text-muted)]" />
-			<input
-				bind:this={inputRef}
-				bind:value={query}
-				type="text"
-				placeholder="Search notes or type > for commands..."
-				class="flex-1 bg-transparent text-[var(--color-text)] placeholder-[var(--color-text-muted)] outline-none"
-				onkeydown={handleKeydown}
-			/>
-			<kbd
-				class="hidden rounded bg-[var(--color-bg-secondary)] px-2 py-1 text-xs text-[var(--color-text-muted)] md:inline"
+		<div class="flex items-center gap-3 p-4">
+			<div class="flex flex-1 items-center gap-3 rounded-xl bg-[var(--color-bg-secondary)] px-4 py-3 ring-1 ring-[var(--color-border)] focus-within:ring-[var(--color-accent)]">
+				<Search class="h-5 w-5 shrink-0 text-[var(--color-text-muted)]" />
+				<div class="relative flex-1">
+					<input
+						bind:this={inputRef}
+						bind:value={query}
+						type="text"
+						class="command-input w-full bg-transparent text-lg text-[var(--color-text)]"
+						onkeydown={handleKeydown}
+					/>
+					{#if !query}
+						<div class="pointer-events-none absolute inset-0 flex items-center overflow-hidden whitespace-nowrap text-lg text-[var(--color-text-muted)]">
+							Search notes or type <code class="mx-1 rounded bg-[var(--color-border)] px-1.5 py-0.5 font-mono text-sm">&gt;</code> for actions
+						</div>
+					{/if}
+				</div>
+				<kbd
+					class="hidden shrink-0 rounded bg-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-text-muted)] md:inline"
+				>
+					ESC
+				</kbd>
+			</div>
+			<button
+				type="button"
+				onclick={onClose}
+				class="shrink-0 text-[var(--color-accent)] md:hidden"
 			>
-				ESC
-			</kbd>
+				Cancel
+			</button>
 		</div>
 
 		<!-- Results -->
-		<div class="max-h-[60vh] overflow-y-auto">
+		<div class="flex-1 overflow-y-auto md:max-h-[60vh] md:flex-none">
 			{#if results.length === 0}
 				<div class="px-4 py-8 text-center text-[var(--color-text-muted)]">
 					No results found
@@ -272,7 +343,8 @@
 					{#each results as item, i}
 						<li>
 							<button
-								onclick={item.action}
+								type="button"
+								onclick={(e) => { e.preventDefault(); e.stopPropagation(); item.action(); }}
 								class="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[var(--color-bg-secondary)]"
 								class:bg-[var(--color-bg-secondary)]={i === selectedIndex}
 							>
@@ -280,13 +352,7 @@
 									class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
 									class:bg-[var(--color-accent)]={item.type === 'action'}
 									class:text-white={item.type === 'action'}
-									class:bg-amber-500={item.type === 'folder'}
-									class:bg-opacity-20={item.type === 'folder' || item.type === 'vault'}
-									class:text-amber-600={item.type === 'folder'}
-									class:bg-[var(--color-border)]={item.type === 'note'}
-									class:text-[var(--color-text-muted)]={item.type === 'note'}
-									class:bg-purple-500={item.type === 'vault'}
-									class:text-purple-600={item.type === 'vault'}
+									style={item.type === 'folder' ? `background: ${resourceColors.folder.bgAlpha}; color: ${resourceColors.folder.color};` : item.type === 'vault' ? `background: ${resourceColors.vault.bgAlpha}; color: ${resourceColors.vault.color};` : item.type === 'note' ? `background: ${resourceColors.note.bgAlpha}; color: ${resourceColors.note.color};` : ''}
 								>
 									<svg
 										xmlns="http://www.w3.org/2000/svg"
@@ -309,25 +375,29 @@
 								</div>
 								{#if item.type === 'action'}
 									<span
-										class="shrink-0 rounded bg-[var(--color-accent)] bg-opacity-20 px-2 py-0.5 text-xs text-[var(--color-accent)]"
+										class="shrink-0 rounded px-2 py-0.5 text-xs font-medium"
+										style="background: {resourceColors.action.bgAlpha}; color: {resourceColors.action.color};"
 									>
 										Action
 									</span>
 								{:else if item.type === 'folder'}
 									<span
-										class="shrink-0 rounded bg-amber-500 bg-opacity-20 px-2 py-0.5 text-xs text-amber-600 dark:text-amber-400"
+										class="shrink-0 rounded px-2 py-0.5 text-xs font-medium"
+										style="background: {resourceColors.folder.bgAlpha}; color: {resourceColors.folder.color};"
 									>
 										Folder
 									</span>
 								{:else if item.type === 'note'}
 									<span
-										class="shrink-0 rounded bg-[var(--color-border)] px-2 py-0.5 text-xs text-[var(--color-text-muted)]"
+										class="shrink-0 rounded px-2 py-0.5 text-xs font-medium"
+										style="background: {resourceColors.note.bgAlpha}; color: {resourceColors.note.color};"
 									>
 										Note
 									</span>
 								{:else if item.type === 'vault'}
 									<span
-										class="shrink-0 rounded bg-purple-500 bg-opacity-20 px-2 py-0.5 text-xs text-purple-600 dark:text-purple-400"
+										class="shrink-0 rounded px-2 py-0.5 text-xs font-medium"
+										style="background: {resourceColors.vault.bgAlpha}; color: {resourceColors.vault.color};"
 									>
 										Vault
 									</span>
@@ -344,6 +414,16 @@
 			class="flex items-center justify-between border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-text-muted)]"
 		>
 			<div class="flex items-center gap-4">
+				<!-- Sync status -->
+				<span class="flex items-center gap-1.5">
+					{#if $syncState.lastSyncedAt}
+						<Cloud class="h-3.5 w-3.5" style="color: {resourceColors.note.color};" />
+						<span>Synced {new Date($syncState.lastSyncedAt).toLocaleDateString()}</span>
+					{:else}
+						<CloudOff class="h-3.5 w-3.5" />
+						<span>Not synced</span>
+					{/if}
+				</span>
 				<span class="hidden items-center gap-1 md:flex">
 					<kbd class="rounded bg-[var(--color-bg-secondary)] px-1.5 py-0.5">↑↓</kbd>
 					navigate
@@ -353,11 +433,26 @@
 					select
 				</span>
 				<span class="hidden items-center gap-1 md:flex">
-					<kbd class="rounded bg-[var(--color-bg-secondary)] px-1.5 py-0.5">&gt;</kbd>
-					commands
+					<kbd class="rounded bg-[var(--color-bg-secondary)] px-1.5 py-0.5 font-mono">&gt;</kbd>
+					actions
 				</span>
 			</div>
 			<span>{results.length} {results.length === 1 ? 'result' : 'results'}</span>
 		</div>
 	</div>
 </div>
+
+<style>
+	.command-input {
+		border: none !important;
+		outline: none !important;
+		box-shadow: none !important;
+	}
+
+	.command-input:focus,
+	.command-input:focus-visible {
+		border: none !important;
+		outline: none !important;
+		box-shadow: none !important;
+	}
+</style>

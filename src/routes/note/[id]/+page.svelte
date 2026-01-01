@@ -84,6 +84,17 @@
 		const minutes = String(date.getMinutes()).padStart(2, '0');
 		return `${year}-${month}-${day} ${hours}:${minutes}`;
 	}
+
+	function handleTitleKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			// Focus the editor
+			const editor = document.querySelector('.ProseMirror') as HTMLElement;
+			if (editor) {
+				editor.focus();
+			}
+		}
+	}
 </script>
 
 {#if note}
@@ -99,14 +110,15 @@
 
 		<!-- Editor -->
 		<div class="flex-1 overflow-y-auto overscroll-contain p-4 md:p-6">
-			<div class="mx-auto max-w-3xl">
+			<div class="mx-auto flex min-h-full max-w-3xl flex-col">
 				<!-- Title -->
 				<input
 					type="text"
 					value={title}
 					oninput={handleTitleChange}
+					onkeydown={handleTitleKeydown}
 					placeholder="Untitled"
-					class="mb-4 w-full border-none bg-transparent text-3xl font-bold text-[var(--color-text)] placeholder-[var(--color-text-muted)] outline-none md:mb-6 md:text-4xl"
+					class="title-input mb-4 w-full bg-transparent text-[2.5rem] font-bold leading-tight text-[var(--color-text)] placeholder-[var(--color-text-muted)] md:mb-6 md:text-[3rem]"
 					style="font-family: var(--font-editor);"
 				/>
 
@@ -145,8 +157,11 @@
 					</div>
 				{/if}
 
+				<!-- Spacer to push footer to bottom -->
+				<div class="min-h-12 flex-1"></div>
+
 				<!-- Last modified -->
-				<div class="mt-12 text-xs text-[var(--color-text-muted)] opacity-40">
+				<div class="mt-8 text-xs text-[var(--color-text-muted)] opacity-40">
 					Last modified: {formatDate(note.modified)}
 				</div>
 
@@ -204,3 +219,27 @@
 		</div>
 	</div>
 {/if}
+
+<style>
+	.title-input {
+		border: none !important;
+		outline: none !important;
+		box-shadow: none !important;
+		-webkit-appearance: none;
+		appearance: none;
+		font-size: 2.5rem !important;
+	}
+
+	.title-input:focus,
+	.title-input:focus-visible {
+		border: none !important;
+		outline: none !important;
+		box-shadow: none !important;
+	}
+
+	@media (min-width: 768px) {
+		.title-input {
+			font-size: 3rem !important;
+		}
+	}
+</style>

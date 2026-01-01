@@ -29,6 +29,7 @@
 
 		{#if $notes.length === 0}
 			<button
+				type="button"
 				onclick={handleNewNote}
 				class="inline-flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-5 py-3 text-base text-white transition-colors hover:bg-[var(--color-accent-hover)] active:scale-[0.98] md:px-6 md:text-lg"
 			>
@@ -65,6 +66,7 @@
 					to search
 				</p>
 				<button
+					type="button"
 					onclick={handleNewNote}
 					class="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-bg-secondary)] active:scale-[0.98]"
 				>

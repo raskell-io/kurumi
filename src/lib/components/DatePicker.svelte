@@ -160,15 +160,19 @@
 		width: 100%;
 		padding: 0.5rem 0.75rem;
 		background: var(--color-bg-secondary);
-		border: 1px solid var(--color-border);
+		border: none !important;
 		border-radius: 0.5rem;
 		color: var(--color-text);
 		font-size: 0.875rem;
-		outline: none;
+		outline: none !important;
+		box-shadow: none !important;
 	}
 
-	.date-input:focus {
-		border-color: var(--color-accent);
+	.date-input:focus,
+	.date-input:focus-visible {
+		border: none !important;
+		outline: none !important;
+		box-shadow: none !important;
 	}
 
 	.date-preview {

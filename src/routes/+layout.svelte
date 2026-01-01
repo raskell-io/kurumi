@@ -10,7 +10,8 @@
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import FolderTree from '$lib/components/FolderTree.svelte';
 	import VaultSelector from '$lib/components/VaultSelector.svelte';
-	import { X, Plus, Search, ChevronDown, Folder, List, GitFork, BookOpen, Settings, Menu, FileText, Cloud, RefreshCw, CheckCircle, AlertCircle } from 'lucide-svelte';
+	import Snackbar from '$lib/components/Snackbar.svelte';
+	import { X, Plus, Search, ChevronDown, Folder, List, GitFork, BookOpen, Settings, Menu, Cloud, RefreshCw, CheckCircle, AlertCircle, Pencil, Tag } from 'lucide-svelte';
 
 	let { children } = $props();
 
@@ -22,6 +23,8 @@
 	let showTags = $state(false);
 	let theme = $state<'light' | 'dark' | 'system'>('system');
 	let viewMode = $state<'list' | 'folders'>('folders');
+	let showNewNoteAnimation = $state(false);
+	let showNewFolderAnimation = $state(false);
 
 	// Sidebar resizing (desktop only)
 	const MIN_SIDEBAR_WIDTH = 200;
@@ -30,11 +33,44 @@
 	let sidebarWidth = $state(DEFAULT_SIDEBAR_WIDTH);
 	let isResizing = $state(false);
 
-	// Check if we're in read mode (hide sidebar)
+	// Check if we're in read mode
 	let isReadMode = $derived($page.url.pathname.startsWith('/read'));
 
-	// Check if we're in docs (needs scrolling, no sidebar)
-	let isDocsPage = $derived($page.url.pathname.startsWith('/docs'));
+	// Get current note ID from path (for edit link in read mode)
+	let currentNoteId = $derived.by(() => {
+		const match = $page.url.pathname.match(/^\/read\/([a-zA-Z0-9-]+)$/);
+		return match ? match[1] : null;
+	});
+
+	// Get current note ID from edit path
+	let editNoteId = $derived.by(() => {
+		const match = $page.url.pathname.match(/^\/note\/([a-zA-Z0-9-]+)$/);
+		return match ? match[1] : null;
+	});
+
+	// Breadcrumb for current note location
+	let breadcrumb = $derived.by(() => {
+		if (!editNoteId) return null;
+		const note = $notes.find(n => n.id === editNoteId);
+		if (!note) return null;
+
+		// Build folder path
+		const path: string[] = [];
+		let currentFolderId = note.folderId;
+		while (currentFolderId) {
+			const folder = $folders.find(f => f.id === currentFolderId);
+			if (folder) {
+				path.unshift(folder.name);
+				currentFolderId = folder.parentId;
+			} else {
+				break;
+			}
+		}
+
+		// Add note title
+		path.push(note.title || 'Untitled');
+		return path;
+	});
 
 	// Sync status
 	let showSyncStatus = $derived(initialized && isSyncConfigured());
@@ -176,10 +212,12 @@
 		}
 	});
 
-	function handleNewNote() {
+	async function handleNewNote() {
 		const note = addNote();
-		goto(`/note/${note.id}`);
 		if (isMobile) sidebarOpen = false;
+		await goto(`/note/${note.id}`);
+		// Show snackbar after navigation completes
+		showNewNoteAnimation = true;
 	}
 
 	function handleNoteClick() {
@@ -348,8 +386,8 @@
 	</div>
 {:else}
 	<div class="flex h-[100dvh] bg-[var(--color-bg)]">
-		<!-- Mobile overlay (hidden in read mode) -->
-		{#if !isReadMode && isMobile && sidebarOpen}
+		<!-- Mobile overlay -->
+		{#if isMobile && sidebarOpen}
 			<button
 				class="animate-backdrop fixed inset-0 z-40 bg-black/50"
 				onclick={() => (sidebarOpen = false)}
@@ -357,17 +395,16 @@
 			></button>
 		{/if}
 
-		<!-- Sidebar (hidden in read mode) -->
-		{#if !isReadMode}
+		<!-- Sidebar -->
 		<aside
-			class="fixed inset-y-0 left-0 z-50 flex w-full flex-col border-r-0 border-[var(--color-border)] bg-[var(--color-bg-secondary)] md:relative md:z-auto md:border-r md:pt-6 {sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}"
+			class="fixed inset-y-0 left-0 z-50 flex w-full flex-col border-r-0 border-[var(--color-border)] bg-[var(--color-bg-secondary)] md:relative md:z-auto md:border-r {sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}"
 			style="transition: transform 250ms cubic-bezier(0.4, 0, 0.2, 1); --sidebar-width: {sidebarWidth}px; width: {isMobile ? undefined : `${sidebarWidth}px`};"
 			role="navigation"
 			aria-label="Main navigation"
 		>
 			<!-- Logo -->
 			<div
-				class="flex items-center justify-between border-b border-[var(--color-border)] px-4 pb-4 safe-top"
+				class="flex min-h-16 items-center justify-between border-b border-[var(--color-border)] px-4 py-2 safe-top md:min-h-0 md:py-2"
 			>
 				<div class="flex items-center gap-2">
 					<img src="/icon-192.avif" alt="Kurumi" class="h-8 w-8 rounded" />
@@ -386,6 +423,7 @@
 			<!-- New Note Button (desktop only) -->
 			<div class="hidden space-y-2 p-3 md:block">
 				<button
+					type="button"
 					onclick={handleNewNote}
 					class="flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-3 text-white transition-colors hover:bg-[var(--color-accent-hover)] active:scale-[0.98]"
 				>
@@ -414,25 +452,25 @@
 				<div class="flex rounded-lg bg-[var(--color-bg)] p-0.5 md:hidden">
 					<button
 						onclick={() => (viewMode = 'folders')}
-						class="rounded-md px-2 py-1.5 transition-colors"
+						class="flex items-center justify-center rounded-md p-2 transition-colors"
 						class:bg-[var(--color-accent)]={viewMode === 'folders'}
 						class:text-white={viewMode === 'folders'}
 						class:text-[var(--color-text-muted)]={viewMode !== 'folders'}
 						aria-label="Folder view"
 						title="Folder view"
 					>
-						<Folder class="h-4 w-4" />
+						<Folder class="h-5 w-5" />
 					</button>
 					<button
 						onclick={() => (viewMode = 'list')}
-						class="rounded-md px-2 py-1.5 transition-colors"
+						class="flex items-center justify-center rounded-md p-2 transition-colors"
 						class:bg-[var(--color-accent)]={viewMode === 'list'}
 						class:text-white={viewMode === 'list'}
 						class:text-[var(--color-text-muted)]={viewMode !== 'list'}
 						aria-label="List view"
 						title="List view"
 					>
-						<List class="h-4 w-4" />
+						<List class="h-5 w-5" />
 					</button>
 				</div>
 			</div>
@@ -484,7 +522,7 @@
 				<div class="flex rounded-lg bg-[var(--color-bg)] p-0.5">
 					<button
 						onclick={() => (viewMode = 'folders')}
-						class="rounded-md px-2 py-1 text-xs transition-colors"
+						class="flex items-center justify-center rounded-md p-1.5 transition-colors"
 						class:bg-[var(--color-accent)]={viewMode === 'folders'}
 						class:text-white={viewMode === 'folders'}
 						class:text-[var(--color-text-muted)]={viewMode !== 'folders'}
@@ -495,7 +533,7 @@
 					</button>
 					<button
 						onclick={() => (viewMode = 'list')}
-						class="rounded-md px-2 py-1 text-xs transition-colors"
+						class="flex items-center justify-center rounded-md p-1.5 transition-colors"
 						class:bg-[var(--color-accent)]={viewMode === 'list'}
 						class:text-white={viewMode === 'list'}
 						class:text-[var(--color-text-muted)]={viewMode !== 'list'}
@@ -510,7 +548,7 @@
 			<!-- Notes List -->
 			<nav class="flex-1 overflow-y-auto overscroll-contain p-2" aria-label="Notes list">
 				{#if viewMode === 'folders'}
-					<FolderTree onNoteClick={handleNoteClick} />
+					<FolderTree onNoteClick={handleNoteClick} onNoteCreate={() => showNewNoteAnimation = true} onFolderCreate={() => showNewFolderAnimation = true} />
 				{:else}
 					{#if selectedTag}
 						<div class="mb-2 flex items-center justify-between px-1 text-xs text-[var(--color-text-muted)]" role="status" aria-live="polite">
@@ -592,6 +630,14 @@
 			<div class="border-t border-[var(--color-border)] p-2 safe-bottom">
 				<div class="grid grid-cols-4 gap-1">
 					<a
+						href="/references"
+						onclick={handleNoteClick}
+						class="flex flex-col items-center gap-1 rounded-lg px-2 py-2 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
+					>
+						<Tag class="h-5 w-5" />
+						<span class="text-xs">Refs</span>
+					</a>
+					<a
 						href="/graph"
 						onclick={handleNoteClick}
 						class="flex flex-col items-center gap-1 rounded-lg px-2 py-2 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
@@ -599,22 +645,25 @@
 						<GitFork class="h-5 w-5" />
 						<span class="text-xs">Graph</span>
 					</a>
-					<a
-						href="/references"
-						onclick={handleNoteClick}
-						class="flex flex-col items-center gap-1 rounded-lg px-2 py-2 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
-					>
-						<BookOpen class="h-5 w-5" />
-						<span class="text-xs">Refs</span>
-					</a>
-					<a
-						href="/docs"
-						onclick={handleNoteClick}
-						class="flex flex-col items-center gap-1 rounded-lg px-2 py-2 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
-					>
-						<FileText class="h-5 w-5" />
-						<span class="text-xs">Docs</span>
-					</a>
+					{#if isReadMode}
+						<a
+							href={currentNoteId ? `/note/${currentNoteId}` : '/'}
+							onclick={handleNoteClick}
+							class="flex flex-col items-center gap-1 rounded-lg px-2 py-2 text-[var(--color-accent)] transition-colors hover:bg-[var(--color-border)]"
+						>
+							<Pencil class="h-5 w-5" />
+							<span class="text-xs">Edit</span>
+						</a>
+					{:else}
+						<a
+							href="/read"
+							onclick={handleNoteClick}
+							class="flex flex-col items-center gap-1 rounded-lg px-2 py-2 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
+						>
+							<BookOpen class="h-5 w-5" />
+							<span class="text-xs">Read</span>
+						</a>
+					{/if}
 					<a
 						href="/settings"
 						onclick={handleNoteClick}
@@ -642,62 +691,48 @@
 				></div>
 			</div>
 		{/if}
-		{/if}
 
 		<!-- Main Content -->
-		<main class="relative flex flex-1 flex-col" class:overflow-hidden={!isReadMode && !isDocsPage} role="main" aria-label="Main content">
-			<!-- Mobile header (hidden in read mode, docs, and on desktop) -->
-			{#if !isReadMode && !isDocsPage}
+		<main class="relative flex flex-1 flex-col" class:overflow-hidden={!isReadMode} role="main" aria-label="Main content">
+			<!-- Mobile header (hidden in read mode and on desktop) -->
+			{#if !isReadMode}
 			<header
 				class="flex items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-3 safe-top md:hidden"
 			>
-				<div class="flex items-center gap-3">
+				<div class="flex min-w-0 flex-1 items-center gap-2">
 					<button
 						onclick={toggleSidebar}
-						class="rounded-lg p-2 text-[var(--color-text-muted)] hover:bg-[var(--color-border)]"
+						class="shrink-0 rounded-lg p-2 text-[var(--color-text-muted)] hover:bg-[var(--color-border)]"
 						aria-label="Open sidebar"
 					>
 						<Menu class="h-6 w-6" />
 					</button>
-					<div class="flex items-center gap-2">
-						<img src="/icon-192.avif" alt="Kurumi" class="h-6 w-6 rounded" />
-						<span class="font-semibold text-[var(--color-text)]">Kurumi</span>
-					</div>
+					{#if breadcrumb && breadcrumb.length > 0}
+						<div class="flex min-w-0 items-center gap-1 text-sm text-[var(--color-text-muted)]">
+							{#each breadcrumb as segment, i}
+								{#if i > 0}
+									<ChevronDown class="h-3 w-3 shrink-0 -rotate-90" />
+								{/if}
+								<span class="truncate" class:text-[var(--color-text)]={i === breadcrumb.length - 1} class:font-medium={i === breadcrumb.length - 1}>
+									{segment}
+								</span>
+							{/each}
+						</div>
+					{/if}
 				</div>
-				<div class="flex items-center gap-1">
-					<button
-						onclick={handleNewNote}
-						class="rounded-lg p-2 text-[var(--color-accent)] transition-colors hover:bg-[var(--color-border)]"
-						aria-label="New note"
-						title="New note"
-					>
-						<Plus class="h-6 w-6" />
-					</button>
-					<a
-						href="/read"
-						class="rounded-lg p-2 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
-						aria-label="Read mode"
-						title="Read mode"
-					>
-						<BookOpen class="h-6 w-6" />
-					</a>
-				</div>
+				<button
+					type="button"
+					onclick={handleNewNote}
+					class="rounded-lg p-2 text-[var(--color-accent)] transition-colors hover:bg-[var(--color-border)]"
+					aria-label="New note"
+					title="New note"
+				>
+					<Plus class="h-6 w-6" />
+				</button>
 			</header>
 			{/if}
 
-			<!-- Read button - desktop only (hidden in read mode and docs) -->
-			{#if !isReadMode && !isDocsPage}
-			<a
-				href="/read"
-				class="absolute right-6 top-6 z-10 hidden rounded-lg p-2 text-[var(--color-text-muted)] transition-all hover:bg-[var(--color-border)] hover:text-[var(--color-text)] md:block"
-				aria-label="Read mode"
-				title="Read mode"
-			>
-				<BookOpen class="h-5 w-5" />
-			</a>
-			{/if}
-
-			<div class="flex-1" class:overflow-hidden={!isReadMode && !isDocsPage} class:overflow-auto={isReadMode || isDocsPage}>
+			<div class="flex-1" class:overflow-hidden={!isReadMode} class:overflow-auto={isReadMode}>
 				{@render children()}
 			</div>
 		</main>
@@ -706,5 +741,23 @@
 	<!-- Command Palette -->
 	{#if showSearch}
 		<CommandPalette onClose={closeSearch} />
+	{/if}
+
+	<!-- Snackbars -->
+	{#if showNewNoteAnimation}
+		<Snackbar
+			message="New note created"
+			resourceType="note"
+			duration={2000}
+			onClose={() => showNewNoteAnimation = false}
+		/>
+	{/if}
+	{#if showNewFolderAnimation}
+		<Snackbar
+			message="New folder created"
+			resourceType="folder"
+			duration={2000}
+			onClose={() => showNewFolderAnimation = false}
+		/>
 	{/if}
 {/if}

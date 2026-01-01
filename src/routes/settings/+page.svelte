@@ -13,7 +13,7 @@
 		testConnection as testAIConnection
 	} from '$lib/ai';
 	import { onMount } from 'svelte';
-	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2, RefreshCw, CheckCircle, XCircle, Wifi, Sparkles, Bot } from 'lucide-svelte';
+	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2, RefreshCw, CheckCircle, XCircle, Wifi, Sparkles, Bot, ChevronDown, Database, Cloud, Lock, Shield, BookOpen } from 'lucide-svelte';
 
 	let syncToken = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-token') || '' : '');
 	let syncUrl = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-url') || '' : '');
@@ -47,6 +47,10 @@
 	let showAISaved = $state(false);
 	let isTestingAI = $state(false);
 	let aiTestResult = $state<{ success: boolean; error?: string } | null>(null);
+
+	// Documentation sections state
+	let showSyncDocs = $state(false);
+	let showArchDocs = $state(false);
 
 	onMount(() => {
 		const savedTheme = localStorage.getItem('kurumi-theme') as 'system' | 'light' | 'dark' | null;
@@ -597,7 +601,7 @@
 		</section>
 
 		<!-- About -->
-		<section class="mb-8">
+		<section class="mb-6 md:mb-8">
 			<h2 class="mb-3 text-base font-semibold text-[var(--color-text)] md:mb-4 md:text-lg">
 				About
 			</h2>
@@ -620,6 +624,137 @@
 						<br />
 						Data stored locally using IndexedDB.
 					</p>
+				</div>
+			</div>
+		</section>
+
+		<!-- Documentation -->
+		<section class="mb-8">
+			<h2 class="mb-3 text-base font-semibold text-[var(--color-text)] md:mb-4 md:text-lg">
+				<span class="flex items-center gap-2">
+					<BookOpen class="h-5 w-5 text-[var(--color-accent)]" />
+					Documentation
+				</span>
+			</h2>
+			<p class="mb-4 text-sm text-[var(--color-text-muted)]">
+				Learn how Kurumi works and how to set up cross-device sync.
+			</p>
+
+			<div class="space-y-3">
+				<!-- Sync Setup -->
+				<div class="rounded-lg border border-[var(--color-border)] overflow-hidden">
+					<button
+						onclick={() => (showSyncDocs = !showSyncDocs)}
+						class="flex w-full items-center justify-between bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-border)]"
+					>
+						<div class="flex items-center gap-3">
+							<Cloud class="h-5 w-5 text-[var(--color-accent)]" />
+							<div>
+								<h3 class="font-medium text-[var(--color-text)]">Sync Setup</h3>
+								<p class="text-sm text-[var(--color-text-muted)]">Set up cross-device sync with Cloudflare R2</p>
+							</div>
+						</div>
+						<ChevronDown class="h-5 w-5 text-[var(--color-text-muted)] transition-transform {showSyncDocs ? 'rotate-180' : ''}" />
+					</button>
+					{#if showSyncDocs}
+						<div class="border-t border-[var(--color-border)] p-4 text-sm docs-content">
+							<h4>Prerequisites</h4>
+							<ul>
+								<li>A <a href="https://dash.cloudflare.com/sign-up" target="_blank" rel="noopener">Cloudflare account</a> (free)</li>
+								<li><a href="https://mise.jdx.dev/" target="_blank" rel="noopener">mise</a> installed (<code>brew install mise</code>)</li>
+							</ul>
+
+							<h4>Step 1: Enable R2</h4>
+							<ol>
+								<li>Go to <a href="https://dash.cloudflare.com" target="_blank" rel="noopener">Cloudflare Dashboard</a></li>
+								<li>Click <strong>R2 Object Storage</strong> in the sidebar</li>
+								<li>Click <strong>Get Started</strong> or <strong>Activate R2</strong></li>
+								<li>Accept the terms (no credit card required for free tier)</li>
+							</ol>
+
+							<h4>Step 2: Deploy the Worker</h4>
+							<p>Clone the repo and run the setup command:</p>
+							<pre><code>git clone https://github.com/raskell-io/kurumi.git
+cd kurumi/worker
+mise run setup</code></pre>
+							<p>This will install dependencies, log you into Cloudflare, create the R2 bucket, generate a sync token, and deploy the worker.</p>
+
+							<h4>Step 3: Configure Kurumi</h4>
+							<ol>
+								<li>In the <strong>Cloudflare Sync</strong> section above, enter your Worker URL</li>
+								<li>Enter the sync token from Step 2</li>
+								<li>Click <strong>Save Settings</strong> then <strong>Test Connection</strong></li>
+							</ol>
+
+							<h4>Cost</h4>
+							<p>Cloudflare's free tier includes:</p>
+							<ul>
+								<li><strong>Workers:</strong> 100,000 requests/day</li>
+								<li><strong>R2:</strong> 10 GB storage, 10M reads/month, 1M writes/month</li>
+							</ul>
+							<p>For personal use, you'll likely never exceed these limits.</p>
+						</div>
+					{/if}
+				</div>
+
+				<!-- Architecture -->
+				<div class="rounded-lg border border-[var(--color-border)] overflow-hidden">
+					<button
+						onclick={() => (showArchDocs = !showArchDocs)}
+						class="flex w-full items-center justify-between bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-border)]"
+					>
+						<div class="flex items-center gap-3">
+							<Shield class="h-5 w-5 text-[var(--color-accent)]" />
+							<div>
+								<h3 class="font-medium text-[var(--color-text)]">Architecture & Privacy</h3>
+								<p class="text-sm text-[var(--color-text-muted)]">How Kurumi keeps your data safe</p>
+							</div>
+						</div>
+						<ChevronDown class="h-5 w-5 text-[var(--color-text-muted)] transition-transform {showArchDocs ? 'rotate-180' : ''}" />
+					</button>
+					{#if showArchDocs}
+						<div class="border-t border-[var(--color-border)] p-4 text-sm docs-content">
+							<h4>Local-First Architecture</h4>
+							<p>Your data lives on your device first, with optional sync to other devices you control.</p>
+
+							<div class="my-4 grid grid-cols-2 gap-3">
+								<div class="rounded-lg bg-[var(--color-bg-secondary)] p-3">
+									<div class="flex items-center gap-2 mb-2 text-[var(--color-text)]">
+										<Database class="h-4 w-4 text-[var(--color-accent)]" />
+										<strong>IndexedDB</strong>
+									</div>
+									<p class="text-[var(--color-text-muted)]">All notes stored locally in your browser</p>
+								</div>
+								<div class="rounded-lg bg-[var(--color-bg-secondary)] p-3">
+									<div class="flex items-center gap-2 mb-2 text-[var(--color-text)]">
+										<Cloud class="h-4 w-4 text-[var(--color-accent)]" />
+										<strong>Automerge CRDT</strong>
+									</div>
+									<p class="text-[var(--color-text-muted)]">Conflict-free sync between devices</p>
+								</div>
+							</div>
+
+							<h4>Security</h4>
+							<ul>
+								<li><strong>HTTPS/TLS encrypted</strong> - All sync traffic is encrypted</li>
+								<li><strong>Bearer token auth</strong> - Only requests with your token can access your data</li>
+								<li><strong>Encrypted storage</strong> - R2 data is encrypted by Cloudflare</li>
+							</ul>
+
+							<h4>Privacy</h4>
+							<div class="my-4 rounded-lg border border-green-500/30 bg-green-500/10 p-3">
+								<p class="text-green-600 dark:text-green-400"><strong>What we see: Nothing.</strong></p>
+								<p class="text-[var(--color-text-muted)] mt-1">No servers, no analytics, no telemetry. Kurumi is a static web app.</p>
+							</div>
+
+							<h4>Recommendations</h4>
+							<ul>
+								<li>Use a strong sync token: <code>openssl rand -base64 32</code></li>
+								<li>Enable 2FA on your Cloudflare account</li>
+								<li>Regularly export backups to JSON</li>
+							</ul>
+						</div>
+					{/if}
 				</div>
 			</div>
 		</section>
@@ -866,3 +1001,74 @@
 		</div>
 	</div>
 {/if}
+
+<style>
+	.docs-content {
+		color: var(--color-text);
+		line-height: 1.6;
+	}
+
+	.docs-content h4 {
+		font-weight: 600;
+		margin-top: 1.25rem;
+		margin-bottom: 0.5rem;
+		color: var(--color-text);
+	}
+
+	.docs-content h4:first-child {
+		margin-top: 0;
+	}
+
+	.docs-content p {
+		margin-bottom: 0.75rem;
+		color: var(--color-text-muted);
+	}
+
+	.docs-content ul,
+	.docs-content ol {
+		margin-bottom: 0.75rem;
+		padding-left: 1.25rem;
+		color: var(--color-text-muted);
+	}
+
+	.docs-content ul {
+		list-style: disc;
+	}
+
+	.docs-content ol {
+		list-style: decimal;
+	}
+
+	.docs-content li {
+		margin-bottom: 0.375rem;
+	}
+
+	.docs-content a {
+		color: var(--color-accent);
+	}
+
+	.docs-content a:hover {
+		text-decoration: underline;
+	}
+
+	.docs-content code {
+		background: var(--color-bg);
+		padding: 0.125rem 0.375rem;
+		border-radius: 0.25rem;
+		font-size: 0.85em;
+		font-family: var(--font-mono);
+	}
+
+	.docs-content pre {
+		background: var(--color-bg);
+		padding: 0.75rem 1rem;
+		border-radius: 0.5rem;
+		overflow-x: auto;
+		margin: 0.75rem 0;
+	}
+
+	.docs-content pre code {
+		background: none;
+		padding: 0;
+	}
+</style>

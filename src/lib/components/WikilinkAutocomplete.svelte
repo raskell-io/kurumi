@@ -130,10 +130,10 @@
 			bind:value={query}
 			type="text"
 			placeholder="Search notes..."
-			class="flex-1 bg-transparent text-sm text-[var(--color-text)] placeholder-[var(--color-text-muted)] outline-none"
+			class="autocomplete-input min-w-0 flex-1 bg-transparent text-sm text-[var(--color-text)] placeholder-[var(--color-text-muted)]"
 			onkeydown={handleKeydown}
 		/>
-		<kbd class="text-xs text-[var(--color-text-muted)] bg-[var(--color-bg-secondary)] px-1.5 py-0.5 rounded">ESC</kbd>
+		<kbd class="shrink-0 text-xs text-[var(--color-text-muted)] bg-[var(--color-bg-secondary)] px-1.5 py-0.5 rounded">ESC</kbd>
 	</div>
 
 	<div class="results">
@@ -273,5 +273,18 @@
 		padding: 0.125rem 0.25rem;
 		border-radius: 0.25rem;
 		font-family: inherit;
+	}
+
+	.autocomplete-input {
+		border: none !important;
+		outline: none !important;
+		box-shadow: none !important;
+	}
+
+	.autocomplete-input:focus,
+	.autocomplete-input:focus-visible {
+		border: none !important;
+		outline: none !important;
+		box-shadow: none !important;
 	}
 </style>
