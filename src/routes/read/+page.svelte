@@ -108,22 +108,37 @@
 
 	<!-- Controls -->
 	<div class="controls">
-		<div class="controls-left">
-			<div class="view-toggle">
-				<button
-					class="toggle-btn"
-					class:active={viewBy === 'all'}
-					onclick={() => (viewBy = 'all')}
-				>
-					All Notes
-				</button>
-				<button
-					class="toggle-btn"
-					class:active={viewBy === 'folders'}
-					onclick={() => (viewBy = 'folders')}
-				>
-					By Folder
-				</button>
+		<div class="view-toggle">
+			<button
+				class="toggle-btn"
+				class:active={viewBy === 'all'}
+				onclick={() => (viewBy = 'all')}
+			>
+				All Notes
+			</button>
+			<button
+				class="toggle-btn"
+				class:active={viewBy === 'folders'}
+				onclick={() => (viewBy = 'folders')}
+			>
+				By Folder
+			</button>
+		</div>
+
+		<div class="controls-right">
+			<div class="search-filter">
+				<Search class="search-icon" />
+				<input
+					type="text"
+					bind:value={searchQuery}
+					placeholder="Filter notes..."
+					class="search-input"
+				/>
+				{#if searchQuery}
+					<button class="clear-btn" onclick={clearSearch} aria-label="Clear search">
+						<X class="clear-icon" />
+					</button>
+				{/if}
 			</div>
 
 			<div class="sort-select">
@@ -134,21 +149,6 @@
 					<option value="alphabetical">Alphabetical</option>
 				</select>
 			</div>
-		</div>
-
-		<div class="search-filter">
-			<Search class="search-icon" />
-			<input
-				type="text"
-				bind:value={searchQuery}
-				placeholder="Filter notes..."
-				class="search-input"
-			/>
-			{#if searchQuery}
-				<button class="clear-btn" onclick={clearSearch} aria-label="Clear search">
-					<X class="clear-icon" />
-				</button>
-			{/if}
 		</div>
 	</div>
 
@@ -300,7 +300,7 @@
 		gap: 1rem;
 	}
 
-	.controls-left {
+	.controls-right {
 		display: flex;
 		align-items: center;
 		gap: 1rem;
@@ -583,9 +583,10 @@
 			align-items: stretch;
 		}
 
-		.controls-left {
+		.controls-right {
 			flex-direction: column;
 			align-items: stretch;
+			width: 100%;
 		}
 
 		.view-toggle {
