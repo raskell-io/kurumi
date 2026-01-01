@@ -92,7 +92,7 @@
 	<title>{note?.title || 'Note'} - Kurumi</title>
 </svelte:head>
 
-<ReadNav noteId={note?.id} {breadcrumbs} />
+<ReadNav noteId={note?.id} {breadcrumbs} showSearch={false} />
 
 {#if note}
 	<article class="note-reader">
