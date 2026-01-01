@@ -46,6 +46,33 @@ It's designed for:
 
 ---
 
+## Screenshots
+
+<div align="center">
+
+<table>
+<tr>
+<td align="center"><strong>Editor</strong></td>
+<td align="center"><strong>Graph View</strong></td>
+</tr>
+<tr>
+<td><img src="static/screenshots/editor.png" alt="Editor" width="400" /></td>
+<td><img src="static/screenshots/graph.png" alt="Graph View" width="400" /></td>
+</tr>
+<tr>
+<td align="center"><strong>Read Mode</strong></td>
+<td align="center"><strong>Command Palette</strong></td>
+</tr>
+<tr>
+<td><img src="static/screenshots/read-mode.png" alt="Read Mode" width="400" /></td>
+<td><img src="static/screenshots/command-palette.png" alt="Command Palette" width="400" /></td>
+</tr>
+</table>
+
+</div>
+
+---
+
 ## Features
 
 ### Core
