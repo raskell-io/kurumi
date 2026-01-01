@@ -390,14 +390,18 @@
 	}
 
 	.edit-btn {
-		background: var(--color-accent);
-		color: white;
+		background: linear-gradient(135deg, #89b4fa, #cba6f7, #f5c2e7);
+		color: #1e1e2e;
 		padding: 0.5rem 0.75rem;
+		justify-content: center;
+		box-shadow: 0 4px 12px -2px rgba(203, 166, 247, 0.4);
+		font-weight: 500;
 	}
 
 	.edit-btn:hover {
-		background: var(--color-accent-hover);
-		color: white;
+		background: linear-gradient(135deg, #74c7ec, #b4befe, #f5c2e7);
+		color: #1e1e2e;
+		box-shadow: 0 6px 16px -2px rgba(203, 166, 247, 0.5);
 	}
 
 	.btn-text {
