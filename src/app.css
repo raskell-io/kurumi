@@ -105,6 +105,15 @@
 	--color-border: #ccd0da;
 }
 
+/* Editor font options */
+:root.font-quattro {
+	--font-editor: 'iA Writer Quattro S', Georgia, 'Times New Roman', serif;
+}
+
+:root.font-geist {
+	--font-editor: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
 /* Base styles */
 html {
 	font-family: var(--font-sans);

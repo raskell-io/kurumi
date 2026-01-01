@@ -13,12 +13,13 @@
 		testConnection as testAIConnection
 	} from '$lib/ai';
 	import { onMount } from 'svelte';
-	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2, RefreshCw, CheckCircle, XCircle, Wifi, Sparkles, Bot, ChevronDown, Database, Cloud, Lock, Shield, BookOpen, Palette, HardDrive, Info } from 'lucide-svelte';
+	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2, RefreshCw, CheckCircle, XCircle, Wifi, Sparkles, Bot, ChevronDown, Database, Cloud, Lock, Shield, BookOpen, Palette, HardDrive, Info, Type } from 'lucide-svelte';
 
 	let syncToken = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-token') || '' : '');
 	let syncUrl = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-url') || '' : '');
 	let showSaved = $state(false);
 	let theme = $state<'system' | 'light' | 'dark'>('system');
+	let editorFont = $state<'quattro' | 'geist'>('quattro');
 
 	// Import state
 	let showImportModal = $state(false);
@@ -71,6 +72,13 @@
 		if (savedTheme) {
 			theme = savedTheme;
 		}
+
+		// Load editor font
+		const savedFont = localStorage.getItem('kurumi-editor-font') as 'quattro' | 'geist' | null;
+		if (savedFont) {
+			editorFont = savedFont;
+		}
+
 		initSyncState();
 
 		// Load AI settings
@@ -89,6 +97,13 @@
 			document.documentElement.classList.remove('light', 'dark');
 			document.documentElement.classList.add(t);
 		}
+	}
+
+	function setEditorFont(f: 'quattro' | 'geist') {
+		editorFont = f;
+		localStorage.setItem('kurumi-editor-font', f);
+		document.documentElement.classList.remove('font-quattro', 'font-geist');
+		document.documentElement.classList.add(`font-${f}`);
 	}
 
 	function saveSyncSettings() {
@@ -312,6 +327,30 @@
 							<Moon class="h-5 w-5" />
 							Dark
 						</button>
+					</div>
+
+					<!-- Editor Font -->
+					<div class="mt-6 pt-4 border-t border-[var(--color-border)]">
+						<h3 class="mb-2 text-sm font-medium text-[var(--color-text)]">Editor Font</h3>
+						<p class="mb-4 text-sm text-[var(--color-text-muted)]">
+							Choose the font for the note editor.
+						</p>
+						<div class="flex flex-wrap gap-2">
+							<button
+								onclick={() => setEditorFont('quattro')}
+								class="flex items-center gap-2 rounded-lg border px-4 py-3 transition-colors {editorFont === 'quattro' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'}"
+							>
+								<Type class="h-5 w-5" />
+								<span style="font-family: 'iA Writer Quattro S', serif">iA Quattro</span>
+							</button>
+							<button
+								onclick={() => setEditorFont('geist')}
+								class="flex items-center gap-2 rounded-lg border px-4 py-3 transition-colors {editorFont === 'geist' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'}"
+							>
+								<Type class="h-5 w-5" />
+								<span style="font-family: 'Geist', sans-serif">Geist</span>
+							</button>
+						</div>
 					</div>
 				</div>
 			{/if}

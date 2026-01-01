@@ -179,6 +179,15 @@
 			applyTheme(savedTheme);
 		}
 
+		// Load editor font from localStorage
+		const savedFont = localStorage.getItem('kurumi-editor-font') as 'quattro' | 'geist' | null;
+		if (savedFont) {
+			document.documentElement.classList.add(`font-${savedFont}`);
+		} else {
+			// Default to quattro
+			document.documentElement.classList.add('font-quattro');
+		}
+
 		// Load sidebar width from localStorage
 		const savedWidth = localStorage.getItem('kurumi-sidebar-width');
 		if (savedWidth) {
