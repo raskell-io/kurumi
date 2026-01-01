@@ -916,9 +916,6 @@
 					oncontextmenu={(e) => handleFolderContextMenu(e, folder.id)}
 					role="treeitem"
 				>
-					<button onclick={(e) => { e.stopPropagation(); toggleFolder(folder.id); }} class="mr-1 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
-						<ChevronRight class="h-4 w-4 transition-transform {isExpanded ? 'rotate-90' : ''}" />
-					</button>
 					{#if isExpanded && hasContents}
 						<FolderOpen class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
 					{:else}
@@ -943,6 +940,9 @@
 							ondblclick={(e) => handleDoubleClick(e, 'folder', folder.id)}
 						>{folder.name}</span>
 					{/if}
+					<button onclick={(e) => { e.stopPropagation(); toggleFolder(folder.id); }} class="ml-1 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
+						<ChevronRight class="h-4 w-4 transition-transform {isExpanded ? 'rotate-90' : ''}" />
+					</button>
 					<span class="ml-1 text-xs text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100">
 						{folderNotes.length}
 					</span>
@@ -1008,9 +1008,6 @@
 									oncontextmenu={(e) => handleFolderContextMenu(e, subfolder.id)}
 									role="treeitem"
 								>
-									<button onclick={(e) => { e.stopPropagation(); toggleFolder(subfolder.id); }} class="mr-1 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
-										<ChevronRight class="h-4 w-4 transition-transform {isSubExpanded ? 'rotate-90' : ''}" />
-									</button>
 									{#if isSubExpanded && hasSubContents}
 										<FolderOpen class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
 									{:else}
@@ -1035,6 +1032,9 @@
 											ondblclick={(e) => handleDoubleClick(e, 'folder', subfolder.id)}
 										>{subfolder.name}</span>
 									{/if}
+									<button onclick={(e) => { e.stopPropagation(); toggleFolder(subfolder.id); }} class="ml-1 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
+										<ChevronRight class="h-4 w-4 transition-transform {isSubExpanded ? 'rotate-90' : ''}" />
+									</button>
 									<span class="ml-1 text-xs text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100">
 										{subFolderNotes.length}
 									</span>
@@ -1079,9 +1079,6 @@
 													oncontextmenu={(e) => handleFolderContextMenu(e, subSubfolder.id)}
 													role="treeitem"
 												>
-													<button onclick={(e) => { e.stopPropagation(); toggleFolder(subSubfolder.id); }} class="mr-1 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
-														<ChevronRight class="h-4 w-4 transition-transform {isSubSubExpanded ? 'rotate-90' : ''}" />
-													</button>
 													{#if isSubSubExpanded && subSubFolderNotes.length > 0}
 														<FolderOpen class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
 													{:else}
@@ -1106,6 +1103,9 @@
 															ondblclick={(e) => handleDoubleClick(e, 'folder', subSubfolder.id)}
 														>{subSubfolder.name}</span>
 													{/if}
+													<button onclick={(e) => { e.stopPropagation(); toggleFolder(subSubfolder.id); }} class="ml-1 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
+														<ChevronRight class="h-4 w-4 transition-transform {isSubSubExpanded ? 'rotate-90' : ''}" />
+													</button>
 													<span class="ml-1 text-xs text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100">
 														{subSubFolderNotes.length}
 													</span>
