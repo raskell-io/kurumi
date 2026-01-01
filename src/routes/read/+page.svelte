@@ -2,7 +2,7 @@
 	import { notes, folders, getSubfolders, getNotesInFolder, getAllTags } from '$lib/db';
 	import ReadNav from '$lib/components/ReadNav.svelte';
 	import NoteCard from '$lib/components/NoteCard.svelte';
-	import { NotebookText, Folder, ChevronRight, Search, X } from 'lucide-svelte';
+	import { NotebookText, Folder, ChevronRight, Search, X, ArrowDownWideNarrow } from 'lucide-svelte';
 
 	type SortOption = 'recent' | 'alphabetical' | 'oldest';
 	type ViewOption = 'all' | 'folders';
@@ -11,6 +11,26 @@
 	let viewBy = $state<ViewOption>('all');
 	let expandedFolders = $state<Set<string>>(new Set());
 	let searchQuery = $state('');
+	let sortDropdownOpen = $state(false);
+
+	const sortOptions: { value: SortOption; label: string }[] = [
+		{ value: 'recent', label: 'Most Recent' },
+		{ value: 'oldest', label: 'Oldest First' },
+		{ value: 'alphabetical', label: 'Alphabetical' },
+	];
+
+	function toggleSortDropdown() {
+		sortDropdownOpen = !sortDropdownOpen;
+	}
+
+	function selectSort(value: SortOption) {
+		sortBy = value;
+		sortDropdownOpen = false;
+	}
+
+	function closeSortDropdown() {
+		sortDropdownOpen = false;
+	}
 
 	// Get root folders
 	let rootFolders = $derived(getSubfolders(null));
@@ -86,6 +106,12 @@
 	}
 </script>
 
+<svelte:window onclick={(e) => {
+	if (sortDropdownOpen && !(e.target as HTMLElement).closest('.sort-dropdown')) {
+		closeSortDropdown();
+	}
+}} />
+
 <svelte:head>
 	<title>Kurumi - Read</title>
 </svelte:head>
@@ -141,12 +167,28 @@
 				{/if}
 			</div>
 
-			<div class="sort-select">
-				<select id="sort" bind:value={sortBy} aria-label="Sort order">
-					<option value="recent">Most Recent</option>
-					<option value="oldest">Oldest First</option>
-					<option value="alphabetical">Alphabetical</option>
-				</select>
+			<div class="sort-dropdown">
+				<button
+					class="sort-btn"
+					onclick={toggleSortDropdown}
+					aria-label="Sort order"
+					aria-expanded={sortDropdownOpen}
+				>
+					<ArrowDownWideNarrow class="sort-icon" />
+				</button>
+				{#if sortDropdownOpen}
+					<div class="sort-menu">
+						{#each sortOptions as option}
+							<button
+								class="sort-option"
+								class:active={sortBy === option.value}
+								onclick={() => selectSort(option.value)}
+							>
+								{option.label}
+							</button>
+						{/each}
+					</div>
+				{/if}
 			</div>
 		</div>
 	</div>
@@ -330,19 +372,67 @@
 		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 	}
 
-	.sort-select {
-		display: flex;
-		align-items: center;
+	.sort-dropdown {
+		position: relative;
 	}
 
-	.sort-select select {
-		padding: 0.5rem 0.75rem;
+	.sort-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0.5rem;
+		background: var(--color-bg-secondary);
 		border: 1px solid var(--color-border);
-		border-radius: 0.375rem;
-		background: var(--color-bg);
-		color: var(--color-text);
-		font-size: 0.875rem;
+		border-radius: 0.5rem;
+		color: var(--color-text-muted);
 		cursor: pointer;
+		transition: all 0.15s;
+	}
+
+	.sort-btn:hover {
+		background: var(--color-border);
+		color: var(--color-text);
+	}
+
+	.sort-icon {
+		width: 1.25rem;
+		height: 1.25rem;
+	}
+
+	.sort-menu {
+		position: absolute;
+		top: 100%;
+		right: 0;
+		margin-top: 0.25rem;
+		min-width: 140px;
+		background: var(--color-bg);
+		border: 1px solid var(--color-border);
+		border-radius: 0.5rem;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+		overflow: hidden;
+		z-index: 50;
+	}
+
+	.sort-option {
+		display: block;
+		width: 100%;
+		padding: 0.625rem 0.875rem;
+		background: transparent;
+		border: none;
+		text-align: left;
+		font-size: 0.875rem;
+		color: var(--color-text);
+		cursor: pointer;
+		transition: background 0.1s;
+	}
+
+	.sort-option:hover {
+		background: var(--color-bg-secondary);
+	}
+
+	.sort-option.active {
+		background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+		color: var(--color-accent);
 	}
 
 	/* Search Filter */
