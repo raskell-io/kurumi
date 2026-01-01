@@ -232,22 +232,6 @@
 	{:else}
 		<!-- By Folder -->
 		<section class="folders-section">
-			<!-- Root Notes -->
-			{#if filteredRootNotes.length > 0}
-				<div class="folder-group">
-					<h2 class="folder-title">
-						<NotebookText class="folder-icon" />
-						Unfiled Notes
-						<span class="folder-count">{filteredRootNotes.length}</span>
-					</h2>
-					<div class="notes-grid">
-						{#each filteredRootNotes as note (note.id)}
-							<NoteCard {note} showFolder={false} />
-						{/each}
-					</div>
-				</div>
-			{/if}
-
 			<!-- Folders -->
 			{#each rootFolders as folder (folder.id)}
 				{@const folderNotes = getFolderNotes(folder.id)}
@@ -277,6 +261,22 @@
 					{/if}
 				</div>
 			{/each}
+
+			<!-- Unfiled Notes -->
+			{#if filteredRootNotes.length > 0}
+				<div class="folder-group">
+					<h2 class="folder-title">
+						<NotebookText class="folder-icon" />
+						Unfiled Notes
+						<span class="folder-count">{filteredRootNotes.length}</span>
+					</h2>
+					<div class="notes-grid">
+						{#each filteredRootNotes as note (note.id)}
+							<NoteCard {note} showFolder={false} />
+						{/each}
+					</div>
+				</div>
+			{/if}
 
 			{#if rootFolders.length === 0 && rootNotes.length === 0}
 				<div class="empty-state">
