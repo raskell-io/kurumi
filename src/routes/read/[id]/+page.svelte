@@ -6,7 +6,22 @@
 	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
 	import RefPopup from '$lib/components/RefPopup.svelte';
 	import type { Note } from '$lib/db';
-	import { Folder, Link2 } from 'lucide-svelte';
+	import { Folder, Link2, ArrowLeft, ArrowUp, Home } from 'lucide-svelte';
+
+	// Scroll state for "back to top" button
+	let showBackToTop = $state(false);
+
+	function handleScroll() {
+		showBackToTop = window.scrollY > 300;
+	}
+
+	function scrollToTop() {
+		window.scrollTo({ top: 0, behavior: 'smooth' });
+	}
+
+	function goBack() {
+		history.back();
+	}
 
 	// Ref popup state
 	let showRefPopup = $state(false);
@@ -64,6 +79,8 @@
 
 </script>
 
+<svelte:window onscroll={handleScroll} />
+
 <svelte:head>
 	<title>{note?.title || 'Note'} - Kurumi</title>
 </svelte:head>
@@ -72,6 +89,12 @@
 
 {#if note}
 	<article class="note-reader">
+		<!-- Go Back -->
+		<button class="go-back-btn" onclick={goBack}>
+			<ArrowLeft class="h-4 w-4" />
+			Back
+		</button>
+
 		<!-- Header -->
 		<header class="note-header">
 			<h1 class="note-title">{note.title || 'Untitled'}</h1>
@@ -132,14 +155,28 @@
 				<div class="nav-placeholder"></div>
 			{/if}
 
+			<a href="/read" class="nav-link home">
+				<Home class="home-icon" />
+				<span class="nav-label">All Notes</span>
+			</a>
+
 			{#if prevNext.next}
 				<a href="/read/{prevNext.next.id}" class="nav-link next">
 					<span class="nav-label">Next →</span>
 					<span class="nav-title">{prevNext.next.title || 'Untitled'}</span>
 				</a>
+			{:else}
+				<div class="nav-placeholder"></div>
 			{/if}
 		</nav>
 	</article>
+
+	<!-- Back to Top Button -->
+	{#if showBackToTop}
+		<button class="back-to-top" onclick={scrollToTop} aria-label="Back to top">
+			<ArrowUp class="h-5 w-5" />
+		</button>
+	{/if}
 {:else}
 	<div class="not-found">
 		<h1>Note not found</h1>
@@ -163,6 +200,68 @@
 		max-width: 720px;
 		margin: 0 auto;
 		padding: 2rem 1.5rem 4rem;
+	}
+
+	/* Go Back Button */
+	.go-back-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		padding: 0.5rem 0.75rem;
+		margin-bottom: 1.5rem;
+		background: transparent;
+		border: 1px solid var(--color-border);
+		border-radius: 0.5rem;
+		color: var(--color-text-muted);
+		font-size: 0.875rem;
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+
+	.go-back-btn:hover {
+		background: var(--color-bg-secondary);
+		color: var(--color-text);
+		border-color: var(--color-text-muted);
+	}
+
+	/* Back to Top Button */
+	.back-to-top {
+		position: fixed;
+		bottom: 2rem;
+		right: 2rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 3rem;
+		height: 3rem;
+		background: var(--color-bg-secondary);
+		border: 1px solid var(--color-border);
+		border-radius: 50%;
+		color: var(--color-text-muted);
+		cursor: pointer;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+		transition: all 0.15s;
+		z-index: 50;
+		animation: fadeIn 0.2s ease-out;
+	}
+
+	.back-to-top:hover {
+		background: var(--color-accent);
+		border-color: var(--color-accent);
+		color: white;
+		transform: translateY(-2px);
+		box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+	}
+
+	@keyframes fadeIn {
+		from {
+			opacity: 0;
+			transform: translateY(10px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
 	}
 
 	/* Header */
@@ -304,10 +403,11 @@
 	/* Navigation */
 	.note-nav {
 		display: grid;
-		grid-template-columns: 1fr 1fr;
+		grid-template-columns: 1fr auto 1fr;
 		gap: 1rem;
 		padding-top: 2rem;
 		border-top: 1px solid var(--color-border);
+		align-items: stretch;
 	}
 
 	.nav-link {
@@ -327,13 +427,43 @@
 		border-color: var(--color-accent);
 	}
 
-	.nav-link.next {
-		text-align: right;
+	.nav-link.prev {
+		grid-column: 1;
+	}
+
+	.nav-link.home {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 0.25rem;
+		padding: 1rem;
 		grid-column: 2;
 	}
 
-	.nav-link.prev {
-		grid-column: 1;
+	.home-icon {
+		width: 1.5rem;
+		height: 1.5rem;
+		color: var(--color-text-muted);
+		transition: color 0.15s;
+	}
+
+	.nav-link.home:hover .home-icon {
+		color: var(--color-accent);
+	}
+
+	.nav-link.home .nav-label {
+		text-transform: none;
+		letter-spacing: normal;
+	}
+
+	.nav-link.next {
+		text-align: right;
+		grid-column: 3;
+	}
+
+	.nav-placeholder {
+		grid-column: span 1;
 	}
 
 	.nav-label {
@@ -395,7 +525,8 @@
 		}
 
 		.note-nav {
-			grid-template-columns: 1fr;
+			grid-template-columns: 1fr 1fr;
+			grid-template-rows: auto auto;
 			gap: 0.75rem;
 		}
 
@@ -403,10 +534,33 @@
 			padding: 1rem 1.25rem;
 		}
 
-		.nav-link.prev,
-		.nav-link.next {
+		.nav-link.prev {
 			grid-column: 1;
-			text-align: left;
+			grid-row: 1;
+		}
+
+		.nav-link.next {
+			grid-column: 2;
+			grid-row: 1;
+			text-align: right;
+		}
+
+		.nav-link.home {
+			grid-column: 1 / -1;
+			grid-row: 2;
+			flex-direction: row;
+			gap: 0.5rem;
+		}
+
+		.nav-placeholder {
+			display: none;
+		}
+
+		.back-to-top {
+			bottom: 1rem;
+			right: 1rem;
+			width: 2.75rem;
+			height: 2.75rem;
 		}
 	}
 </style>
