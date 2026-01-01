@@ -930,20 +930,20 @@
 								if (e.key === 'Escape') cancelRename();
 							}}
 							onblur={submitRename}
-							class="flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
+							class="min-w-0 flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
 							autofocus
 							onclick={(e) => e.stopPropagation()}
 						/>
 					{:else}
 						<span
-							class="flex-1 truncate text-base text-[var(--color-text)]"
+							class="truncate text-base text-[var(--color-text)]"
 							ondblclick={(e) => handleDoubleClick(e, 'folder', folder.id)}
 						>{folder.name}</span>
 					{/if}
-					<button onclick={(e) => { e.stopPropagation(); toggleFolder(folder.id); }} class="ml-1 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
+					<button onclick={(e) => { e.stopPropagation(); toggleFolder(folder.id); }} class="ml-1 shrink-0 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
 						<ChevronRight class="h-4 w-4 transition-transform {isExpanded ? 'rotate-90' : ''}" />
 					</button>
-					<span class="ml-1 text-xs text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100">
+					<span class="ml-auto text-xs text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100">
 						{folderNotes.length}
 					</span>
 				</div>
@@ -1022,20 +1022,20 @@
 												if (e.key === 'Escape') cancelRename();
 											}}
 											onblur={submitRename}
-											class="flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
+											class="min-w-0 flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
 											autofocus
 											onclick={(e) => e.stopPropagation()}
 										/>
 									{:else}
 										<span
-											class="flex-1 truncate text-base text-[var(--color-text)]"
+											class="truncate text-base text-[var(--color-text)]"
 											ondblclick={(e) => handleDoubleClick(e, 'folder', subfolder.id)}
 										>{subfolder.name}</span>
 									{/if}
-									<button onclick={(e) => { e.stopPropagation(); toggleFolder(subfolder.id); }} class="ml-1 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
+									<button onclick={(e) => { e.stopPropagation(); toggleFolder(subfolder.id); }} class="ml-1 shrink-0 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
 										<ChevronRight class="h-4 w-4 transition-transform {isSubExpanded ? 'rotate-90' : ''}" />
 									</button>
-									<span class="ml-1 text-xs text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100">
+									<span class="ml-auto text-xs text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100">
 										{subFolderNotes.length}
 									</span>
 								</div>
@@ -1093,20 +1093,20 @@
 																if (e.key === 'Escape') cancelRename();
 															}}
 															onblur={submitRename}
-															class="flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
+															class="min-w-0 flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
 															autofocus
 															onclick={(e) => e.stopPropagation()}
 														/>
 													{:else}
 														<span
-															class="flex-1 truncate text-base text-[var(--color-text)]"
+															class="truncate text-base text-[var(--color-text)]"
 															ondblclick={(e) => handleDoubleClick(e, 'folder', subSubfolder.id)}
 														>{subSubfolder.name}</span>
 													{/if}
-													<button onclick={(e) => { e.stopPropagation(); toggleFolder(subSubfolder.id); }} class="ml-1 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
+													<button onclick={(e) => { e.stopPropagation(); toggleFolder(subSubfolder.id); }} class="ml-1 shrink-0 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
 														<ChevronRight class="h-4 w-4 transition-transform {isSubSubExpanded ? 'rotate-90' : ''}" />
 													</button>
-													<span class="ml-1 text-xs text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100">
+													<span class="ml-auto text-xs text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100">
 														{subSubFolderNotes.length}
 													</span>
 												</div>
