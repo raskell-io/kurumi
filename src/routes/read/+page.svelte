@@ -142,8 +142,7 @@
 			</div>
 
 			<div class="sort-select">
-				<label for="sort">Sort:</label>
-				<select id="sort" bind:value={sortBy}>
+				<select id="sort" bind:value={sortBy} aria-label="Sort order">
 					<option value="recent">Most Recent</option>
 					<option value="oldest">Oldest First</option>
 					<option value="alphabetical">Alphabetical</option>
@@ -334,9 +333,6 @@
 	.sort-select {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
-		font-size: 0.875rem;
-		color: var(--color-text-muted);
 	}
 
 	.sort-select select {
