@@ -2,7 +2,7 @@
 	import '../app.css';
 	import { pwaInfo } from 'virtual:pwa-info';
 	import { onMount } from 'svelte';
-	import { initDB, notes, addNote, getAllTags, extractTags, folders } from '$lib/db';
+	import { initDB, notes, addNote, getAllTags, folders } from '$lib/db';
 	import { initSearch, rebuildIndex } from '$lib/search';
 	import { setupVisibilitySync, teardownVisibilitySync, syncState, isSyncConfigured, sync } from '$lib/sync';
 	import { goto } from '$app/navigation';
@@ -11,7 +11,8 @@
 	import FolderTree from '$lib/components/FolderTree.svelte';
 	import VaultSelector from '$lib/components/VaultSelector.svelte';
 	import Snackbar from '$lib/components/Snackbar.svelte';
-	import { X, Plus, Search, ChevronDown, Folder, List, GitFork, BookOpen, Settings, Menu, Cloud, RefreshCw, CheckCircle, AlertCircle, Pencil, Tag } from 'lucide-svelte';
+	import { X, Plus, Search, ChevronDown, GitFork, BookOpen, Settings, Menu, Cloud, RefreshCw, CheckCircle, AlertCircle, Pencil, Tag } from 'lucide-svelte';
+	import { showNewNoteSnackbar } from '$lib/stores/snackbar';
 
 	let { children } = $props();
 
@@ -22,9 +23,21 @@
 	let selectedTag = $state<string | null>(null);
 	let showTags = $state(false);
 	let theme = $state<'light' | 'dark' | 'system'>('system');
-	let viewMode = $state<'list' | 'folders'>('folders');
 	let showNewNoteAnimation = $state(false);
 	let showNewFolderAnimation = $state(false);
+	let deleteNoteSnackbar = $state<string | null>(null);
+	let deleteFolderSnackbar = $state<string | null>(null);
+
+	// Subscribe to snackbar store from other pages
+	$effect(() => {
+		const unsubscribe = showNewNoteSnackbar.subscribe(value => {
+			if (value) {
+				showNewNoteAnimation = true;
+				showNewNoteSnackbar.set(false);
+			}
+		});
+		return unsubscribe;
+	});
 
 	// Sidebar resizing (desktop only)
 	const MIN_SIDEBAR_WIDTH = 200;
@@ -77,16 +90,6 @@
 
 	// Derived: all tags
 	let allTags = $derived(initialized ? getAllTags() : []);
-
-	// Derived: filtered notes
-	let filteredNotes = $derived.by(() => {
-		if (!selectedTag) return $notes;
-		const tag = selectedTag.toLowerCase();
-		return $notes.filter((note) => {
-			const tags = extractTags(note.content);
-			return tags.includes(tag);
-		});
-	});
 
 	function applyTheme(t: 'light' | 'dark' | 'system') {
 		if (t === 'system') {
@@ -222,10 +225,6 @@
 
 	function handleNoteClick() {
 		if (isMobile) sidebarOpen = false;
-	}
-
-	function isActive(noteId: string): boolean {
-		return $page.url.pathname === `/note/${noteId}`;
 	}
 
 	function toggleSidebar() {
@@ -407,7 +406,9 @@
 				class="flex min-h-16 items-center justify-between border-b border-[var(--color-border)] px-4 py-2 safe-top md:min-h-0 md:py-2"
 			>
 				<div class="flex items-center gap-2">
-					<img src="/icon-192.avif" alt="Kurumi" class="h-8 w-8 rounded" />
+					<a href="/" class="shrink-0" aria-label="Go to home" onclick={() => { if (isMobile) sidebarOpen = false; }}>
+						<img src="/icon-192.avif" alt="Kurumi" class="h-11 w-11 rounded" />
+					</a>
 					<VaultSelector />
 				</div>
 				<!-- Close button (mobile only) -->
@@ -432,11 +433,11 @@
 				</button>
 			</div>
 
-			<!-- Search & View Toggle Row -->
-			<div class="flex items-center gap-2 p-3 pt-0 md:pt-3">
+			<!-- Search -->
+			<div class="p-3 pt-0 md:pt-3">
 				<button
 					onclick={openSearch}
-					class="flex flex-1 items-center justify-between rounded-lg border border-[var(--color-border)] px-3 py-2 text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
+					class="flex w-full items-center justify-between rounded-lg border border-[var(--color-border)] px-3 py-2 text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
 				>
 					<div class="flex items-center gap-2">
 						<Search class="h-4 w-4" />
@@ -448,31 +449,6 @@
 						{navigator?.platform?.includes('Mac') ? '⌘' : 'Ctrl'}K
 					</kbd>
 				</button>
-				<!-- View toggle (mobile: inline with search, desktop: hidden here) -->
-				<div class="flex rounded-lg bg-[var(--color-bg)] p-0.5 md:hidden">
-					<button
-						onclick={() => (viewMode = 'folders')}
-						class="flex items-center justify-center rounded-md p-2 transition-colors"
-						class:bg-[var(--color-accent)]={viewMode === 'folders'}
-						class:text-white={viewMode === 'folders'}
-						class:text-[var(--color-text-muted)]={viewMode !== 'folders'}
-						aria-label="Folder view"
-						title="Folder view"
-					>
-						<Folder class="h-5 w-5" />
-					</button>
-					<button
-						onclick={() => (viewMode = 'list')}
-						class="flex items-center justify-center rounded-md p-2 transition-colors"
-						class:bg-[var(--color-accent)]={viewMode === 'list'}
-						class:text-white={viewMode === 'list'}
-						class:text-[var(--color-text-muted)]={viewMode !== 'list'}
-						aria-label="List view"
-						title="List view"
-					>
-						<List class="h-5 w-5" />
-					</button>
-				</div>
 			</div>
 
 			<!-- Tags Filter -->
@@ -516,90 +492,15 @@
 				</div>
 			{/if}
 
-			<!-- View Mode Toggle (desktop only - mobile is in search row) -->
-			<div class="hidden items-center justify-between border-b border-[var(--color-border)] px-3 py-2 md:flex">
-				<span class="text-xs font-medium uppercase text-[var(--color-text-muted)]">View</span>
-				<div class="flex rounded-lg bg-[var(--color-bg)] p-0.5">
-					<button
-						onclick={() => (viewMode = 'folders')}
-						class="flex items-center justify-center rounded-md p-1.5 transition-colors"
-						class:bg-[var(--color-accent)]={viewMode === 'folders'}
-						class:text-white={viewMode === 'folders'}
-						class:text-[var(--color-text-muted)]={viewMode !== 'folders'}
-						aria-label="Folder view"
-						title="Folder view"
-					>
-						<Folder class="h-4 w-4" />
-					</button>
-					<button
-						onclick={() => (viewMode = 'list')}
-						class="flex items-center justify-center rounded-md p-1.5 transition-colors"
-						class:bg-[var(--color-accent)]={viewMode === 'list'}
-						class:text-white={viewMode === 'list'}
-						class:text-[var(--color-text-muted)]={viewMode !== 'list'}
-						aria-label="List view"
-						title="List view"
-					>
-						<List class="h-4 w-4" />
-					</button>
-				</div>
-			</div>
-
 			<!-- Notes List -->
 			<nav class="flex-1 overflow-y-auto overscroll-contain p-2" aria-label="Notes list">
-				{#if viewMode === 'folders'}
-					<FolderTree onNoteClick={handleNoteClick} onNoteCreate={() => showNewNoteAnimation = true} onFolderCreate={() => showNewFolderAnimation = true} />
-				{:else}
-					{#if selectedTag}
-						<div class="mb-2 flex items-center justify-between px-1 text-xs text-[var(--color-text-muted)]" role="status" aria-live="polite">
-							<span>Filtered by #{selectedTag}</span>
-							<button
-								onclick={() => (selectedTag = null)}
-								class="text-[var(--color-accent)] hover:underline"
-								aria-label="Clear tag filter"
-							>
-								Clear
-							</button>
-						</div>
-					{/if}
-					{#each filteredNotes as note (note.id)}
-						<a
-							href="/note/{note.id}"
-							onclick={handleNoteClick}
-							class="mb-1 block rounded-lg px-3 py-3 transition-colors hover:bg-[var(--color-border)] active:scale-[0.98]"
-							class:bg-[var(--color-accent)]={isActive(note.id)}
-							class:text-white={isActive(note.id)}
-							aria-current={isActive(note.id) ? 'page' : undefined}
-						>
-							<div class="truncate font-medium">
-								{note.title || 'Untitled'}
-							</div>
-							<div
-								class="mt-0.5 truncate text-sm"
-								class:text-[var(--color-text-muted)]={!isActive(note.id)}
-								class:text-white={isActive(note.id)}
-								class:opacity-75={isActive(note.id)}
-							>
-								{note.content.slice(0, 50) || 'Empty note...'}
-							</div>
-						</a>
-					{:else}
-						<div class="px-3 py-8 text-center text-[var(--color-text-muted)]">
-							{#if selectedTag}
-								<p>No notes with #{selectedTag}</p>
-								<button
-									onclick={() => (selectedTag = null)}
-									class="mt-2 text-sm text-[var(--color-accent)] hover:underline"
-								>
-									Clear filter
-								</button>
-							{:else}
-								<p>No notes yet</p>
-								<p class="mt-1 text-sm">Tap "New Note" to get started</p>
-							{/if}
-						</div>
-					{/each}
-				{/if}
+				<FolderTree
+							onNoteClick={handleNoteClick}
+							onNoteCreate={() => showNewNoteAnimation = true}
+							onFolderCreate={() => showNewFolderAnimation = true}
+							onNoteDelete={(name) => deleteNoteSnackbar = name}
+							onFolderDelete={(name) => deleteFolderSnackbar = name}
+						/>
 			</nav>
 
 			<!-- Sync Status (clickable to force sync) -->
@@ -758,6 +659,22 @@
 			resourceType="folder"
 			duration={2000}
 			onClose={() => showNewFolderAnimation = false}
+		/>
+	{/if}
+	{#if deleteNoteSnackbar}
+		<Snackbar
+			message={`Deleted "${deleteNoteSnackbar}"`}
+			resourceType="action"
+			duration={2000}
+			onClose={() => deleteNoteSnackbar = null}
+		/>
+	{/if}
+	{#if deleteFolderSnackbar}
+		<Snackbar
+			message={`Deleted "${deleteFolderSnackbar}"`}
+			resourceType="action"
+			duration={2000}
+			onClose={() => deleteFolderSnackbar = null}
 		/>
 	{/if}
 {/if}

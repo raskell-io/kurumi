@@ -7,6 +7,7 @@
 		addFolder,
 		addNote,
 		deleteFolder,
+		deleteNote,
 		updateFolder,
 		updateNote,
 		moveNoteToFolder,
@@ -37,9 +38,11 @@
 		onNoteClick?: () => void;
 		onNoteCreate?: () => void;
 		onFolderCreate?: () => void;
+		onNoteDelete?: (name: string) => void;
+		onFolderDelete?: (name: string) => void;
 	};
 
-	let { onNoteClick, onNoteCreate, onFolderCreate }: Props = $props();
+	let { onNoteClick, onNoteCreate, onFolderCreate, onNoteDelete, onFolderDelete }: Props = $props();
 
 	// Track which folders are expanded
 	let expandedFolders = $state<Set<string>>(new Set());
@@ -72,6 +75,23 @@
 	let longPressTimer: ReturnType<typeof setTimeout> | null = null;
 	const LONG_PRESS_DURATION = 300; // ms to trigger drag
 	const DRAG_THRESHOLD = 10; // pixels to move before canceling long press
+
+	// Swipe-to-delete state (supports both notes and folders)
+	type SwipeItem = { type: 'note' | 'folder'; id: string } | null;
+	let swipeOpenItem = $state<SwipeItem>(null);
+	let swipeStartX = $state<number | null>(null);
+	let swipeCurrentX = $state<number | null>(null);
+	let swipingItem = $state<SwipeItem>(null);
+	const SWIPE_THRESHOLD = 60; // pixels to trigger delete reveal
+	const DELETE_BUTTON_WIDTH = 80; // width of delete button
+
+	// Delete animation state
+	let deletingItem = $state<SwipeItem>(null);
+	const DELETE_ANIMATION_DURATION = 250; // ms
+
+	// Confirmation dialog state
+	let confirmDeleteItem = $state<SwipeItem>(null);
+	let confirmDeleteName = $state<string>('');
 
 	// Sort order state
 	type SortOrder = 'name-asc' | 'name-desc' | 'modified-desc' | 'modified-asc';
@@ -504,6 +524,161 @@
 		}
 	}
 
+	// Swipe-to-delete handlers (unified for notes and folders)
+	function handleSwipeStart(e: TouchEvent, item: SwipeItem) {
+		// Don't start swipe if we're in drag mode
+		if (touchDragActive || !item) return;
+
+		const touch = e.touches[0];
+		swipeStartX = touch.clientX;
+		swipingItem = item;
+		swipeCurrentX = touch.clientX;
+	}
+
+	function handleSwipeMove(e: TouchEvent) {
+		if (swipeStartX === null || !swipingItem) return;
+
+		const touch = e.touches[0];
+		const deltaX = swipeStartX - touch.clientX;
+
+		// Only allow swiping left (deltaX > 0)
+		if (deltaX > 0) {
+			swipeCurrentX = touch.clientX;
+			// Prevent scrolling while swiping
+			e.preventDefault();
+		}
+	}
+
+	function handleSwipeEnd() {
+		if (swipeStartX === null || swipeCurrentX === null || !swipingItem) {
+			resetSwipe();
+			return;
+		}
+
+		const deltaX = swipeStartX - swipeCurrentX;
+
+		// If swiped past threshold, reveal delete button
+		if (deltaX >= SWIPE_THRESHOLD) {
+			swipeOpenItem = swipingItem;
+		} else {
+			swipeOpenItem = null;
+		}
+
+		resetSwipe();
+	}
+
+	function resetSwipe() {
+		swipeStartX = null;
+		swipeCurrentX = null;
+		swipingItem = null;
+	}
+
+	function getSwipeOffset(type: 'note' | 'folder', id: string): number {
+		// If this item is actively being swiped
+		if (swipingItem?.type === type && swipingItem.id === id && swipeStartX !== null && swipeCurrentX !== null) {
+			const deltaX = swipeStartX - swipeCurrentX;
+			// Clamp between 0 and DELETE_BUTTON_WIDTH
+			return Math.max(0, Math.min(deltaX, DELETE_BUTTON_WIDTH));
+		}
+		// If this item has delete revealed
+		if (swipeOpenItem?.type === type && swipeOpenItem.id === id) {
+			return DELETE_BUTTON_WIDTH;
+		}
+		return 0;
+	}
+
+	function isDeleting(type: 'note' | 'folder', id: string): boolean {
+		return deletingItem?.type === type && deletingItem.id === id;
+	}
+
+	function requestDelete(type: 'note' | 'folder', id: string) {
+		// Get the name for notification/confirmation
+		let name = '';
+		if (type === 'note') {
+			const note = $notes.find(n => n.id === id);
+			name = note?.title || 'Untitled';
+		} else {
+			const folder = $folders.find(f => f.id === id);
+			name = folder?.name || 'Folder';
+		}
+
+		if (type === 'note') {
+			// Notes don't need confirmation - delete immediately
+			performDelete('note', id, name);
+		} else {
+			// Folders need confirmation
+			confirmDeleteItem = { type, id };
+			confirmDeleteName = name;
+		}
+	}
+
+	function performDelete(type: 'note' | 'folder', id: string, name: string) {
+		// Start the delete animation
+		deletingItem = { type, id };
+		swipeOpenItem = null;
+
+		// After animation, actually delete
+		setTimeout(() => {
+			if (type === 'note') {
+				// Navigate away if we're deleting the current note
+				if (isNoteActive(id)) {
+					goto('/');
+				}
+				deleteNote(id);
+				onNoteDelete?.(name);
+			} else {
+				deleteFolder(id, false);
+				onFolderDelete?.(name);
+			}
+			deletingItem = null;
+		}, DELETE_ANIMATION_DURATION);
+	}
+
+	function cancelDelete() {
+		confirmDeleteItem = null;
+		confirmDeleteName = '';
+	}
+
+	function confirmDelete() {
+		if (!confirmDeleteItem) return;
+
+		const { type, id } = confirmDeleteItem;
+		const name = confirmDeleteName;
+
+		confirmDeleteItem = null;
+		confirmDeleteName = '';
+
+		performDelete(type, id, name);
+	}
+
+	function handleRowClick(e: MouseEvent, type: 'note' | 'folder', id: string) {
+		// On desktop, clicking the right edge (last 40px) toggles delete
+		const target = e.currentTarget as HTMLElement;
+		const rect = target.getBoundingClientRect();
+		const clickX = e.clientX - rect.left;
+		const isRightEdge = clickX > rect.width - 40;
+
+		// If delete is open for another item, close it
+		if (swipeOpenItem && (swipeOpenItem.type !== type || swipeOpenItem.id !== id)) {
+			swipeOpenItem = null;
+		}
+
+		// If clicking right edge on desktop, toggle delete
+		if (isRightEdge && !('ontouchstart' in window)) {
+			e.preventDefault();
+			e.stopPropagation();
+			if (swipeOpenItem?.type === type && swipeOpenItem.id === id) {
+				swipeOpenItem = null;
+			} else {
+				swipeOpenItem = { type, id };
+			}
+		}
+	}
+
+	function closeSwipeDelete() {
+		swipeOpenItem = null;
+	}
+
 	// Reveal current file in tree
 	function revealCurrentFile() {
 		const match = $page.url.pathname.match(/^\/note\/(.+)$/);
@@ -557,8 +732,26 @@
 </script>
 
 <svelte:window
-	onclick={closeContextMenu}
+	onclick={(e) => {
+		closeContextMenu();
+		// Close swipe delete if clicking outside
+		if (swipeOpenItem) {
+			const target = e.target as HTMLElement;
+			if (!target.closest('.swipe-container')) {
+				closeSwipeDelete();
+			}
+		}
+	}}
 	onkeydown={(e) => {
+		// Close confirmation dialog on Escape
+		if (e.key === 'Escape' && confirmDeleteItem) {
+			cancelDelete();
+			return;
+		}
+		if (e.key === 'Escape' && swipeOpenItem) {
+			closeSwipeDelete();
+			return;
+		}
 		if (e.key === 'F2' && !renamingFolder && !renamingNote) {
 			e.preventDefault();
 			// Get the currently active note from URL
@@ -642,57 +835,70 @@
 		{@const folderNotes = $notes.filter((n) => n.folderId === folder.id)}
 		{@const isExpanded = expandedFolders.has(folder.id)}
 		{@const hasContents = subfolders.length > 0 || folderNotes.length > 0}
+		{@const folderSwipeOffset = getSwipeOffset('folder', folder.id)}
 
-		<div class="folder-item">
-			<!-- Folder header -->
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div
-				class="group flex items-center rounded-lg px-2 py-2 transition-colors hover:bg-[var(--color-border)]"
-				class:drop-target={isDraggedOver(folder.id)}
-				class:dragging={draggedItem?.type === 'folder' && draggedItem.id === folder.id}
-				data-folder-id={folder.id}
-				draggable="true"
-				ondragstart={(e) => handleDragStart(e, { type: 'folder', id: folder.id })}
-				ondragend={handleDragEnd}
-				ondragover={(e) => { e.stopPropagation(); handleDragOver(e, folder.id); }}
-				ondragleave={handleDragLeave}
-				ondrop={(e) => { e.stopPropagation(); handleDrop(e, folder.id); }}
-				ontouchstart={(e) => handleTouchStart(e, { type: 'folder', id: folder.id }, folder.name)}
-				ontouchmove={handleTouchMove}
-				ontouchend={handleTouchEnd}
-				oncontextmenu={(e) => handleFolderContextMenu(e, folder.id)}
-				role="treeitem"
-			>
-				{#if isExpanded && hasContents}
-					<FolderOpen class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
-				{:else}
-					<Folder class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
-				{/if}
-				{#if renamingFolder === folder.id}
-					<input
-						type="text"
-						bind:value={renameValue}
-						onkeydown={(e) => {
-							if (e.key === 'Enter') submitRename();
-							if (e.key === 'Escape') cancelRename();
-						}}
-						onblur={submitRename}
-						class="flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
-						autofocus
-						onclick={(e) => e.stopPropagation()}
-					/>
-				{:else}
-					<span
-						class="flex-1 truncate text-base text-[var(--color-text)]"
-						ondblclick={(e) => handleDoubleClick(e, 'folder', folder.id)}
-					>{folder.name}</span>
-				{/if}
-				<span class="ml-1 text-xs text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100">
-					{folderNotes.length}
-				</span>
-				<button onclick={() => toggleFolder(folder.id)} class="ml-1 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
-					<ChevronRight class="h-4 w-4 transition-transform {isExpanded ? 'rotate-90' : ''}" />
+		<div class="folder-item" class:deleting={isDeleting('folder', folder.id)}>
+			<!-- Folder header with swipe container -->
+			<div class="swipe-container relative mb-0.5 overflow-hidden rounded-lg">
+				<button
+					onclick={() => requestDelete('folder', folder.id)}
+					class="delete-action absolute right-0 top-0 flex h-full items-center justify-center bg-red-500 text-white transition-opacity"
+					style="width: {DELETE_BUTTON_WIDTH}px; opacity: {folderSwipeOffset > 0 ? 1 : 0};"
+					tabindex={folderSwipeOffset > 0 ? 0 : -1}
+				>
+					<Trash2 class="h-5 w-5" />
 				</button>
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div
+					class="folder-row group relative flex items-center rounded-lg bg-[var(--color-bg-secondary)] px-2 py-2 transition-transform hover:bg-[var(--color-border)]"
+					class:drop-target={isDraggedOver(folder.id)}
+					class:dragging={draggedItem?.type === 'folder' && draggedItem.id === folder.id}
+					style="transform: translateX(-{folderSwipeOffset}px);"
+					data-folder-id={folder.id}
+					draggable="true"
+					ondragstart={(e) => handleDragStart(e, { type: 'folder', id: folder.id })}
+					ondragend={handleDragEnd}
+					ondragover={(e) => { e.stopPropagation(); handleDragOver(e, folder.id); }}
+					ondragleave={handleDragLeave}
+					ondrop={(e) => { e.stopPropagation(); handleDrop(e, folder.id); }}
+					ontouchstart={(e) => handleSwipeStart(e, { type: 'folder', id: folder.id })}
+					ontouchmove={handleSwipeMove}
+					ontouchend={handleSwipeEnd}
+					onclick={(e) => handleRowClick(e, 'folder', folder.id)}
+					oncontextmenu={(e) => handleFolderContextMenu(e, folder.id)}
+					role="treeitem"
+				>
+					<button onclick={(e) => { e.stopPropagation(); toggleFolder(folder.id); }} class="mr-1 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
+						<ChevronRight class="h-4 w-4 transition-transform {isExpanded ? 'rotate-90' : ''}" />
+					</button>
+					{#if isExpanded && hasContents}
+						<FolderOpen class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
+					{:else}
+						<Folder class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
+					{/if}
+					{#if renamingFolder === folder.id}
+						<input
+							type="text"
+							bind:value={renameValue}
+							onkeydown={(e) => {
+								if (e.key === 'Enter') submitRename();
+								if (e.key === 'Escape') cancelRename();
+							}}
+							onblur={submitRename}
+							class="flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
+							autofocus
+							onclick={(e) => e.stopPropagation()}
+						/>
+					{:else}
+						<span
+							class="flex-1 truncate text-base text-[var(--color-text)]"
+							ondblclick={(e) => handleDoubleClick(e, 'folder', folder.id)}
+						>{folder.name}</span>
+					{/if}
+					<span class="ml-1 text-xs text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100">
+						{folderNotes.length}
+					</span>
+				</div>
 			</div>
 
 			<!-- Folder contents -->
@@ -722,56 +928,69 @@
 						{@const subFolderNotes = $notes.filter((n) => n.folderId === subfolder.id)}
 						{@const isSubExpanded = expandedFolders.has(subfolder.id)}
 						{@const hasSubContents = subSubfolders.length > 0 || subFolderNotes.length > 0}
+						{@const subfolderSwipeOffset = getSwipeOffset('folder', subfolder.id)}
 
-						<div class="subfolder-item">
-							<!-- svelte-ignore a11y_no_static_element_interactions -->
-							<div
-								class="group flex items-center rounded-lg px-2 py-2 transition-colors hover:bg-[var(--color-border)]"
-								class:drop-target={isDraggedOver(subfolder.id)}
-								class:dragging={draggedItem?.type === 'folder' && draggedItem.id === subfolder.id}
-								data-folder-id={subfolder.id}
-								draggable="true"
-								ondragstart={(e) => handleDragStart(e, { type: 'folder', id: subfolder.id })}
-								ondragend={handleDragEnd}
-								ondragover={(e) => { e.stopPropagation(); handleDragOver(e, subfolder.id); }}
-								ondragleave={handleDragLeave}
-								ondrop={(e) => { e.stopPropagation(); handleDrop(e, subfolder.id); }}
-								ontouchstart={(e) => handleTouchStart(e, { type: 'folder', id: subfolder.id }, subfolder.name)}
-								ontouchmove={handleTouchMove}
-								ontouchend={handleTouchEnd}
-								oncontextmenu={(e) => handleFolderContextMenu(e, subfolder.id)}
-								role="treeitem"
-							>
-								{#if isSubExpanded && hasSubContents}
-									<FolderOpen class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
-								{:else}
-									<Folder class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
-								{/if}
-								{#if renamingFolder === subfolder.id}
-									<input
-										type="text"
-										bind:value={renameValue}
-										onkeydown={(e) => {
-											if (e.key === 'Enter') submitRename();
-											if (e.key === 'Escape') cancelRename();
-										}}
-										onblur={submitRename}
-										class="flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
-										autofocus
-										onclick={(e) => e.stopPropagation()}
-									/>
-								{:else}
-									<span
-										class="flex-1 truncate text-base text-[var(--color-text)]"
-										ondblclick={(e) => handleDoubleClick(e, 'folder', subfolder.id)}
-									>{subfolder.name}</span>
-								{/if}
-								<span class="ml-1 text-xs text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100">
-									{subFolderNotes.length}
-								</span>
-								<button onclick={() => toggleFolder(subfolder.id)} class="ml-1 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
-									<ChevronRight class="h-4 w-4 transition-transform {isSubExpanded ? 'rotate-90' : ''}" />
+						<div class="subfolder-item" class:deleting={isDeleting('folder', subfolder.id)}>
+							<div class="swipe-container relative mb-0.5 overflow-hidden rounded-lg">
+								<button
+									onclick={() => requestDelete('folder', subfolder.id)}
+									class="delete-action absolute right-0 top-0 flex h-full items-center justify-center bg-red-500 text-white transition-opacity"
+									style="width: {DELETE_BUTTON_WIDTH}px; opacity: {subfolderSwipeOffset > 0 ? 1 : 0};"
+									tabindex={subfolderSwipeOffset > 0 ? 0 : -1}
+								>
+									<Trash2 class="h-5 w-5" />
 								</button>
+								<!-- svelte-ignore a11y_no_static_element_interactions -->
+								<div
+									class="folder-row group relative flex items-center rounded-lg bg-[var(--color-bg-secondary)] px-2 py-2 transition-transform hover:bg-[var(--color-border)]"
+									class:drop-target={isDraggedOver(subfolder.id)}
+									class:dragging={draggedItem?.type === 'folder' && draggedItem.id === subfolder.id}
+									style="transform: translateX(-{subfolderSwipeOffset}px);"
+									data-folder-id={subfolder.id}
+									draggable="true"
+									ondragstart={(e) => handleDragStart(e, { type: 'folder', id: subfolder.id })}
+									ondragend={handleDragEnd}
+									ondragover={(e) => { e.stopPropagation(); handleDragOver(e, subfolder.id); }}
+									ondragleave={handleDragLeave}
+									ondrop={(e) => { e.stopPropagation(); handleDrop(e, subfolder.id); }}
+									ontouchstart={(e) => handleSwipeStart(e, { type: 'folder', id: subfolder.id })}
+									ontouchmove={handleSwipeMove}
+									ontouchend={handleSwipeEnd}
+									onclick={(e) => handleRowClick(e, 'folder', subfolder.id)}
+									oncontextmenu={(e) => handleFolderContextMenu(e, subfolder.id)}
+									role="treeitem"
+								>
+									<button onclick={(e) => { e.stopPropagation(); toggleFolder(subfolder.id); }} class="mr-1 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
+										<ChevronRight class="h-4 w-4 transition-transform {isSubExpanded ? 'rotate-90' : ''}" />
+									</button>
+									{#if isSubExpanded && hasSubContents}
+										<FolderOpen class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
+									{:else}
+										<Folder class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
+									{/if}
+									{#if renamingFolder === subfolder.id}
+										<input
+											type="text"
+											bind:value={renameValue}
+											onkeydown={(e) => {
+												if (e.key === 'Enter') submitRename();
+												if (e.key === 'Escape') cancelRename();
+											}}
+											onblur={submitRename}
+											class="flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
+											autofocus
+											onclick={(e) => e.stopPropagation()}
+										/>
+									{:else}
+										<span
+											class="flex-1 truncate text-base text-[var(--color-text)]"
+											ondblclick={(e) => handleDoubleClick(e, 'folder', subfolder.id)}
+										>{subfolder.name}</span>
+									{/if}
+									<span class="ml-1 text-xs text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100">
+										{subFolderNotes.length}
+									</span>
+								</div>
 							</div>
 
 							<!-- Subfolder contents -->
@@ -781,95 +1000,120 @@
 									{#each subSubfolders as subSubfolder (subSubfolder.id)}
 										{@const subSubFolderNotes = $notes.filter((n) => n.folderId === subSubfolder.id)}
 										{@const isSubSubExpanded = expandedFolders.has(subSubfolder.id)}
-										<div class="subfolder-item">
-											<!-- svelte-ignore a11y_no_static_element_interactions -->
-											<div
-												class="group flex items-center rounded-lg px-2 py-2 transition-colors hover:bg-[var(--color-border)]"
-												class:drop-target={isDraggedOver(subSubfolder.id)}
-												class:dragging={draggedItem?.type === 'folder' && draggedItem.id === subSubfolder.id}
-												data-folder-id={subSubfolder.id}
-												draggable="true"
-												ondragstart={(e) => handleDragStart(e, { type: 'folder', id: subSubfolder.id })}
-												ondragend={handleDragEnd}
-												ondragover={(e) => { e.stopPropagation(); handleDragOver(e, subSubfolder.id); }}
-												ondragleave={handleDragLeave}
-												ondrop={(e) => { e.stopPropagation(); handleDrop(e, subSubfolder.id); }}
-												ontouchstart={(e) => handleTouchStart(e, { type: 'folder', id: subSubfolder.id }, subSubfolder.name)}
-												ontouchmove={handleTouchMove}
-												ontouchend={handleTouchEnd}
-												oncontextmenu={(e) => handleFolderContextMenu(e, subSubfolder.id)}
-												role="treeitem"
-											>
-												{#if isSubSubExpanded && subSubFolderNotes.length > 0}
-													<FolderOpen class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
-												{:else}
-													<Folder class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
-												{/if}
-												{#if renamingFolder === subSubfolder.id}
-													<input
-														type="text"
-														bind:value={renameValue}
-														onkeydown={(e) => {
-															if (e.key === 'Enter') submitRename();
-															if (e.key === 'Escape') cancelRename();
-														}}
-														onblur={submitRename}
-														class="flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
-														autofocus
-														onclick={(e) => e.stopPropagation()}
-													/>
-												{:else}
-													<span
-														class="flex-1 truncate text-base text-[var(--color-text)]"
-														ondblclick={(e) => handleDoubleClick(e, 'folder', subSubfolder.id)}
-													>{subSubfolder.name}</span>
-												{/if}
-												<span class="ml-1 text-xs text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100">
-													{subSubFolderNotes.length}
-												</span>
-												<button onclick={() => toggleFolder(subSubfolder.id)} class="ml-1 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
-													<ChevronRight class="h-4 w-4 transition-transform {isSubSubExpanded ? 'rotate-90' : ''}" />
+										{@const subSubfolderSwipeOffset = getSwipeOffset('folder', subSubfolder.id)}
+										<div class="subfolder-item" class:deleting={isDeleting('folder', subSubfolder.id)}>
+											<div class="swipe-container relative mb-0.5 overflow-hidden rounded-lg">
+												<button
+													onclick={() => requestDelete('folder', subSubfolder.id)}
+													class="delete-action absolute right-0 top-0 flex h-full items-center justify-center bg-red-500 text-white transition-opacity"
+													style="width: {DELETE_BUTTON_WIDTH}px; opacity: {subSubfolderSwipeOffset > 0 ? 1 : 0};"
+													tabindex={subSubfolderSwipeOffset > 0 ? 0 : -1}
+												>
+													<Trash2 class="h-5 w-5" />
 												</button>
+												<!-- svelte-ignore a11y_no_static_element_interactions -->
+												<div
+													class="folder-row group relative flex items-center rounded-lg bg-[var(--color-bg-secondary)] px-2 py-2 transition-transform hover:bg-[var(--color-border)]"
+													class:drop-target={isDraggedOver(subSubfolder.id)}
+													class:dragging={draggedItem?.type === 'folder' && draggedItem.id === subSubfolder.id}
+													style="transform: translateX(-{subSubfolderSwipeOffset}px);"
+													data-folder-id={subSubfolder.id}
+													draggable="true"
+													ondragstart={(e) => handleDragStart(e, { type: 'folder', id: subSubfolder.id })}
+													ondragend={handleDragEnd}
+													ondragover={(e) => { e.stopPropagation(); handleDragOver(e, subSubfolder.id); }}
+													ondragleave={handleDragLeave}
+													ondrop={(e) => { e.stopPropagation(); handleDrop(e, subSubfolder.id); }}
+													ontouchstart={(e) => handleSwipeStart(e, { type: 'folder', id: subSubfolder.id })}
+													ontouchmove={handleSwipeMove}
+													ontouchend={handleSwipeEnd}
+													onclick={(e) => handleRowClick(e, 'folder', subSubfolder.id)}
+													oncontextmenu={(e) => handleFolderContextMenu(e, subSubfolder.id)}
+													role="treeitem"
+												>
+													<button onclick={(e) => { e.stopPropagation(); toggleFolder(subSubfolder.id); }} class="mr-1 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
+														<ChevronRight class="h-4 w-4 transition-transform {isSubSubExpanded ? 'rotate-90' : ''}" />
+													</button>
+													{#if isSubSubExpanded && subSubFolderNotes.length > 0}
+														<FolderOpen class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
+													{:else}
+														<Folder class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
+													{/if}
+													{#if renamingFolder === subSubfolder.id}
+														<input
+															type="text"
+															bind:value={renameValue}
+															onkeydown={(e) => {
+																if (e.key === 'Enter') submitRename();
+																if (e.key === 'Escape') cancelRename();
+															}}
+															onblur={submitRename}
+															class="flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
+															autofocus
+															onclick={(e) => e.stopPropagation()}
+														/>
+													{:else}
+														<span
+															class="flex-1 truncate text-base text-[var(--color-text)]"
+															ondblclick={(e) => handleDoubleClick(e, 'folder', subSubfolder.id)}
+														>{subSubfolder.name}</span>
+													{/if}
+													<span class="ml-1 text-xs text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100">
+														{subSubFolderNotes.length}
+													</span>
+												</div>
 											</div>
 											{#if isSubSubExpanded}
 												<div class="ml-4 border-l border-[var(--color-border)] pl-2">
 													{#each subSubFolderNotes as note (note.id)}
-														<a
-															href="/note/{note.id}"
-															onclick={handleNoteClick}
-															oncontextmenu={(e) => handleNoteContextMenu(e, note.id)}
-															class="mb-0.5 flex items-center rounded-lg px-2 py-2 transition-colors hover:bg-[var(--color-border)]"
-															class:bg-[var(--color-accent)]={isNoteActive(note.id)}
-															class:text-white={isNoteActive(note.id)}
-															class:dragging={draggedItem?.type === 'note' && draggedItem.id === note.id}
-															draggable="true"
-															ondragstart={(e) => handleDragStart(e, { type: 'note', id: note.id })}
-															ondragend={handleDragEnd}
-															ontouchstart={(e) => handleTouchStart(e, { type: 'note', id: note.id }, note.title || 'Untitled')}
-															ontouchmove={handleTouchMove}
-															ontouchend={handleTouchEnd}
-														>
-															<FileText class="mr-2 h-5 w-5 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
-															{#if renamingNote === note.id}
-																<input
-																	type="text"
-																	bind:value={renameValue}
-																	onkeydown={(e) => {
-																		if (e.key === 'Enter') submitNoteRename();
-																		if (e.key === 'Escape') cancelRename();
-																	}}
-																	onblur={submitNoteRename}
-																	onclick={(e) => e.preventDefault()}
-																	class="flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
-																	autofocus
-																/>
-															{:else}
-																<span
-																	class="truncate text-base"
-																	ondblclick={(e) => handleDoubleClick(e, 'note', note.id)}
-																>{note.title || 'Untitled'}</span>
-															{/if}
-														</a>
+														{@const swipeOffset = getSwipeOffset('note', note.id)}
+														<div class="swipe-container relative mb-0.5 overflow-hidden rounded-lg" class:deleting={isDeleting('note', note.id)}>
+															<button
+																onclick={() => requestDelete('note', note.id)}
+																class="delete-action absolute right-0 top-0 flex h-full items-center justify-center bg-red-500 text-white transition-opacity"
+																style="width: {DELETE_BUTTON_WIDTH}px; opacity: {swipeOffset > 0 ? 1 : 0};"
+																tabindex={swipeOffset > 0 ? 0 : -1}
+															>
+																<Trash2 class="h-5 w-5" />
+															</button>
+															<a
+																href="/note/{note.id}"
+																onclick={(e) => { handleRowClick(e, 'note', note.id); if (!(swipeOpenItem?.type === 'note' && swipeOpenItem.id === note.id)) handleNoteClick(); }}
+																oncontextmenu={(e) => handleNoteContextMenu(e, note.id)}
+																ontouchstart={(e) => handleSwipeStart(e, { type: 'note', id: note.id })}
+																ontouchmove={handleSwipeMove}
+																ontouchend={handleSwipeEnd}
+																class="note-row relative flex items-center rounded-lg bg-[var(--color-bg-secondary)] px-2 py-2 transition-transform hover:bg-[var(--color-border)]"
+																class:bg-[var(--color-accent)]={isNoteActive(note.id)}
+																class:text-white={isNoteActive(note.id)}
+																class:dragging={draggedItem?.type === 'note' && draggedItem.id === note.id}
+																style="transform: translateX(-{swipeOffset}px);"
+																draggable="true"
+																ondragstart={(e) => handleDragStart(e, { type: 'note', id: note.id })}
+																ondragend={handleDragEnd}
+															>
+																<FileText class="mr-2 h-5 w-5 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
+																{#if renamingNote === note.id}
+																	<input
+																		type="text"
+																		bind:value={renameValue}
+																		onkeydown={(e) => {
+																			if (e.key === 'Enter') submitNoteRename();
+																			if (e.key === 'Escape') cancelRename();
+																		}}
+																		onblur={submitNoteRename}
+																		onclick={(e) => e.preventDefault()}
+																		class="flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
+																		autofocus
+																	/>
+																{:else}
+																	<span
+																		class="truncate text-base"
+																		ondblclick={(e) => handleDoubleClick(e, 'note', note.id)}
+																	>{note.title || 'Untitled'}</span>
+																{/if}
+															</a>
+														</div>
 													{/each}
 												</div>
 											{/if}
@@ -877,42 +1121,54 @@
 									{/each}
 									<!-- Notes in subfolder -->
 									{#each subFolderNotes as note (note.id)}
-										<a
-											href="/note/{note.id}"
-											onclick={handleNoteClick}
-											oncontextmenu={(e) => handleNoteContextMenu(e, note.id)}
-											class="mb-0.5 flex items-center rounded-lg px-2 py-2 transition-colors hover:bg-[var(--color-border)]"
-											class:bg-[var(--color-accent)]={isNoteActive(note.id)}
-											class:text-white={isNoteActive(note.id)}
-											class:dragging={draggedItem?.type === 'note' && draggedItem.id === note.id}
-											draggable="true"
-											ondragstart={(e) => handleDragStart(e, { type: 'note', id: note.id })}
-											ondragend={handleDragEnd}
-											ontouchstart={(e) => handleTouchStart(e, { type: 'note', id: note.id }, note.title || 'Untitled')}
-											ontouchmove={handleTouchMove}
-											ontouchend={handleTouchEnd}
-										>
-											<FileText class="mr-2 h-5 w-5 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
-											{#if renamingNote === note.id}
-												<input
-													type="text"
-													bind:value={renameValue}
-													onkeydown={(e) => {
-														if (e.key === 'Enter') submitNoteRename();
-														if (e.key === 'Escape') cancelRename();
-													}}
-													onblur={submitNoteRename}
-													onclick={(e) => e.preventDefault()}
-													class="flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
-													autofocus
-												/>
-											{:else}
-												<span
-													class="truncate text-base"
-													ondblclick={(e) => handleDoubleClick(e, 'note', note.id)}
-												>{note.title || 'Untitled'}</span>
-											{/if}
-										</a>
+										{@const swipeOffset = getSwipeOffset('note', note.id)}
+										<div class="swipe-container relative mb-0.5 overflow-hidden rounded-lg" class:deleting={isDeleting('note', note.id)}>
+											<button
+												onclick={() => requestDelete('note', note.id)}
+												class="delete-action absolute right-0 top-0 flex h-full items-center justify-center bg-red-500 text-white transition-opacity"
+												style="width: {DELETE_BUTTON_WIDTH}px; opacity: {swipeOffset > 0 ? 1 : 0};"
+												tabindex={swipeOffset > 0 ? 0 : -1}
+											>
+												<Trash2 class="h-5 w-5" />
+											</button>
+											<a
+												href="/note/{note.id}"
+												onclick={(e) => { handleRowClick(e, 'note', note.id); if (!(swipeOpenItem?.type === 'note' && swipeOpenItem.id === note.id)) handleNoteClick(); }}
+												oncontextmenu={(e) => handleNoteContextMenu(e, note.id)}
+												ontouchstart={(e) => handleSwipeStart(e, { type: 'note', id: note.id })}
+												ontouchmove={handleSwipeMove}
+												ontouchend={handleSwipeEnd}
+												class="note-row relative flex items-center rounded-lg bg-[var(--color-bg-secondary)] px-2 py-2 transition-transform hover:bg-[var(--color-border)]"
+												class:bg-[var(--color-accent)]={isNoteActive(note.id)}
+												class:text-white={isNoteActive(note.id)}
+												class:dragging={draggedItem?.type === 'note' && draggedItem.id === note.id}
+												style="transform: translateX(-{swipeOffset}px);"
+												draggable="true"
+												ondragstart={(e) => handleDragStart(e, { type: 'note', id: note.id })}
+												ondragend={handleDragEnd}
+											>
+												<FileText class="mr-2 h-5 w-5 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
+												{#if renamingNote === note.id}
+													<input
+														type="text"
+														bind:value={renameValue}
+														onkeydown={(e) => {
+															if (e.key === 'Enter') submitNoteRename();
+															if (e.key === 'Escape') cancelRename();
+														}}
+														onblur={submitNoteRename}
+														onclick={(e) => e.preventDefault()}
+														class="flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
+														autofocus
+													/>
+												{:else}
+													<span
+														class="truncate text-base"
+														ondblclick={(e) => handleDoubleClick(e, 'note', note.id)}
+													>{note.title || 'Untitled'}</span>
+												{/if}
+											</a>
+										</div>
 									{/each}
 								</div>
 							{/if}
@@ -921,42 +1177,54 @@
 
 					<!-- Notes in this folder (after subfolders) -->
 					{#each folderNotes as note (note.id)}
-						<a
-							href="/note/{note.id}"
-							onclick={handleNoteClick}
-							oncontextmenu={(e) => handleNoteContextMenu(e, note.id)}
-							class="mb-0.5 flex items-center rounded-lg px-2 py-2 transition-colors hover:bg-[var(--color-border)]"
-							class:bg-[var(--color-accent)]={isNoteActive(note.id)}
-							class:text-white={isNoteActive(note.id)}
-							class:dragging={draggedItem?.type === 'note' && draggedItem.id === note.id}
-							draggable="true"
-							ondragstart={(e) => handleDragStart(e, { type: 'note', id: note.id })}
-							ondragend={handleDragEnd}
-							ontouchstart={(e) => handleTouchStart(e, { type: 'note', id: note.id }, note.title || 'Untitled')}
-							ontouchmove={handleTouchMove}
-							ontouchend={handleTouchEnd}
-						>
-							<FileText class="mr-2 h-5 w-5 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
-							{#if renamingNote === note.id}
-								<input
-									type="text"
-									bind:value={renameValue}
-									onkeydown={(e) => {
-										if (e.key === 'Enter') submitNoteRename();
-										if (e.key === 'Escape') cancelRename();
-									}}
-									onblur={submitNoteRename}
-									onclick={(e) => e.preventDefault()}
-									class="flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
-									autofocus
-								/>
-							{:else}
-								<span
-									class="truncate text-base"
-									ondblclick={(e) => handleDoubleClick(e, 'note', note.id)}
-								>{note.title || 'Untitled'}</span>
-							{/if}
-						</a>
+						{@const swipeOffset = getSwipeOffset('note', note.id)}
+						<div class="swipe-container relative mb-0.5 overflow-hidden rounded-lg" class:deleting={isDeleting('note', note.id)}>
+							<button
+								onclick={() => requestDelete('note', note.id)}
+								class="delete-action absolute right-0 top-0 flex h-full items-center justify-center bg-red-500 text-white transition-opacity"
+								style="width: {DELETE_BUTTON_WIDTH}px; opacity: {swipeOffset > 0 ? 1 : 0};"
+								tabindex={swipeOffset > 0 ? 0 : -1}
+							>
+								<Trash2 class="h-5 w-5" />
+							</button>
+							<a
+								href="/note/{note.id}"
+								onclick={(e) => { handleRowClick(e, 'note', note.id); if (!(swipeOpenItem?.type === 'note' && swipeOpenItem.id === note.id)) handleNoteClick(); }}
+								oncontextmenu={(e) => handleNoteContextMenu(e, note.id)}
+								ontouchstart={(e) => handleSwipeStart(e, { type: 'note', id: note.id })}
+								ontouchmove={handleSwipeMove}
+								ontouchend={handleSwipeEnd}
+								class="note-row relative flex items-center rounded-lg bg-[var(--color-bg-secondary)] px-2 py-2 transition-transform hover:bg-[var(--color-border)]"
+								class:bg-[var(--color-accent)]={isNoteActive(note.id)}
+								class:text-white={isNoteActive(note.id)}
+								class:dragging={draggedItem?.type === 'note' && draggedItem.id === note.id}
+								style="transform: translateX(-{swipeOffset}px);"
+								draggable="true"
+								ondragstart={(e) => handleDragStart(e, { type: 'note', id: note.id })}
+								ondragend={handleDragEnd}
+							>
+								<FileText class="mr-2 h-5 w-5 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
+								{#if renamingNote === note.id}
+									<input
+										type="text"
+										bind:value={renameValue}
+										onkeydown={(e) => {
+											if (e.key === 'Enter') submitNoteRename();
+											if (e.key === 'Escape') cancelRename();
+										}}
+										onblur={submitNoteRename}
+										onclick={(e) => e.preventDefault()}
+										class="flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
+										autofocus
+									/>
+								{:else}
+									<span
+										class="truncate text-base"
+										ondblclick={(e) => handleDoubleClick(e, 'note', note.id)}
+									>{note.title || 'Untitled'}</span>
+								{/if}
+							</a>
+						</div>
 					{/each}
 				</div>
 			{/if}
@@ -965,42 +1233,56 @@
 
 	<!-- Root notes (not in any folder) - shown at root level after folders -->
 	{#each rootNotes as note (note.id)}
-		<a
-			href="/note/{note.id}"
-			onclick={handleNoteClick}
-			oncontextmenu={(e) => handleNoteContextMenu(e, note.id)}
-			class="mb-0.5 flex items-center rounded-lg px-2 py-2 transition-colors hover:bg-[var(--color-border)]"
-			class:bg-[var(--color-accent)]={isNoteActive(note.id)}
-			class:text-white={isNoteActive(note.id)}
-			class:dragging={draggedItem?.type === 'note' && draggedItem.id === note.id}
-			draggable="true"
-			ondragstart={(e) => handleDragStart(e, { type: 'note', id: note.id })}
-			ondragend={handleDragEnd}
-			ontouchstart={(e) => handleTouchStart(e, { type: 'note', id: note.id }, note.title || 'Untitled')}
-			ontouchmove={handleTouchMove}
-			ontouchend={handleTouchEnd}
-		>
-			<FileText class="mr-2 h-5 w-5 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
-			{#if renamingNote === note.id}
-				<input
-					type="text"
-					bind:value={renameValue}
-					onkeydown={(e) => {
-						if (e.key === 'Enter') submitNoteRename();
-						if (e.key === 'Escape') cancelRename();
-					}}
-					onblur={submitNoteRename}
-					onclick={(e) => e.preventDefault()}
-					class="flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
-					autofocus
-				/>
-			{:else}
-				<span
-					class="truncate text-base"
-					ondblclick={(e) => handleDoubleClick(e, 'note', note.id)}
-				>{note.title || 'Untitled'}</span>
-			{/if}
-		</a>
+		{@const swipeOffset = getSwipeOffset('note', note.id)}
+		<div class="swipe-container relative mb-0.5 overflow-hidden rounded-lg" class:deleting={isDeleting('note', note.id)}>
+			<!-- Delete button (revealed on swipe) -->
+			<button
+				onclick={() => requestDelete('note', note.id)}
+				class="delete-action absolute right-0 top-0 flex h-full items-center justify-center bg-red-500 text-white transition-opacity"
+				style="width: {DELETE_BUTTON_WIDTH}px; opacity: {swipeOffset > 0 ? 1 : 0};"
+				tabindex={swipeOffset > 0 ? 0 : -1}
+			>
+				<Trash2 class="h-5 w-5" />
+			</button>
+			<!-- Note row -->
+			<a
+				href="/note/{note.id}"
+				onclick={(e) => { handleRowClick(e, 'note', note.id); if (!(swipeOpenItem?.type === 'note' && swipeOpenItem.id === note.id)) handleNoteClick(); }}
+				oncontextmenu={(e) => handleNoteContextMenu(e, note.id)}
+				ontouchstart={(e) => handleSwipeStart(e, { type: 'note', id: note.id })}
+				ontouchmove={handleSwipeMove}
+				ontouchend={handleSwipeEnd}
+				class="note-row relative flex items-center rounded-lg bg-[var(--color-bg-secondary)] px-2 py-2 transition-transform hover:bg-[var(--color-border)]"
+				class:bg-[var(--color-accent)]={isNoteActive(note.id)}
+				class:text-white={isNoteActive(note.id)}
+				class:dragging={draggedItem?.type === 'note' && draggedItem.id === note.id}
+				style="transform: translateX(-{swipeOffset}px);"
+				draggable="true"
+				ondragstart={(e) => handleDragStart(e, { type: 'note', id: note.id })}
+				ondragend={handleDragEnd}
+			>
+				<FileText class="mr-2 h-5 w-5 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
+				{#if renamingNote === note.id}
+					<input
+						type="text"
+						bind:value={renameValue}
+						onkeydown={(e) => {
+							if (e.key === 'Enter') submitNoteRename();
+							if (e.key === 'Escape') cancelRename();
+						}}
+						onblur={submitNoteRename}
+						onclick={(e) => e.preventDefault()}
+						class="flex-1 rounded bg-[var(--color-bg)] px-1 text-base text-[var(--color-text)] outline-none ring-1 ring-[var(--color-accent)]"
+						autofocus
+					/>
+				{:else}
+					<span
+						class="truncate text-base"
+						ondblclick={(e) => handleDoubleClick(e, 'note', note.id)}
+					>{note.title || 'Untitled'}</span>
+				{/if}
+			</a>
+		</div>
 	{/each}
 </div>
 
@@ -1137,6 +1419,58 @@
 	</div>
 {/if}
 
+<!-- Delete Confirmation Dialog -->
+{#if confirmDeleteItem}
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4"
+		onclick={cancelDelete}
+	>
+		<div
+			class="w-full max-w-sm rounded-xl bg-[var(--color-bg)] p-5 shadow-xl"
+			onclick={(e) => e.stopPropagation()}
+		>
+			<div class="mb-4 flex items-center gap-3">
+				<div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-500/10">
+					<Trash2 class="h-5 w-5 text-red-500" />
+				</div>
+				<div>
+					<h3 class="text-base font-semibold text-[var(--color-text)]">
+						Delete {confirmDeleteItem.type === 'folder' ? 'folder' : 'note'}?
+					</h3>
+					<p class="text-sm text-[var(--color-text-muted)]">This action cannot be undone</p>
+				</div>
+			</div>
+
+			<p class="mb-4 rounded-lg bg-[var(--color-bg-secondary)] px-3 py-2 text-sm text-[var(--color-text)]">
+				"{confirmDeleteName}"
+			</p>
+
+			{#if confirmDeleteItem.type === 'folder'}
+				<p class="mb-4 text-xs text-[var(--color-text-muted)]">
+					Contents will be moved to the parent folder.
+				</p>
+			{/if}
+
+			<div class="flex gap-3">
+				<button
+					onclick={cancelDelete}
+					class="flex-1 rounded-lg border border-[var(--color-border)] px-4 py-2.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-bg-secondary)]"
+				>
+					Cancel
+				</button>
+				<button
+					onclick={confirmDelete}
+					class="flex-1 rounded-lg bg-red-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-red-600"
+				>
+					Delete
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
 <style>
 	/* Drag and drop styles */
 	.drop-target {
@@ -1208,5 +1542,66 @@
 		-webkit-user-select: none;
 		user-select: none;
 		-webkit-touch-callout: none;
+	}
+
+	/* Swipe-to-delete styles */
+	.swipe-container {
+		touch-action: pan-y;
+	}
+
+	.note-row,
+	.folder-row {
+		will-change: transform;
+		transition: transform 0.2s ease-out;
+	}
+
+	.delete-action {
+		transition: opacity 0.15s ease-out;
+	}
+
+	/* Delete animation */
+	.deleting {
+		animation: deleteSlide 0.25s ease-out forwards;
+	}
+
+	.folder-item.deleting,
+	.subfolder-item.deleting {
+		animation: deleteSlide 0.25s ease-out forwards;
+	}
+
+	@keyframes deleteSlide {
+		0% {
+			opacity: 1;
+			max-height: 100px;
+			margin-bottom: 0.125rem;
+			transform: translateX(0);
+		}
+		50% {
+			opacity: 0;
+			transform: translateX(-20px);
+		}
+		100% {
+			opacity: 0;
+			max-height: 0;
+			margin-bottom: 0;
+			padding: 0;
+			overflow: hidden;
+		}
+	}
+
+	/* Desktop: show a subtle hint on the right edge */
+	@media (hover: hover) {
+		.swipe-container:hover .note-row::after,
+		.swipe-container:hover .folder-row::after {
+			content: '';
+			position: absolute;
+			right: 0;
+			top: 0;
+			bottom: 0;
+			width: 4px;
+			background: linear-gradient(to left, rgba(239, 68, 68, 0.3), transparent);
+			border-radius: 0 0.5rem 0.5rem 0;
+			pointer-events: none;
+		}
 	}
 </style>

@@ -97,7 +97,7 @@
 <nav class="read-nav">
 	<div class="nav-content">
 		<!-- Logo/Home -->
-		<a href="/read" class="nav-logo">
+		<a href="/" class="nav-logo">
 			<img src="/icon-192.avif" alt="Kurumi" class="logo-icon" />
 			<span class="logo-text">
 				{#if $currentVault?.icon}

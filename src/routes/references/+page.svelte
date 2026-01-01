@@ -347,8 +347,14 @@
 
 	.tabs {
 		display: flex;
-		gap: 0.5rem;
+		gap: 0.25rem;
 		overflow-x: auto;
+		-webkit-overflow-scrolling: touch;
+		scrollbar-width: none;
+	}
+
+	.tabs::-webkit-scrollbar {
+		display: none;
 	}
 
 	.tab-actions {
@@ -358,17 +364,19 @@
 	.tab {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
-		padding: 0.5rem 1rem;
+		justify-content: center;
+		gap: 0.375rem;
+		padding: 0.5rem 0.75rem;
 		background: transparent;
 		border: none;
 		border-radius: 0.5rem;
 		color: var(--color-text-muted);
-		font-size: 0.875rem;
+		font-size: 0.8125rem;
 		font-weight: 500;
 		cursor: pointer;
 		transition: all 0.15s ease;
 		white-space: nowrap;
+		flex-shrink: 0;
 	}
 
 	.tab:hover {
@@ -383,9 +391,11 @@
 
 	.tab .count {
 		background: rgba(255, 255, 255, 0.2);
-		padding: 0.125rem 0.5rem;
+		padding: 0.125rem 0.375rem;
 		border-radius: 1rem;
-		font-size: 0.75rem;
+		font-size: 0.6875rem;
+		min-width: 1.25rem;
+		text-align: center;
 	}
 
 	.tab:not(.active) .count {
