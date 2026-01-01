@@ -13,7 +13,7 @@
 		testConnection as testAIConnection
 	} from '$lib/ai';
 	import { onMount } from 'svelte';
-	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2, RefreshCw, CheckCircle, XCircle, Wifi, Sparkles, Bot, ChevronDown, Database, Cloud, Lock, Shield, BookOpen } from 'lucide-svelte';
+	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2, RefreshCw, CheckCircle, XCircle, Wifi, Sparkles, Bot, ChevronDown, Database, Cloud, Lock, Shield, BookOpen, Palette, HardDrive, Info } from 'lucide-svelte';
 
 	let syncToken = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-token') || '' : '');
 	let syncUrl = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-url') || '' : '');
@@ -51,6 +51,20 @@
 	// Documentation sections state
 	let showSyncDocs = $state(false);
 	let showArchDocs = $state(false);
+
+	// Collapsible sections state
+	let sections = $state({
+		appearance: true,
+		sync: false,
+		ai: false,
+		data: false,
+		danger: false,
+		about: false
+	});
+
+	function toggleSection(section: keyof typeof sections) {
+		sections[section] = !sections[section];
+	}
 
 	onMount(() => {
 		const savedTheme = localStorage.getItem('kurumi-theme') as 'system' | 'light' | 'dark' | null;
@@ -255,508 +269,570 @@
 	<div class="mx-auto max-w-2xl">
 		<h1 class="mb-6 text-xl font-bold text-[var(--color-text)] md:mb-8 md:text-2xl">Settings</h1>
 
-		<!-- Theme -->
-		<section class="mb-6 md:mb-8">
-			<h2 class="mb-3 text-base font-semibold text-[var(--color-text)] md:mb-4 md:text-lg">
-				Theme
-			</h2>
-			<p class="mb-4 text-sm text-[var(--color-text-muted)]">
-				Choose your preferred color scheme.
-			</p>
-
-			<div class="flex flex-wrap gap-2">
-				<button
-					onclick={() => setTheme('system')}
-					class="flex items-center gap-2 rounded-lg border px-4 py-3 transition-colors {theme === 'system' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'}"
-				>
-					<Monitor class="h-5 w-5" />
-					System
-				</button>
-				<button
-					onclick={() => setTheme('light')}
-					class="flex items-center gap-2 rounded-lg border px-4 py-3 transition-colors {theme === 'light' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'}"
-				>
-					<Sun class="h-5 w-5" />
-					Light
-				</button>
-				<button
-					onclick={() => setTheme('dark')}
-					class="flex items-center gap-2 rounded-lg border px-4 py-3 transition-colors {theme === 'dark' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'}"
-				>
-					<Moon class="h-5 w-5" />
-					Dark
-				</button>
-			</div>
-		</section>
-
-		<!-- Sync Settings -->
-		<section class="mb-6 md:mb-8">
-			<h2 class="mb-3 text-base font-semibold text-[var(--color-text)] md:mb-4 md:text-lg">
-				Cloudflare Sync
-			</h2>
-			<p class="mb-4 text-sm text-[var(--color-text-muted)]">
-				Configure sync with your Cloudflare R2 Worker to access notes across devices.
-			</p>
-
-			<div class="space-y-4">
-				<div>
-					<label for="syncUrl" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
-						Sync Worker URL
-					</label>
-					<input
-						id="syncUrl"
-						type="url"
-						bind:value={syncUrl}
-						placeholder="https://kurumi-sync.your-domain.workers.dev/sync"
-						class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:border-[var(--color-accent)] focus:outline-none"
-					/>
-				</div>
-
-				<div>
-					<label for="syncToken" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
-						Sync Token
-					</label>
-					<input
-						id="syncToken"
-						type="password"
-						bind:value={syncToken}
-						placeholder="Your sync authentication token"
-						class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:border-[var(--color-accent)] focus:outline-none"
-					/>
-				</div>
-
-				<div class="flex flex-col gap-3 md:flex-row">
-					<button
-						onclick={saveSyncSettings}
-						class="rounded-lg bg-[var(--color-accent)] px-4 py-3 text-white transition-colors hover:bg-[var(--color-accent-hover)] active:scale-[0.98]"
-					>
-						{showSaved ? 'Saved!' : 'Save Settings'}
-					</button>
-
-					<button
-						onclick={handleTestConnection}
-						disabled={isTesting || !syncUrl || !syncToken}
-						class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] disabled:opacity-50"
-					>
-						{#if isTesting}
-							<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
-						{:else}
-							<Wifi class="h-4 w-4" />
-						{/if}
-						Test Connection
-					</button>
-				</div>
-
-				{#if testResult}
-					<div class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm {testResult.success ? 'bg-green-500/10 text-green-600 dark:text-green-400' : 'bg-red-500/10 text-red-500'}">
-						{#if testResult.success}
-							<CheckCircle class="h-4 w-4" />
-							Connection successful
-						{:else}
-							<XCircle class="h-4 w-4" />
-							{testResult.error || 'Connection failed'}
-						{/if}
-					</div>
-				{/if}
-			</div>
-		</section>
-
-		<!-- Sync Status -->
-		{#if isSyncConfigured()}
-			<section class="mb-6 md:mb-8">
-				<h2 class="mb-3 text-base font-semibold text-[var(--color-text)] md:mb-4 md:text-lg">
-					Sync Status
-				</h2>
-
-				<div class="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
-					<div class="flex items-center justify-between">
-						<div class="flex items-center gap-3">
-							{#if $syncState.status === 'syncing'}
-								<div class="h-3 w-3 animate-pulse rounded-full bg-amber-500"></div>
-								<span class="text-[var(--color-text)]">Syncing...</span>
-							{:else if $syncState.status === 'success'}
-								<div class="h-3 w-3 rounded-full bg-green-500"></div>
-								<span class="text-[var(--color-text)]">Synced</span>
-							{:else if $syncState.status === 'error'}
-								<div class="h-3 w-3 rounded-full bg-red-500"></div>
-								<span class="text-red-500">{$syncState.error || 'Sync failed'}</span>
-							{:else}
-								<div class="h-3 w-3 rounded-full bg-[var(--color-text-muted)]"></div>
-								<span class="text-[var(--color-text-muted)]">Ready to sync</span>
-							{/if}
-						</div>
-
-						<button
-							onclick={handleSync}
-							disabled={$syncState.status === 'syncing'}
-							class="flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-white transition-colors hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
-						>
-							<RefreshCw class="h-4 w-4 {$syncState.status === 'syncing' ? 'animate-spin' : ''}" />
-							Sync Now
-						</button>
-					</div>
-
-					{#if $syncState.lastSyncedAt}
-						<div class="mt-3 text-sm text-[var(--color-text-muted)]">
-							Last synced: {formatTimestamp($syncState.lastSyncedAt)}
-						</div>
-					{/if}
-				</div>
-			</section>
-		{/if}
-
-		<!-- AI Assistant -->
-		<section class="mb-6 md:mb-8">
-			<h2 class="mb-3 text-base font-semibold text-[var(--color-text)] md:mb-4 md:text-lg">
-				<span class="flex items-center gap-2">
-					<Sparkles class="h-5 w-5 text-[var(--color-accent)]" />
-					AI Assistant
-				</span>
-			</h2>
-			<p class="mb-4 text-sm text-[var(--color-text-muted)]">
-				Enable AI-powered text assistance. Select text in the editor to improve, expand, summarize, or translate.
-			</p>
-
-			<div class="space-y-4">
-				<!-- Provider Selection -->
-				<div>
-					<label class="mb-2 block text-sm font-medium text-[var(--color-text)]">
-						AI Provider
-					</label>
-					<div class="flex gap-2">
-						<button
-							onclick={() => handleProviderChange('openai')}
-							class="flex flex-1 items-center justify-center gap-2 rounded-lg border px-4 py-3 transition-colors {aiProvider === 'openai' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-border)]'}"
-						>
-							<Bot class="h-4 w-4" />
-							OpenAI
-						</button>
-						<button
-							onclick={() => handleProviderChange('anthropic')}
-							class="flex flex-1 items-center justify-center gap-2 rounded-lg border px-4 py-3 transition-colors {aiProvider === 'anthropic' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-border)]'}"
-						>
-							<Sparkles class="h-4 w-4" />
-							Anthropic
-						</button>
+		<!-- Appearance -->
+		<section class="mb-4 rounded-lg border border-[var(--color-border)] overflow-hidden">
+			<button
+				onclick={() => toggleSection('appearance')}
+				class="flex w-full items-center justify-between bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-border)]"
+			>
+				<div class="flex items-center gap-3">
+					<Palette class="h-5 w-5 text-[var(--color-accent)]" />
+					<div>
+						<h2 class="font-semibold text-[var(--color-text)]">Appearance</h2>
+						<p class="text-sm text-[var(--color-text-muted)]">Theme and display settings</p>
 					</div>
 				</div>
-
-				<!-- API Key Input -->
-				<div>
-					<label for="aiApiKey" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
-						{aiProvider === 'openai' ? 'OpenAI' : 'Anthropic'} API Key
-					</label>
-					{#if aiProvider === 'openai'}
-						<input
-							id="aiApiKey"
-							type="password"
-							bind:value={openaiKey}
-							placeholder="sk-..."
-							class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:border-[var(--color-accent)] focus:outline-none"
-						/>
-					{:else}
-						<input
-							id="aiApiKey"
-							type="password"
-							bind:value={anthropicKey}
-							placeholder="sk-ant-..."
-							class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:border-[var(--color-accent)] focus:outline-none"
-						/>
-					{/if}
-					<p class="mt-1 text-xs text-[var(--color-text-muted)]">
-						{#if aiProvider === 'openai'}
-							Get your API key from <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" class="text-[var(--color-accent)] hover:underline">OpenAI Dashboard</a>
-						{:else}
-							Get your API key from <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener" class="text-[var(--color-accent)] hover:underline">Anthropic Console</a>
-						{/if}
+				<ChevronDown class="h-5 w-5 text-[var(--color-text-muted)] transition-transform {sections.appearance ? 'rotate-180' : ''}" />
+			</button>
+			{#if sections.appearance}
+				<div class="border-t border-[var(--color-border)] p-4">
+					<p class="mb-4 text-sm text-[var(--color-text-muted)]">
+						Choose your preferred color scheme.
 					</p>
-				</div>
 
-				<!-- Model Selection -->
-				<div>
-					<label for="aiModel" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
-						Model
-					</label>
-					<select
-						id="aiModel"
-						bind:value={aiModel}
-						class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-[var(--color-text)] focus:border-[var(--color-accent)] focus:outline-none"
-					>
-						{#each availableModels as model}
-							<option value={model.id}>{model.name}</option>
-						{/each}
-					</select>
-				</div>
-
-				<!-- Action Buttons -->
-				<div class="flex flex-col gap-3 md:flex-row">
-					<button
-						onclick={handleSaveAISettings}
-						class="rounded-lg bg-[var(--color-accent)] px-4 py-3 text-white transition-colors hover:bg-[var(--color-accent-hover)] active:scale-[0.98]"
-					>
-						{showAISaved ? 'Saved!' : 'Save Settings'}
-					</button>
-
-					<button
-						onclick={handleTestAI}
-						disabled={isTestingAI || !currentApiKey}
-						class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] disabled:opacity-50"
-					>
-						{#if isTestingAI}
-							<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
-						{:else}
-							<Sparkles class="h-4 w-4" />
-						{/if}
-						Test Connection
-					</button>
-				</div>
-
-				{#if aiTestResult}
-					<div class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm {aiTestResult.success ? 'bg-green-500/10 text-green-600 dark:text-green-400' : 'bg-red-500/10 text-red-500'}">
-						{#if aiTestResult.success}
-							<CheckCircle class="h-4 w-4" />
-							Connection successful
-						{:else}
-							<XCircle class="h-4 w-4" />
-							{aiTestResult.error || 'Connection failed'}
-						{/if}
+					<div class="flex flex-wrap gap-2">
+						<button
+							onclick={() => setTheme('system')}
+							class="flex items-center gap-2 rounded-lg border px-4 py-3 transition-colors {theme === 'system' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'}"
+						>
+							<Monitor class="h-5 w-5" />
+							System
+						</button>
+						<button
+							onclick={() => setTheme('light')}
+							class="flex items-center gap-2 rounded-lg border px-4 py-3 transition-colors {theme === 'light' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'}"
+						>
+							<Sun class="h-5 w-5" />
+							Light
+						</button>
+						<button
+							onclick={() => setTheme('dark')}
+							class="flex items-center gap-2 rounded-lg border px-4 py-3 transition-colors {theme === 'dark' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'}"
+						>
+							<Moon class="h-5 w-5" />
+							Dark
+						</button>
 					</div>
-				{/if}
-			</div>
-		</section>
-
-		<!-- Import/Export -->
-		<section class="mb-6 md:mb-8">
-			<h2 class="mb-3 text-base font-semibold text-[var(--color-text)] md:mb-4 md:text-lg">
-				Import & Export
-			</h2>
-			<p class="mb-4 text-sm text-[var(--color-text-muted)]">
-				Import or export your data as JSON for backup or migration.
-			</p>
-
-			<div class="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
-				<input
-					type="file"
-					accept=".json,application/json"
-					class="hidden"
-					bind:this={fileInputRef}
-					onchange={handleFileSelect}
-				/>
-				<button
-					onclick={triggerFileInput}
-					class="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] active:scale-[0.98] md:w-auto"
-				>
-					<Upload class="h-4 w-4" />
-					Import JSON
-				</button>
-				<button
-					onclick={handleExport}
-					class="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] active:scale-[0.98] md:w-auto"
-				>
-					<Download class="h-4 w-4" />
-					Export JSON
-				</button>
-			</div>
-
-			<div class="mt-3 text-sm text-[var(--color-text-muted)]">
-				{$vaults.length} {$vaults.length === 1 ? 'vault' : 'vaults'} · {$folders.length} {$folders.length === 1 ? 'folder' : 'folders'} · {$notes.length} {$notes.length === 1 ? 'note' : 'notes'}
-			</div>
-
-			{#if importError && !showImportModal}
-				<div class="mt-3 flex items-center gap-2 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-500">
-					<AlertTriangle class="h-4 w-4 shrink-0" />
-					{importError}
 				</div>
 			{/if}
+		</section>
 
-			{#if importSuccess}
-				<div class="mt-3 flex items-center gap-2 rounded-lg bg-green-500/10 px-3 py-2 text-sm text-green-600 dark:text-green-400">
-					<Check class="h-4 w-4 shrink-0" />
-					Imported {importSuccess.vaults} {importSuccess.vaults === 1 ? 'vault' : 'vaults'}, {importSuccess.folders} {importSuccess.folders === 1 ? 'folder' : 'folders'}, {importSuccess.notes} {importSuccess.notes === 1 ? 'note' : 'notes'}
+		<!-- Sync -->
+		<section class="mb-4 rounded-lg border border-[var(--color-border)] overflow-hidden">
+			<button
+				onclick={() => toggleSection('sync')}
+				class="flex w-full items-center justify-between bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-border)]"
+			>
+				<div class="flex items-center gap-3">
+					<Cloud class="h-5 w-5 text-[var(--color-accent)]" />
+					<div>
+						<h2 class="font-semibold text-[var(--color-text)]">Cloudflare Sync</h2>
+						<p class="text-sm text-[var(--color-text-muted)]">Cross-device sync with R2</p>
+					</div>
+				</div>
+				<div class="flex items-center gap-2">
+					{#if isSyncConfigured()}
+						<span class="flex h-2 w-2 rounded-full bg-green-500"></span>
+					{/if}
+					<ChevronDown class="h-5 w-5 text-[var(--color-text-muted)] transition-transform {sections.sync ? 'rotate-180' : ''}" />
+				</div>
+			</button>
+			{#if sections.sync}
+				<div class="border-t border-[var(--color-border)] p-4">
+					<p class="mb-4 text-sm text-[var(--color-text-muted)]">
+						Configure sync with your Cloudflare R2 Worker to access notes across devices.
+					</p>
+
+					<div class="space-y-4">
+						<div>
+							<label for="syncUrl" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+								Sync Worker URL
+							</label>
+							<input
+								id="syncUrl"
+								type="url"
+								bind:value={syncUrl}
+								placeholder="https://kurumi-sync.your-domain.workers.dev/sync"
+								class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:border-[var(--color-accent)] focus:outline-none"
+							/>
+						</div>
+
+						<div>
+							<label for="syncToken" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+								Sync Token
+							</label>
+							<input
+								id="syncToken"
+								type="password"
+								bind:value={syncToken}
+								placeholder="Your sync authentication token"
+								class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:border-[var(--color-accent)] focus:outline-none"
+							/>
+						</div>
+
+						<div class="flex flex-col gap-3 md:flex-row">
+							<button
+								onclick={saveSyncSettings}
+								class="rounded-lg bg-[var(--color-accent)] px-4 py-3 text-white transition-colors hover:bg-[var(--color-accent-hover)] active:scale-[0.98]"
+							>
+								{showSaved ? 'Saved!' : 'Save Settings'}
+							</button>
+
+							<button
+								onclick={handleTestConnection}
+								disabled={isTesting || !syncUrl || !syncToken}
+								class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] disabled:opacity-50"
+							>
+								{#if isTesting}
+									<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+								{:else}
+									<Wifi class="h-4 w-4" />
+								{/if}
+								Test Connection
+							</button>
+						</div>
+
+						{#if testResult}
+							<div class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm {testResult.success ? 'bg-green-500/10 text-green-600 dark:text-green-400' : 'bg-red-500/10 text-red-500'}">
+								{#if testResult.success}
+									<CheckCircle class="h-4 w-4" />
+									Connection successful
+								{:else}
+									<XCircle class="h-4 w-4" />
+									{testResult.error || 'Connection failed'}
+								{/if}
+							</div>
+						{/if}
+
+						<!-- Sync Status -->
+						{#if isSyncConfigured()}
+							<div class="mt-4 pt-4 border-t border-[var(--color-border)]">
+								<h3 class="mb-3 text-sm font-semibold text-[var(--color-text)]">Sync Status</h3>
+								<div class="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] p-4">
+									<div class="flex items-center justify-between">
+										<div class="flex items-center gap-3">
+											{#if $syncState.status === 'syncing'}
+												<div class="h-3 w-3 animate-pulse rounded-full bg-amber-500"></div>
+												<span class="text-[var(--color-text)]">Syncing...</span>
+											{:else if $syncState.status === 'success'}
+												<div class="h-3 w-3 rounded-full bg-green-500"></div>
+												<span class="text-[var(--color-text)]">Synced</span>
+											{:else if $syncState.status === 'error'}
+												<div class="h-3 w-3 rounded-full bg-red-500"></div>
+												<span class="text-red-500">{$syncState.error || 'Sync failed'}</span>
+											{:else}
+												<div class="h-3 w-3 rounded-full bg-[var(--color-text-muted)]"></div>
+												<span class="text-[var(--color-text-muted)]">Ready to sync</span>
+											{/if}
+										</div>
+
+										<button
+											onclick={handleSync}
+											disabled={$syncState.status === 'syncing'}
+											class="flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-white transition-colors hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
+										>
+											<RefreshCw class="h-4 w-4 {$syncState.status === 'syncing' ? 'animate-spin' : ''}" />
+											Sync Now
+										</button>
+									</div>
+
+									{#if $syncState.lastSyncedAt}
+										<div class="mt-3 text-sm text-[var(--color-text-muted)]">
+											Last synced: {formatTimestamp($syncState.lastSyncedAt)}
+										</div>
+									{/if}
+								</div>
+							</div>
+						{/if}
+					</div>
+				</div>
+			{/if}
+		</section>
+
+		<!-- AI Assistant -->
+		<section class="mb-4 rounded-lg border border-[var(--color-border)] overflow-hidden">
+			<button
+				onclick={() => toggleSection('ai')}
+				class="flex w-full items-center justify-between bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-border)]"
+			>
+				<div class="flex items-center gap-3">
+					<Sparkles class="h-5 w-5 text-[var(--color-accent)]" />
+					<div>
+						<h2 class="font-semibold text-[var(--color-text)]">AI Assistant</h2>
+						<p class="text-sm text-[var(--color-text-muted)]">OpenAI and Anthropic integration</p>
+					</div>
+				</div>
+				<div class="flex items-center gap-2">
+					{#if isAIConfigured()}
+						<span class="flex h-2 w-2 rounded-full bg-green-500"></span>
+					{/if}
+					<ChevronDown class="h-5 w-5 text-[var(--color-text-muted)] transition-transform {sections.ai ? 'rotate-180' : ''}" />
+				</div>
+			</button>
+			{#if sections.ai}
+				<div class="border-t border-[var(--color-border)] p-4">
+					<p class="mb-4 text-sm text-[var(--color-text-muted)]">
+						Enable AI-powered text assistance. Select text in the editor to improve, expand, summarize, or translate.
+					</p>
+
+					<div class="space-y-4">
+						<!-- Provider Selection -->
+						<div>
+							<label class="mb-2 block text-sm font-medium text-[var(--color-text)]">
+								AI Provider
+							</label>
+							<div class="flex gap-2">
+								<button
+									onclick={() => handleProviderChange('openai')}
+									class="flex flex-1 items-center justify-center gap-2 rounded-lg border px-4 py-3 transition-colors {aiProvider === 'openai' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-border)]'}"
+								>
+									<Bot class="h-4 w-4" />
+									OpenAI
+								</button>
+								<button
+									onclick={() => handleProviderChange('anthropic')}
+									class="flex flex-1 items-center justify-center gap-2 rounded-lg border px-4 py-3 transition-colors {aiProvider === 'anthropic' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-border)]'}"
+								>
+									<Sparkles class="h-4 w-4" />
+									Anthropic
+								</button>
+							</div>
+						</div>
+
+						<!-- API Key Input -->
+						<div>
+							<label for="aiApiKey" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+								{aiProvider === 'openai' ? 'OpenAI' : 'Anthropic'} API Key
+							</label>
+							{#if aiProvider === 'openai'}
+								<input
+									id="aiApiKey"
+									type="password"
+									bind:value={openaiKey}
+									placeholder="sk-..."
+									class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:border-[var(--color-accent)] focus:outline-none"
+								/>
+							{:else}
+								<input
+									id="aiApiKey"
+									type="password"
+									bind:value={anthropicKey}
+									placeholder="sk-ant-..."
+									class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:border-[var(--color-accent)] focus:outline-none"
+								/>
+							{/if}
+							<p class="mt-1 text-xs text-[var(--color-text-muted)]">
+								{#if aiProvider === 'openai'}
+									Get your API key from <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" class="text-[var(--color-accent)] hover:underline">OpenAI Dashboard</a>
+								{:else}
+									Get your API key from <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener" class="text-[var(--color-accent)] hover:underline">Anthropic Console</a>
+								{/if}
+							</p>
+						</div>
+
+						<!-- Model Selection -->
+						<div>
+							<label for="aiModel" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+								Model
+							</label>
+							<select
+								id="aiModel"
+								bind:value={aiModel}
+								class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-[var(--color-text)] focus:border-[var(--color-accent)] focus:outline-none"
+							>
+								{#each availableModels as model}
+									<option value={model.id}>{model.name}</option>
+								{/each}
+							</select>
+						</div>
+
+						<!-- Action Buttons -->
+						<div class="flex flex-col gap-3 md:flex-row">
+							<button
+								onclick={handleSaveAISettings}
+								class="rounded-lg bg-[var(--color-accent)] px-4 py-3 text-white transition-colors hover:bg-[var(--color-accent-hover)] active:scale-[0.98]"
+							>
+								{showAISaved ? 'Saved!' : 'Save Settings'}
+							</button>
+
+							<button
+								onclick={handleTestAI}
+								disabled={isTestingAI || !currentApiKey}
+								class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] disabled:opacity-50"
+							>
+								{#if isTestingAI}
+									<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+								{:else}
+									<Sparkles class="h-4 w-4" />
+								{/if}
+								Test Connection
+							</button>
+						</div>
+
+						{#if aiTestResult}
+							<div class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm {aiTestResult.success ? 'bg-green-500/10 text-green-600 dark:text-green-400' : 'bg-red-500/10 text-red-500'}">
+								{#if aiTestResult.success}
+									<CheckCircle class="h-4 w-4" />
+									Connection successful
+								{:else}
+									<XCircle class="h-4 w-4" />
+									{aiTestResult.error || 'Connection failed'}
+								{/if}
+							</div>
+						{/if}
+					</div>
+				</div>
+			{/if}
+		</section>
+
+		<!-- Data Management -->
+		<section class="mb-4 rounded-lg border border-[var(--color-border)] overflow-hidden">
+			<button
+				onclick={() => toggleSection('data')}
+				class="flex w-full items-center justify-between bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-border)]"
+			>
+				<div class="flex items-center gap-3">
+					<HardDrive class="h-5 w-5 text-[var(--color-accent)]" />
+					<div>
+						<h2 class="font-semibold text-[var(--color-text)]">Data Management</h2>
+						<p class="text-sm text-[var(--color-text-muted)]">Import, export, and backup</p>
+					</div>
+				</div>
+				<ChevronDown class="h-5 w-5 text-[var(--color-text-muted)] transition-transform {sections.data ? 'rotate-180' : ''}" />
+			</button>
+			{#if sections.data}
+				<div class="border-t border-[var(--color-border)] p-4">
+					<p class="mb-4 text-sm text-[var(--color-text-muted)]">
+						Import or export your data as JSON for backup or migration.
+					</p>
+
+					<div class="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+						<input
+							type="file"
+							accept=".json,application/json"
+							class="hidden"
+							bind:this={fileInputRef}
+							onchange={handleFileSelect}
+						/>
+						<button
+							onclick={triggerFileInput}
+							class="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] active:scale-[0.98] md:w-auto"
+						>
+							<Upload class="h-4 w-4" />
+							Import JSON
+						</button>
+						<button
+							onclick={handleExport}
+							class="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] active:scale-[0.98] md:w-auto"
+						>
+							<Download class="h-4 w-4" />
+							Export JSON
+						</button>
+					</div>
+
+					<div class="mt-3 text-sm text-[var(--color-text-muted)]">
+						{$vaults.length} {$vaults.length === 1 ? 'vault' : 'vaults'} · {$folders.length} {$folders.length === 1 ? 'folder' : 'folders'} · {$notes.length} {$notes.length === 1 ? 'note' : 'notes'}
+					</div>
+
+					{#if importError && !showImportModal}
+						<div class="mt-3 flex items-center gap-2 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-500">
+							<AlertTriangle class="h-4 w-4 shrink-0" />
+							{importError}
+						</div>
+					{/if}
+
+					{#if importSuccess}
+						<div class="mt-3 flex items-center gap-2 rounded-lg bg-green-500/10 px-3 py-2 text-sm text-green-600 dark:text-green-400">
+							<Check class="h-4 w-4 shrink-0" />
+							Imported {importSuccess.vaults} {importSuccess.vaults === 1 ? 'vault' : 'vaults'}, {importSuccess.folders} {importSuccess.folders === 1 ? 'folder' : 'folders'}, {importSuccess.notes} {importSuccess.notes === 1 ? 'note' : 'notes'}
+						</div>
+					{/if}
 				</div>
 			{/if}
 		</section>
 
 		<!-- Danger Zone -->
-		<section class="mb-6 md:mb-8">
-			<h2 class="mb-3 text-base font-semibold text-red-500 md:mb-4 md:text-lg">
-				Danger Zone
-			</h2>
-			<div class="rounded-lg border border-red-500/30 bg-red-500/5 p-4">
-				<div class="flex items-start justify-between gap-4">
-					<div>
-						<h3 class="font-medium text-[var(--color-text)]">Clear All Data</h3>
-						<p class="mt-1 text-sm text-[var(--color-text-muted)]">
-							Permanently delete all vaults, folders, and notes. This cannot be undone.
-						</p>
-					</div>
-					<button
-						onclick={startClearData}
-						class="shrink-0 rounded-lg border border-red-500/50 px-4 py-2 text-sm text-red-500 transition-colors hover:bg-red-500/10"
-					>
-						Clear Data
-					</button>
-				</div>
-			</div>
-		</section>
-
-		<!-- About -->
-		<section class="mb-6 md:mb-8">
-			<h2 class="mb-3 text-base font-semibold text-[var(--color-text)] md:mb-4 md:text-lg">
-				About
-			</h2>
-			<div
-				class="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4"
+		<section class="mb-4 rounded-lg border border-red-500/30 overflow-hidden">
+			<button
+				onclick={() => toggleSection('danger')}
+				class="flex w-full items-center justify-between bg-red-500/5 px-4 py-3 text-left transition-colors hover:bg-red-500/10"
 			>
 				<div class="flex items-center gap-3">
-					<img src="/icon-192.avif" alt="Kurumi" class="h-12 w-12 rounded-lg" />
+					<Trash2 class="h-5 w-5 text-red-500" />
 					<div>
-						<h3 class="font-semibold text-[var(--color-text)]">Kurumi</h3>
-						<p class="text-sm text-[var(--color-text-muted)]">
-							Your local-first second brain
-						</p>
+						<h2 class="font-semibold text-red-500">Danger Zone</h2>
+						<p class="text-sm text-[var(--color-text-muted)]">Destructive actions</p>
 					</div>
 				</div>
-				<div class="mt-4 text-sm text-[var(--color-text-muted)]">
-					<p>Version 0.1.0</p>
-					<p class="mt-1">
-						Built with SvelteKit, Automerge, and Tailwind CSS.
-						<br />
-						Data stored locally using IndexedDB.
-					</p>
+				<ChevronDown class="h-5 w-5 text-red-500 transition-transform {sections.danger ? 'rotate-180' : ''}" />
+			</button>
+			{#if sections.danger}
+				<div class="border-t border-red-500/30 p-4 bg-red-500/5">
+					<div class="flex items-start justify-between gap-4">
+						<div>
+							<h3 class="font-medium text-[var(--color-text)]">Clear All Data</h3>
+							<p class="mt-1 text-sm text-[var(--color-text-muted)]">
+								Permanently delete all vaults, folders, and notes. This cannot be undone.
+							</p>
+						</div>
+						<button
+							onclick={startClearData}
+							class="shrink-0 rounded-lg border border-red-500/50 px-4 py-2 text-sm text-red-500 transition-colors hover:bg-red-500/10"
+						>
+							Clear Data
+						</button>
+					</div>
 				</div>
-			</div>
+			{/if}
 		</section>
 
-		<!-- Documentation -->
-		<section class="mb-8">
-			<h2 class="mb-3 text-base font-semibold text-[var(--color-text)] md:mb-4 md:text-lg">
-				<span class="flex items-center gap-2">
-					<BookOpen class="h-5 w-5 text-[var(--color-accent)]" />
-					Documentation
-				</span>
-			</h2>
-			<p class="mb-4 text-sm text-[var(--color-text-muted)]">
-				Learn how Kurumi works and how to set up cross-device sync.
-			</p>
-
-			<div class="space-y-3">
-				<!-- Sync Setup -->
-				<div class="rounded-lg border border-[var(--color-border)] overflow-hidden">
-					<button
-						onclick={() => (showSyncDocs = !showSyncDocs)}
-						class="flex w-full items-center justify-between bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-border)]"
-					>
-						<div class="flex items-center gap-3">
-							<Cloud class="h-5 w-5 text-[var(--color-accent)]" />
-							<div>
-								<h3 class="font-medium text-[var(--color-text)]">Sync Setup</h3>
-								<p class="text-sm text-[var(--color-text-muted)]">Set up cross-device sync with Cloudflare R2</p>
-							</div>
+		<!-- About & Documentation -->
+		<section class="mb-4 rounded-lg border border-[var(--color-border)] overflow-hidden">
+			<button
+				onclick={() => toggleSection('about')}
+				class="flex w-full items-center justify-between bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-border)]"
+			>
+				<div class="flex items-center gap-3">
+					<Info class="h-5 w-5 text-[var(--color-accent)]" />
+					<div>
+						<h2 class="font-semibold text-[var(--color-text)]">About & Documentation</h2>
+						<p class="text-sm text-[var(--color-text-muted)]">Version info and guides</p>
+					</div>
+				</div>
+				<ChevronDown class="h-5 w-5 text-[var(--color-text-muted)] transition-transform {sections.about ? 'rotate-180' : ''}" />
+			</button>
+			{#if sections.about}
+				<div class="border-t border-[var(--color-border)] p-4">
+					<!-- About -->
+					<div class="flex items-center gap-3 mb-4">
+						<img src="/icon-192.avif" alt="Kurumi" class="h-12 w-12 rounded-lg" />
+						<div>
+							<h3 class="font-semibold text-[var(--color-text)]">Kurumi</h3>
+							<p class="text-sm text-[var(--color-text-muted)]">
+								Your local-first second brain · v0.1.0
+							</p>
 						</div>
-						<ChevronDown class="h-5 w-5 text-[var(--color-text-muted)] transition-transform {showSyncDocs ? 'rotate-180' : ''}" />
-					</button>
-					{#if showSyncDocs}
-						<div class="border-t border-[var(--color-border)] p-4 text-sm docs-content">
-							<h4>Prerequisites</h4>
-							<ul>
-								<li>A <a href="https://dash.cloudflare.com/sign-up" target="_blank" rel="noopener">Cloudflare account</a> (free)</li>
-								<li><a href="https://mise.jdx.dev/" target="_blank" rel="noopener">mise</a> installed (<code>brew install mise</code>)</li>
-							</ul>
+					</div>
+					<p class="mb-4 text-sm text-[var(--color-text-muted)]">
+						Built with SvelteKit, Automerge, and Tailwind CSS. Data stored locally using IndexedDB.
+					</p>
 
-							<h4>Step 1: Enable R2</h4>
-							<ol>
-								<li>Go to <a href="https://dash.cloudflare.com" target="_blank" rel="noopener">Cloudflare Dashboard</a></li>
-								<li>Click <strong>R2 Object Storage</strong> in the sidebar</li>
-								<li>Click <strong>Get Started</strong> or <strong>Activate R2</strong></li>
-								<li>Accept the terms (no credit card required for free tier)</li>
-							</ol>
+					<!-- Docs -->
+					<div class="space-y-3 mt-4 pt-4 border-t border-[var(--color-border)]">
+						<h3 class="text-sm font-semibold text-[var(--color-text)]">Documentation</h3>
 
-							<h4>Step 2: Deploy the Worker</h4>
-							<p>Clone the repo and run the setup command:</p>
-							<pre><code>git clone https://github.com/raskell-io/kurumi.git
+						<!-- Sync Setup -->
+						<div class="rounded-lg border border-[var(--color-border)] overflow-hidden">
+							<button
+								onclick={() => (showSyncDocs = !showSyncDocs)}
+								class="flex w-full items-center justify-between bg-[var(--color-bg)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-bg-secondary)]"
+							>
+								<div class="flex items-center gap-3">
+									<Cloud class="h-4 w-4 text-[var(--color-accent)]" />
+									<span class="text-sm font-medium text-[var(--color-text)]">Sync Setup</span>
+								</div>
+								<ChevronDown class="h-4 w-4 text-[var(--color-text-muted)] transition-transform {showSyncDocs ? 'rotate-180' : ''}" />
+							</button>
+							{#if showSyncDocs}
+								<div class="border-t border-[var(--color-border)] p-4 text-sm docs-content">
+									<h4>Prerequisites</h4>
+									<ul>
+										<li>A <a href="https://dash.cloudflare.com/sign-up" target="_blank" rel="noopener">Cloudflare account</a> (free)</li>
+										<li><a href="https://mise.jdx.dev/" target="_blank" rel="noopener">mise</a> installed (<code>brew install mise</code>)</li>
+									</ul>
+
+									<h4>Step 1: Enable R2</h4>
+									<ol>
+										<li>Go to <a href="https://dash.cloudflare.com" target="_blank" rel="noopener">Cloudflare Dashboard</a></li>
+										<li>Click <strong>R2 Object Storage</strong> in the sidebar</li>
+										<li>Click <strong>Get Started</strong> or <strong>Activate R2</strong></li>
+										<li>Accept the terms (no credit card required for free tier)</li>
+									</ol>
+
+									<h4>Step 2: Deploy the Worker</h4>
+									<p>Clone the repo and run the setup command:</p>
+									<pre><code>git clone https://github.com/raskell-io/kurumi.git
 cd kurumi/worker
 mise run setup</code></pre>
-							<p>This will install dependencies, log you into Cloudflare, create the R2 bucket, generate a sync token, and deploy the worker.</p>
+									<p>This will install dependencies, log you into Cloudflare, create the R2 bucket, generate a sync token, and deploy the worker.</p>
 
-							<h4>Step 3: Configure Kurumi</h4>
-							<ol>
-								<li>In the <strong>Cloudflare Sync</strong> section above, enter your Worker URL</li>
-								<li>Enter the sync token from Step 2</li>
-								<li>Click <strong>Save Settings</strong> then <strong>Test Connection</strong></li>
-							</ol>
+									<h4>Step 3: Configure Kurumi</h4>
+									<ol>
+										<li>In the <strong>Cloudflare Sync</strong> section above, enter your Worker URL</li>
+										<li>Enter the sync token from Step 2</li>
+										<li>Click <strong>Save Settings</strong> then <strong>Test Connection</strong></li>
+									</ol>
 
-							<h4>Cost</h4>
-							<p>Cloudflare's free tier includes:</p>
-							<ul>
-								<li><strong>Workers:</strong> 100,000 requests/day</li>
-								<li><strong>R2:</strong> 10 GB storage, 10M reads/month, 1M writes/month</li>
-							</ul>
-							<p>For personal use, you'll likely never exceed these limits.</p>
-						</div>
-					{/if}
-				</div>
-
-				<!-- Architecture -->
-				<div class="rounded-lg border border-[var(--color-border)] overflow-hidden">
-					<button
-						onclick={() => (showArchDocs = !showArchDocs)}
-						class="flex w-full items-center justify-between bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-border)]"
-					>
-						<div class="flex items-center gap-3">
-							<Shield class="h-5 w-5 text-[var(--color-accent)]" />
-							<div>
-								<h3 class="font-medium text-[var(--color-text)]">Architecture & Privacy</h3>
-								<p class="text-sm text-[var(--color-text-muted)]">How Kurumi keeps your data safe</p>
-							</div>
-						</div>
-						<ChevronDown class="h-5 w-5 text-[var(--color-text-muted)] transition-transform {showArchDocs ? 'rotate-180' : ''}" />
-					</button>
-					{#if showArchDocs}
-						<div class="border-t border-[var(--color-border)] p-4 text-sm docs-content">
-							<h4>Local-First Architecture</h4>
-							<p>Your data lives on your device first, with optional sync to other devices you control.</p>
-
-							<div class="my-4 grid grid-cols-2 gap-3">
-								<div class="rounded-lg bg-[var(--color-bg-secondary)] p-3">
-									<div class="flex items-center gap-2 mb-2 text-[var(--color-text)]">
-										<Database class="h-4 w-4 text-[var(--color-accent)]" />
-										<strong>IndexedDB</strong>
-									</div>
-									<p class="text-[var(--color-text-muted)]">All notes stored locally in your browser</p>
+									<h4>Cost</h4>
+									<p>Cloudflare's free tier includes:</p>
+									<ul>
+										<li><strong>Workers:</strong> 100,000 requests/day</li>
+										<li><strong>R2:</strong> 10 GB storage, 10M reads/month, 1M writes/month</li>
+									</ul>
+									<p>For personal use, you'll likely never exceed these limits.</p>
 								</div>
-								<div class="rounded-lg bg-[var(--color-bg-secondary)] p-3">
-									<div class="flex items-center gap-2 mb-2 text-[var(--color-text)]">
-										<Cloud class="h-4 w-4 text-[var(--color-accent)]" />
-										<strong>Automerge CRDT</strong>
-									</div>
-									<p class="text-[var(--color-text-muted)]">Conflict-free sync between devices</p>
-								</div>
-							</div>
-
-							<h4>Security</h4>
-							<ul>
-								<li><strong>HTTPS/TLS encrypted</strong> - All sync traffic is encrypted</li>
-								<li><strong>Bearer token auth</strong> - Only requests with your token can access your data</li>
-								<li><strong>Encrypted storage</strong> - R2 data is encrypted by Cloudflare</li>
-							</ul>
-
-							<h4>Privacy</h4>
-							<div class="my-4 rounded-lg border border-green-500/30 bg-green-500/10 p-3">
-								<p class="text-green-600 dark:text-green-400"><strong>What we see: Nothing.</strong></p>
-								<p class="text-[var(--color-text-muted)] mt-1">No servers, no analytics, no telemetry. Kurumi is a static web app.</p>
-							</div>
-
-							<h4>Recommendations</h4>
-							<ul>
-								<li>Use a strong sync token: <code>openssl rand -base64 32</code></li>
-								<li>Enable 2FA on your Cloudflare account</li>
-								<li>Regularly export backups to JSON</li>
-							</ul>
+							{/if}
 						</div>
-					{/if}
+
+						<!-- Architecture -->
+						<div class="rounded-lg border border-[var(--color-border)] overflow-hidden">
+							<button
+								onclick={() => (showArchDocs = !showArchDocs)}
+								class="flex w-full items-center justify-between bg-[var(--color-bg)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-bg-secondary)]"
+							>
+								<div class="flex items-center gap-3">
+									<Shield class="h-4 w-4 text-[var(--color-accent)]" />
+									<span class="text-sm font-medium text-[var(--color-text)]">Architecture & Privacy</span>
+								</div>
+								<ChevronDown class="h-4 w-4 text-[var(--color-text-muted)] transition-transform {showArchDocs ? 'rotate-180' : ''}" />
+							</button>
+							{#if showArchDocs}
+								<div class="border-t border-[var(--color-border)] p-4 text-sm docs-content">
+									<h4>Local-First Architecture</h4>
+									<p>Your data lives on your device first, with optional sync to other devices you control.</p>
+
+									<div class="my-4 grid grid-cols-2 gap-3">
+										<div class="rounded-lg bg-[var(--color-bg-secondary)] p-3">
+											<div class="flex items-center gap-2 mb-2 text-[var(--color-text)]">
+												<Database class="h-4 w-4 text-[var(--color-accent)]" />
+												<strong>IndexedDB</strong>
+											</div>
+											<p class="text-[var(--color-text-muted)]">All notes stored locally in your browser</p>
+										</div>
+										<div class="rounded-lg bg-[var(--color-bg-secondary)] p-3">
+											<div class="flex items-center gap-2 mb-2 text-[var(--color-text)]">
+												<Cloud class="h-4 w-4 text-[var(--color-accent)]" />
+												<strong>Automerge CRDT</strong>
+											</div>
+											<p class="text-[var(--color-text-muted)]">Conflict-free sync between devices</p>
+										</div>
+									</div>
+
+									<h4>Security</h4>
+									<ul>
+										<li><strong>HTTPS/TLS encrypted</strong> - All sync traffic is encrypted</li>
+										<li><strong>Bearer token auth</strong> - Only requests with your token can access your data</li>
+										<li><strong>Encrypted storage</strong> - R2 data is encrypted by Cloudflare</li>
+									</ul>
+
+									<h4>Privacy</h4>
+									<div class="my-4 rounded-lg border border-green-500/30 bg-green-500/10 p-3">
+										<p class="text-green-600 dark:text-green-400"><strong>What we see: Nothing.</strong></p>
+										<p class="text-[var(--color-text-muted)] mt-1">No servers, no analytics, no telemetry. Kurumi is a static web app.</p>
+									</div>
+
+									<h4>Recommendations</h4>
+									<ul>
+										<li>Use a strong sync token: <code>openssl rand -base64 32</code></li>
+										<li>Enable 2FA on your Cloudflare account</li>
+										<li>Regularly export backups to JSON</li>
+									</ul>
+								</div>
+							{/if}
+						</div>
+					</div>
 				</div>
-			</div>
+			{/if}
 		</section>
 
 		<!-- Bottom safe area spacer -->
