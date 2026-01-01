@@ -550,12 +550,20 @@
 					swipeStartX,
 					swipeStartY
 				);
-				resetSwipe();
+				// Don't reset swipe state - handleSwipeMove/End will check touchDragActive
+				swipeLongPressTimer = null;
 			}
 		}, LONG_PRESS_DURATION);
 	}
 
 	function handleSwipeMove(e: TouchEvent) {
+		// If in drag mode, handle drag movement
+		if (touchDragActive) {
+			handleTouchMove(e);
+			return;
+		}
+
+		// For swipe mode, we need the start position and item
 		if (swipeStartX === null || !swipingItem) return;
 
 		const touch = e.touches[0];
@@ -566,12 +574,6 @@
 		if (swipeLongPressTimer && (Math.abs(deltaX) > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD)) {
 			clearTimeout(swipeLongPressTimer);
 			swipeLongPressTimer = null;
-		}
-
-		// If in drag mode, handle drag movement instead
-		if (touchDragActive) {
-			handleTouchMove(e);
-			return;
 		}
 
 		// Only allow swiping left (deltaX > 0)
@@ -592,7 +594,6 @@
 		// If in drag mode, handle drag end
 		if (touchDragActive) {
 			handleTouchEnd();
-			resetSwipe();
 			return;
 		}
 
