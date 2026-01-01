@@ -656,6 +656,11 @@ function isDocEmpty(d: Automerge.Doc<KurumiDocument>): boolean {
 	return noteCount === 0 && folderCount === 0;
 }
 
+// Deep copy an object to break Automerge references
+function deepCopy<T>(obj: T): T {
+	return JSON.parse(JSON.stringify(obj));
+}
+
 // Helper to pick the most recent version of an item
 function pickNewest<T extends { modified: number }>(local: T | undefined, remote: T | undefined): T | undefined {
 	if (!local) return remote;
@@ -669,64 +674,80 @@ function manualMerge(
 	localDoc: Automerge.Doc<KurumiDocument>,
 	remoteDoc: Automerge.Doc<KurumiDocument>
 ): Automerge.Doc<KurumiDocument> {
+	// Extract plain objects from Automerge docs to avoid reference issues
+	const localData = deepCopy({
+		vaults: localDoc.vaults || {},
+		folders: localDoc.folders || {},
+		notes: localDoc.notes || {},
+		people: localDoc.people || {},
+		events: localDoc.events || {}
+	});
+	const remoteData = deepCopy({
+		vaults: remoteDoc.vaults || {},
+		folders: remoteDoc.folders || {},
+		notes: remoteDoc.notes || {},
+		people: remoteDoc.people || {},
+		events: remoteDoc.events || {}
+	});
+
 	return Automerge.change(baseDoc, (d) => {
 		// Merge vaults
 		const allVaultIds = new Set([
-			...Object.keys(localDoc.vaults || {}),
-			...Object.keys(remoteDoc.vaults || {})
+			...Object.keys(localData.vaults),
+			...Object.keys(remoteData.vaults)
 		]);
 		for (const id of allVaultIds) {
-			const newest = pickNewest(localDoc.vaults?.[id], remoteDoc.vaults?.[id]);
+			const newest = pickNewest(localData.vaults[id], remoteData.vaults[id]);
 			if (newest && !d.vaults[id]) {
-				d.vaults[id] = { ...newest };
+				d.vaults[id] = newest;
 			}
 		}
 
 		// Merge folders
 		const allFolderIds = new Set([
-			...Object.keys(localDoc.folders || {}),
-			...Object.keys(remoteDoc.folders || {})
+			...Object.keys(localData.folders),
+			...Object.keys(remoteData.folders)
 		]);
 		for (const id of allFolderIds) {
-			const newest = pickNewest(localDoc.folders?.[id], remoteDoc.folders?.[id]);
+			const newest = pickNewest(localData.folders[id], remoteData.folders[id]);
 			if (newest) {
-				d.folders[id] = { ...newest };
+				d.folders[id] = newest;
 			}
 		}
 
 		// Merge notes - always keep all, use newest content for conflicts
 		const allNoteIds = new Set([
-			...Object.keys(localDoc.notes || {}),
-			...Object.keys(remoteDoc.notes || {})
+			...Object.keys(localData.notes),
+			...Object.keys(remoteData.notes)
 		]);
 		for (const id of allNoteIds) {
-			const newest = pickNewest(localDoc.notes?.[id], remoteDoc.notes?.[id]);
+			const newest = pickNewest(localData.notes[id], remoteData.notes[id]);
 			if (newest) {
-				d.notes[id] = { ...newest };
+				d.notes[id] = newest;
 			}
 		}
 
 		// Merge people
 		const allPeopleIds = new Set([
-			...Object.keys(localDoc.people || {}),
-			...Object.keys(remoteDoc.people || {})
+			...Object.keys(localData.people),
+			...Object.keys(remoteData.people)
 		]);
 		for (const id of allPeopleIds) {
-			const newest = pickNewest(localDoc.people?.[id], remoteDoc.people?.[id]);
+			const newest = pickNewest(localData.people[id], remoteData.people[id]);
 			if (newest && !d.people[id]) {
-				d.people[id] = { ...newest };
+				d.people[id] = newest;
 			}
 		}
 
 		// Merge events
 		const allEventIds = new Set([
-			...Object.keys(localDoc.events || {}),
-			...Object.keys(remoteDoc.events || {})
+			...Object.keys(localData.events),
+			...Object.keys(remoteData.events)
 		]);
 		for (const id of allEventIds) {
-			const newest = pickNewest(localDoc.events?.[id], remoteDoc.events?.[id]);
+			const newest = pickNewest(localData.events[id], remoteData.events[id]);
 			if (newest && !d.events[id]) {
-				d.events[id] = { ...newest };
+				d.events[id] = newest;
 			}
 		}
 	});
