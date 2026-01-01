@@ -656,20 +656,114 @@ function isDocEmpty(d: Automerge.Doc<KurumiDocument>): boolean {
 	return noteCount === 0 && folderCount === 0;
 }
 
+// Helper to pick the most recent version of an item
+function pickNewest<T extends { modified: number }>(local: T | undefined, remote: T | undefined): T | undefined {
+	if (!local) return remote;
+	if (!remote) return local;
+	return local.modified >= remote.modified ? local : remote;
+}
+
+// Manually merge all data from both documents, preferring newest versions
+function manualMerge(
+	baseDoc: Automerge.Doc<KurumiDocument>,
+	localDoc: Automerge.Doc<KurumiDocument>,
+	remoteDoc: Automerge.Doc<KurumiDocument>
+): Automerge.Doc<KurumiDocument> {
+	return Automerge.change(baseDoc, (d) => {
+		// Merge vaults
+		const allVaultIds = new Set([
+			...Object.keys(localDoc.vaults || {}),
+			...Object.keys(remoteDoc.vaults || {})
+		]);
+		for (const id of allVaultIds) {
+			const newest = pickNewest(localDoc.vaults?.[id], remoteDoc.vaults?.[id]);
+			if (newest && !d.vaults[id]) {
+				d.vaults[id] = { ...newest };
+			}
+		}
+
+		// Merge folders
+		const allFolderIds = new Set([
+			...Object.keys(localDoc.folders || {}),
+			...Object.keys(remoteDoc.folders || {})
+		]);
+		for (const id of allFolderIds) {
+			const newest = pickNewest(localDoc.folders?.[id], remoteDoc.folders?.[id]);
+			if (newest) {
+				d.folders[id] = { ...newest };
+			}
+		}
+
+		// Merge notes - always keep all, use newest content for conflicts
+		const allNoteIds = new Set([
+			...Object.keys(localDoc.notes || {}),
+			...Object.keys(remoteDoc.notes || {})
+		]);
+		for (const id of allNoteIds) {
+			const newest = pickNewest(localDoc.notes?.[id], remoteDoc.notes?.[id]);
+			if (newest) {
+				d.notes[id] = { ...newest };
+			}
+		}
+
+		// Merge people
+		const allPeopleIds = new Set([
+			...Object.keys(localDoc.people || {}),
+			...Object.keys(remoteDoc.people || {})
+		]);
+		for (const id of allPeopleIds) {
+			const newest = pickNewest(localDoc.people?.[id], remoteDoc.people?.[id]);
+			if (newest && !d.people[id]) {
+				d.people[id] = { ...newest };
+			}
+		}
+
+		// Merge events
+		const allEventIds = new Set([
+			...Object.keys(localDoc.events || {}),
+			...Object.keys(remoteDoc.events || {})
+		]);
+		for (const id of allEventIds) {
+			const newest = pickNewest(localDoc.events?.[id], remoteDoc.events?.[id]);
+			if (newest && !d.events[id]) {
+				d.events[id] = { ...newest };
+			}
+		}
+	});
+}
+
 // Merge with a remote document (for sync)
-// Handles the case where documents were created independently (no shared history)
+// Strategy: Always combine all data, use CRDT merge when possible, fall back to manual merge
 export async function mergeDoc(remoteBinary: Uint8Array): Promise<void> {
+	// Validate binary data
+	if (!remoteBinary || remoteBinary.length === 0) {
+		console.warn('Received empty remote document, skipping merge');
+		return;
+	}
+
+	if (remoteBinary.length < 8) {
+		console.warn('Remote document too small to be valid, skipping merge');
+		return;
+	}
+
 	let remoteDoc: Automerge.Doc<KurumiDocument>;
 
 	try {
 		remoteDoc = Automerge.load<KurumiDocument>(remoteBinary);
 	} catch (loadError) {
 		console.error('Failed to load remote document:', loadError);
-		throw new Error(`Failed to load remote document: ${loadError instanceof Error ? loadError.message : 'Unknown error'}`);
+		console.warn('Remote document corrupted - local data preserved, will push on next sync');
+		return;
 	}
 
-	// If local is empty but remote has content, adopt remote as base
+	if (!remoteDoc || typeof remoteDoc !== 'object') {
+		console.warn('Remote document has invalid structure, skipping merge');
+		return;
+	}
+
+	// If local is empty but remote has content, adopt remote
 	if (isDocEmpty(doc) && !isDocEmpty(remoteDoc)) {
+		console.log('Local empty, adopting remote document');
 		doc = Automerge.clone(remoteDoc);
 		currentVaultIdStore.set(doc.currentVaultId || DEFAULT_VAULT_ID);
 		docStore.set(doc);
@@ -677,89 +771,41 @@ export async function mergeDoc(remoteBinary: Uint8Array): Promise<void> {
 		return;
 	}
 
-	// Standard Automerge merge - wrap in try-catch for better error messages
-	let mergedDoc: Automerge.Doc<KurumiDocument>;
+	// If remote is empty but local has content, keep local (will push)
+	if (!isDocEmpty(doc) && isDocEmpty(remoteDoc)) {
+		console.log('Remote empty, keeping local document');
+		return;
+	}
+
+	// Try standard Automerge CRDT merge first
+	let mergedDoc: Automerge.Doc<KurumiDocument> | null = null;
 	try {
 		mergedDoc = Automerge.merge(doc, remoteDoc);
 	} catch (mergeError) {
-		console.error('Automerge merge failed:', mergeError);
-		console.log('Local doc actor:', Automerge.getActorId(doc));
-		console.log('Remote doc actor:', Automerge.getActorId(remoteDoc));
+		console.warn('Automerge CRDT merge failed, falling back to manual merge:', mergeError);
+	}
 
-		// If merge fails, try to recover by taking the document with more content
-		const localCount = Object.keys(doc.notes || {}).length + Object.keys(doc.folders || {}).length;
-		const remoteCount = Object.keys(remoteDoc.notes || {}).length + Object.keys(remoteDoc.folders || {}).length;
+	// If CRDT merge worked, check for data loss and recover if needed
+	if (mergedDoc) {
+		const localNoteCount = Object.keys(doc.notes || {}).length;
+		const remoteNoteCount = Object.keys(remoteDoc.notes || {}).length;
+		const mergedNoteCount = Object.keys(mergedDoc.notes || {}).length;
+		const expectedMinNotes = Math.max(localNoteCount, remoteNoteCount);
 
-		if (remoteCount > localCount) {
-			console.log('Merge failed - adopting remote document with more content');
-			doc = Automerge.clone(remoteDoc);
-			currentVaultIdStore.set(doc.currentVaultId || DEFAULT_VAULT_ID);
-			docStore.set(doc);
-			await saveDoc();
-			return;
+		// If merge lost notes, do manual recovery
+		if (mergedNoteCount < expectedMinNotes) {
+			console.log(`CRDT merge lost data (${mergedNoteCount} < ${expectedMinNotes}), recovering...`);
+			doc = manualMerge(mergedDoc, doc, remoteDoc);
 		} else {
-			console.log('Merge failed - keeping local document with more content');
-			// Just keep local and push it
-			return;
+			doc = mergedDoc;
 		}
-	}
-
-	// Check if merge lost any data from either document
-	// This can happen when documents have no shared history
-	const localNoteIds = new Set(Object.keys(doc.notes || {}));
-	const remoteNoteIds = new Set(Object.keys(remoteDoc.notes || {}));
-	const mergedNoteIds = new Set(Object.keys(mergedDoc.notes || {}));
-
-	const localFolderIds = new Set(Object.keys(doc.folders || {}));
-	const remoteFolderIds = new Set(Object.keys(remoteDoc.folders || {}));
-	const mergedFolderIds = new Set(Object.keys(mergedDoc.folders || {}));
-
-	// Find missing items
-	const missingNotes: Note[] = [];
-	const missingFolders: Folder[] = [];
-
-	for (const id of localNoteIds) {
-		if (!mergedNoteIds.has(id) && doc.notes[id]) {
-			missingNotes.push(doc.notes[id]);
-		}
-	}
-	for (const id of remoteNoteIds) {
-		if (!mergedNoteIds.has(id) && remoteDoc.notes[id]) {
-			missingNotes.push(remoteDoc.notes[id]);
-		}
-	}
-
-	for (const id of localFolderIds) {
-		if (!mergedFolderIds.has(id) && doc.folders[id]) {
-			missingFolders.push(doc.folders[id]);
-		}
-	}
-	for (const id of remoteFolderIds) {
-		if (!mergedFolderIds.has(id) && remoteDoc.folders[id]) {
-			missingFolders.push(remoteDoc.folders[id]);
-		}
-	}
-
-	// If merge lost data, manually add it back
-	if (missingNotes.length > 0 || missingFolders.length > 0) {
-		console.log(`Sync: Recovering ${missingNotes.length} notes and ${missingFolders.length} folders lost in merge`);
-		doc = Automerge.change(mergedDoc, (d) => {
-			for (const note of missingNotes) {
-				if (!d.notes[note.id]) {
-					d.notes[note.id] = note;
-				}
-			}
-			for (const folder of missingFolders) {
-				if (!d.folders[folder.id]) {
-					d.folders[folder.id] = folder;
-				}
-			}
-		});
 	} else {
-		doc = mergedDoc;
+		// CRDT merge failed completely, do full manual merge
+		console.log('Performing full manual merge of local and remote data');
+		doc = manualMerge(doc, doc, remoteDoc);
 	}
 
-	// Update the vault ID store to match merged document
+	// Update the vault ID store
 	currentVaultIdStore.set(doc.currentVaultId || DEFAULT_VAULT_ID);
 
 	docStore.set(doc);

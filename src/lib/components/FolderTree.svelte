@@ -525,14 +525,34 @@
 	}
 
 	// Swipe-to-delete handlers (unified for notes and folders)
+	// Also supports long-press to initiate drag mode
+	let swipeStartY = $state<number | null>(null);
+	let swipeLongPressTimer: ReturnType<typeof setTimeout> | null = null;
+
 	function handleSwipeStart(e: TouchEvent, item: SwipeItem) {
 		// Don't start swipe if we're in drag mode
 		if (touchDragActive || !item) return;
 
 		const touch = e.touches[0];
 		swipeStartX = touch.clientX;
+		swipeStartY = touch.clientY;
 		swipingItem = item;
 		swipeCurrentX = touch.clientX;
+
+		// Start long-press timer for drag mode
+		swipeLongPressTimer = setTimeout(() => {
+			if (swipingItem && swipeStartX !== null && swipeStartY !== null) {
+				// Initiate drag mode
+				const label = getItemLabel(swipingItem);
+				startTouchDrag(
+					{ type: swipingItem.type, id: swipingItem.id },
+					label,
+					swipeStartX,
+					swipeStartY
+				);
+				resetSwipe();
+			}
+		}, LONG_PRESS_DURATION);
 	}
 
 	function handleSwipeMove(e: TouchEvent) {
@@ -540,6 +560,19 @@
 
 		const touch = e.touches[0];
 		const deltaX = swipeStartX - touch.clientX;
+		const deltaY = swipeStartY !== null ? Math.abs(touch.clientY - swipeStartY) : 0;
+
+		// If moved too much, cancel long-press timer
+		if (swipeLongPressTimer && (Math.abs(deltaX) > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD)) {
+			clearTimeout(swipeLongPressTimer);
+			swipeLongPressTimer = null;
+		}
+
+		// If in drag mode, handle drag movement instead
+		if (touchDragActive) {
+			handleTouchMove(e);
+			return;
+		}
 
 		// Only allow swiping left (deltaX > 0)
 		if (deltaX > 0) {
@@ -550,6 +583,19 @@
 	}
 
 	function handleSwipeEnd() {
+		// Clear long-press timer
+		if (swipeLongPressTimer) {
+			clearTimeout(swipeLongPressTimer);
+			swipeLongPressTimer = null;
+		}
+
+		// If in drag mode, handle drag end
+		if (touchDragActive) {
+			handleTouchEnd();
+			resetSwipe();
+			return;
+		}
+
 		if (swipeStartX === null || swipeCurrentX === null || !swipingItem) {
 			resetSwipe();
 			return;
@@ -569,6 +615,7 @@
 
 	function resetSwipe() {
 		swipeStartX = null;
+		swipeStartY = null;
 		swipeCurrentX = null;
 		swipingItem = null;
 	}
