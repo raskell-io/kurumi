@@ -10,9 +10,10 @@
 		noteId?: string;
 		title?: string;
 		breadcrumbs?: { label: string; href: string }[];
+		showSearch?: boolean;
 	}
 
-	let { noteId, title, breadcrumbs = [] }: Props = $props();
+	let { noteId, title, breadcrumbs = [], showSearch = true }: Props = $props();
 
 	let searchQuery = $state('');
 	let searchOpen = $state(false);
@@ -134,40 +135,42 @@
 		<div class="nav-spacer"></div>
 
 		<!-- Search -->
-		<div class="search-container">
-			<div class="search-wrapper">
-				<Search class="search-icon" />
-				<input
-					bind:this={searchInputRef}
-					bind:value={searchQuery}
-					type="text"
-					placeholder="Search..."
-					class="search-input"
-					onfocus={handleSearchFocus}
-					onblur={handleSearchBlur}
-					onkeydown={handleSearchKeydown}
-				/>
-				<kbd class="search-kbd">
-					{navigator?.platform?.includes('Mac') ? '⌘' : 'Ctrl'}K
-				</kbd>
-			</div>
-
-			{#if searchOpen && searchResults.length > 0}
-				<div class="search-results">
-					{#each searchResults as result, i}
-						<a
-							href="/read/{result.id}"
-							class="search-result"
-							class:selected={i === selectedIndex}
-							onclick={() => { searchOpen = false; searchQuery = ''; }}
-						>
-							<NotebookText class="result-icon" />
-							{result.title || 'Untitled'}
-						</a>
-					{/each}
+		{#if showSearch}
+			<div class="search-container">
+				<div class="search-wrapper">
+					<Search class="search-icon" />
+					<input
+						bind:this={searchInputRef}
+						bind:value={searchQuery}
+						type="text"
+						placeholder="Search..."
+						class="search-input"
+						onfocus={handleSearchFocus}
+						onblur={handleSearchBlur}
+						onkeydown={handleSearchKeydown}
+					/>
+					<kbd class="search-kbd">
+						{navigator?.platform?.includes('Mac') ? '⌘' : 'Ctrl'}K
+					</kbd>
 				</div>
-			{/if}
-		</div>
+
+				{#if searchOpen && searchResults.length > 0}
+					<div class="search-results">
+						{#each searchResults as result, i}
+							<a
+								href="/read/{result.id}"
+								class="search-result"
+								class:selected={i === selectedIndex}
+								onclick={() => { searchOpen = false; searchQuery = ''; }}
+							>
+								<NotebookText class="result-icon" />
+								{result.title || 'Untitled'}
+							</a>
+						{/each}
+					</div>
+				{/if}
+			</div>
+		{/if}
 
 		<!-- Actions -->
 		<div class="nav-actions">

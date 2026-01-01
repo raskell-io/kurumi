@@ -2,7 +2,7 @@
 	import { notes, folders, getSubfolders, getNotesInFolder, getAllTags } from '$lib/db';
 	import ReadNav from '$lib/components/ReadNav.svelte';
 	import NoteCard from '$lib/components/NoteCard.svelte';
-	import { NotebookText, Folder, ChevronRight } from 'lucide-svelte';
+	import { NotebookText, Folder, ChevronRight, Search, X } from 'lucide-svelte';
 
 	type SortOption = 'recent' | 'alphabetical' | 'oldest';
 	type ViewOption = 'all' | 'folders';
@@ -10,6 +10,7 @@
 	let sortBy = $state<SortOption>('recent');
 	let viewBy = $state<ViewOption>('all');
 	let expandedFolders = $state<Set<string>>(new Set());
+	let searchQuery = $state('');
 
 	// Get root folders
 	let rootFolders = $derived(getSubfolders(null));
@@ -20,9 +21,20 @@
 	// Get all tags
 	let allTags = $derived(getAllTags());
 
-	// Sort notes based on selected option
+	// Filter and sort notes based on search and selected option
 	let sortedNotes = $derived.by(() => {
-		const notesList = [...$notes];
+		let notesList = [...$notes];
+
+		// Filter by search query
+		if (searchQuery.trim()) {
+			const query = searchQuery.toLowerCase();
+			notesList = notesList.filter(note =>
+				(note.title || '').toLowerCase().includes(query) ||
+				note.content.toLowerCase().includes(query)
+			);
+		}
+
+		// Sort
 		switch (sortBy) {
 			case 'recent':
 				return notesList.sort((a, b) => b.modified - a.modified);
@@ -35,6 +47,20 @@
 		}
 	});
 
+	// Filtered root notes for folder view
+	let filteredRootNotes = $derived.by(() => {
+		if (!searchQuery.trim()) return rootNotes;
+		const query = searchQuery.toLowerCase();
+		return rootNotes.filter(note =>
+			(note.title || '').toLowerCase().includes(query) ||
+			note.content.toLowerCase().includes(query)
+		);
+	});
+
+	function clearSearch() {
+		searchQuery = '';
+	}
+
 	function toggleFolder(folderId: string) {
 		const newSet = new Set(expandedFolders);
 		if (newSet.has(folderId)) {
@@ -46,7 +72,13 @@
 	}
 
 	function getFolderNotes(folderId: string) {
-		return getNotesInFolder(folderId);
+		const notes = getNotesInFolder(folderId);
+		if (!searchQuery.trim()) return notes;
+		const query = searchQuery.toLowerCase();
+		return notes.filter(note =>
+			(note.title || '').toLowerCase().includes(query) ||
+			note.content.toLowerCase().includes(query)
+		);
 	}
 
 	function getFolderSubfolders(folderId: string) {
@@ -58,7 +90,7 @@
 	<title>Kurumi - Read</title>
 </svelte:head>
 
-<ReadNav />
+<ReadNav showSearch={false} />
 
 <main class="blog-index">
 	<!-- Hero -->
@@ -76,30 +108,47 @@
 
 	<!-- Controls -->
 	<div class="controls">
-		<div class="view-toggle">
-			<button
-				class="toggle-btn"
-				class:active={viewBy === 'all'}
-				onclick={() => (viewBy = 'all')}
-			>
-				All Notes
-			</button>
-			<button
-				class="toggle-btn"
-				class:active={viewBy === 'folders'}
-				onclick={() => (viewBy = 'folders')}
-			>
-				By Folder
-			</button>
+		<div class="controls-left">
+			<div class="view-toggle">
+				<button
+					class="toggle-btn"
+					class:active={viewBy === 'all'}
+					onclick={() => (viewBy = 'all')}
+				>
+					All Notes
+				</button>
+				<button
+					class="toggle-btn"
+					class:active={viewBy === 'folders'}
+					onclick={() => (viewBy = 'folders')}
+				>
+					By Folder
+				</button>
+			</div>
+
+			<div class="sort-select">
+				<label for="sort">Sort:</label>
+				<select id="sort" bind:value={sortBy}>
+					<option value="recent">Most Recent</option>
+					<option value="oldest">Oldest First</option>
+					<option value="alphabetical">Alphabetical</option>
+				</select>
+			</div>
 		</div>
 
-		<div class="sort-select">
-			<label for="sort">Sort:</label>
-			<select id="sort" bind:value={sortBy}>
-				<option value="recent">Most Recent</option>
-				<option value="oldest">Oldest First</option>
-				<option value="alphabetical">Alphabetical</option>
-			</select>
+		<div class="search-filter">
+			<Search class="search-icon" />
+			<input
+				type="text"
+				bind:value={searchQuery}
+				placeholder="Filter notes..."
+				class="search-input"
+			/>
+			{#if searchQuery}
+				<button class="clear-btn" onclick={clearSearch} aria-label="Clear search">
+					<X class="clear-icon" />
+				</button>
+			{/if}
 		</div>
 	</div>
 
@@ -143,15 +192,15 @@
 		<!-- By Folder -->
 		<section class="folders-section">
 			<!-- Root Notes -->
-			{#if rootNotes.length > 0}
+			{#if filteredRootNotes.length > 0}
 				<div class="folder-group">
 					<h2 class="folder-title">
 						<NotebookText class="folder-icon" />
 						Unfiled Notes
-						<span class="folder-count">{rootNotes.length}</span>
+						<span class="folder-count">{filteredRootNotes.length}</span>
 					</h2>
 					<div class="notes-grid">
-						{#each rootNotes as note (note.id)}
+						{#each filteredRootNotes as note (note.id)}
 							<NoteCard {note} showFolder={false} />
 						{/each}
 					</div>
@@ -251,6 +300,13 @@
 		gap: 1rem;
 	}
 
+	.controls-left {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		flex-wrap: wrap;
+	}
+
 	.view-toggle {
 		display: flex;
 		background: var(--color-bg-secondary);
@@ -291,6 +347,68 @@
 		color: var(--color-text);
 		font-size: 0.875rem;
 		cursor: pointer;
+	}
+
+	/* Search Filter */
+	.search-filter {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.5rem 0.75rem;
+		background: var(--color-bg-secondary);
+		border: 1px solid var(--color-border);
+		border-radius: 0.5rem;
+		min-width: 200px;
+		max-width: 300px;
+		transition: border-color 0.15s;
+	}
+
+	.search-filter:focus-within {
+		border-color: var(--color-accent);
+	}
+
+	.search-filter .search-icon {
+		width: 1rem;
+		height: 1rem;
+		color: var(--color-text-muted);
+		flex-shrink: 0;
+	}
+
+	.search-filter .search-input {
+		flex: 1;
+		background: transparent;
+		border: none;
+		outline: none;
+		font-size: 0.875rem;
+		color: var(--color-text);
+		min-width: 0;
+	}
+
+	.search-filter .search-input::placeholder {
+		color: var(--color-text-muted);
+	}
+
+	.clear-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0.25rem;
+		background: transparent;
+		border: none;
+		border-radius: 0.25rem;
+		color: var(--color-text-muted);
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+
+	.clear-btn:hover {
+		background: var(--color-border);
+		color: var(--color-text);
+	}
+
+	.clear-icon {
+		width: 0.875rem;
+		height: 0.875rem;
 	}
 
 	/* Tags */
@@ -465,12 +583,23 @@
 			align-items: stretch;
 		}
 
+		.controls-left {
+			flex-direction: column;
+			align-items: stretch;
+		}
+
 		.view-toggle {
 			width: 100%;
 		}
 
 		.toggle-btn {
 			flex: 1;
+		}
+
+		.search-filter {
+			min-width: 0;
+			max-width: none;
+			width: 100%;
 		}
 	}
 </style>
