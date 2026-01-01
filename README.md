@@ -27,6 +27,7 @@
   <a href="#features">Features</a> •
   <a href="#installation">Installation</a> •
   <a href="#usage">Usage</a> •
+  <a href="#sync-setup">Sync Setup</a> •
   <a href="#philosophy">Philosophy</a>
 </p>
 
@@ -38,25 +39,63 @@ Kurumi (クルミ, "walnut" in Japanese - because it looks like a brain) is a pe
 
 It's designed for:
 - **Capturing ideas** instantly, from any device
-- **Connecting thoughts** through wikilinks and backlinks
+- **Connecting thoughts** through wikilinks, tags, and @mentions
 - **Working offline** with full functionality
 - **Owning your data** with local-first architecture
+- **AI assistance** to refine and improve your writing
 
 ---
 
 ## Features
 
+### Core
+
 | Feature | Description |
 |---------|-------------|
-| **Wikilinks** | Link notes with `[[Note Title]]` syntax |
-| **Backlinks** | See what links to the current note |
-| **Graph View** | Visualize connections between notes |
+| **Vaults** | Organize notes into separate workspaces with custom icons |
+| **Wikilinks** | Link notes with `[[Note Title]]` syntax and autocomplete |
+| **Backlinks** | See all notes that link to the current note |
+| **Graph View** | Interactive visualization of note connections |
 | **Full-text Search** | Find anything instantly with Cmd+K |
-| **Folders** | Organize notes hierarchically |
+| **Folders** | Organize notes hierarchically with drag-and-drop |
 | **Tags** | Extract and filter by #hashtags |
+| **@Mentions** | Reference people with @name syntax |
+| **#Dates** | Reference dates with #2024-01-15 syntax |
+
+### Read Mode
+
+A distraction-free reading experience for your notes:
+- Clean, blog-style article layout
+- Browse by folder, tag, person, or date
+- Quick navigation between notes
+- One-click switch to edit mode
+
+### AI Assistant
+
+Powered by OpenAI or Anthropic (bring your own API key):
+- **Improve** - Fix grammar, clarity, and flow
+- **Expand** - Add detail and elaboration
+- **Summarize** - Condense to key points
+- **Simplify** - Make text easier to understand
+- **Translate** - Convert to any language
+
+### Customization
+
+| Feature | Description |
+|---------|-------------|
+| **Themes** | Light, dark, and system (Catppuccin palette) |
+| **Editor Font** | iA Writer Quattro S or Geist |
+| **Font Size** | Small, medium, or large |
+| **References** | Browse all tags, people, and dates in one place |
+
+### Sync & Data
+
+| Feature | Description |
+|---------|-------------|
 | **Offline-first** | Works without internet, syncs when connected |
+| **Cloudflare R2** | Optional cross-device sync via your own account |
+| **Import/Export** | Full JSON backup and restore |
 | **PWA** | Install on any device, feels native |
-| **Dark Mode** | Light, dark, and system themes |
 
 ---
 
@@ -93,24 +132,60 @@ npm run preview
 | `Cmd/Ctrl + K` | Open command palette |
 | `Cmd/Ctrl + N` | Create new note |
 | `Cmd/Ctrl + G` | Open graph view |
+| `Cmd/Ctrl + R` | Open references |
+| `Cmd/Ctrl + Shift + R` | Open read mode |
 | `Cmd/Ctrl + ,` | Open settings |
 | `Escape` | Close modal/sidebar |
 
 ### Linking Notes
 
-Type `[[` to start a wikilink. Notes are matched by title (case-insensitive). If the note doesn't exist, clicking the link creates it.
+Type `[[` to start a wikilink. Autocomplete helps you find existing notes. If the note doesn't exist, clicking the link creates it.
 
 ```markdown
 This connects to [[Another Idea]] and relates to [[Project Planning]].
 ```
 
-### Tags
-
-Use `#hashtags` anywhere in your notes. Tags are automatically extracted and appear in the sidebar for filtering.
+### Tags, People & Dates
 
 ```markdown
 Working on the #mvp for #kurumi today.
+Meeting with @alice and @bob about the project.
+Deadline is #2024-12-31 for the launch.
 ```
+
+All references are automatically extracted and browsable in the References page.
+
+---
+
+## Sync Setup
+
+Kurumi can sync across devices using your own Cloudflare account (free tier is plenty).
+
+### Prerequisites
+
+- A [Cloudflare account](https://dash.cloudflare.com/sign-up) (free)
+- [mise](https://mise.jdx.dev/) installed (`brew install mise`)
+
+### Deploy
+
+```bash
+cd worker
+mise run setup
+```
+
+This will:
+1. Install dependencies
+2. Log you into Cloudflare
+3. Create the R2 bucket
+4. Generate a sync token
+5. Deploy the worker
+
+### Configure
+
+1. Go to Settings > Cloudflare Sync
+2. Enter your Worker URL
+3. Enter the sync token
+4. Click Test Connection
 
 ---
 
@@ -118,14 +193,18 @@ Working on the #mvp for #kurumi today.
 
 | Layer | Technology |
 |-------|------------|
-| Framework | SvelteKit 2 + Svelte 5 |
+| Framework | SvelteKit 2 + Svelte 5 Runes |
 | Styling | Tailwind CSS 4 |
 | Data | Automerge CRDTs |
-| Storage | IndexedDB |
+| Storage | IndexedDB (idb-keyval) |
 | Editor | Milkdown |
 | Search | MiniSearch |
-| Graph | force-graph |
+| Graph | force-graph (WebGL) |
+| Icons | Lucide |
+| Fonts | Geist, Geist Mono, iA Writer Quattro S |
 | PWA | @vite-pwa/sveltekit |
+| Sync | Cloudflare R2 + Workers |
+| AI | OpenAI, Anthropic |
 
 ---
 
@@ -162,28 +241,6 @@ Working on the #mvp for #kurumi today.
 │    Cloudflare R2 (optional)         │  ← Cross-device sync
 └─────────────────────────────────────┘
 ```
-
----
-
-## Roadmap
-
-See [.claude/roadmap.md](.claude/roadmap.md) for the full development roadmap.
-
-**Next up:**
-- Cloudflare R2 sync for cross-device access
-- AI integration (refine ideas, find related notes)
-- Markdown export/import
-- Daily notes
-
----
-
-## Part of the Raskell.io Family
-
-Kurumi is part of the [raskell.io](https://raskell.io) ecosystem, alongside:
-- [Sentinel](https://sentinel.raskell.io) - Security-first reverse proxy built on Pingora
-- [Ushio](https://github.com/raskell-io/ushio) - Deterministic edge traffic replay
-- [Sango](https://github.com/raskell-io/sango) - Operator-grade edge diagnostics
-- [Tanuki](https://tanuki.raskell.io) - Agent registry
 
 ---
 
