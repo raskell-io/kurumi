@@ -6,7 +6,7 @@
 	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
 	import RefPopup from '$lib/components/RefPopup.svelte';
 	import type { Note } from '$lib/db';
-	import { Folder, Link2, ArrowLeft, ArrowUp, Home } from 'lucide-svelte';
+	import { Folder, Link2, ArrowLeft, ArrowUp, Newspaper } from 'lucide-svelte';
 
 	// Scroll state for "back to top" button
 	let showBackToTop = $state(false);
@@ -156,7 +156,7 @@
 			{/if}
 
 			<a href="/read" class="nav-link home">
-				<Home class="home-icon" />
+				<Newspaper class="home-icon" />
 				<span class="nav-label">All Notes</span>
 			</a>
 

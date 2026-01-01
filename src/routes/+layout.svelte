@@ -196,6 +196,14 @@
 		});
 
 		checkMobile();
+
+		// Check for sidebar=open query parameter (from read mode)
+		if ($page.url.searchParams.get('sidebar') === 'open') {
+			sidebarOpen = true;
+			// Clear the query parameter from URL
+			goto('/', { replaceState: true });
+		}
+
 		window.addEventListener('resize', checkMobile);
 		window.addEventListener('keydown', handleKeydown);
 

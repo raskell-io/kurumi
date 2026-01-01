@@ -99,6 +99,9 @@
 			</span>
 		</a>
 
+		<!-- Read Mode Badge -->
+		<span class="read-mode-badge">Read mode</span>
+
 		<!-- Breadcrumbs -->
 		{#if breadcrumbs.length > 0}
 			<div class="breadcrumbs">
@@ -162,7 +165,7 @@
 					<span class="btn-text">Edit</span>
 				</a>
 			{:else}
-				<a href="/" class="nav-btn" title="Back to editor">
+				<a href="/?sidebar=open" class="nav-btn" title="Back to editor">
 					<PenSquare class="h-5 w-5" />
 				</a>
 			{/if}
@@ -219,6 +222,17 @@
 		width: 1rem;
 		height: 1rem;
 		color: var(--color-accent);
+	}
+
+	.read-mode-badge {
+		font-size: 0.75rem;
+		font-weight: 500;
+		color: var(--color-text-muted);
+		background: var(--color-bg-secondary);
+		padding: 0.25rem 0.5rem;
+		border-radius: 0.25rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
 	}
 
 	.breadcrumbs {
@@ -343,6 +357,7 @@
 		align-items: center;
 		gap: 0.5rem;
 		flex-shrink: 0;
+		margin-left: auto;
 	}
 
 	.nav-btn {

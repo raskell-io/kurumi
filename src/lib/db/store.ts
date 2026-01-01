@@ -1043,13 +1043,23 @@ export async function importJSON(jsonString: string, options: ImportOptions): Pr
 // ============ Content Extraction ============
 
 // Extract wikilinks from content
+// Handles both escaped \[\[...\]\] and unescaped [[...]] formats (Milkdown escapes brackets)
 export function extractWikilinks(content: string): string[] {
-	const regex = /\[\[([^\]]+)\]\]/g;
 	const links: string[] = [];
+
+	// Match unescaped [[...]]
+	const unescapedRegex = /\[\[([^\]]+)\]\]/g;
 	let match;
-	while ((match = regex.exec(content)) !== null) {
+	while ((match = unescapedRegex.exec(content)) !== null) {
 		links.push(match[1]);
 	}
+
+	// Match escaped \[\[...]] (Milkdown format - escapes opening brackets)
+	const escapedRegex = /\\\[\\\[([^\]]+)\]\]/g;
+	while ((match = escapedRegex.exec(content)) !== null) {
+		links.push(match[1]);
+	}
+
 	return links;
 }
 

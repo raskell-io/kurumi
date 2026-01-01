@@ -34,11 +34,57 @@
 		};
 	});
 
-	// Hover popup state
-	let hoveredNode = $state<GraphNode | null>(null);
-	let hoverPosition = $state<{ x: number; y: number }>({ x: 0, y: 0 });
-	let isHoveringPopup = $state(false);
-	let hidePopupTimeout: ReturnType<typeof setTimeout> | null = null;
+	// Popup state (only shown on click)
+	let selectedNode = $state<GraphNode | null>(null);
+	let popupPosition = $state<{ x: number; y: number }>({ x: 0, y: 0 });
+
+	// Popup drag state
+	let isDraggingPopup = $state(false);
+	let dragOffset = $state<{ x: number; y: number }>({ x: 0, y: 0 });
+
+	function handlePopupDragStart(e: MouseEvent) {
+		if ((e.target as HTMLElement).closest('button')) return; // Don't drag when clicking buttons
+		isDraggingPopup = true;
+		dragOffset = {
+			x: e.clientX - popupPosition.x,
+			y: e.clientY - popupPosition.y
+		};
+		e.preventDefault();
+	}
+
+	function handlePopupTouchStart(e: TouchEvent) {
+		if ((e.target as HTMLElement).closest('button')) return;
+		if (e.touches.length !== 1) return;
+		isDraggingPopup = true;
+		const touch = e.touches[0];
+		dragOffset = {
+			x: touch.clientX - popupPosition.x,
+			y: touch.clientY - popupPosition.y
+		};
+	}
+
+	function handlePopupDrag(e: MouseEvent) {
+		if (!isDraggingPopup) return;
+		popupPosition = {
+			x: e.clientX - dragOffset.x,
+			y: e.clientY - dragOffset.y
+		};
+	}
+
+	function handlePopupTouchMove(e: TouchEvent) {
+		if (!isDraggingPopup) return;
+		if (e.touches.length !== 1) return;
+		const touch = e.touches[0];
+		popupPosition = {
+			x: touch.clientX - dragOffset.x,
+			y: touch.clientY - dragOffset.y
+		};
+		e.preventDefault(); // Prevent scrolling while dragging
+	}
+
+	function handlePopupDragEnd() {
+		isDraggingPopup = false;
+	}
 
 	// Search/filter state
 	let searchQuery = $state('');
@@ -70,14 +116,16 @@
 
 	function buildGraphData(): { nodes: GraphNode[]; links: GraphLink[] } {
 		const allNotes = notesData;
-		const noteMap = new Map(allNotes.map((n) => [n.title.toLowerCase(), n.id]));
+		// Map note titles (trimmed and lowercased) to their IDs for link matching
+		const noteMap = new Map(allNotes.map((n) => [n.title.trim().toLowerCase(), n.id]));
+		const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
 		// Calculate backlinks for each note
 		const backlinkCounts = new Map<string, number>();
 		for (const note of allNotes) {
 			const wikilinks = extractWikilinks(note.content);
 			for (const link of wikilinks) {
-				const targetId = noteMap.get(link.toLowerCase());
+				const targetId = noteMap.get(link.trim().toLowerCase());
 				if (targetId) {
 					backlinkCounts.set(targetId, (backlinkCounts.get(targetId) || 0) + 1);
 				}
@@ -87,11 +135,13 @@
 		const nodes: GraphNode[] = allNotes.map((note) => {
 			const linkCount = extractWikilinks(note.content).length;
 			const backlinkCount = backlinkCounts.get(note.id) || 0;
+			// Color by folder, with special highlight for the current note
+			const folderColor = getFolderColor(note.folderId, isDark);
 			return {
 				id: note.id,
 				name: note.title || 'Untitled',
 				val: Math.max(2, linkCount + backlinkCount + 1),
-				color: note.id === highlightNoteId ? '#818cf8' : undefined,
+				color: note.id === highlightNoteId ? '#818cf8' : folderColor,
 				content: note.content,
 				folderId: note.folderId,
 				created: note.created,
@@ -105,7 +155,8 @@
 		for (const note of allNotes) {
 			const wikilinks = extractWikilinks(note.content);
 			for (const link of wikilinks) {
-				const targetId = noteMap.get(link.toLowerCase());
+				// Trim and lowercase to match against noteMap
+				const targetId = noteMap.get(link.trim().toLowerCase());
 				if (targetId && targetId !== note.id) {
 					links.push({ source: note.id, target: targetId });
 				}
@@ -119,6 +170,44 @@
 		if (!folderId) return 'No folder';
 		const folder = foldersData.find((f) => f.id === folderId);
 		return folder?.name || 'Unknown';
+	}
+
+	// Generate a consistent color for a folder based on its ID
+	const folderColorCache = new Map<string, { h: number; s: number; l: number }>();
+	function getFolderHSL(folderId: string | null, isDark: boolean): { h: number; s: number; l: number } {
+		if (!folderId) {
+			// Notes without folder get a neutral gray
+			return { h: 220, s: 10, l: isDark ? 50 : 55 };
+		}
+
+		const cacheKey = `${folderId}-${isDark}`;
+		if (folderColorCache.has(cacheKey)) {
+			return folderColorCache.get(cacheKey)!;
+		}
+
+		// Hash the folder ID to get a consistent hue (0-360)
+		let hash = 0;
+		for (let i = 0; i < folderId.length; i++) {
+			hash = folderId.charCodeAt(i) + ((hash << 5) - hash);
+		}
+		const hue = Math.abs(hash) % 360;
+
+		const hsl = {
+			h: hue,
+			s: isDark ? 65 : 55,
+			l: isDark ? 65 : 45
+		};
+
+		folderColorCache.set(cacheKey, hsl);
+		return hsl;
+	}
+
+	function getFolderColor(folderId: string | null, isDark: boolean, alpha: number = 1): string {
+		const { h, s, l } = getFolderHSL(folderId, isDark);
+		if (alpha < 1) {
+			return `hsla(${h}, ${s}%, ${l}%, ${alpha})`;
+		}
+		return `hsl(${h}, ${s}%, ${l}%)`;
 	}
 
 	function formatDate(timestamp: number): string {
@@ -176,86 +265,66 @@
 			.nodeLabel(() => '') // Disable default tooltip, we use custom
 			.nodeColor((node: GraphNode) => node.color || (isDark ? '#9ca3af' : '#6b7280'))
 			.nodeVal((node: GraphNode) => node.val)
-			// Links - use rgba for opacity
-			.linkColor(isDark ? 'rgba(129, 140, 248, 0.8)' : 'rgba(99, 102, 241, 0.8)')
-			.linkWidth(2)
-			.linkDirectionalParticles(2)
-			.linkDirectionalParticleWidth(3)
-			.linkDirectionalParticleSpeed(0.005)
-			.linkDirectionalParticleColor(() => accentColor)
+			// Links - solid lines with theme-appropriate colors
+			.linkColor(isDark ? 'rgba(148, 163, 184, 0.5)' : 'rgba(100, 116, 139, 0.5)')
+			.linkWidth(2.5)
 			// Curved links for better visibility when overlapping
-			.linkCurvature(0.2)
+			.linkCurvature(0.15)
 			.backgroundColor('transparent')
 			.onNodeClick((node: GraphNode) => {
-				goto(`/note/${node.id}`);
+				// Show popup - never navigate directly from node click
+				selectedNode = node;
+
+				// Set position using node's screen coordinates
+				if (node.x !== undefined && node.y !== undefined) {
+					const screenCoords = graph?.graph2ScreenCoords(node.x, node.y);
+					if (screenCoords) {
+						popupPosition = { x: screenCoords.x, y: screenCoords.y };
+					}
+				}
 			})
 			.onNodeHover((node: GraphNode | null, prevNode: GraphNode | null) => {
 				containerRef.style.cursor = node ? 'pointer' : 'default';
-
-				// Clear any pending hide timeout
-				if (hidePopupTimeout) {
-					clearTimeout(hidePopupTimeout);
-					hidePopupTimeout = null;
-				}
-
-				if (node) {
-					// Show popup immediately when hovering a node
-					hoveredNode = node;
-					// Set initial position using node's screen coordinates
-					if (node.x !== undefined && node.y !== undefined) {
-						const screenCoords = graph?.graph2ScreenCoords(node.x, node.y);
-						if (screenCoords) {
-							hoverPosition = { x: screenCoords.x, y: screenCoords.y };
-						}
-					}
-				} else if (!isHoveringPopup) {
-					// Delay hiding popup to allow mouse to move to it
-					hidePopupTimeout = setTimeout(() => {
-						if (!isHoveringPopup) {
-							hoveredNode = null;
-						}
-					}, 300);
-				}
+				// Popup only shows on click, not hover
 
 				// Highlight connected links on hover
 				if (graph) {
-					const defaultColor = isDark ? 'rgba(129, 140, 248, 0.8)' : 'rgba(99, 102, 241, 0.8)';
+					const defaultColor = isDark ? 'rgba(148, 163, 184, 0.5)' : 'rgba(100, 116, 139, 0.5)';
 					graph
 						.linkWidth((link: any) => {
-							if (!node) return 2;
+							if (!node) return 2.5;
 							const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
 							const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-							return sourceId === node.id || targetId === node.id ? 4 : 1;
+							return sourceId === node.id || targetId === node.id ? 4 : 1.5;
 						})
 						.linkColor((link: any) => {
 							if (!node) return defaultColor;
 							const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
 							const targetId = typeof link.target === 'object' ? link.target.id : link.target;
 							if (sourceId === node.id || targetId === node.id) {
-								return '#f59e0b'; // Highlight color (amber)
+								return isDark ? '#fbbf24' : '#f59e0b'; // Highlight color (amber)
 							}
-							return isDark ? 'rgba(129, 140, 248, 0.3)' : 'rgba(99, 102, 241, 0.3)';
+							return isDark ? 'rgba(148, 163, 184, 0.2)' : 'rgba(100, 116, 139, 0.2)';
 						});
 				}
 			})
 			.onNodeDrag((node: GraphNode) => {
-				// Update hover position during drag
-				if (hoveredNode && hoveredNode.id === node.id) {
+				// Update popup position during drag
+				if (selectedNode && selectedNode.id === node.id) {
 					const screenCoords = graph?.graph2ScreenCoords(node.x!, node.y!);
 					if (screenCoords) {
-						hoverPosition = { x: screenCoords.x, y: screenCoords.y };
+						popupPosition = { x: screenCoords.x, y: screenCoords.y };
 					}
 				}
 			})
 			.cooldownTicks(100)
 			.onEngineStop(() => {
 				graph?.zoomToFit(400, 50);
+			})
+			.onBackgroundClick(() => {
+				// Dismiss popup when clicking on empty space
+				selectedNode = null;
 			});
-
-		// Track mouse position for hover popup - always update so it's ready when needed
-		containerRef.addEventListener('mousemove', (e) => {
-			hoverPosition = { x: e.clientX, y: e.clientY };
-		});
 
 		// Handle resize
 		const resizeObserver = new ResizeObserver(() => {
@@ -271,15 +340,18 @@
 
 	// Initialize or update graph when data changes
 	$effect(() => {
+		// Explicitly read notesData to establish dependency
+		const currentNotes = notesData;
+
 		// Only proceed after mount and when we have a container
 		if (!mounted || !containerRef) return;
 
 		// Initialize graph if not yet created and we have data
-		if (!graph && notesData.length > 0) {
+		if (!graph && currentNotes.length > 0) {
 			initGraph();
 		}
 		// Update existing graph when data changes
-		else if (graph) {
+		else if (graph && currentNotes.length > 0) {
 			const { nodes, links } = buildGraphData();
 			graph.graphData({ nodes, links });
 		}
@@ -303,9 +375,13 @@
 	});
 
 	function handleOpenNote() {
-		if (hoveredNode) {
-			goto(`/note/${hoveredNode.id}`);
+		if (selectedNode) {
+			goto(`/note/${selectedNode.id}`);
 		}
+	}
+
+	function closePopup() {
+		selectedNode = null;
 	}
 
 	// Check if a node matches the search query
@@ -332,15 +408,19 @@
 
 	// Update graph based on search
 	$effect(() => {
+		// Read reactive values at top level to establish dependencies
+		const currentQuery = searchQuery;
+		const currentFilterMode = filterMode;
+
 		if (!graph) return;
 
-		const q = searchQuery.toLowerCase().trim();
+		const q = currentQuery.toLowerCase().trim();
 		const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 		const accentColor = getComputedStyle(document.documentElement)
 			.getPropertyValue('--color-accent')
 			.trim() || '#818cf8';
 
-		if (filterMode === 'filter' && q) {
+		if (currentFilterMode === 'filter' && q) {
 			// Filter mode: only show matching nodes and their connections
 			const { nodes, links } = buildGraphData();
 			const matchingIds = new Set(nodes.filter(n => nodeMatchesSearch(n)).map(n => n.id));
@@ -360,12 +440,13 @@
 				return visibleIds.has(sourceId) && visibleIds.has(targetId);
 			});
 
-			// Color matching nodes differently
+			// Matching nodes get accent color, connected nodes get dimmed folder color
 			filteredNodes.forEach(n => {
 				if (matchingIds.has(n.id)) {
 					n.color = accentColor;
 				} else {
-					n.color = isDark ? 'rgba(156, 163, 175, 0.5)' : 'rgba(107, 114, 128, 0.5)';
+					// Dim the folder color for connected but non-matching nodes
+					n.color = getFolderColor(n.folderId, isDark, 0.5);
 				}
 			});
 
@@ -383,10 +464,10 @@
 				} else if (q && nodeMatchesSearch(n)) {
 					n.color = accentColor;
 				} else if (q) {
-					n.color = isDark ? 'rgba(156, 163, 175, 0.3)' : 'rgba(107, 114, 128, 0.3)';
-				} else {
-					n.color = isDark ? '#9ca3af' : '#6b7280';
+					// Dim non-matching nodes but keep folder color
+					n.color = getFolderColor(n.folderId, isDark, 0.3);
 				}
+				// else: keep the folder color already set by buildGraphData
 			});
 
 			graph.graphData({ nodes, links });
@@ -420,6 +501,18 @@
 
 	// Global keyboard shortcut
 	function handleGlobalKeydown(e: KeyboardEvent) {
+		// Escape to close popup or search
+		if (e.key === 'Escape') {
+			if (selectedNode) {
+				closePopup();
+				return;
+			}
+			if (showSearch) {
+				showSearch = false;
+				searchQuery = '';
+				return;
+			}
+		}
 		// "/" to open search (when not already in an input)
 		if (e.key === '/' && !showSearch && document.activeElement?.tagName !== 'INPUT') {
 			e.preventDefault();
@@ -428,7 +521,13 @@
 	}
 </script>
 
-<svelte:window onkeydown={handleGlobalKeydown} />
+<svelte:window
+	onkeydown={handleGlobalKeydown}
+	onmousemove={handlePopupDrag}
+	onmouseup={handlePopupDragEnd}
+	ontouchmove={handlePopupTouchMove}
+	ontouchend={handlePopupDragEnd}
+/>
 
 <div class="graph-container">
 	<div bind:this={containerRef} class="h-full w-full"></div>
@@ -488,51 +587,46 @@
 		</button>
 	</div>
 
-	{#if hoveredNode}
+	{#if selectedNode}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
-			class="hover-popup"
-			style="left: {hoverPosition.x + 15}px; top: {hoverPosition.y + 15}px;"
-			onmouseenter={() => {
-				isHoveringPopup = true;
-				if (hidePopupTimeout) {
-					clearTimeout(hidePopupTimeout);
-					hidePopupTimeout = null;
-				}
-			}}
-			onmouseleave={() => {
-				isHoveringPopup = false;
-				hidePopupTimeout = setTimeout(() => {
-					hoveredNode = null;
-				}, 200);
-			}}
+			class="node-popup"
+			class:dragging={isDraggingPopup}
+			style="left: {popupPosition.x + 15}px; top: {popupPosition.y + 15}px;"
+			onmousedown={handlePopupDragStart}
+			ontouchstart={handlePopupTouchStart}
 		>
 			<div class="popup-header">
-				<h3 class="popup-title">{hoveredNode.name}</h3>
-				<span class="popup-folder">{getFolderName(hoveredNode.folderId)}</span>
+				<div class="popup-header-content">
+					<h3 class="popup-title">{selectedNode.name}</h3>
+					<span class="popup-folder">{getFolderName(selectedNode.folderId)}</span>
+				</div>
+				<button class="popup-close" onclick={closePopup} aria-label="Close">
+					<X class="h-4 w-4" />
+				</button>
 			</div>
 
 			<div class="popup-stats">
 				<div class="stat">
-					<span class="stat-value">{getWordCount(hoveredNode.content)}</span>
+					<span class="stat-value">{getWordCount(selectedNode.content)}</span>
 					<span class="stat-label">words</span>
 				</div>
 				<div class="stat">
-					<span class="stat-value">{hoveredNode.linkCount}</span>
+					<span class="stat-value">{selectedNode.linkCount}</span>
 					<span class="stat-label">links</span>
 				</div>
 				<div class="stat">
-					<span class="stat-value">{hoveredNode.backlinkCount}</span>
+					<span class="stat-value">{selectedNode.backlinkCount}</span>
 					<span class="stat-label">backlinks</span>
 				</div>
 			</div>
 
 			<div class="popup-preview">
-				{getPreviewText(hoveredNode.content)}
+				{getPreviewText(selectedNode.content)}
 			</div>
 
 			<div class="popup-footer">
-				<span class="popup-date">Modified {formatDate(hoveredNode.modified)}</span>
+				<span class="popup-date">Modified {formatDate(selectedNode.modified)}</span>
 				<button class="popup-open" onclick={handleOpenNote}>
 					Open
 					<ArrowRight class="h-3 w-3" />
@@ -549,7 +643,7 @@
 		width: 100%;
 	}
 
-	.hover-popup {
+	.node-popup {
 		position: fixed;
 		z-index: 100;
 		width: 280px;
@@ -560,6 +654,14 @@
 		padding: 0.875rem;
 		pointer-events: auto;
 		animation: fadeIn 0.15s ease-out;
+		cursor: grab;
+		user-select: none;
+		touch-action: none; /* Enable custom touch handling */
+	}
+
+	.node-popup.dragging {
+		cursor: grabbing;
+		box-shadow: 0 15px 50px rgba(0, 0, 0, 0.3);
 	}
 
 	@keyframes fadeIn {
@@ -574,7 +676,16 @@
 	}
 
 	.popup-header {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 0.5rem;
 		margin-bottom: 0.75rem;
+	}
+
+	.popup-header-content {
+		flex: 1;
+		min-width: 0;
 	}
 
 	.popup-title {
@@ -593,6 +704,26 @@
 		display: flex;
 		align-items: center;
 		gap: 0.25rem;
+	}
+
+	.popup-close {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.75rem;
+		height: 1.75rem;
+		background: var(--color-bg-secondary);
+		border: none;
+		border-radius: 0.375rem;
+		color: var(--color-text-muted);
+		cursor: pointer;
+		flex-shrink: 0;
+		transition: all 0.15s;
+	}
+
+	.popup-close:hover {
+		background: var(--color-border);
+		color: var(--color-text);
 	}
 
 	.popup-stats {

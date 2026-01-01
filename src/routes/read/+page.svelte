@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { notes, folders, getSubfolders, getNotesInFolder, getAllTags } from '$lib/db';
+	import { notes, folders, getSubfolders, getNotesInFolder, getAllTags, currentVault } from '$lib/db';
 	import ReadNav from '$lib/components/ReadNav.svelte';
 	import NoteCard from '$lib/components/NoteCard.svelte';
 	import { NotebookText, Folder, ChevronRight, Search, X, ArrowDownWideNarrow } from 'lucide-svelte';
@@ -121,8 +121,7 @@
 <main class="blog-index">
 	<!-- Hero -->
 	<header class="hero">
-		<h1>Kurumi</h1>
-		<p class="tagline">Your personal knowledge base</p>
+		<h1>{$currentVault?.name || 'Notes'}</h1>
 		<div class="stats">
 			<span>{$notes.length} notes</span>
 			<span class="dot"></span>
@@ -134,37 +133,22 @@
 
 	<!-- Controls -->
 	<div class="controls">
-		<div class="view-toggle">
-			<button
-				class="toggle-btn"
-				class:active={viewBy === 'all'}
-				onclick={() => (viewBy = 'all')}
-			>
-				All Notes
-			</button>
-			<button
-				class="toggle-btn"
-				class:active={viewBy === 'folders'}
-				onclick={() => (viewBy = 'folders')}
-			>
-				By Folder
-			</button>
-		</div>
-
-		<div class="controls-right">
-			<div class="search-filter">
-				<Search class="search-icon" />
-				<input
-					type="text"
-					bind:value={searchQuery}
-					placeholder="Filter notes..."
-					class="search-input"
-				/>
-				{#if searchQuery}
-					<button class="clear-btn" onclick={clearSearch} aria-label="Clear search">
-						<X class="clear-icon" />
-					</button>
-				{/if}
+		<div class="controls-top">
+			<div class="view-toggle">
+				<button
+					class="toggle-btn"
+					class:active={viewBy === 'all'}
+					onclick={() => (viewBy = 'all')}
+				>
+					All Notes
+				</button>
+				<button
+					class="toggle-btn"
+					class:active={viewBy === 'folders'}
+					onclick={() => (viewBy = 'folders')}
+				>
+					By Folder
+				</button>
 			</div>
 
 			<div class="sort-dropdown">
@@ -190,6 +174,21 @@
 					</div>
 				{/if}
 			</div>
+		</div>
+
+		<div class="search-filter">
+			<Search class="search-icon" />
+			<input
+				type="text"
+				bind:value={searchQuery}
+				placeholder="Filter notes..."
+				class="search-input"
+			/>
+			{#if searchQuery}
+				<button class="clear-btn" onclick={clearSearch} aria-label="Clear search">
+					<X class="clear-icon" />
+				</button>
+			{/if}
 		</div>
 	</div>
 
@@ -306,12 +305,6 @@
 		font-size: 2.5rem;
 		font-weight: 700;
 		color: var(--color-text);
-		margin-bottom: 0.5rem;
-	}
-
-	.tagline {
-		font-size: 1.125rem;
-		color: var(--color-text-muted);
 		margin-bottom: 1rem;
 	}
 
@@ -341,11 +334,10 @@
 		gap: 1rem;
 	}
 
-	.controls-right {
+	.controls-top {
 		display: flex;
 		align-items: center;
-		gap: 1rem;
-		flex-wrap: wrap;
+		gap: 0.75rem;
 	}
 
 	.view-toggle {
@@ -669,14 +661,13 @@
 			align-items: stretch;
 		}
 
-		.controls-right {
-			flex-direction: column;
-			align-items: stretch;
+		.controls-top {
 			width: 100%;
+			justify-content: space-between;
 		}
 
 		.view-toggle {
-			width: 100%;
+			flex: 1;
 		}
 
 		.toggle-btn {
