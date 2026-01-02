@@ -804,6 +804,21 @@
 						Built with SvelteKit, Automerge, and Tailwind CSS. Data stored locally using IndexedDB.
 					</p>
 
+					<!-- Support -->
+					<div class="mt-4 pt-4 border-t border-[var(--color-border)]">
+						<a
+							href="https://ko-fi.com/raskell"
+							target="_blank"
+							rel="noopener"
+							class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] hover:border-[var(--color-accent)]"
+						>
+							<svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+								<path d="M23.881 8.948c-.773-4.085-4.859-4.593-4.859-4.593H.723c-.604 0-.679.798-.679.798s-.082 7.324-.022 11.822c.164 2.424 2.586 2.672 2.586 2.672s8.267-.023 11.966-.049c2.438-.426 2.683-2.566 2.658-3.734 4.352.24 7.422-2.831 6.649-6.916zm-11.062 3.511c-1.246 1.453-4.011 3.976-4.011 3.976s-.121.119-.31.023c-.076-.057-.108-.09-.108-.09-.443-.441-3.368-3.049-4.034-3.954-.709-.965-1.041-2.7-.091-3.71.951-1.01 3.005-1.086 4.363.407 0 0 1.565-1.782 3.468-.963 1.904.82 1.832 3.011.723 4.311z"/>
+							</svg>
+							Support on Ko-fi
+						</a>
+					</div>
+
 					<!-- Docs -->
 					<div class="space-y-3 mt-4 pt-4 border-t border-[var(--color-border)]">
 						<h3 class="text-sm font-semibold text-[var(--color-text)]">Documentation</h3>

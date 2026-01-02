@@ -271,6 +271,16 @@ This will:
 
 ---
 
+## Support
+
+If you find Kurumi useful, consider supporting its development:
+
+<a href="https://ko-fi.com/raskell">
+  <img src="https://img.shields.io/badge/Ko--fi-Support-ff5e5b?logo=ko-fi&logoColor=white&style=for-the-badge" alt="Ko-fi">
+</a>
+
+---
+
 ## License
 
 MIT
