@@ -9,7 +9,7 @@ const config = {
 		adapter: adapter({
 			pages: 'build',
 			assets: 'build',
-			fallback: 'index.html', // SPA mode for client-side routing
+			fallback: '404.html', // GitHub Pages serves 404.html for unknown routes
 			precompress: false,
 			strict: true
 		}),
