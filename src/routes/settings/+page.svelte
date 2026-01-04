@@ -760,7 +760,7 @@
 								{:else}
 									<Download class="h-4 w-4" />
 								{/if}
-								Vanilla
+								Markdown
 							</button>
 							<button
 								onclick={() => handleMarkdownExport('hugo')}
@@ -772,7 +772,7 @@
 								{:else}
 									<Download class="h-4 w-4" />
 								{/if}
-								Hugo
+								Hugo-flavoured
 							</button>
 							<button
 								onclick={() => handleMarkdownExport('zola')}
@@ -784,7 +784,7 @@
 								{:else}
 									<Download class="h-4 w-4" />
 								{/if}
-								Zola
+								Zola-flavoured
 							</button>
 						</div>
 					</div>

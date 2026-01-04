@@ -130,19 +130,19 @@
 							onclick={() => handleExport('vanilla')}
 							class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]"
 						>
-							Vanilla
+							Markdown
 						</button>
 						<button
 							onclick={() => handleExport('hugo')}
 							class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]"
 						>
-							Hugo
+							Hugo-flavoured
 						</button>
 						<button
 							onclick={() => handleExport('zola')}
 							class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]"
 						>
-							Zola
+							Zola-flavoured
 						</button>
 					</div>
 				{/if}

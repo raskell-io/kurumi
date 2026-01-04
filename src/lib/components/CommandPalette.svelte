@@ -109,7 +109,7 @@
 		{
 			id: 'export-vanilla',
 			type: 'action',
-			title: 'Export as Vanilla Markdown',
+			title: 'Export as Markdown',
 			description: 'Export vault as plain markdown files',
 			icon: 'download',
 			action: () => handleMarkdownExport('vanilla')
@@ -117,7 +117,7 @@
 		{
 			id: 'export-hugo',
 			type: 'action',
-			title: 'Export as Hugo Markdown',
+			title: 'Export as Hugo-flavoured Markdown',
 			description: 'Export vault with Hugo front matter',
 			icon: 'download',
 			action: () => handleMarkdownExport('hugo')
@@ -125,7 +125,7 @@
 		{
 			id: 'export-zola',
 			type: 'action',
-			title: 'Export as Zola Markdown',
+			title: 'Export as Zola-flavoured Markdown',
 			description: 'Export vault with Zola front matter',
 			icon: 'download',
 			action: () => handleMarkdownExport('zola')
