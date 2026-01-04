@@ -22,7 +22,7 @@ export const GIT_PROVIDERS: Record<GitProviderId, GitProvider> = {
 		tokenUrl: 'https://github.com/settings/tokens/new',
 		tokenHelp: 'Create a fine-grained token with "Contents" read/write access',
 		repoUrlPattern: /^https:\/\/github\.com\/[\w-]+\/[\w.-]+(?:\.git)?$/,
-		exampleUrl: 'https://github.com/username/notes'
+		exampleUrl: 'https://github.com/your-username/kurumi-notes'
 	},
 	gitlab: {
 		id: 'gitlab',
@@ -31,7 +31,7 @@ export const GIT_PROVIDERS: Record<GitProviderId, GitProvider> = {
 		tokenUrl: 'https://gitlab.com/-/user_settings/personal_access_tokens',
 		tokenHelp: 'Create a token with "api" or "write_repository" scope',
 		repoUrlPattern: /^https:\/\/gitlab\.com\/[\w-]+\/[\w.-]+(?:\.git)?$/,
-		exampleUrl: 'https://gitlab.com/username/notes'
+		exampleUrl: 'https://gitlab.com/your-username/kurumi-notes'
 	},
 	codeberg: {
 		id: 'codeberg',
@@ -40,7 +40,7 @@ export const GIT_PROVIDERS: Record<GitProviderId, GitProvider> = {
 		tokenUrl: 'https://codeberg.org/user/settings/applications',
 		tokenHelp: 'Create an access token with "repository" scope',
 		repoUrlPattern: /^https:\/\/codeberg\.org\/[\w-]+\/[\w.-]+(?:\.git)?$/,
-		exampleUrl: 'https://codeberg.org/username/notes'
+		exampleUrl: 'https://codeberg.org/your-username/kurumi-notes'
 	}
 };
 
