@@ -2,7 +2,9 @@
 	import '../app.css';
 	import { pwaInfo } from 'virtual:pwa-info';
 	import { onMount } from 'svelte';
+	import { afterNavigate } from '$app/navigation';
 	import { initDB, notes, addNote, getAllTags, folders, trashCount } from '$lib/db';
+	import { initHashRouter, updateHashFromPath } from '$lib/hash-router';
 	import { initSearch, rebuildIndex } from '$lib/search';
 	import { setupVisibilitySync, teardownVisibilitySync, syncState, isSyncConfigured, sync } from '$lib/sync';
 	import { goto } from '$app/navigation';
@@ -184,7 +186,19 @@
 		}
 	}
 
+	// Initialize hash router and sync on navigation
+	let cleanupHashRouter: (() => void) | null = null;
+
+	afterNavigate(({ to }) => {
+		if (to?.url?.pathname) {
+			updateHashFromPath(to.url.pathname);
+		}
+	});
+
 	onMount(() => {
+		// Initialize hash-based routing for GitHub Pages compatibility
+		cleanupHashRouter = initHashRouter();
+
 		// Load theme from localStorage
 		const savedTheme = localStorage.getItem('kurumi-theme') as 'light' | 'dark' | 'system' | null;
 		if (savedTheme) {
@@ -242,6 +256,7 @@
 			window.removeEventListener('resize', checkMobile);
 			window.removeEventListener('keydown', handleKeydown);
 			teardownVisibilitySync();
+			cleanupHashRouter?.();
 		};
 	});
 
