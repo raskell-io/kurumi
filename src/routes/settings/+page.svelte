@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { exportNotesJSON, exportFullJSON, analyzeImport, importJSON, notes, folders, vaults, currentVaultId, type ImportAnalysis, type ConflictResolution } from '$lib/db';
 	import { exportVaultAsMarkdown, type MarkdownExportFormat } from '$lib/utils/markdown-export';
+	import { importObsidianVault, type ObsidianImportResult } from '$lib/utils/obsidian-import';
 	import { syncState, initSyncState, sync, testConnection, isSyncConfigured, getSyncMethod, setSyncMethod, isR2SyncConfigured, type SyncMethod } from '$lib/sync';
 	import {
 		gitSyncState,
@@ -83,6 +84,10 @@
 	// Markdown export state
 	let isExportingMarkdown = $state(false);
 	let markdownExportFormat = $state<MarkdownExportFormat | null>(null);
+
+	// Obsidian import state
+	let isImportingObsidian = $state(false);
+	let obsidianImportResult = $state<ObsidianImportResult | null>(null);
 
 	// Collapsible sections state
 	let sections = $state({
@@ -339,6 +344,16 @@
 
 	function triggerFileInput() {
 		fileInputRef?.click();
+	}
+
+	async function handleObsidianImport() {
+		isImportingObsidian = true;
+		obsidianImportResult = null;
+		try {
+			obsidianImportResult = await importObsidianVault();
+		} finally {
+			isImportingObsidian = false;
+		}
 	}
 
 	function startClearData() {
@@ -989,6 +1004,46 @@
 
 					<div class="mt-3 text-sm text-[var(--color-text-muted)]">
 						{$vaults.length} {$vaults.length === 1 ? 'vault' : 'vaults'} · {$folders.length} {$folders.length === 1 ? 'folder' : 'folders'} · {$notes.length} {$notes.length === 1 ? 'note' : 'notes'}
+					</div>
+
+					<!-- Obsidian Import -->
+					<div class="mt-4 pt-4 border-t border-[var(--color-border)]">
+						<h3 class="mb-2 text-sm font-medium text-[var(--color-text)]">Import from Obsidian</h3>
+						<p class="mb-3 text-sm text-[var(--color-text-muted)]">
+							Import an Obsidian vault folder. All markdown files and folders will be imported into the current vault.
+						</p>
+						<button
+							onclick={handleObsidianImport}
+							disabled={isImportingObsidian}
+							class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] active:scale-[0.98] disabled:opacity-50"
+						>
+							{#if isImportingObsidian}
+								<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+								Importing...
+							{:else}
+								<Upload class="h-4 w-4" />
+								Select Obsidian Vault Folder
+							{/if}
+						</button>
+
+						{#if obsidianImportResult}
+							{#if obsidianImportResult.success}
+								<div class="mt-3 flex items-start gap-2 rounded-lg bg-green-500/10 px-3 py-2 text-sm text-green-600 dark:text-green-400">
+									<Check class="h-4 w-4 shrink-0 mt-0.5" />
+									<div>
+										<p>Imported {obsidianImportResult.foldersCreated} {obsidianImportResult.foldersCreated === 1 ? 'folder' : 'folders'} and {obsidianImportResult.notesCreated} {obsidianImportResult.notesCreated === 1 ? 'note' : 'notes'}</p>
+										{#if obsidianImportResult.skipped.length > 0}
+											<p class="mt-1 text-xs opacity-80">Skipped {obsidianImportResult.skipped.length} items (hidden files, non-markdown, etc.)</p>
+										{/if}
+									</div>
+								</div>
+							{:else if obsidianImportResult.error}
+								<div class="mt-3 flex items-center gap-2 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-500">
+									<AlertTriangle class="h-4 w-4 shrink-0" />
+									{obsidianImportResult.error}
+								</div>
+							{/if}
+						{/if}
 					</div>
 
 					<!-- Markdown Export -->

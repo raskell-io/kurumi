@@ -55,7 +55,7 @@
 	// Sidebar resizing (desktop only)
 	const MIN_SIDEBAR_WIDTH = 200;
 	const MAX_SIDEBAR_WIDTH = 480;
-	const DEFAULT_SIDEBAR_WIDTH = 256;
+	const DEFAULT_SIDEBAR_WIDTH = 360;
 	let sidebarWidth = $state(DEFAULT_SIDEBAR_WIDTH);
 	let isResizing = $state(false);
 
