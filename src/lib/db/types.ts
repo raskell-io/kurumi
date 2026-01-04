@@ -30,6 +30,7 @@ export interface Note {
 	vaultId: string;
 	created: number;
 	modified: number;
+	deletedAt: number | null; // null = not deleted, timestamp = when moved to trash
 }
 
 export interface Folder {
@@ -39,6 +40,7 @@ export interface Folder {
 	vaultId: string;
 	created: number;
 	modified: number;
+	deletedAt: number | null; // null = not deleted, timestamp = when moved to trash
 }
 
 // Reference objects - first-class entities for people and events
@@ -123,7 +125,7 @@ export function createEmptyDocument(): KurumiDocument {
 		events: {},
 		templates: {},
 		currentVaultId: DEFAULT_VAULT_ID,
-		version: 4
+		version: 5
 	};
 }
 
@@ -142,7 +144,8 @@ export function createNote(
 		folderId,
 		vaultId,
 		created: now,
-		modified: now
+		modified: now,
+		deletedAt: null
 	};
 }
 
@@ -158,7 +161,8 @@ export function createFolder(
 		parentId,
 		vaultId,
 		created: now,
-		modified: now
+		modified: now,
+		deletedAt: null
 	};
 }
 

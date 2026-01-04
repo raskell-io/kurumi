@@ -55,13 +55,13 @@ export const currentVault: Readable<Vault | undefined> = derived(
 	}
 );
 
-// Derived store for notes array (sorted by modified date) - filtered by current vault
+// Derived store for notes array (sorted by modified date) - filtered by current vault, excludes deleted
 export const notes: Readable<Note[]> = derived(
 	[docStore, currentVaultId],
 	([$doc, $vaultId]) => {
 		if (!$doc) return [];
 		return Object.values($doc.notes)
-			.filter((note) => note.vaultId === $vaultId)
+			.filter((note) => note.vaultId === $vaultId && !note.deletedAt)
 			.sort((a, b) => b.modified - a.modified);
 	}
 );
@@ -69,13 +69,13 @@ export const notes: Readable<Note[]> = derived(
 // Derived store for notes count
 export const notesCount: Readable<number> = derived(notes, ($notes) => $notes.length);
 
-// Derived store for folders (sorted by name) - filtered by current vault
+// Derived store for folders (sorted by name) - filtered by current vault, excludes deleted
 export const folders: Readable<Folder[]> = derived(
 	[docStore, currentVaultId],
 	([$doc, $vaultId]) => {
 		if (!$doc || !$doc.folders) return [];
 		return Object.values($doc.folders)
-			.filter((folder) => folder.vaultId === $vaultId)
+			.filter((folder) => folder.vaultId === $vaultId && !folder.deletedAt)
 			.sort((a, b) => a.name.localeCompare(b.name));
 	}
 );
@@ -113,11 +113,41 @@ export const templates: Readable<Template[]> = derived(
 	}
 );
 
-// All notes across all vaults (for cross-vault operations)
+// All notes across all vaults (for cross-vault operations), excludes deleted
 export const allNotes: Readable<Note[]> = derived(docStore, ($doc) => {
 	if (!$doc) return [];
-	return Object.values($doc.notes).sort((a, b) => b.modified - a.modified);
+	return Object.values($doc.notes)
+		.filter((note) => !note.deletedAt)
+		.sort((a, b) => b.modified - a.modified);
 });
+
+// Trash: deleted notes in current vault (sorted by deletedAt, newest first)
+export const trashedNotes: Readable<Note[]> = derived(
+	[docStore, currentVaultId],
+	([$doc, $vaultId]) => {
+		if (!$doc) return [];
+		return Object.values($doc.notes)
+			.filter((note) => note.vaultId === $vaultId && note.deletedAt !== null)
+			.sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
+	}
+);
+
+// Trash: deleted folders in current vault (sorted by deletedAt, newest first)
+export const trashedFolders: Readable<Folder[]> = derived(
+	[docStore, currentVaultId],
+	([$doc, $vaultId]) => {
+		if (!$doc || !$doc.folders) return [];
+		return Object.values($doc.folders)
+			.filter((folder) => folder.vaultId === $vaultId && folder.deletedAt !== null)
+			.sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
+	}
+);
+
+// Count of items in trash
+export const trashCount: Readable<number> = derived(
+	[trashedNotes, trashedFolders],
+	([$notes, $folders]) => $notes.length + $folders.length
+);
 
 // Initialize the database
 export async function initDB(): Promise<void> {
@@ -267,6 +297,28 @@ export async function initDB(): Promise<void> {
 				await saveDoc();
 			}
 
+			// Migrate: add deletedAt field to notes and folders (version 4 -> version 5)
+			const needsDeletedAtMigration =
+				Object.values(doc.notes).some((note) => note.deletedAt === undefined) ||
+				Object.values(doc.folders).some((folder) => folder.deletedAt === undefined);
+
+			if (needsDeletedAtMigration) {
+				doc = Automerge.change(doc, (d) => {
+					for (const note of Object.values(d.notes)) {
+						if (note.deletedAt === undefined) {
+							(note as Note).deletedAt = null;
+						}
+					}
+					for (const folder of Object.values(d.folders)) {
+						if (folder.deletedAt === undefined) {
+							(folder as Folder).deletedAt = null;
+						}
+					}
+					d.version = 5;
+				});
+				await saveDoc();
+			}
+
 			// Update internal vault ID store
 			currentVaultIdStore.set(doc.currentVaultId || DEFAULT_VAULT_ID);
 		} else {
@@ -276,6 +328,12 @@ export async function initDB(): Promise<void> {
 		}
 
 		docStore.set(doc);
+
+		// Auto-cleanup old trash items (>30 days)
+		const cleanedUp = cleanupOldTrashInternal();
+		if (cleanedUp > 0) {
+			console.log(`Auto-cleaned ${cleanedUp} items from trash`);
+		}
 	} catch (error) {
 		console.error('Failed to initialize database:', error);
 		// Start fresh if there's a corruption
@@ -284,6 +342,43 @@ export async function initDB(): Promise<void> {
 		docStore.set(doc);
 		await saveDoc();
 	}
+}
+
+// Internal cleanup function that returns count without triggering store update during init
+function cleanupOldTrashInternal(): number {
+	const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+	let deletedCount = 0;
+
+	const notesToDelete: string[] = [];
+	const foldersToDelete: string[] = [];
+
+	// Collect items to delete
+	for (const note of Object.values(doc.notes)) {
+		if (note.deletedAt && note.deletedAt < thirtyDaysAgo) {
+			notesToDelete.push(note.id);
+		}
+	}
+	for (const folder of Object.values(doc.folders)) {
+		if (folder.deletedAt && folder.deletedAt < thirtyDaysAgo) {
+			foldersToDelete.push(folder.id);
+		}
+	}
+
+	if (notesToDelete.length > 0 || foldersToDelete.length > 0) {
+		doc = Automerge.change(doc, (d) => {
+			for (const id of notesToDelete) {
+				delete d.notes[id];
+				deletedCount++;
+			}
+			for (const id of foldersToDelete) {
+				delete d.folders[id];
+				deletedCount++;
+			}
+		});
+		saveDoc();
+	}
+
+	return deletedCount;
 }
 
 // Save document to IndexedDB
@@ -479,7 +574,10 @@ export function updateNote(id: string, updates: Partial<Omit<Note, 'id' | 'creat
 
 export function deleteNote(id: string): void {
 	updateDoc((d) => {
-		delete d.notes[id];
+		const note = d.notes[id];
+		if (note) {
+			note.deletedAt = Date.now();
+		}
 	});
 }
 
@@ -515,42 +613,203 @@ export function updateFolder(id: string, updates: Partial<Omit<Folder, 'id' | 'c
 }
 
 export function deleteFolder(id: string, deleteContents: boolean = false): void {
+	const now = Date.now();
 	updateDoc((d) => {
+		const folder = d.folders[id];
+		if (!folder) return;
+
 		if (deleteContents) {
-			// Delete all notes in this folder
+			// Soft delete all notes in this folder
 			for (const note of Object.values(d.notes)) {
-				if (note.folderId === id) {
-					delete d.notes[note.id];
+				if (note.folderId === id && !note.deletedAt) {
+					note.deletedAt = now;
 				}
 			}
-			// Recursively delete subfolders
-			for (const folder of Object.values(d.folders)) {
-				if (folder.parentId === id) {
-					// Move subfolder's notes to root before deleting
-					for (const note of Object.values(d.notes)) {
-						if (note.folderId === folder.id) {
-							delete d.notes[note.id];
-						}
+			// Recursively soft delete subfolders and their notes
+			const collectSubfolderIds = (parentId: string): string[] => {
+				const ids: string[] = [];
+				for (const f of Object.values(d.folders)) {
+					if (f.parentId === parentId && !f.deletedAt) {
+						ids.push(f.id);
+						ids.push(...collectSubfolderIds(f.id));
 					}
-					delete d.folders[folder.id];
+				}
+				return ids;
+			};
+
+			const subfolderIds = collectSubfolderIds(id);
+			for (const subfolderId of subfolderIds) {
+				// Soft delete notes in subfolder
+				for (const note of Object.values(d.notes)) {
+					if (note.folderId === subfolderId && !note.deletedAt) {
+						note.deletedAt = now;
+					}
+				}
+				// Soft delete subfolder
+				const subfolder = d.folders[subfolderId];
+				if (subfolder) {
+					subfolder.deletedAt = now;
 				}
 			}
 		} else {
 			// Move notes to root level
 			for (const note of Object.values(d.notes)) {
-				if (note.folderId === id) {
+				if (note.folderId === id && !note.deletedAt) {
 					note.folderId = null;
 				}
 			}
 			// Move subfolders to root level
-			for (const folder of Object.values(d.folders)) {
-				if (folder.parentId === id) {
-					folder.parentId = null;
+			for (const f of Object.values(d.folders)) {
+				if (f.parentId === id && !f.deletedAt) {
+					f.parentId = null;
 				}
 			}
 		}
+		// Soft delete the folder itself
+		folder.deletedAt = now;
+	});
+}
+
+// ============ Trash Operations ============
+
+// Restore a note from trash
+export function restoreNote(id: string): void {
+	updateDoc((d) => {
+		const note = d.notes[id];
+		if (note && note.deletedAt) {
+			note.deletedAt = null;
+			// If the note was in a deleted folder, move to root
+			if (note.folderId && d.folders[note.folderId]?.deletedAt) {
+				note.folderId = null;
+			}
+		}
+	});
+}
+
+// Restore a folder from trash (and optionally its contents)
+export function restoreFolder(id: string, restoreContents: boolean = true): void {
+	updateDoc((d) => {
+		const folder = d.folders[id];
+		if (!folder || !folder.deletedAt) return;
+
+		// Restore the folder
+		folder.deletedAt = null;
+
+		// If parent folder is deleted, move to root
+		if (folder.parentId && d.folders[folder.parentId]?.deletedAt) {
+			folder.parentId = null;
+		}
+
+		if (restoreContents) {
+			// Restore all notes that were in this folder
+			for (const note of Object.values(d.notes)) {
+				if (note.folderId === id && note.deletedAt) {
+					note.deletedAt = null;
+				}
+			}
+
+			// Restore subfolders recursively
+			const restoreSubfolders = (parentId: string) => {
+				for (const f of Object.values(d.folders)) {
+					if (f.parentId === parentId && f.deletedAt) {
+						f.deletedAt = null;
+						// Restore notes in this subfolder
+						for (const note of Object.values(d.notes)) {
+							if (note.folderId === f.id && note.deletedAt) {
+								note.deletedAt = null;
+							}
+						}
+						restoreSubfolders(f.id);
+					}
+				}
+			};
+			restoreSubfolders(id);
+		}
+	});
+}
+
+// Permanently delete a note (cannot be undone)
+export function permanentlyDeleteNote(id: string): void {
+	updateDoc((d) => {
+		delete d.notes[id];
+	});
+}
+
+// Permanently delete a folder (cannot be undone)
+export function permanentlyDeleteFolder(id: string): void {
+	updateDoc((d) => {
+		// Also permanently delete all notes that were in this folder
+		for (const note of Object.values(d.notes)) {
+			if (note.folderId === id) {
+				delete d.notes[note.id];
+			}
+		}
+
+		// Permanently delete subfolders recursively
+		const deleteSubfolders = (parentId: string) => {
+			for (const f of Object.values(d.folders)) {
+				if (f.parentId === parentId) {
+					// Delete notes in subfolder
+					for (const note of Object.values(d.notes)) {
+						if (note.folderId === f.id) {
+							delete d.notes[note.id];
+						}
+					}
+					deleteSubfolders(f.id);
+					delete d.folders[f.id];
+				}
+			}
+		};
+		deleteSubfolders(id);
+
 		delete d.folders[id];
 	});
+}
+
+// Empty entire trash (permanently delete all trashed items)
+export function emptyTrash(): void {
+	const vaultId = getCurrentVaultId();
+	updateDoc((d) => {
+		// Delete all trashed notes in current vault
+		for (const note of Object.values(d.notes)) {
+			if (note.vaultId === vaultId && note.deletedAt) {
+				delete d.notes[note.id];
+			}
+		}
+
+		// Delete all trashed folders in current vault
+		for (const folder of Object.values(d.folders)) {
+			if (folder.vaultId === vaultId && folder.deletedAt) {
+				delete d.folders[folder.id];
+			}
+		}
+	});
+}
+
+// Auto-cleanup: permanently delete items that have been in trash for more than 30 days
+export function cleanupOldTrash(): number {
+	const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+	let deletedCount = 0;
+
+	updateDoc((d) => {
+		// Delete old trashed notes
+		for (const note of Object.values(d.notes)) {
+			if (note.deletedAt && note.deletedAt < thirtyDaysAgo) {
+				delete d.notes[note.id];
+				deletedCount++;
+			}
+		}
+
+		// Delete old trashed folders
+		for (const folder of Object.values(d.folders)) {
+			if (folder.deletedAt && folder.deletedAt < thirtyDaysAgo) {
+				delete d.folders[folder.id];
+				deletedCount++;
+			}
+		}
+	});
+
+	return deletedCount;
 }
 
 export function moveNoteToFolder(noteId: string, folderId: string | null): void {

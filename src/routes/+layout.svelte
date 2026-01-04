@@ -2,7 +2,7 @@
 	import '../app.css';
 	import { pwaInfo } from 'virtual:pwa-info';
 	import { onMount } from 'svelte';
-	import { initDB, notes, addNote, getAllTags, folders } from '$lib/db';
+	import { initDB, notes, addNote, getAllTags, folders, trashCount } from '$lib/db';
 	import { initSearch, rebuildIndex } from '$lib/search';
 	import { setupVisibilitySync, teardownVisibilitySync, syncState, isSyncConfigured, sync } from '$lib/sync';
 	import { goto } from '$app/navigation';
@@ -12,7 +12,7 @@
 	import VaultSelector from '$lib/components/VaultSelector.svelte';
 	import TemplatePicker from '$lib/components/TemplatePicker.svelte';
 	import Snackbar from '$lib/components/Snackbar.svelte';
-	import { X, Plus, Search, ChevronDown, GitFork, BookOpen, Settings, ListTree, Cloud, RefreshCw, CheckCircle, AlertCircle, Pencil, Tag } from 'lucide-svelte';
+	import { X, Plus, Search, ChevronDown, GitFork, BookOpen, Settings, ListTree, Cloud, RefreshCw, CheckCircle, AlertCircle, Pencil, Tag, Trash2 } from 'lucide-svelte';
 	import { showNewNoteSnackbar, triggerSearch } from '$lib/stores/snackbar';
 
 	let { children } = $props();
@@ -568,7 +568,7 @@
 
 			<!-- Footer -->
 			<div class="border-t border-[var(--color-border)] p-2 safe-bottom">
-				<div class="grid grid-cols-4 gap-1">
+				<div class="grid grid-cols-5 gap-1">
 					<a
 						href="/references"
 						onclick={handleNoteClick}
@@ -604,6 +604,19 @@
 							<span class="text-xs">Read</span>
 						</a>
 					{/if}
+					<a
+						href="/trash"
+						onclick={handleNoteClick}
+						class="relative flex flex-col items-center gap-1 rounded-lg px-2 py-2 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
+					>
+						<Trash2 class="h-5 w-5" />
+						<span class="text-xs">Trash</span>
+						{#if $trashCount > 0}
+							<span class="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--color-accent)] px-1 text-[10px] font-medium text-white">
+								{$trashCount > 99 ? '99+' : $trashCount}
+							</span>
+						{/if}
+					</a>
 					<a
 						href="/settings"
 						onclick={handleNoteClick}
@@ -705,7 +718,7 @@
 	{/if}
 	{#if deleteNoteSnackbar}
 		<Snackbar
-			message={`Deleted "${deleteNoteSnackbar}"`}
+			message={`"${deleteNoteSnackbar}" moved to Trash`}
 			resourceType="action"
 			duration={2000}
 			onClose={() => deleteNoteSnackbar = null}
@@ -713,7 +726,7 @@
 	{/if}
 	{#if deleteFolderSnackbar}
 		<Snackbar
-			message={`Deleted "${deleteFolderSnackbar}"`}
+			message={`"${deleteFolderSnackbar}" moved to Trash`}
 			resourceType="action"
 			duration={2000}
 			onClose={() => deleteFolderSnackbar = null}
