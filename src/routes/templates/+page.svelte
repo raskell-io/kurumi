@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { templates, addTemplate, updateTemplate, deleteTemplate, type Template } from '$lib/db';
-	import { Plus, FileText, Pencil, Trash2, X, Info } from 'lucide-svelte';
+	import { templates, addTemplate, updateTemplate, deleteTemplate, addStarterTemplates, type Template } from '$lib/db';
+	import { Plus, FileText, Pencil, Trash2, X, Info, Sparkles } from 'lucide-svelte';
 
 	// Store subscription for Svelte 5 runes mode
 	let templatesData = $state<Template[]>([]);
@@ -124,12 +124,21 @@
 					<p class="mt-2 text-sm text-[var(--color-text-muted)]">
 						Create templates to quickly start new notes with predefined content
 					</p>
-					<button
-						onclick={openNewTemplate}
-						class="mt-4 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[var(--color-accent-hover)]"
-					>
-						Create your first template
-					</button>
+					<div class="mt-4 flex flex-col items-center gap-2 sm:flex-row sm:justify-center">
+						<button
+							onclick={addStarterTemplates}
+							class="flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[var(--color-accent-hover)]"
+						>
+							<Sparkles class="h-4 w-4" />
+							Add starter templates
+						</button>
+						<button
+							onclick={openNewTemplate}
+							class="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-bg-secondary)]"
+						>
+							Create from scratch
+						</button>
+					</div>
 				</div>
 			</div>
 		{:else}

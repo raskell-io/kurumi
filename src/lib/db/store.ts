@@ -815,6 +815,89 @@ export function templateHasVariable(content: string, variable: string): boolean 
 	return content.includes(`{${variable}}`);
 }
 
+// Add default starter templates
+export function addStarterTemplates(): void {
+	if (!doc) {
+		console.error('Cannot add templates: database not initialized');
+		return;
+	}
+
+	const vaultId = getCurrentVaultId();
+	const now = Date.now();
+
+	updateDoc((d) => {
+		if (!d.templates) d.templates = {};
+
+		// Meeting Notes
+		const meetingNotesId = generateId();
+		d.templates[meetingNotesId] = {
+			id: meetingNotesId,
+			name: 'Meeting Notes',
+			description: 'Template for meeting notes with agenda and action items',
+			content: `# Meeting: {title}
+
+**Date:** {date}
+**Attendees:**
+
+## Agenda
+-
+
+## Notes
+
+## Action Items
+- [ ] `,
+			vaultId,
+			created: now,
+			modified: now
+		};
+
+		// Daily Journal
+		const dailyJournalId = generateId();
+		d.templates[dailyJournalId] = {
+			id: dailyJournalId,
+			name: 'Daily Journal',
+			description: 'Daily reflection and planning template',
+			content: `# {weekday}, {date}
+
+## How I'm feeling
+
+## Today's priorities
+- [ ]
+
+## Notes
+
+## Gratitude
+`,
+			vaultId,
+			created: now,
+			modified: now
+		};
+
+		// Project Brief
+		const projectBriefId = generateId();
+		d.templates[projectBriefId] = {
+			id: projectBriefId,
+			name: 'Project Brief',
+			description: 'Template for project planning and documentation',
+			content: `# {title}
+
+## Overview
+
+## Goals
+
+## Timeline
+
+## Resources
+
+## Notes
+`,
+			vaultId,
+			created: now,
+			modified: now
+		};
+	});
+}
+
 // ============ Sync Operations ============
 
 // Get the raw Automerge document for sync
