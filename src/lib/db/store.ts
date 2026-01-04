@@ -189,10 +189,79 @@ export async function initDB(): Promise<void> {
 				await saveDoc();
 			}
 
-			// Migrate: add templates collection (version 3 -> version 4)
+			// Migrate: add templates collection with starter templates (version 3 -> version 4)
 			if (!doc.templates) {
+				const now = Date.now();
+				const vaultId = doc.currentVaultId || DEFAULT_VAULT_ID;
 				doc = Automerge.change(doc, (d) => {
 					d.templates = {};
+
+					// Add default starter templates
+					const meetingNotesId = generateId();
+					d.templates[meetingNotesId] = {
+						id: meetingNotesId,
+						name: 'Meeting Notes',
+						description: 'Template for meeting notes with agenda and action items',
+						content: `# Meeting: {title}
+
+**Date:** {date}
+**Attendees:**
+
+## Agenda
+-
+
+## Notes
+
+## Action Items
+- [ ] `,
+						vaultId,
+						created: now,
+						modified: now
+					};
+
+					const dailyJournalId = generateId();
+					d.templates[dailyJournalId] = {
+						id: dailyJournalId,
+						name: 'Daily Journal',
+						description: 'Daily reflection and planning template',
+						content: `# {weekday}, {date}
+
+## How I'm feeling
+
+## Today's priorities
+- [ ]
+
+## Notes
+
+## Gratitude
+`,
+						vaultId,
+						created: now,
+						modified: now
+					};
+
+					const projectBriefId = generateId();
+					d.templates[projectBriefId] = {
+						id: projectBriefId,
+						name: 'Project Brief',
+						description: 'Template for project planning and documentation',
+						content: `# {title}
+
+## Overview
+
+## Goals
+
+## Timeline
+
+## Resources
+
+## Notes
+`,
+						vaultId,
+						created: now,
+						modified: now
+					};
+
 					d.version = 4;
 				});
 				await saveDoc();
