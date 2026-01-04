@@ -1,7 +1,18 @@
 <script lang="ts">
 	import { exportNotesJSON, exportFullJSON, analyzeImport, importJSON, notes, folders, vaults, currentVaultId, type ImportAnalysis, type ConflictResolution } from '$lib/db';
 	import { exportVaultAsMarkdown, type MarkdownExportFormat } from '$lib/utils/markdown-export';
-	import { syncState, initSyncState, sync, testConnection, isSyncConfigured } from '$lib/sync';
+	import { syncState, initSyncState, sync, testConnection, isSyncConfigured, getSyncMethod, setSyncMethod, isR2SyncConfigured, type SyncMethod } from '$lib/sync';
+	import {
+		gitSyncState,
+		initGitSyncState,
+		getGitSyncConfig,
+		saveGitSyncConfig,
+		isGitSyncConfigured,
+		testGitConnection,
+		GIT_PROVIDERS,
+		type GitProviderId,
+		type GitSyncConfig
+	} from '$lib/git';
 	import {
 		type AIProvider,
 		AVAILABLE_MODELS,
@@ -14,7 +25,7 @@
 		testConnection as testAIConnection
 	} from '$lib/ai';
 	import { onMount } from 'svelte';
-	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2, RefreshCw, CheckCircle, XCircle, Wifi, Sparkles, ChevronDown, Database, Cloud, Lock, Shield, BookOpen, Palette, HardDrive, Info, Type } from 'lucide-svelte';
+	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2, RefreshCw, CheckCircle, XCircle, Wifi, Sparkles, ChevronDown, Database, Cloud, Lock, Shield, BookOpen, Palette, HardDrive, Info, Type, GitBranch } from 'lucide-svelte';
 
 	let syncToken = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-token') || '' : '');
 	let syncUrl = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-url') || '' : '');
@@ -41,6 +52,20 @@
 	// Sync test state
 	let isTesting = $state(false);
 	let testResult = $state<{ success: boolean; error?: string } | null>(null);
+
+	// Sync method state
+	let syncMethod = $state<SyncMethod>(getSyncMethod());
+
+	// Git sync state
+	let gitProvider = $state<GitProviderId>('github');
+	let gitRepoUrl = $state('');
+	let gitBranch = $state('main');
+	let gitToken = $state('');
+	let gitAuthorName = $state('Kurumi');
+	let gitAuthorEmail = $state('kurumi@localhost');
+	let showGitSaved = $state(false);
+	let isTestingGit = $state(false);
+	let gitTestResult = $state<{ success: boolean; error?: string } | null>(null);
 
 	// AI settings state
 	let aiProvider = $state<AIProvider>('openai');
@@ -92,6 +117,21 @@
 		}
 
 		initSyncState();
+		initGitSyncState();
+
+		// Load sync method
+		syncMethod = getSyncMethod();
+
+		// Load git sync settings
+		const gitConfig = getGitSyncConfig();
+		if (gitConfig) {
+			gitProvider = gitConfig.provider;
+			gitRepoUrl = gitConfig.repoUrl;
+			gitBranch = gitConfig.branch;
+			gitToken = gitConfig.token;
+			gitAuthorName = gitConfig.authorName;
+			gitAuthorEmail = gitConfig.authorEmail;
+		}
 
 		// Load AI settings
 		aiProvider = getStoredProvider();
@@ -143,6 +183,37 @@
 	async function handleSync() {
 		await sync();
 	}
+
+	// Sync method handlers
+	function handleSyncMethodChange(method: SyncMethod) {
+		syncMethod = method;
+		setSyncMethod(method);
+	}
+
+	// Git sync handlers
+	function saveGitSettings() {
+		const config: GitSyncConfig = {
+			provider: gitProvider,
+			repoUrl: gitRepoUrl,
+			branch: gitBranch,
+			token: gitToken,
+			authorName: gitAuthorName,
+			authorEmail: gitAuthorEmail
+		};
+		saveGitSyncConfig(config);
+		showGitSaved = true;
+		setTimeout(() => (showGitSaved = false), 2000);
+	}
+
+	async function handleTestGitConnection() {
+		isTestingGit = true;
+		gitTestResult = null;
+		saveGitSettings();
+		gitTestResult = await testGitConnection(gitProvider, gitRepoUrl, gitToken);
+		isTestingGit = false;
+	}
+
+	let currentGitProvider = $derived(GIT_PROVIDERS[gitProvider]);
 
 	function handleProviderChange(provider: AIProvider) {
 		aiProvider = provider;
@@ -427,10 +498,16 @@
 				class="flex w-full items-center justify-between bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-border)]"
 			>
 				<div class="flex items-center gap-3">
-					<Cloud class="h-5 w-5 text-[var(--color-accent)]" />
+					{#if syncMethod === 'git'}
+						<GitBranch class="h-5 w-5 text-[var(--color-accent)]" />
+					{:else}
+						<Cloud class="h-5 w-5 text-[var(--color-accent)]" />
+					{/if}
 					<div>
-						<h2 class="font-semibold text-[var(--color-text)]">Cloudflare Sync</h2>
-						<p class="text-sm text-[var(--color-text-muted)]">Cross-device sync with R2</p>
+						<h2 class="font-semibold text-[var(--color-text)]">Sync</h2>
+						<p class="text-sm text-[var(--color-text-muted)]">
+							{#if syncMethod === 'git'}Git repository sync{:else}Cloudflare R2 sync{/if}
+						</p>
 					</div>
 				</div>
 				<div class="flex items-center gap-2">
@@ -442,73 +519,243 @@
 			</button>
 			{#if sections.sync}
 				<div class="border-t border-[var(--color-border)] p-4">
-					<p class="mb-4 text-sm text-[var(--color-text-muted)]">
-						Configure sync with your Cloudflare R2 Worker to access notes across devices.
-					</p>
-
-					<div class="space-y-4">
-						<div>
-							<label for="syncUrl" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
-								Sync Worker URL
-							</label>
-							<input
-								id="syncUrl"
-								type="url"
-								bind:value={syncUrl}
-								placeholder="https://kurumi-sync.your-domain.workers.dev/sync"
-								class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:border-[var(--color-accent)] focus:outline-none"
-							/>
-						</div>
-
-						<div>
-							<label for="syncToken" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
-								Sync Token
-							</label>
-							<input
-								id="syncToken"
-								type="password"
-								bind:value={syncToken}
-								placeholder="Your sync authentication token"
-								class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:border-[var(--color-accent)] focus:outline-none"
-							/>
-						</div>
-
-						<div class="flex flex-col gap-3 md:flex-row">
+					<!-- Sync Method Toggle -->
+					<div class="mb-4">
+						<label class="mb-2 block text-sm font-medium text-[var(--color-text)]">Sync Method</label>
+						<div class="flex gap-2">
 							<button
-								onclick={saveSyncSettings}
-								class="rounded-lg bg-[var(--color-accent)] px-4 py-3 text-white transition-colors hover:bg-[var(--color-accent-hover)] active:scale-[0.98]"
+								onclick={() => handleSyncMethodChange('r2')}
+								class="flex flex-1 items-center justify-center gap-2 rounded-lg border px-4 py-3 transition-colors {syncMethod === 'r2' || syncMethod === null ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-border)]'}"
 							>
-								{showSaved ? 'Saved!' : 'Save Settings'}
+								<Cloud class="h-4 w-4" />
+								Cloudflare R2
 							</button>
-
 							<button
-								onclick={handleTestConnection}
-								disabled={isTesting || !syncUrl || !syncToken}
-								class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] disabled:opacity-50"
+								onclick={() => handleSyncMethodChange('git')}
+								class="flex flex-1 items-center justify-center gap-2 rounded-lg border px-4 py-3 transition-colors {syncMethod === 'git' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-border)]'}"
 							>
-								{#if isTesting}
-									<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
-								{:else}
-									<Wifi class="h-4 w-4" />
-								{/if}
-								Test Connection
+								<GitBranch class="h-4 w-4" />
+								Git Repository
 							</button>
 						</div>
+					</div>
 
-						{#if testResult}
-							<div class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm {testResult.success ? 'bg-green-500/10 text-green-600 dark:text-green-400' : 'bg-red-500/10 text-red-500'}">
-								{#if testResult.success}
-									<CheckCircle class="h-4 w-4" />
-									Connection successful
-								{:else}
-									<XCircle class="h-4 w-4" />
-									{testResult.error || 'Connection failed'}
-								{/if}
+					{#if syncMethod === 'git'}
+						<!-- Git Sync Configuration -->
+						<div class="space-y-4">
+							<p class="text-sm text-[var(--color-text-muted)]">
+								Sync notes as markdown files to a Git repository. Works with GitHub, GitLab, and Codeberg.
+							</p>
+
+							<!-- Provider Selection -->
+							<div>
+								<label class="mb-2 block text-sm font-medium text-[var(--color-text)]">Provider</label>
+								<div class="flex gap-2">
+									{#each Object.values(GIT_PROVIDERS) as provider}
+										<button
+											onclick={() => (gitProvider = provider.id)}
+											class="flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors {gitProvider === provider.id ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-border)]'}"
+										>
+											{provider.name}
+										</button>
+									{/each}
+								</div>
 							</div>
-						{/if}
 
-						<!-- Sync Status -->
-						{#if isSyncConfigured()}
+							<!-- Repository URL -->
+							<div>
+								<label for="gitRepoUrl" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+									Repository URL
+								</label>
+								<input
+									id="gitRepoUrl"
+									type="url"
+									bind:value={gitRepoUrl}
+									placeholder={currentGitProvider.exampleUrl}
+									class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:border-[var(--color-accent)] focus:outline-none"
+								/>
+							</div>
+
+							<!-- Branch -->
+							<div>
+								<label for="gitBranch" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+									Branch
+								</label>
+								<input
+									id="gitBranch"
+									type="text"
+									bind:value={gitBranch}
+									placeholder="main"
+									class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:border-[var(--color-accent)] focus:outline-none"
+								/>
+							</div>
+
+							<!-- Personal Access Token -->
+							<div>
+								<label for="gitToken" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+									Personal Access Token
+								</label>
+								<input
+									id="gitToken"
+									type="password"
+									bind:value={gitToken}
+									placeholder="ghp_xxxx..."
+									class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:border-[var(--color-accent)] focus:outline-none"
+								/>
+								<p class="mt-1 text-xs text-[var(--color-text-muted)]">
+									<a href={currentGitProvider.tokenUrl} target="_blank" rel="noopener" class="text-[var(--color-accent)] hover:underline">
+										Create a token
+									</a> · {currentGitProvider.tokenHelp}
+								</p>
+							</div>
+
+							<!-- Action Buttons -->
+							<div class="flex flex-col gap-3 md:flex-row">
+								<button
+									onclick={saveGitSettings}
+									class="rounded-lg bg-[var(--color-accent)] px-4 py-3 text-white transition-colors hover:bg-[var(--color-accent-hover)] active:scale-[0.98]"
+								>
+									{showGitSaved ? 'Saved!' : 'Save Settings'}
+								</button>
+
+								<button
+									onclick={handleTestGitConnection}
+									disabled={isTestingGit || !gitRepoUrl || !gitToken}
+									class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] disabled:opacity-50"
+								>
+									{#if isTestingGit}
+										<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+									{:else}
+										<Wifi class="h-4 w-4" />
+									{/if}
+									Test Connection
+								</button>
+							</div>
+
+							{#if gitTestResult}
+								<div class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm {gitTestResult.success ? 'bg-green-500/10 text-green-600 dark:text-green-400' : 'bg-red-500/10 text-red-500'}">
+									{#if gitTestResult.success}
+										<CheckCircle class="h-4 w-4" />
+										Connection successful
+									{:else}
+										<XCircle class="h-4 w-4" />
+										{gitTestResult.error || 'Connection failed'}
+									{/if}
+								</div>
+							{/if}
+
+							<!-- Git Sync Status -->
+							{#if isGitSyncConfigured()}
+								<div class="mt-4 pt-4 border-t border-[var(--color-border)]">
+									<h3 class="mb-3 text-sm font-semibold text-[var(--color-text)]">Sync Status</h3>
+									<div class="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] p-4">
+										<div class="flex items-center justify-between">
+											<div class="flex items-center gap-3">
+												{#if ['cloning', 'pulling', 'pushing', 'syncing'].includes($gitSyncState.status)}
+													<div class="h-3 w-3 animate-pulse rounded-full bg-amber-500"></div>
+													<span class="text-[var(--color-text)]">
+														{$gitSyncState.status === 'cloning' ? 'Cloning...' : $gitSyncState.status === 'pulling' ? 'Pulling...' : $gitSyncState.status === 'pushing' ? 'Pushing...' : 'Syncing...'}
+													</span>
+												{:else if $gitSyncState.status === 'success'}
+													<div class="h-3 w-3 rounded-full bg-green-500"></div>
+													<span class="text-[var(--color-text)]">Synced</span>
+												{:else if $gitSyncState.status === 'error'}
+													<div class="h-3 w-3 rounded-full bg-red-500"></div>
+													<span class="text-red-500">{$gitSyncState.error || 'Sync failed'}</span>
+												{:else}
+													<div class="h-3 w-3 rounded-full bg-[var(--color-text-muted)]"></div>
+													<span class="text-[var(--color-text-muted)]">Ready to sync</span>
+												{/if}
+											</div>
+
+											<button
+												onclick={handleSync}
+												disabled={['cloning', 'pulling', 'pushing', 'syncing'].includes($gitSyncState.status)}
+												class="flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-white transition-colors hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
+											>
+												<RefreshCw class="h-4 w-4 {['cloning', 'pulling', 'pushing', 'syncing'].includes($gitSyncState.status) ? 'animate-spin' : ''}" />
+												Sync Now
+											</button>
+										</div>
+
+										{#if $gitSyncState.lastSyncedAt}
+											<div class="mt-3 text-sm text-[var(--color-text-muted)]">
+												Last synced: {formatTimestamp($gitSyncState.lastSyncedAt)}
+											</div>
+										{/if}
+									</div>
+								</div>
+							{/if}
+						</div>
+					{:else}
+						<!-- R2 Sync Configuration -->
+						<p class="mb-4 text-sm text-[var(--color-text-muted)]">
+							Configure sync with your Cloudflare R2 Worker to access notes across devices.
+						</p>
+
+						<div class="space-y-4">
+							<div>
+								<label for="syncUrl" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+									Sync Worker URL
+								</label>
+								<input
+									id="syncUrl"
+									type="url"
+									bind:value={syncUrl}
+									placeholder="https://kurumi-sync.your-domain.workers.dev/sync"
+									class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:border-[var(--color-accent)] focus:outline-none"
+								/>
+							</div>
+
+							<div>
+								<label for="syncToken" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+									Sync Token
+								</label>
+								<input
+									id="syncToken"
+									type="password"
+									bind:value={syncToken}
+									placeholder="Your sync authentication token"
+									class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:border-[var(--color-accent)] focus:outline-none"
+								/>
+							</div>
+
+							<div class="flex flex-col gap-3 md:flex-row">
+								<button
+									onclick={saveSyncSettings}
+									class="rounded-lg bg-[var(--color-accent)] px-4 py-3 text-white transition-colors hover:bg-[var(--color-accent-hover)] active:scale-[0.98]"
+								>
+									{showSaved ? 'Saved!' : 'Save Settings'}
+								</button>
+
+								<button
+									onclick={handleTestConnection}
+									disabled={isTesting || !syncUrl || !syncToken}
+									class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] disabled:opacity-50"
+								>
+									{#if isTesting}
+										<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+									{:else}
+										<Wifi class="h-4 w-4" />
+									{/if}
+									Test Connection
+								</button>
+							</div>
+
+							{#if testResult}
+								<div class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm {testResult.success ? 'bg-green-500/10 text-green-600 dark:text-green-400' : 'bg-red-500/10 text-red-500'}">
+									{#if testResult.success}
+										<CheckCircle class="h-4 w-4" />
+										Connection successful
+									{:else}
+										<XCircle class="h-4 w-4" />
+										{testResult.error || 'Connection failed'}
+									{/if}
+								</div>
+							{/if}
+
+							<!-- R2 Sync Status -->
+							{#if isR2SyncConfigured()}
 							<div class="mt-4 pt-4 border-t border-[var(--color-border)]">
 								<h3 class="mb-3 text-sm font-semibold text-[var(--color-text)]">Sync Status</h3>
 								<div class="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] p-4">
@@ -548,9 +795,10 @@
 							</div>
 						{/if}
 					</div>
-				</div>
-			{/if}
-		</section>
+				{/if}
+			</div>
+		{/if}
+	</section>
 
 		<!-- AI Assistant -->
 		<section class="mb-4 rounded-lg border border-[var(--color-border)] overflow-hidden">
