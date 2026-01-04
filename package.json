@@ -40,6 +40,7 @@
 		"@milkdown/transformer": "^7.17.3",
 		"force-graph": "^1.51.0",
 		"idb-keyval": "^6.2.2",
+		"jszip": "^3.10.1",
 		"lucide-svelte": "^0.562.0",
 		"marked": "^17.0.1",
 		"minisearch": "^7.2.0",

@@ -1,17 +1,19 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { getNote, updateNote, deleteNote, findBacklinks, notes, addNote } from '$lib/db';
+	import { getNote, updateNote, deleteNote, findBacklinks, notes, addNote, folders } from '$lib/db';
 	import { get } from 'svelte/store';
 	import Editor from '$lib/components/Editor.svelte';
 	import { untrack } from 'svelte';
-	import { Trash2 } from 'lucide-svelte';
+	import { downloadSingleNote, type MarkdownExportFormat } from '$lib/utils/markdown-export';
+	import { Trash2, Download, ChevronDown } from 'lucide-svelte';
 
 	let note = $state<ReturnType<typeof getNote>>(undefined);
 	let title = $state('');
 	let content = $state('');
 	let backlinks = $state<ReturnType<typeof findBacklinks>>([]);
 	let showDeleteConfirm = $state(false);
+	let showExportMenu = $state(false);
 	let currentId = $state('');
 
 	// Debounce timer for auto-save
@@ -95,18 +97,66 @@
 			}
 		}
 	}
+
+	function handleExport(format: MarkdownExportFormat) {
+		if (!note) return;
+		const allNotes = get(notes);
+		const allFolders = get(folders);
+		downloadSingleNote(note, allNotes, allFolders, { format });
+		showExportMenu = false;
+	}
 </script>
 
 {#if note}
 	<div class="group/note relative flex h-full flex-col">
-		<!-- Delete button (appears on hover) -->
-		<button
-			onclick={() => (showDeleteConfirm = true)}
-			class="absolute bottom-4 right-4 z-10 rounded-lg p-2 text-[var(--color-text-muted)] opacity-0 transition-all hover:bg-red-100 hover:text-red-600 active:scale-95 group-hover/note:opacity-100 dark:hover:bg-red-900/30 md:bottom-6 md:right-6"
-			title="Delete note"
-		>
-			<Trash2 class="h-5 w-5" />
-		</button>
+		<!-- Action buttons (appear on hover) -->
+		<div class="absolute bottom-4 right-4 z-10 flex items-center gap-2 opacity-0 transition-all group-hover/note:opacity-100 md:bottom-6 md:right-6">
+			<!-- Export button -->
+			<div class="relative">
+				<button
+					onclick={() => (showExportMenu = !showExportMenu)}
+					class="flex items-center gap-1 rounded-lg p-2 text-[var(--color-text-muted)] transition-all hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text)] active:scale-95"
+					title="Export note"
+				>
+					<Download class="h-5 w-5" />
+					<ChevronDown class="h-3 w-3" />
+				</button>
+
+				{#if showExportMenu}
+					<div
+						class="absolute bottom-full right-0 mb-2 w-40 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] py-1 shadow-lg"
+					>
+						<button
+							onclick={() => handleExport('vanilla')}
+							class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]"
+						>
+							Vanilla
+						</button>
+						<button
+							onclick={() => handleExport('hugo')}
+							class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]"
+						>
+							Hugo
+						</button>
+						<button
+							onclick={() => handleExport('zola')}
+							class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]"
+						>
+							Zola
+						</button>
+					</div>
+				{/if}
+			</div>
+
+			<!-- Delete button -->
+			<button
+				onclick={() => (showDeleteConfirm = true)}
+				class="rounded-lg p-2 text-[var(--color-text-muted)] transition-all hover:bg-red-100 hover:text-red-600 active:scale-95 dark:hover:bg-red-900/30"
+				title="Delete note"
+			>
+				<Trash2 class="h-5 w-5" />
+			</button>
+		</div>
 
 		<!-- Editor -->
 		<div class="flex-1 overflow-y-auto overscroll-contain p-4 md:p-6">

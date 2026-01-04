@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { exportNotesJSON, exportFullJSON, analyzeImport, importJSON, notes, folders, vaults, type ImportAnalysis, type ConflictResolution } from '$lib/db';
+	import { exportNotesJSON, exportFullJSON, analyzeImport, importJSON, notes, folders, vaults, currentVaultId, type ImportAnalysis, type ConflictResolution } from '$lib/db';
+	import { exportVaultAsMarkdown, type MarkdownExportFormat } from '$lib/utils/markdown-export';
 	import { syncState, initSyncState, sync, testConnection, isSyncConfigured } from '$lib/sync';
 	import {
 		type AIProvider,
@@ -53,6 +54,10 @@
 	// Documentation sections state
 	let showSyncDocs = $state(false);
 	let showArchDocs = $state(false);
+
+	// Markdown export state
+	let isExportingMarkdown = $state(false);
+	let markdownExportFormat = $state<MarkdownExportFormat | null>(null);
 
 	// Collapsible sections state
 	let sections = $state({
@@ -188,6 +193,23 @@
 		a.download = `kurumi-export-${new Date().toISOString().split('T')[0]}.json`;
 		a.click();
 		URL.revokeObjectURL(url);
+	}
+
+	async function handleMarkdownExport(format: MarkdownExportFormat) {
+		isExportingMarkdown = true;
+		markdownExportFormat = format;
+		try {
+			const vault = $vaults.find((v) => v.id === $currentVaultId);
+			if (!vault) return;
+
+			const vaultNotes = $notes.filter((n) => n.vaultId === vault.id);
+			const vaultFolders = $folders.filter((f) => f.vaultId === vault.id);
+
+			await exportVaultAsMarkdown(vaultNotes, vaultFolders, vault, { format });
+		} finally {
+			isExportingMarkdown = false;
+			markdownExportFormat = null;
+		}
 	}
 
 	function handleFileSelect(event: Event) {
@@ -719,6 +741,52 @@
 
 					<div class="mt-3 text-sm text-[var(--color-text-muted)]">
 						{$vaults.length} {$vaults.length === 1 ? 'vault' : 'vaults'} · {$folders.length} {$folders.length === 1 ? 'folder' : 'folders'} · {$notes.length} {$notes.length === 1 ? 'note' : 'notes'}
+					</div>
+
+					<!-- Markdown Export -->
+					<div class="mt-4 pt-4 border-t border-[var(--color-border)]">
+						<h3 class="mb-2 text-sm font-medium text-[var(--color-text)]">Export as Markdown</h3>
+						<p class="mb-3 text-sm text-[var(--color-text-muted)]">
+							Export current vault as markdown files with folder structure. Choose a format:
+						</p>
+						<div class="flex flex-wrap gap-2">
+							<button
+								onclick={() => handleMarkdownExport('vanilla')}
+								disabled={isExportingMarkdown}
+								class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] active:scale-[0.98] disabled:opacity-50"
+							>
+								{#if isExportingMarkdown && markdownExportFormat === 'vanilla'}
+									<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+								{:else}
+									<Download class="h-4 w-4" />
+								{/if}
+								Vanilla
+							</button>
+							<button
+								onclick={() => handleMarkdownExport('hugo')}
+								disabled={isExportingMarkdown}
+								class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] active:scale-[0.98] disabled:opacity-50"
+							>
+								{#if isExportingMarkdown && markdownExportFormat === 'hugo'}
+									<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+								{:else}
+									<Download class="h-4 w-4" />
+								{/if}
+								Hugo
+							</button>
+							<button
+								onclick={() => handleMarkdownExport('zola')}
+								disabled={isExportingMarkdown}
+								class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] active:scale-[0.98] disabled:opacity-50"
+							>
+								{#if isExportingMarkdown && markdownExportFormat === 'zola'}
+									<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+								{:else}
+									<Download class="h-4 w-4" />
+								{/if}
+								Zola
+							</button>
+						</div>
 					</div>
 
 					{#if importError && !showImportModal}

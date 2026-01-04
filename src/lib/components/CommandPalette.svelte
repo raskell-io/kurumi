@@ -5,7 +5,8 @@
 	import { getIconById } from '$lib/icons/vault-icons';
 	import { syncState } from '$lib/sync/status';
 	import { resourceColors } from '$lib/types/resources';
-	import { Search, Cloud, CloudOff } from 'lucide-svelte';
+	import { exportVaultAsMarkdown, type MarkdownExportFormat } from '$lib/utils/markdown-export';
+	import { Search, Cloud, CloudOff, Download } from 'lucide-svelte';
 
 	interface Props {
 		onClose: () => void;
@@ -15,6 +16,17 @@
 
 	let showCreateVaultModal = $state(false);
 	let newVaultName = $state('');
+
+	async function handleMarkdownExport(format: MarkdownExportFormat) {
+		const vault = $vaults.find((v) => v.id === $currentVaultId);
+		if (!vault) return;
+
+		const vaultNotes = $notes.filter((n) => n.vaultId === vault.id);
+		const vaultFolders = $folders.filter((f) => f.vaultId === vault.id);
+
+		await exportVaultAsMarkdown(vaultNotes, vaultFolders, vault, { format });
+		onClose();
+	}
 
 	interface Command {
 		id: string;
@@ -93,6 +105,30 @@
 				goto('/');
 				onClose();
 			}
+		},
+		{
+			id: 'export-vanilla',
+			type: 'action',
+			title: 'Export as Vanilla Markdown',
+			description: 'Export vault as plain markdown files',
+			icon: 'download',
+			action: () => handleMarkdownExport('vanilla')
+		},
+		{
+			id: 'export-hugo',
+			type: 'action',
+			title: 'Export as Hugo Markdown',
+			description: 'Export vault with Hugo front matter',
+			icon: 'download',
+			action: () => handleMarkdownExport('hugo')
+		},
+		{
+			id: 'export-zola',
+			type: 'action',
+			title: 'Export as Zola Markdown',
+			description: 'Export vault with Zola front matter',
+			icon: 'download',
+			action: () => handleMarkdownExport('zola')
 		}
 	];
 
@@ -265,6 +301,8 @@
 				return 'M10 12a2 2 0 100-4 2 2 0 000 4z M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z';
 			case 'vault':
 				return 'M4 3a2 2 0 100 4h12a2 2 0 100-4H4zM3 8h14v7a2 2 0 01-2 2H5a2 2 0 01-2-2V8zm5 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z';
+			case 'download':
+				return 'M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z';
 			default:
 				return 'M9 2a1 1 0 000 2h2a1 1 0 100-2H9z M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z';
 		}
