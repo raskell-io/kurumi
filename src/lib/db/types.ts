@@ -69,12 +69,24 @@ export interface Event {
 	modified: number;
 }
 
+export interface Template {
+	id: string;
+	name: string;
+	content: string; // Markdown with {variable} placeholders
+	description?: string;
+	vaultId: string;
+	created: number;
+	modified: number;
+	[key: string]: unknown; // Automerge compatibility
+}
+
 export interface KurumiDocument {
 	notes: Record<string, Note>;
 	folders: Record<string, Folder>;
 	vaults: Record<string, Vault>;
 	people: Record<string, Person>;
 	events: Record<string, Event>;
+	templates: Record<string, Template>;
 	currentVaultId: string;
 	version: number;
 	[key: string]: unknown; // Required for Automerge compatibility
@@ -109,8 +121,9 @@ export function createEmptyDocument(): KurumiDocument {
 		vaults: { [DEFAULT_VAULT_ID]: defaultVault },
 		people: {},
 		events: {},
+		templates: {},
 		currentVaultId: DEFAULT_VAULT_ID,
-		version: 3
+		version: 4
 	};
 }
 
@@ -178,5 +191,23 @@ export function createEvent(
 		created: now,
 		modified: now,
 		...fields
+	};
+}
+
+export function createTemplate(
+	name: string,
+	content: string,
+	vaultId: string = DEFAULT_VAULT_ID,
+	description?: string
+): Template {
+	const now = Date.now();
+	return {
+		id: generateId(),
+		name,
+		content,
+		description,
+		vaultId,
+		created: now,
+		modified: now
 	};
 }

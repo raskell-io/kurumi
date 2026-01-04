@@ -10,6 +10,7 @@
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import FolderTree from '$lib/components/FolderTree.svelte';
 	import VaultSelector from '$lib/components/VaultSelector.svelte';
+	import TemplatePicker from '$lib/components/TemplatePicker.svelte';
 	import Snackbar from '$lib/components/Snackbar.svelte';
 	import { X, Plus, Search, ChevronDown, GitFork, BookOpen, Settings, ListTree, Cloud, RefreshCw, CheckCircle, AlertCircle, Pencil, Tag } from 'lucide-svelte';
 	import { showNewNoteSnackbar, triggerSearch } from '$lib/stores/snackbar';
@@ -20,6 +21,7 @@
 	let sidebarOpen = $state(false);
 	let isMobile = $state(false);
 	let showSearch = $state(false);
+	let showTemplatePicker = $state(false);
 	let selectedTag = $state<string | null>(null);
 	let showTags = $state(false);
 	let theme = $state<'light' | 'dark' | 'system'>('system');
@@ -678,8 +680,11 @@
 
 	<!-- Command Palette -->
 	{#if showSearch}
-		<CommandPalette onClose={closeSearch} />
+		<CommandPalette onClose={closeSearch} onShowTemplatePicker={() => (showTemplatePicker = true)} />
 	{/if}
+
+	<!-- Template Picker -->
+	<TemplatePicker bind:open={showTemplatePicker} onClose={() => (showTemplatePicker = false)} />
 
 	<!-- Snackbars -->
 	{#if showNewNoteAnimation}

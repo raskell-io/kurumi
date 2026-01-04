@@ -9,6 +9,7 @@ import {
 	createDefaultVault,
 	createPerson,
 	createEvent,
+	createTemplate,
 	generateId,
 	DEFAULT_VAULT_ID,
 	type KurumiDocument,
@@ -16,7 +17,8 @@ import {
 	type Folder,
 	type Vault,
 	type Person,
-	type Event
+	type Event,
+	type Template
 } from './types';
 
 const STORAGE_KEY = 'kurumi-doc';
@@ -100,6 +102,17 @@ export const events: Readable<Event[]> = derived(
 	}
 );
 
+// Derived store for templates (sorted by name) - filtered by current vault
+export const templates: Readable<Template[]> = derived(
+	[docStore, currentVaultId],
+	([$doc, $vaultId]) => {
+		if (!$doc || !$doc.templates) return [];
+		return Object.values($doc.templates)
+			.filter((template) => template.vaultId === $vaultId)
+			.sort((a, b) => a.name.localeCompare(b.name));
+	}
+);
+
 // All notes across all vaults (for cross-vault operations)
 export const allNotes: Readable<Note[]> = derived(docStore, ($doc) => {
 	if (!$doc) return [];
@@ -172,6 +185,15 @@ export async function initDB(): Promise<void> {
 					if (!d.people) d.people = {};
 					if (!d.events) d.events = {};
 					d.version = 3;
+				});
+				await saveDoc();
+			}
+
+			// Migrate: add templates collection (version 3 -> version 4)
+			if (!doc.templates) {
+				doc = Automerge.change(doc, (d) => {
+					d.templates = {};
+					d.version = 4;
 				});
 				await saveDoc();
 			}
@@ -640,6 +662,88 @@ export function deleteEvent(id: string): void {
 			delete d.events[id];
 		}
 	});
+}
+
+// ============ Template CRUD Operations ============
+
+export function addTemplate(name: string, content: string, description?: string): Template {
+	if (!doc) {
+		console.error('Cannot add template: database not initialized');
+		doc = Automerge.from<KurumiDocument>(createEmptyDocument());
+		docStore.set(doc);
+	}
+	const vaultId = getCurrentVaultId();
+	const template = createTemplate(name, content, vaultId, description);
+	updateDoc((d) => {
+		if (!d.templates) d.templates = {};
+		d.templates[template.id] = template;
+	});
+	return template;
+}
+
+export function getTemplate(id: string): Template | undefined {
+	return doc?.templates?.[id];
+}
+
+export function getTemplateByName(name: string): Template | undefined {
+	if (!doc?.templates) return undefined;
+	const vaultId = getCurrentVaultId();
+	return Object.values(doc.templates).find((t) => t.name === name && t.vaultId === vaultId);
+}
+
+export function updateTemplate(
+	id: string,
+	updates: Partial<Omit<Template, 'id' | 'created' | 'vaultId'>>
+): void {
+	updateDoc((d) => {
+		const template = d.templates?.[id];
+		if (template) {
+			if (updates.name !== undefined) template.name = updates.name;
+			if (updates.content !== undefined) template.content = updates.content;
+			if (updates.description !== undefined) template.description = updates.description;
+			template.modified = Date.now();
+		}
+	});
+}
+
+export function deleteTemplate(id: string): void {
+	updateDoc((d) => {
+		if (d.templates) {
+			delete d.templates[id];
+		}
+	});
+}
+
+// Get current vault name (for template variables)
+export function getCurrentVaultName(): string {
+	if (!doc?.vaults) return 'Default';
+	const vaultId = getCurrentVaultId();
+	return doc.vaults[vaultId]?.name || 'Default';
+}
+
+// Apply template variables to content
+export function applyTemplateVariables(
+	content: string,
+	overrides?: Record<string, string>
+): string {
+	const now = new Date();
+	const variables: Record<string, string> = {
+		date: now.toISOString().split('T')[0],
+		datetime: now.toISOString(),
+		time: now.toTimeString().slice(0, 5),
+		year: now.getFullYear().toString(),
+		month: now.toLocaleDateString('en-US', { month: 'long' }),
+		weekday: now.toLocaleDateString('en-US', { weekday: 'long' }),
+		vault: getCurrentVaultName(),
+		...overrides
+	};
+
+	return content.replace(/\{(\w+)\}/g, (match, key) => variables[key] ?? match);
+}
+
+// Check if template content contains a specific variable
+export function templateHasVariable(content: string, variable: string): boolean {
+	return content.includes(`{${variable}}`);
 }
 
 // ============ Sync Operations ============

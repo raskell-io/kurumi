@@ -10,9 +10,10 @@
 
 	interface Props {
 		onClose: () => void;
+		onShowTemplatePicker?: () => void;
 	}
 
-	let { onClose }: Props = $props();
+	let { onClose, onShowTemplatePicker }: Props = $props();
 
 	let showCreateVaultModal = $state(false);
 	let newVaultName = $state('');
@@ -129,6 +130,28 @@
 			description: 'Export vault with Zola front matter',
 			icon: 'download',
 			action: () => handleMarkdownExport('zola')
+		},
+		{
+			id: 'new-from-template',
+			type: 'action',
+			title: 'New from template',
+			description: 'Create a note from a template',
+			icon: 'template',
+			action: () => {
+				onClose();
+				onShowTemplatePicker?.();
+			}
+		},
+		{
+			id: 'templates',
+			type: 'action',
+			title: 'Manage Templates',
+			description: 'Create and edit note templates',
+			icon: 'template',
+			action: () => {
+				goto('/templates');
+				onClose();
+			}
 		}
 	];
 
