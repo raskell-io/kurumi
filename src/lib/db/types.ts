@@ -82,6 +82,156 @@ export interface Template {
 	[key: string]: unknown; // Automerge compatibility
 }
 
+// ---------------------------------------------------------------------------
+// Memory model (roadmap §7) — durable knowledge objects beyond simple notes.
+// These types are the frozen contract for storage, sync, processing, and the
+// inference router. They are additive: existing Note/Folder remain untouched.
+// ---------------------------------------------------------------------------
+
+export type MemoryType =
+	| 'note'
+	| 'voice-memo'
+	| 'meeting'
+	| 'task'
+	| 'reference'
+	| 'file';
+
+export type MemorySpace = 'personal' | 'work' | 'shared' | 'archive';
+
+export type ProcessingState =
+	| 'pending'
+	| 'transcribing'
+	| 'summarizing'
+	| 'extracting'
+	| 'ready'
+	| 'failed';
+
+export type CaptureMode =
+	| 'voice-memo'
+	| 'in-person-meeting'
+	| 'remote-meeting-basic'
+	| 'remote-meeting-enhanced'
+	| 'upload';
+
+export type EntityType =
+	| 'project'
+	| 'person'
+	| 'topic'
+	| 'place'
+	| 'organization'
+	| 'source';
+
+export type RelationType =
+	| 'relates_to'
+	| 'mentions'
+	| 'belongs_to_space'
+	| 'produced'
+	| 'follows'
+	| 'blocks'
+	| 'depends_on'
+	| 'aliases'
+	| 'supersedes'
+	| 'derived_from';
+
+export type ActionItemStatus = 'open' | 'in_progress' | 'done' | 'cancelled';
+
+export interface TranscriptSegment {
+	start: number; // seconds
+	end: number;
+	speaker?: string;
+	text: string;
+}
+
+export interface ControlledLabel {
+	class: 'type' | 'domain' | 'entity' | 'workflow';
+	value: string;
+}
+
+export interface MemoryObject {
+	id: string;
+	type: MemoryType;
+	space: MemorySpace;
+	parentBucket: string | null; // e.g. "Inbox", "Projects", "Meetings"
+	title: string;
+	rawText: string | null;
+	bodyMarkdown: string | null;
+	rawAudioRef: string | null;
+	rawMediaRef: string | null;
+	transcript: string | null;
+	transcriptSegments: TranscriptSegment[];
+	summaryShort: string | null;
+	summaryLong: string | null;
+	createdAt: number;
+	updatedAt: number;
+	capturedAt: number;
+	sourceDevice: string | null;
+	sourceContext: string | null;
+	language: string | null;
+	tags: string[];
+	controlledLabels: ControlledLabel[];
+	participants: string[]; // entity ids
+	entities: string[]; // entity ids
+	projects: string[]; // entity ids
+	topics: string[]; // entity ids
+	dates: string[]; // ISO dates referenced
+	actionItems: string[]; // ActionItem ids
+	decisions: string[];
+	relatedMemoryIds: string[];
+	visibilityScope: MemorySpace;
+	processingState: ProcessingState;
+	confidenceScores: Record<string, number>;
+	embeddingRef: string | null;
+	vaultId: string;
+	deletedAt: number | null;
+}
+
+export interface MeetingMetadata {
+	memoryObjectId: string;
+	captureMode: CaptureMode;
+	startedAt: number;
+	endedAt: number | null;
+	platform: string | null;
+	diarizationEnabled: boolean;
+	consentNoticeShown: boolean;
+	transcriptStatus: ProcessingState;
+	summaryStatus: ProcessingState;
+}
+
+export interface ActionItem {
+	id: string;
+	memoryObjectId: string;
+	text: string;
+	assignee: string | null; // entity id or freeform
+	dueDate: string | null; // ISO date
+	status: ActionItemStatus;
+	confidence: number; // 0..1
+	createdAt: number;
+	updatedAt: number;
+}
+
+export interface Entity {
+	id: string;
+	type: EntityType;
+	canonicalName: string;
+	aliases: string[];
+	description: string | null;
+	links: string[];
+	relatedEntityIds: string[];
+	vaultId: string;
+	createdAt: number;
+	updatedAt: number;
+}
+
+export interface Relation {
+	id: string;
+	fromObjectId: string;
+	relationType: RelationType;
+	toObjectId: string;
+	confidence: number; // 0..1
+	createdBy: 'user' | 'system' | 'inference';
+	createdAt: number;
+}
+
 export interface KurumiDocument {
 	notes: Record<string, Note>;
 	folders: Record<string, Folder>;
