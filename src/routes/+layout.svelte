@@ -20,8 +20,9 @@
 	import FolderTree from '$lib/components/FolderTree.svelte';
 	import VaultSelector from '$lib/components/VaultSelector.svelte';
 	import TemplatePicker from '$lib/components/TemplatePicker.svelte';
+	import VoiceCaptureModal from '$lib/components/VoiceCaptureModal.svelte';
 	import Snackbar from '$lib/components/Snackbar.svelte';
-	import { X, Plus, Search, ChevronDown, GitFork, BookOpen, Settings, ListTree, Cloud, RefreshCw, CheckCircle, AlertCircle, Pencil, Tag, Trash2 } from 'lucide-svelte';
+	import { X, Plus, Search, ChevronDown, GitFork, BookOpen, Settings, ListTree, Cloud, RefreshCw, CheckCircle, AlertCircle, Pencil, Tag, Trash2, Mic } from 'lucide-svelte';
 	import { showNewNoteSnackbar, triggerSearch } from '$lib/stores/snackbar';
 
 	let { children } = $props();
@@ -31,6 +32,7 @@
 	let isMobile = $state(false);
 	let showSearch = $state(false);
 	let showTemplatePicker = $state(false);
+	let showVoiceCapture = $state(false);
 	let selectedTag = $state<string | null>(null);
 	let showTags = $state(false);
 	let theme = $state<'light' | 'dark' | 'system'>('system');
@@ -482,7 +484,7 @@
 				</button>
 			</div>
 
-			<!-- New Note Button (desktop only) -->
+			<!-- New Note + Voice Memo Buttons (desktop only) -->
 			<div class="hidden space-y-2 p-3 md:block">
 				<button
 					type="button"
@@ -491,6 +493,14 @@
 				>
 					<Plus class="h-5 w-5" />
 					New Note
+				</button>
+				<button
+					type="button"
+					onclick={() => (showVoiceCapture = true)}
+					class="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-bg-secondary)] active:scale-[0.98]"
+				>
+					<Mic class="h-4 w-4" />
+					Voice memo
 				</button>
 			</div>
 
@@ -720,6 +730,9 @@
 
 	<!-- Template Picker -->
 	<TemplatePicker bind:open={showTemplatePicker} onClose={() => (showTemplatePicker = false)} />
+
+	<!-- Voice Capture Modal -->
+	<VoiceCaptureModal open={showVoiceCapture} onClose={() => (showVoiceCapture = false)} />
 
 	<!-- Snackbars -->
 	{#if showNewNoteAnimation}

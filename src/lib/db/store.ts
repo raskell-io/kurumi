@@ -1,6 +1,7 @@
 import * as Automerge from '@automerge/automerge';
 import { get, set } from 'idb-keyval';
 import { writable, derived, type Readable } from 'svelte/store';
+import { deleteBlob } from './blob-store';
 import {
 	createEmptyDocument,
 	createMemoryObject,
@@ -444,6 +445,7 @@ function cleanupOldTrashInternal(): number {
 	for (const m of Object.values(doc.memoryObjects)) {
 		if (m.deletedAt && m.deletedAt < thirtyDaysAgo) {
 			memoryIdsToDelete.push(m.id);
+			deleteBlobsForMemory(m);
 		}
 	}
 	for (const folder of Object.values(doc.folders)) {
@@ -484,6 +486,17 @@ function updateDoc(changeFn: (doc: KurumiDocument) => void): void {
 	doc = Automerge.change(doc, changeFn);
 	docStore.set(doc);
 	saveDoc(); // Fire and forget, we have local state
+}
+
+// Fire-and-forget deletion of any blob refs attached to a memory.
+// Used when permanently deleting memories so blobs don't leak in IndexedDB.
+function deleteBlobsForMemory(memory: MemoryObject): void {
+	if (memory.rawAudioRef) {
+		void deleteBlob(memory.rawAudioRef);
+	}
+	if (memory.rawMediaRef) {
+		void deleteBlob(memory.rawMediaRef);
+	}
 }
 
 // Get current vault ID synchronously
@@ -646,6 +659,30 @@ export function addMemoryObject(
 		folderId: folderId ?? null,
 		vaultId
 	});
+	updateDoc((d) => {
+		d.memoryObjects[memory.id] = memory;
+	});
+	return memory;
+}
+
+export function addVoiceMemo(options: {
+	title: string;
+	rawAudioRef: string;
+	folderId?: string | null;
+}): MemoryObject {
+	if (!doc) {
+		console.error('Cannot add voice memo: database not initialized');
+		doc = Automerge.from<KurumiDocument>(createEmptyDocument());
+		docStore.set(doc);
+	}
+	const vaultId = getCurrentVaultId();
+	const memory = createMemoryObject({
+		type: 'voice-memo',
+		title: options.title,
+		folderId: options.folderId ?? null,
+		vaultId
+	});
+	memory.rawAudioRef = options.rawAudioRef;
 	updateDoc((d) => {
 		d.memoryObjects[memory.id] = memory;
 	});
@@ -838,6 +875,10 @@ export function restoreFolder(id: string, restoreContents: boolean = true): void
 
 // Permanently delete a memory object (cannot be undone)
 export function permanentlyDeleteMemoryObject(id: string): void {
+	const memory = doc?.memoryObjects[id];
+	if (memory) {
+		deleteBlobsForMemory(memory);
+	}
 	updateDoc((d) => {
 		delete d.memoryObjects[id];
 	});
@@ -845,6 +886,26 @@ export function permanentlyDeleteMemoryObject(id: string): void {
 
 // Permanently delete a folder (cannot be undone)
 export function permanentlyDeleteFolder(id: string): void {
+	if (!doc) return;
+
+	// Collect every memory that will be removed so we can clean up blobs.
+	const folderIdsToDelete = new Set<string>([id]);
+	const collectSubfolders = (parentId: string) => {
+		for (const f of Object.values(doc.folders)) {
+			if (f.parentId === parentId && !folderIdsToDelete.has(f.id)) {
+				folderIdsToDelete.add(f.id);
+				collectSubfolders(f.id);
+			}
+		}
+	};
+	collectSubfolders(id);
+
+	for (const memory of Object.values(doc.memoryObjects)) {
+		if (memory.folderId && folderIdsToDelete.has(memory.folderId)) {
+			deleteBlobsForMemory(memory);
+		}
+	}
+
 	updateDoc((d) => {
 		// Also permanently delete all memories that were in this folder
 		for (const memory of Object.values(d.memoryObjects)) {
@@ -877,6 +938,13 @@ export function permanentlyDeleteFolder(id: string): void {
 // Empty entire trash (permanently delete all trashed items)
 export function emptyTrash(): void {
 	const vaultId = getCurrentVaultId();
+	if (doc) {
+		for (const memory of Object.values(doc.memoryObjects)) {
+			if (memory.vaultId === vaultId && memory.deletedAt) {
+				deleteBlobsForMemory(memory);
+			}
+		}
+	}
 	updateDoc((d) => {
 		// Delete all trashed memories in current vault
 		for (const memory of Object.values(d.memoryObjects)) {
@@ -898,6 +966,14 @@ export function emptyTrash(): void {
 export function cleanupOldTrash(): number {
 	const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
 	let deletedCount = 0;
+
+	if (doc) {
+		for (const memory of Object.values(doc.memoryObjects)) {
+			if (memory.deletedAt && memory.deletedAt < thirtyDaysAgo) {
+				deleteBlobsForMemory(memory);
+			}
+		}
+	}
 
 	updateDoc((d) => {
 		// Delete old trashed memories

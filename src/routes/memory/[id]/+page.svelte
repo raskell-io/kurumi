@@ -14,7 +14,8 @@
 	import Editor from '$lib/components/Editor.svelte';
 	import { untrack } from 'svelte';
 	import { downloadSingleMemory, type MarkdownExportFormat } from '$lib/utils/markdown-export';
-	import { Trash2, Download, ChevronDown } from 'lucide-svelte';
+	import { getBlob } from '$lib/db/blob-store';
+	import { Trash2, Download, ChevronDown, Mic } from 'lucide-svelte';
 
 	let memory = $state<ReturnType<typeof getMemoryObject>>(undefined);
 	let title = $state('');
@@ -23,6 +24,9 @@
 	let showDeleteConfirm = $state(false);
 	let showExportMenu = $state(false);
 	let currentId = $state('');
+
+	// Audio playback for voice memos
+	let audioUrl = $state<string | null>(null);
 
 	// Debounce timer for auto-save
 	let saveTimeout: ReturnType<typeof setTimeout>;
@@ -39,8 +43,28 @@
 					content = memory.bodyMarkdown;
 					backlinks = findBacklinks(id);
 				}
+				loadAudioForCurrentMemory();
 			});
 		}
+	});
+
+	async function loadAudioForCurrentMemory() {
+		// Revoke any previous audio URL
+		if (audioUrl) {
+			URL.revokeObjectURL(audioUrl);
+			audioUrl = null;
+		}
+		if (!memory || !memory.rawAudioRef) return;
+		const stored = await getBlob(memory.rawAudioRef);
+		if (!stored) return;
+		audioUrl = URL.createObjectURL(stored.blob);
+	}
+
+	// Cleanup the object URL when the component is destroyed
+	$effect(() => {
+		return () => {
+			if (audioUrl) URL.revokeObjectURL(audioUrl);
+		};
 	});
 
 	function handleTitleChange(e: Event) {
@@ -179,6 +203,20 @@
 					class="title-input mb-4 w-full bg-transparent text-[2.5rem] font-bold leading-tight text-[var(--color-text)] placeholder-[var(--color-text-muted)] md:mb-6 md:text-[3rem]"
 					style="font-family: var(--font-editor);"
 				/>
+
+				<!-- Audio playback for voice memos -->
+				{#if memory.type === 'voice-memo'}
+					<div class="mb-4 flex items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 md:mb-6">
+						<Mic class="h-5 w-5 shrink-0 text-[var(--color-accent)]" />
+						{#if audioUrl}
+							<audio controls src={audioUrl} class="w-full">
+								Your browser does not support audio playback.
+							</audio>
+						{:else}
+							<span class="text-sm text-[var(--color-text-muted)]">Audio unavailable</span>
+						{/if}
+					</div>
+				{/if}
 
 				<!-- Milkdown Editor -->
 				{#key memory.id}
