@@ -179,6 +179,7 @@
 			{#if activeTab === 'tags'}
 				<ExportMenu type="tags" tags={allTags} />
 			{:else if activeTab === 'people'}
+				<a href="/people" class="manage-link">Manage / merge</a>
 				<ExportMenu type="people" people={allPeople} />
 			{:else if activeTab === 'dates'}
 				<ExportMenu type="dates" dates={allDates} />
@@ -359,6 +360,24 @@
 
 	.tab-actions {
 		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.manage-link {
+		font-size: 0.8125rem;
+		color: var(--color-text-muted);
+		text-decoration: none;
+		padding: 0.375rem 0.75rem;
+		border: 1px solid var(--color-border);
+		border-radius: 0.375rem;
+		transition: all 0.15s;
+	}
+
+	.manage-link:hover {
+		color: var(--color-accent);
+		border-color: var(--color-accent);
 	}
 
 	.tab {

@@ -1525,6 +1525,145 @@ export function deletePerson(id: string): void {
 	});
 }
 
+/**
+ * Merge two people entries. The source is deleted after moving its
+ * metadata into the target and rewriting every reference across
+ * memories and action items:
+ *
+ * 1. Markdown bodies: @Source → @Target (whole-word match on the name)
+ * 2. memory.participants: replace Source with Target, dedupe
+ * 3. actionItem.assignee: replace Source with Target
+ * 4. Target person gets any email/phone/company/title/customFields
+ *    from the source that the target was missing
+ *
+ * The rewrite keeps IDs, so backlinks / search results / embeddings
+ * stay valid.
+ */
+export function mergePeople(sourceId: string, targetId: string): void {
+	if (sourceId === targetId) return;
+	updateDoc((d) => {
+		const source = d.people?.[sourceId];
+		const target = d.people?.[targetId];
+		if (!source || !target) return;
+
+		// Fill in missing fields on the target from the source
+		if (!target.email && source.email) target.email = source.email;
+		if (!target.phone && source.phone) target.phone = source.phone;
+		if (!target.company && source.company) target.company = source.company;
+		if (!target.title && source.title) target.title = source.title;
+		if (source.customFields) {
+			target.customFields = { ...(target.customFields ?? {}), ...source.customFields };
+		}
+		target.modified = Date.now();
+
+		// Rewrite markdown bodies: @Source → @Target. Escape regex
+		// metacharacters in the source name and require a word boundary
+		// so "Alice" doesn't match inside "Alice Smith".
+		const sourceEsc = source.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+		const atRegex = new RegExp(`@${sourceEsc}(?![A-Za-z])`, 'g');
+		for (const memory of Object.values(d.memoryObjects)) {
+			if (memory.vaultId !== target.vaultId) continue;
+
+			if (atRegex.test(memory.bodyMarkdown)) {
+				memory.bodyMarkdown = memory.bodyMarkdown.replace(atRegex, `@${target.name}`);
+				memory.updatedAt = Date.now();
+			}
+			atRegex.lastIndex = 0;
+
+			// Replace source name inside participants array, dedupe
+			const participants = memory.participants ?? [];
+			let changed = false;
+			const next: string[] = [];
+			const seen = new Set<string>();
+			for (const p of participants) {
+				const replacement = p.toLowerCase() === source.name.toLowerCase() ? target.name : p;
+				if (replacement !== p) changed = true;
+				const key = replacement.toLowerCase();
+				if (seen.has(key)) {
+					changed = true;
+					continue;
+				}
+				seen.add(key);
+				next.push(replacement);
+			}
+			if (changed) {
+				memory.participants.splice(0, memory.participants.length);
+				for (const p of next) memory.participants.push(p);
+				memory.updatedAt = Date.now();
+			}
+		}
+
+		// Rewrite action item assignees (freeform name match)
+		if (d.actionItems) {
+			for (const item of Object.values(d.actionItems)) {
+				if (item.assignee && item.assignee.toLowerCase() === source.name.toLowerCase()) {
+					item.assignee = target.name;
+					item.updatedAt = Date.now();
+				}
+			}
+		}
+
+		// Finally drop the source Person
+		delete d.people![sourceId];
+	});
+}
+
+/**
+ * Propose pairs of people that look like duplicates. Uses a cheap
+ * heuristic:
+ *
+ * - case-insensitive exact name match (guaranteed dupe)
+ * - one name is a prefix of the other (e.g. "Alice" vs "Alice Smith")
+ * - normalized (letters only, lowercased) strings are equal
+ *
+ * Returns pairs sorted with the lower-count candidate as the source
+ * (so merges default to moving fewer refs). Fuzzy matching (Levenshtein,
+ * phonetic) is intentionally out of scope for the first pass.
+ */
+export function proposePersonMerges(): Array<{ source: Person; target: Person }> {
+	if (!doc?.people) return [];
+	const vaultId = getCurrentVaultId();
+	const list = Object.values(doc.people).filter((p) => p.vaultId === vaultId);
+	const proposals: Array<{ source: Person; target: Person; score: number }> = [];
+
+	const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, '');
+
+	for (let i = 0; i < list.length; i++) {
+		for (let j = i + 1; j < list.length; j++) {
+			const a = list[i];
+			const b = list[j];
+			const aLower = a.name.toLowerCase();
+			const bLower = b.name.toLowerCase();
+
+			if (aLower === bLower) {
+				proposals.push({ source: b, target: a, score: 3 });
+				continue;
+			}
+
+			if (
+				aLower !== bLower &&
+				(aLower.startsWith(bLower + ' ') || bLower.startsWith(aLower + ' '))
+			) {
+				// Prefer the longer name as target.
+				if (a.name.length >= b.name.length) {
+					proposals.push({ source: b, target: a, score: 2 });
+				} else {
+					proposals.push({ source: a, target: b, score: 2 });
+				}
+				continue;
+			}
+
+			if (norm(a.name) === norm(b.name)) {
+				proposals.push({ source: b, target: a, score: 1 });
+			}
+		}
+	}
+
+	return proposals
+		.sort((a, b) => b.score - a.score)
+		.map(({ source, target }) => ({ source, target }));
+}
+
 // ============ Events CRUD Operations ============
 
 export function addEvent(
