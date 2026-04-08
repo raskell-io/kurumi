@@ -273,10 +273,93 @@ export class TextLocalProvider implements InferenceProvider {
 	}
 
 	async answerWithContext(
-		_input: AnswerWithContextInput,
-		_options?: TaskOptions
+		input: AnswerWithContextInput,
+		options?: TaskOptions
 	): Promise<InferenceResult<AnsweredQuestion>> {
-		return notImplemented('answerWithContext');
+		const settings = getLocalInferenceSettings();
+		const modelId = textModelId(settings.textModel);
+		if (!settings.enabled || !settings.textModelEnabled) {
+			return notEnabled(modelId);
+		}
+
+		const startedAt = Date.now();
+
+		// Build the context blocks the same way the OpenAI provider does so
+		// the model sees [n] markers and knows to cite by number.
+		const contextBlocks = input.context
+			.map((c, i) => `[${i + 1}] ${c.text}`)
+			.join('\n\n---\n\n');
+
+		// Optional prior conversation context
+		let conversationHeader = '';
+		if (input.priorTurns && input.priorTurns.length > 0) {
+			const lines: string[] = ['Previous turns in this conversation:'];
+			for (const turn of input.priorTurns) {
+				const cleanedAnswer = turn.answer.replace(/\[\d+\]/g, '').trim();
+				lines.push(`User: ${turn.question}`);
+				lines.push(`Assistant: ${cleanedAnswer}`);
+			}
+			lines.push('');
+			conversationHeader = lines.join('\n') + '\n';
+		}
+
+		// Small local models struggle with strict JSON, so we use a simple
+		// natural-language format and parse it leniently. The model is asked
+		// to use [n] markers in the answer text — we extract those after the
+		// fact to build the citations array.
+		const system = `You answer questions about a user's personal memories. You are given a question and a set of candidate memories tagged with [number] markers.
+
+Rules:
+- Base your answer ONLY on the provided memories.
+- Use inline [n] markers to cite the memory number you used.
+- Keep answers concise — 2-4 sentences unless more detail is needed.
+- If the memories don't contain the answer, say so plainly.
+- Do NOT include preamble like "Based on the memories..." — just answer.`;
+
+		const userPrompt = `${conversationHeader}Question: ${input.question}\n\nCandidate memories:\n\n${contextBlocks}`;
+
+		const result = await runChat(system, userPrompt, {
+			...options,
+			maxTokens: options?.maxTokens ?? 400,
+			temperature: options?.temperature ?? 0.3
+		});
+
+		if (!result.ok) {
+			return {
+				ok: false,
+				error: result.error,
+				target: 'local',
+				providerId: 'text-local',
+				model: modelId,
+				latencyMs: Date.now() - startedAt
+			};
+		}
+
+		// Parse [n] markers from the answer in order of first appearance
+		// and map them to memory IDs from the candidate list. The order
+		// matches the [n] = candidate index convention used by the prompt.
+		const answer = result.text.trim();
+		const seenMarkers = new Set<number>();
+		const citationOrder: number[] = [];
+		const markerRegex = /\[(\d+)\]/g;
+		let match: RegExpExecArray | null;
+		while ((match = markerRegex.exec(answer)) !== null) {
+			const n = parseInt(match[1], 10);
+			if (!seenMarkers.has(n) && n >= 1 && n <= input.context.length) {
+				seenMarkers.add(n);
+				citationOrder.push(n);
+			}
+		}
+		const citations = citationOrder.map((n) => input.context[n - 1].memoryId);
+
+		return {
+			ok: true,
+			value: { answer, citations },
+			target: 'local',
+			providerId: 'text-local',
+			model: modelId,
+			latencyMs: Date.now() - startedAt
+		};
 	}
 
 	async proposeCanonicalLabels(

@@ -1012,6 +1012,7 @@
 								>
 									<option value="smollm2-360m">{textModelLabel('smollm2-360m')}</option>
 									<option value="qwen2-0_5b">{textModelLabel('qwen2-0_5b')}</option>
+									<option value="llama-3_2-1b">{textModelLabel('llama-3_2-1b')}</option>
 								</select>
 							</div>
 
