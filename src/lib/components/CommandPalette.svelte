@@ -202,6 +202,39 @@
 			}
 		},
 		{
+			id: 'review',
+			type: 'action',
+			title: 'Weekly review',
+			description: 'Stats and summary for this week',
+			icon: 'calendar',
+			action: () => {
+				goto('/review');
+				onClose();
+			}
+		},
+		{
+			id: 'tags-manage',
+			type: 'action',
+			title: 'Manage tags',
+			description: 'Merge duplicates and rename tags',
+			icon: 'hash',
+			action: () => {
+				goto('/tags');
+				onClose();
+			}
+		},
+		{
+			id: 'topics-manage',
+			type: 'action',
+			title: 'Manage topics & projects',
+			description: 'Merge and rename extracted topics',
+			icon: 'hash',
+			action: () => {
+				goto('/topics');
+				onClose();
+			}
+		},
+		{
 			id: 'people',
 			type: 'action',
 			title: 'People',
@@ -444,6 +477,8 @@
 				return 'M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z';
 			case 'bell':
 				return 'M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z';
+			case 'hash':
+				return 'M9.243 3.03a1 1 0 01.727 1.213L9.53 6h2.94l.56-2.243a1 1 0 111.94.486L14.53 6H17a1 1 0 110 2h-2.97l-1 4H15a1 1 0 110 2h-2.47l-.56 2.242a1 1 0 11-1.94-.485L10.47 14H7.53l-.56 2.242a1 1 0 11-1.94-.485L5.47 14H3a1 1 0 110-2h2.97l1-4H5a1 1 0 110-2h2.47l.56-2.243a1 1 0 011.213-.727zM9.03 8l-1 4h2.94l1-4H9.03z';
 			default:
 				return 'M9 2a1 1 0 000 2h2a1 1 0 100-2H9z M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z';
 		}

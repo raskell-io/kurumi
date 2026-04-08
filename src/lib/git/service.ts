@@ -403,14 +403,35 @@ export async function testGitConnection(
 }
 
 /**
+ * Canonicalize a body + title into a comparison-friendly form: trim,
+ * collapse runs of whitespace, drop trailing whitespace on each line.
+ * Used so cosmetic reformatting (e.g. the markdown round-trip through
+ * the git export) doesn't fire spurious conflicts between devices.
+ */
+function canonicalContent(memory: MemoryObject): string {
+	const body = (memory.bodyMarkdown ?? '')
+		.replace(/\r\n/g, '\n')
+		.split('\n')
+		.map((line) => line.replace(/\s+$/, ''))
+		.join('\n')
+		.replace(/\n{3,}/g, '\n\n')
+		.trim();
+	return `${(memory.title ?? '').trim()}\n\n${body}`;
+}
+
+/**
  * Detect memories whose local and remote versions have both changed
  * since the last successful sync. Uses this device's lastSyncedAt as a
  * proxy for the last known common ancestor:
  *
- * - If both sides updated AFTER lastSyncedAt and the bodies actually
- *   differ, it's a conflict.
+ * - If both sides updated AFTER lastSyncedAt and the canonicalized
+ *   bodies actually differ, it's a conflict.
  * - If only one side updated, last-write-wins is fine.
- * - If bodies are byte-identical, no conflict regardless of timestamps.
+ * - If the canonical content is identical (byte-identical OR only
+ *   whitespace differences), no conflict regardless of timestamps.
+ *   This protects against clock drift making an unchanged memory
+ *   look like a concurrent edit, and against the markdown export
+ *   round-trip normalizing trailing whitespace on push.
  */
 function detectConflicts(
 	local: MemoryObject[],
@@ -425,7 +446,7 @@ function detectConflicts(
 		if (!r) continue;
 		if (l.updatedAt <= lastSyncedAt) continue; // Local unchanged since sync
 		if (r.updatedAt <= lastSyncedAt) continue; // Remote unchanged since sync
-		if (l.bodyMarkdown === r.bodyMarkdown && l.title === r.title) continue;
+		if (canonicalContent(l) === canonicalContent(r)) continue;
 		conflicts.push({
 			memoryId: l.id,
 			title: l.title || 'Untitled',
