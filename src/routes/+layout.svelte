@@ -77,9 +77,9 @@
 		return match ? match[1] : null;
 	});
 
-	// Get current note ID from edit path
+	// Get current memory ID from edit path
 	let editNoteId = $derived.by(() => {
-		const match = $page.url.pathname.match(/^\/note\/([a-zA-Z0-9-]+)$/);
+		const match = $page.url.pathname.match(/^\/memory\/([a-zA-Z0-9-]+)$/);
 		return match ? match[1] : null;
 	});
 
@@ -279,7 +279,7 @@
 	async function handleNewNote() {
 		const memory = addMemoryObject();
 		if (isMobile) sidebarOpen = false;
-		await goto(`/note/${memory.id}`);
+		await goto(`/memory/${memory.id}`);
 		// Show snackbar after navigation completes
 		showNewNoteAnimation = true;
 	}
@@ -609,7 +609,7 @@
 					</a>
 					{#if isReadMode}
 						<a
-							href={currentNoteId ? `/note/${currentNoteId}` : '/'}
+							href={currentNoteId ? `/memory/${currentNoteId}` : '/'}
 							onclick={handleNoteClick}
 							class="flex flex-col items-center gap-1 rounded-lg px-2 py-2 text-[var(--color-accent)] transition-colors hover:bg-[var(--color-border)]"
 						>

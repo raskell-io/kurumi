@@ -53,7 +53,7 @@
 	}
 
 	function openNote(noteId: string) {
-		goto(`/note/${noteId}`);
+		goto(`/memory/${noteId}`);
 	}
 
 	function getPreview(content: string): string {

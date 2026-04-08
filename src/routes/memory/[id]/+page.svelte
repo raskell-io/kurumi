@@ -77,11 +77,11 @@
 
 		if (target) {
 			// Navigate to existing memory
-			goto(`/note/${target.id}`);
+			goto(`/memory/${target.id}`);
 		} else {
 			// Create new memory with this title
 			const created = addMemoryObject(linkTitle, '');
-			goto(`/note/${created.id}`);
+			goto(`/memory/${created.id}`);
 		}
 	}
 
@@ -200,7 +200,7 @@
 						<div class="space-y-2">
 							{#each backlinks as backlink}
 								<a
-									href="/note/{backlink.id}"
+									href="/memory/{backlink.id}"
 									class="block rounded-lg border border-[var(--color-border)] p-3 transition-colors hover:border-[var(--color-accent)] active:scale-[0.99]"
 								>
 									<div class="font-medium text-[var(--color-text)]">

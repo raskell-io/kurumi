@@ -6,7 +6,7 @@
 
 	function handleNewNote() {
 		const memory = addMemoryObject();
-		goto(`/note/${memory.id}`);
+		goto(`/memory/${memory.id}`);
 		showNewNoteSnackbar.set(true);
 	}
 
@@ -90,7 +90,7 @@
 						<div class="space-y-2">
 							{#each recentMemories as memory}
 								<a
-									href="/note/{memory.id}"
+									href="/memory/{memory.id}"
 									class="flex items-center gap-3 rounded-xl bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-all hover:bg-[var(--color-border)] hover:scale-[1.02] active:scale-[0.98]"
 								>
 									<FileText class="h-5 w-5 shrink-0 text-[var(--color-accent)]" />

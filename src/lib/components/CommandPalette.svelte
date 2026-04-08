@@ -56,7 +56,7 @@
 			icon: 'plus',
 			action: () => {
 				const memory = addMemoryObject();
-				goto(`/note/${memory.id}`);
+				goto(`/memory/${memory.id}`);
 				onClose();
 			}
 		},
@@ -214,7 +214,7 @@
 					icon: 'note',
 					description: stripHtml(m.bodyMarkdown).slice(0, 60),
 					action: () => {
-						goto(`/note/${m.id}`);
+						goto(`/memory/${m.id}`);
 						onClose();
 					}
 				}));
@@ -289,7 +289,7 @@
 				icon: 'note',
 				description: stripHtml(r.content).slice(0, 60),
 				action: () => {
-					goto(`/note/${r.id}`);
+					goto(`/memory/${r.id}`);
 					onClose();
 				}
 			}));

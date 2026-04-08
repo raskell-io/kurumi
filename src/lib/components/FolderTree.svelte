@@ -189,7 +189,7 @@
 		closeContextMenu();
 		const memory = addMemoryObject(undefined, undefined, folderId);
 		onNoteClick?.();
-		await goto(`/note/${memory.id}`);
+		await goto(`/memory/${memory.id}`);
 		onNoteCreate?.();
 	}
 
@@ -272,7 +272,7 @@
 	}
 
 	function isNoteActive(noteId: string): boolean {
-		return $page.url.pathname === `/note/${noteId}`;
+		return $page.url.pathname === `/memory/${noteId}`;
 	}
 
 	function handleNoteClick() {
@@ -757,7 +757,7 @@
 
 	// Reveal current file in tree
 	function revealCurrentFile() {
-		const match = $page.url.pathname.match(/^\/note\/(.+)$/);
+		const match = $page.url.pathname.match(/^\/memory\/(.+)$/);
 		if (!match) return;
 
 		const memoryId = match[1];
@@ -780,7 +780,7 @@
 
 		// Scroll to the memory element
 		setTimeout(() => {
-			const noteElement = document.querySelector(`a[href="/note/${memoryId}"]`);
+			const noteElement = document.querySelector(`a[href="/memory/${memoryId}"]`);
 			noteElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 		}, 100);
 	}
@@ -1030,7 +1030,7 @@
 				<Trash2 class="h-5 w-5" />
 			</button>
 			<a
-				href="/note/{memory.id}"
+				href="/memory/{memory.id}"
 				onclick={(e) => { handleRowClick(e, 'note', memory.id); if (!(swipeOpenItem?.type === 'note' && swipeOpenItem.id === memory.id)) handleNoteClick(); }}
 				oncontextmenu={(e) => handleNoteContextMenu(e, memory.id)}
 				ontouchstart={(e) => handleSwipeStart(e, { type: 'note', id: memory.id })}

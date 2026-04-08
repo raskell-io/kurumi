@@ -97,7 +97,7 @@
 
 		const memory = addMemoryObject(noteTitle, content);
 		onClose();
-		goto(`/note/${memory.id}`);
+		goto(`/memory/${memory.id}`);
 	}
 
 	function handleTitleSubmit() {

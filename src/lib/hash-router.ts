@@ -4,7 +4,7 @@ import { browser } from '$app/environment';
 /**
  * Hash-based routing for GitHub Pages compatibility.
  *
- * URLs like /#/note/xyz allow the app to work on static hosts
+ * URLs like /#/memory/xyz allow the app to work on static hosts
  * without returning 404 errors on refresh.
  */
 
@@ -62,7 +62,7 @@ export function updateHashFromPath(path: string): void {
 
 /**
  * Extract the path from the hash.
- * e.g., "/#/note/xyz" -> "/note/xyz"
+ * e.g., "/#/memory/xyz" -> "/memory/xyz"
  */
 function getPathFromHash(): string | null {
 	if (!browser) return null;
@@ -75,7 +75,7 @@ function getPathFromHash(): string | null {
 
 /**
  * Create a hash-based href from a path.
- * e.g., "/note/xyz" -> "/#/note/xyz"
+ * e.g., "/memory/xyz" -> "/#/memory/xyz"
  */
 export function hashHref(path: string): string {
 	if (path.startsWith('#')) return path;

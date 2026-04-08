@@ -35,7 +35,7 @@
 	}
 
 	function navigateToResult(result: SearchResult) {
-		goto(`/note/${result.id}`);
+		goto(`/memory/${result.id}`);
 		onClose();
 	}
 

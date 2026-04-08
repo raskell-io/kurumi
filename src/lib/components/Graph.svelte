@@ -375,7 +375,7 @@
 
 	function handleOpenNote() {
 		if (selectedNode) {
-			goto(`/note/${selectedNode.id}`);
+			goto(`/memory/${selectedNode.id}`);
 		}
 	}
 

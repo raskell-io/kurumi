@@ -100,7 +100,7 @@
 	}
 
 	function openMemory(memoryId: string) {
-		goto(`/note/${memoryId}`);
+		goto(`/memory/${memoryId}`);
 	}
 
 	function getPreview(memory: MemoryObject): string {

@@ -160,7 +160,7 @@
 		<div class="nav-actions">
 			<!-- Edit link: show note-specific when viewing a note, general when not -->
 			{#if noteId}
-				<a href="/note/{noteId}" class="nav-btn edit-btn" title="Edit this note">
+				<a href="/memory/{noteId}" class="nav-btn edit-btn" title="Edit this note">
 					<Pencil class="h-5 w-5" />
 					<span class="btn-text">Edit</span>
 				</a>
