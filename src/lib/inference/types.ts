@@ -114,9 +114,20 @@ export interface ClassifyResult {
 	confidence: number;
 }
 
+export interface AskTurn {
+	question: string;
+	answer: string;
+}
+
 export interface AnswerWithContextInput {
 	question: string;
 	context: Array<{ memoryId: string; text: string }>;
+	/**
+	 * Optional prior turns of conversation. The provider should pass these
+	 * to the model so follow-up questions can resolve pronouns and reference
+	 * earlier discussion.
+	 */
+	priorTurns?: AskTurn[];
 }
 
 export interface AnsweredQuestion {

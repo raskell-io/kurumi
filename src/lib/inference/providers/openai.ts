@@ -548,7 +548,23 @@ Return ONLY a JSON object with this exact shape:
   "citations": ["memory_id_for_1", "memory_id_for_2"]
 }`;
 
-		const userPrompt = `Question:\n${input.question}\n\nCandidate memories:\n\n${contextBlocks}`;
+		// Optionally prepend a compact rendering of prior conversation turns
+		// so follow-up questions can resolve pronouns and references. Strip
+		// any inline [n] markers from prior assistant answers — those numbers
+		// referred to a different candidate set and would be misleading now.
+		let conversationHeader = '';
+		if (input.priorTurns && input.priorTurns.length > 0) {
+			const lines: string[] = ['Previous conversation in this thread:'];
+			for (const turn of input.priorTurns) {
+				const cleanedAnswer = turn.answer.replace(/\[\d+\]/g, '').trim();
+				lines.push(`User: ${turn.question}`);
+				lines.push(`You: ${cleanedAnswer}`);
+			}
+			lines.push('');
+			conversationHeader = lines.join('\n') + '\n';
+		}
+
+		const userPrompt = `${conversationHeader}Question:\n${input.question}\n\nCandidate memories:\n\n${contextBlocks}`;
 
 		const result = await callChat(apiKey, system, userPrompt, {
 			...options,

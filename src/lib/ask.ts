@@ -18,6 +18,7 @@ import { search } from './search';
 import { getMemoryObject, memoryObjects } from './db';
 import type { MemoryObject } from './db/types';
 import { inferenceRouter } from './inference';
+import type { AskTurn } from './inference';
 import { get } from 'svelte/store';
 
 const MAX_CONTEXT_MEMORIES = 8;
@@ -46,7 +47,10 @@ export function isAskKurumiAvailable(): boolean {
 	return !!inferenceRouter.findProvider(() => true);
 }
 
-export async function askKurumi(question: string): Promise<AskKurumiResult | AskKurumiError> {
+export async function askKurumi(
+	question: string,
+	priorTurns: AskTurn[] = []
+): Promise<AskKurumiResult | AskKurumiError> {
 	const trimmed = question.trim();
 	if (!trimmed) {
 		return { error: 'Please enter a question.' };
@@ -90,7 +94,8 @@ export async function askKurumi(question: string): Promise<AskKurumiResult | Ask
 		try {
 			const result = await provider.answerWithContext({
 				question: trimmed,
-				context: contextBlocks
+				context: contextBlocks,
+				priorTurns
 			});
 			if (result.ok && result.value) {
 				const citationIds = new Set(result.value.citations);

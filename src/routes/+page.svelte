@@ -2,10 +2,25 @@
 	import { memoryObjects, addMemoryObject } from '$lib/db';
 	import { askKurumi, isAskKurumiResult, type AskKurumiResult } from '$lib/ask';
 	import { isAIConfigured } from '$lib/ai';
+	import type { MemoryObject } from '$lib/db/types';
 	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
 	import { goto } from '$app/navigation';
-	import { Plus, FileText, Clock, Sparkles, Send, AlertCircle, Settings } from 'lucide-svelte';
+	import {
+		Plus,
+		FileText,
+		Clock,
+		Sparkles,
+		Send,
+		AlertCircle,
+		Settings,
+		RotateCcw
+	} from 'lucide-svelte';
 	import { showNewNoteSnackbar } from '$lib/stores/snackbar';
+
+	type Turn = {
+		question: string;
+		result: AskKurumiResult;
+	};
 
 	function handleNewNote() {
 		const memory = addMemoryObject();
@@ -29,19 +44,26 @@
 
 	let question = $state('');
 	let asking = $state(false);
-	let answer = $state<AskKurumiResult | null>(null);
 	let askError = $state<string | null>(null);
+	// Conversation history for the current Ask thread. Each turn keeps the
+	// raw question and the full result (so we can re-render citations).
+	let turns = $state<Turn[]>([]);
 
 	async function handleAsk() {
 		const trimmed = question.trim();
 		if (!trimmed || asking) return;
 		asking = true;
 		askError = null;
-		answer = null;
 		try {
-			const result = await askKurumi(trimmed);
+			// Pass prior turns so the model can resolve follow-up references.
+			const priorTurns = turns.map((t) => ({
+				question: t.question,
+				answer: t.result.answer
+			}));
+			const result = await askKurumi(trimmed, priorTurns);
 			if (isAskKurumiResult(result)) {
-				answer = result;
+				turns = [...turns, { question: trimmed, result }];
+				question = '';
 			} else {
 				askError = result.error;
 			}
@@ -60,8 +82,8 @@
 		}
 	}
 
-	function clearAnswer() {
-		answer = null;
+	function clearConversation() {
+		turns = [];
 		askError = null;
 		question = '';
 	}
@@ -106,7 +128,7 @@
 	 * passes inline HTML through, so the resulting markdown still renders
 	 * normally.
 	 */
-	function renderInlineCitations(answerText: string, candidates: typeof recentMemories): string {
+	function renderInlineCitations(answerText: string, candidates: MemoryObject[]): string {
 		return answerText.replace(/\[(\d+)\]/g, (match, numStr) => {
 			const n = parseInt(numStr, 10);
 			const memory = candidates[n - 1];
@@ -187,7 +209,9 @@
 						type="text"
 						bind:value={question}
 						onkeydown={handleAskKeydown}
-						placeholder="Ask anything about your memories…"
+						placeholder={turns.length > 0
+							? 'Follow up on this conversation…'
+							: 'Ask anything about your memories…'}
 						disabled={asking}
 						class="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-4 pr-14 text-base text-[var(--color-text)] placeholder-[var(--color-text-muted)] outline-none transition-colors focus:border-[var(--color-accent)] disabled:opacity-50"
 					/>
@@ -219,48 +243,68 @@
 					</div>
 				{/if}
 
-				{#if answer}
-					<div class="mt-4 space-y-4">
-						<div class="rounded-xl border border-[var(--color-accent)]/30 bg-[var(--color-accent)]/5 p-4">
-							<div class="markdown-content text-sm text-[var(--color-text)]">
-								<MarkdownRenderer
-									content={renderInlineCitations(answer.answer, answer.candidates)}
-								/>
-							</div>
-							<div class="mt-3 flex items-center justify-between text-xs text-[var(--color-text-muted)]">
-								<span>{answer.candidates.length} memories searched · {answer.citations.length} cited</span>
-								<button
-									type="button"
-									onclick={clearAnswer}
-									class="rounded px-2 py-0.5 hover:bg-[var(--color-bg-secondary)]"
-								>
-									Clear
-								</button>
-							</div>
-						</div>
-
-						{#if answer.citations.length > 0}
-							<div>
-								<p class="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-									Sources
-								</p>
-								<div class="space-y-2">
-									{#each answer.citations as memory (memory.id)}
-										<a
-											href="/memory/{memory.id}"
-											class="block rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 transition-colors hover:border-[var(--color-accent)]"
-										>
-											<div class="font-medium text-[var(--color-text)]">
-												{memory.title || 'Untitled'}
-											</div>
-											<div class="mt-1 truncate text-sm text-[var(--color-text-muted)]">
-												{memoryPreview(memory.summaryShort ?? memory.transcript ?? memory.bodyMarkdown)}
-											</div>
-										</a>
-									{/each}
+				{#if turns.length > 0}
+					<div class="mt-4 space-y-6">
+						{#each turns as turn, idx (idx)}
+							<div class="space-y-3">
+								<!-- Question bubble -->
+								<div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-3 text-sm text-[var(--color-text)]">
+									<div class="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+										You asked
+									</div>
+									{turn.question}
 								</div>
+
+								<!-- Answer card -->
+								<div class="rounded-xl border border-[var(--color-accent)]/30 bg-[var(--color-accent)]/5 p-4">
+									<div class="markdown-content text-sm text-[var(--color-text)]">
+										<MarkdownRenderer
+											content={renderInlineCitations(turn.result.answer, turn.result.candidates)}
+										/>
+									</div>
+									<div class="mt-3 text-xs text-[var(--color-text-muted)]">
+										{turn.result.candidates.length} memories searched · {turn.result.citations.length} cited
+									</div>
+								</div>
+
+								<!-- Source cards (collapsible-ish) -->
+								{#if turn.result.citations.length > 0}
+									<div>
+										<p class="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+											Sources
+										</p>
+										<div class="space-y-2">
+											{#each turn.result.citations as memory (memory.id)}
+												<a
+													href="/memory/{memory.id}"
+													class="block rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 transition-colors hover:border-[var(--color-accent)]"
+												>
+													<div class="font-medium text-[var(--color-text)]">
+														{memory.title || 'Untitled'}
+													</div>
+													<div class="mt-1 truncate text-sm text-[var(--color-text-muted)]">
+														{memoryPreview(
+															memory.summaryShort ?? memory.transcript ?? memory.bodyMarkdown
+														)}
+													</div>
+												</a>
+											{/each}
+										</div>
+									</div>
+								{/if}
 							</div>
-						{/if}
+						{/each}
+
+						<div class="flex justify-end">
+							<button
+								type="button"
+								onclick={clearConversation}
+								class="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-1.5 text-xs text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
+							>
+								<RotateCcw class="h-3 w-3" />
+								Clear conversation
+							</button>
+						</div>
 					</div>
 				{/if}
 			{:else}
