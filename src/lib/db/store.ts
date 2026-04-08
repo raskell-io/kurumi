@@ -2891,6 +2891,112 @@ export function getMemoryObjectsByTag(tag: string): MemoryObject[] {
 	});
 }
 
+/**
+ * Rename every occurrence of #oldTag in memory bodies (and in the
+ * memory.tags arrays) to #newTag across the current vault. Bumps
+ * updatedAt so the next sync picks up the change. Returns how many
+ * memories were touched.
+ *
+ * Both inputs are normalized to lowercase; the regex requires a
+ * word-boundary-style lookahead so "#projects" doesn't become
+ * "#projectsnew" when renaming "projects" → "projectsnew".
+ */
+export function renameTag(oldTag: string, newTag: string): number {
+	if (!doc) return 0;
+	const vaultId = getCurrentVaultId();
+	const from = oldTag.toLowerCase();
+	const to = newTag.toLowerCase();
+	if (from === to || !from || !to) return 0;
+
+	// Require word-boundary after the tag so #proj doesn't match inside
+	// #projects. Tags allow letters/digits/underscore/hyphen.
+	const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	const regex = new RegExp(`(^|\\s)#${escaped}(?![a-zA-Z0-9_-])`, 'g');
+
+	let touched = 0;
+	updateDoc((d) => {
+		for (const memory of Object.values(d.memoryObjects)) {
+			if (memory.vaultId !== vaultId) continue;
+			if (!regex.test(memory.bodyMarkdown)) {
+				regex.lastIndex = 0;
+				continue;
+			}
+			regex.lastIndex = 0;
+			memory.bodyMarkdown = memory.bodyMarkdown.replace(regex, `$1#${to}`);
+
+			// Also rewrite the legacy tags array if the old tag is listed
+			// (stored lowercase by convention).
+			const tagIndex = memory.tags.findIndex((t) => t.toLowerCase() === from);
+			if (tagIndex >= 0) {
+				memory.tags[tagIndex] = to;
+			}
+
+			memory.updatedAt = Date.now();
+			touched++;
+		}
+	});
+	return touched;
+}
+
+/**
+ * Merge one tag into another. Identical to renameTag today — kept as
+ * a separate entry point so future work (e.g. keeping the source as
+ * an alias) has an obvious hook.
+ */
+export function mergeTags(sourceTag: string, targetTag: string): number {
+	return renameTag(sourceTag, targetTag);
+}
+
+/**
+ * Propose tag-merge candidates using the same heuristic as
+ * proposePersonMerges: exact dupes, prefix matches, letters-only
+ * normalized matches. Returns pairs with the lower-count tag as the
+ * merge source.
+ */
+export function proposeTagMerges(): Array<{ source: string; target: string; score: number }> {
+	const tags = getAllTags();
+	const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+	const proposals: Array<{ source: string; target: string; score: number }> = [];
+
+	for (let i = 0; i < tags.length; i++) {
+		for (let j = i + 1; j < tags.length; j++) {
+			const a = tags[i];
+			const b = tags[j];
+
+			if (a.tag === b.tag) continue; // getAllTags already dedupes; defensive
+
+			// Normalized match — covers "side_project" vs "side-project", etc.
+			if (norm(a.tag) === norm(b.tag)) {
+				const source = a.count <= b.count ? a : b;
+				const target = a.count <= b.count ? b : a;
+				proposals.push({ source: source.tag, target: target.tag, score: 3 });
+				continue;
+			}
+
+			// Prefix match — "proj" vs "project"
+			if (
+				(a.tag.length > 3 || b.tag.length > 3) &&
+				(a.tag.startsWith(b.tag) || b.tag.startsWith(a.tag))
+			) {
+				// Prefer the longer tag as target (more specific)
+				const source = a.tag.length < b.tag.length ? a : b;
+				const target = a.tag.length < b.tag.length ? b : a;
+				proposals.push({ source: source.tag, target: target.tag, score: 1 });
+			}
+		}
+	}
+
+	return proposals.sort((a, b) => b.score - a.score);
+}
+
+/**
+ * Return tags that appear in exactly one memory. These are candidates
+ * for cleanup — often accidental single-use labels.
+ */
+export function getLowValueTags(): Array<{ tag: string; count: number }> {
+	return getAllTags().filter((t) => t.count <= 1);
+}
+
 // Extract people mentions from content (@Full Name)
 export function extractPeople(content: string): string[] {
 	const regex = /@([A-Z][a-zA-Z]+(?: [A-Z][a-zA-Z]+)*)/g;
@@ -2986,6 +3092,118 @@ export function getMemoryObjectsByTopic(topic: string): MemoryObject[] {
 	});
 }
 
+/**
+ * Rename every occurrence of `oldTopic` in memory.topics arrays across
+ * the current vault. Case-insensitive source match. If the target
+ * already exists on a memory that also has the source, the source is
+ * removed (dedupe). Returns memories touched.
+ */
+export function renameTopic(oldTopic: string, newTopic: string): number {
+	return renameStringInArrays('topics', oldTopic, newTopic);
+}
+
+export function mergeTopics(sourceTopic: string, targetTopic: string): number {
+	return renameTopic(sourceTopic, targetTopic);
+}
+
+/**
+ * Generic rename-across-memory-arrays helper used by topic/project/
+ * (and in principle any other bare-string array on MemoryObject).
+ * Mutates the array in place via Automerge, dedupes against the
+ * target, and bumps updatedAt for touched memories.
+ */
+function renameStringInArrays(
+	field: 'topics' | 'projects',
+	from: string,
+	to: string
+): number {
+	if (!doc) return 0;
+	const vaultId = getCurrentVaultId();
+	const fromLower = from.toLowerCase().trim();
+	const toTrimmed = to.trim();
+	const toLower = toTrimmed.toLowerCase();
+	if (!fromLower || !toLower || fromLower === toLower) return 0;
+
+	let touched = 0;
+	updateDoc((d) => {
+		for (const memory of Object.values(d.memoryObjects)) {
+			if (memory.vaultId !== vaultId) continue;
+			const arr = memory[field];
+			if (!Array.isArray(arr)) continue;
+			const fromIndex = arr.findIndex((v) => v.toLowerCase() === fromLower);
+			if (fromIndex < 0) continue;
+
+			const hasTarget = arr.some((v) => v.toLowerCase() === toLower);
+			if (hasTarget) {
+				// Target already present → just remove the source entry.
+				arr.splice(fromIndex, 1);
+			} else {
+				arr[fromIndex] = toTrimmed;
+			}
+
+			memory.updatedAt = Date.now();
+			touched++;
+		}
+	});
+	return touched;
+}
+
+/**
+ * Propose topic merges using the same heuristic as
+ * proposeTagMerges / proposePersonMerges.
+ */
+export function proposeTopicMerges(): Array<{
+	source: string;
+	target: string;
+	score: number;
+}> {
+	return proposeStringMerges(getAllExtractedTopics());
+}
+
+export function proposeProjectMerges(): Array<{
+	source: string;
+	target: string;
+	score: number;
+}> {
+	return proposeStringMerges(getAllExtractedProjects());
+}
+
+function proposeStringMerges(
+	entries: { name: string; count: number }[]
+): Array<{ source: string; target: string; score: number }> {
+	const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+	const proposals: Array<{ source: string; target: string; score: number }> = [];
+
+	for (let i = 0; i < entries.length; i++) {
+		for (let j = i + 1; j < entries.length; j++) {
+			const a = entries[i];
+			const b = entries[j];
+			const aLower = a.name.toLowerCase();
+			const bLower = b.name.toLowerCase();
+
+			if (aLower === bLower) continue;
+
+			if (norm(a.name) === norm(b.name)) {
+				const source = a.count <= b.count ? a : b;
+				const target = a.count <= b.count ? b : a;
+				proposals.push({ source: source.name, target: target.name, score: 3 });
+				continue;
+			}
+
+			if (
+				(a.name.length > 3 || b.name.length > 3) &&
+				(aLower.startsWith(bLower + ' ') || bLower.startsWith(aLower + ' '))
+			) {
+				const source = a.name.length < b.name.length ? a : b;
+				const target = a.name.length < b.name.length ? b : a;
+				proposals.push({ source: source.name, target: target.name, score: 1 });
+			}
+		}
+	}
+
+	return proposals.sort((a, b) => b.score - a.score);
+}
+
 // Get all unique extracted projects across memories in current vault.
 export function getAllExtractedProjects(): { name: string; count: number }[] {
 	if (!doc) return [];
@@ -3017,6 +3235,14 @@ export function getMemoryObjectsByProject(project: string): MemoryObject[] {
 		if (memory.vaultId !== vaultId) return false;
 		return (memory.projects ?? []).some((p) => p.toLowerCase() === target);
 	});
+}
+
+export function renameProject(oldProject: string, newProject: string): number {
+	return renameStringInArrays('projects', oldProject, newProject);
+}
+
+export function mergeProjects(sourceProject: string, targetProject: string): number {
+	return renameProject(sourceProject, targetProject);
 }
 
 // Extract dates from content (//YYYY-MM-DD)

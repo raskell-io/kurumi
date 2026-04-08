@@ -177,6 +177,7 @@
 		<!-- Export button -->
 		<div class="tab-actions">
 			{#if activeTab === 'tags'}
+				<a href="/tags" class="manage-link">Manage / merge</a>
 				<ExportMenu type="tags" tags={allTags} />
 			{:else if activeTab === 'people'}
 				<a href="/people" class="manage-link">Manage / merge</a>
