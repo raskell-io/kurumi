@@ -1712,6 +1712,17 @@ export function deletePerson(id: string): void {
 }
 
 /**
+ * Restore a deleted person exactly as it was, preserving id. Used by
+ * undo.
+ */
+export function restorePerson(person: Person): void {
+	updateDoc((d) => {
+		if (!d.people) d.people = {};
+		d.people[person.id] = deepCopy(person);
+	});
+}
+
+/**
  * Merge two people entries. The source is deleted after moving its
  * metadata into the target and rewriting every reference across
  * memories and action items:
@@ -2091,6 +2102,25 @@ export function deleteActionItem(id: string): void {
 	});
 }
 
+/**
+ * Restore an action item exactly as it was, preserving its id. Used
+ * by the undo stack — a plain addActionItem would generate a new id
+ * and break any existing references (e.g. the source memory's
+ * actionItems array).
+ */
+export function restoreActionItem(item: ActionItem): void {
+	updateDoc((d) => {
+		if (!d.actionItems) d.actionItems = {};
+		d.actionItems[item.id] = deepCopy(item);
+		if (item.memoryObjectId) {
+			const memory = d.memoryObjects[item.memoryObjectId];
+			if (memory && !memory.actionItems.includes(item.id)) {
+				memory.actionItems.push(item.id);
+			}
+		}
+	});
+}
+
 // ============ ReminderProposal CRUD ============
 
 export function addReminderProposal(options: {
@@ -2188,6 +2218,17 @@ export function deleteReminderProposal(id: string): void {
 	});
 }
 
+/**
+ * Restore a reminder proposal exactly as it was, preserving id and
+ * any linked actionItemId. Used by undo.
+ */
+export function restoreReminderProposal(proposal: ReminderProposal): void {
+	updateDoc((d) => {
+		if (!d.reminderProposals) d.reminderProposals = {};
+		d.reminderProposals[proposal.id] = deepCopy(proposal);
+	});
+}
+
 // ============ DraftProposal CRUD ============
 
 export function addDraftProposal(options: {
@@ -2244,6 +2285,17 @@ export function rejectDraftProposal(id: string): void {
 export function deleteDraftProposal(id: string): void {
 	updateDoc((d) => {
 		if (d.draftProposals) delete d.draftProposals[id];
+	});
+}
+
+/**
+ * Restore a draft proposal exactly as it was, preserving id. Used by
+ * undo.
+ */
+export function restoreDraftProposal(draft: DraftProposal): void {
+	updateDoc((d) => {
+		if (!d.draftProposals) d.draftProposals = {};
+		d.draftProposals[draft.id] = deepCopy(draft);
 	});
 }
 

@@ -21,6 +21,8 @@
 	import { setupVisibilitySync, teardownVisibilitySync, syncState, isSyncConfigured, sync } from '$lib/sync';
 	import { gitSyncState } from '$lib/git';
 	import GitConflictModal from '$lib/components/GitConflictModal.svelte';
+	import UndoToast from '$lib/components/UndoToast.svelte';
+	import { undoLast } from '$lib/stores/undo';
 	import { bootNotifications, stopNotificationLoop } from '$lib/notifications';
 	import {
 		getLocalInferenceSettings,
@@ -246,6 +248,13 @@
 		}
 
 		if (e.metaKey || e.ctrlKey) {
+			// Cmd+Z: pop the last undo entry from the global stack
+			if (!e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+				e.preventDefault();
+				undoLast();
+				return;
+			}
+
 			// Cmd+Shift shortcuts
 			if (e.shiftKey && e.key === 'r') {
 				e.preventDefault();
@@ -993,4 +1002,6 @@
 	{#if showConflictModal}
 		<GitConflictModal onClose={() => (showConflictModal = false)} />
 	{/if}
+
+	<UndoToast />
 {/if}
