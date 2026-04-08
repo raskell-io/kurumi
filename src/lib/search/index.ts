@@ -1,7 +1,7 @@
 import MiniSearch from 'minisearch';
-import { memoryObjects } from '$lib/db';
+import { memoryObjects, extractTags, extractPeople, getFolderPath } from '$lib/db';
 import { get } from 'svelte/store';
-import type { MemoryObject } from '$lib/db/types';
+import type { MemoryObject, MemoryType } from '$lib/db/types';
 
 export interface SearchResult {
 	id: string;
@@ -10,6 +10,240 @@ export interface SearchResult {
 	score: number;
 	match: Record<string, string[]>;
 }
+
+/**
+ * Parsed filter operators extracted from a query string. Multiple
+ * values are ORed within a field; different fields are ANDed together.
+ *
+ *   tag:work tag:urgent      → items with (#work OR #urgent)
+ *   tag:work person:alice    → items with #work AND @alice
+ *
+ * Date filters are half-open: `after:2026-01-01` is strictly greater
+ * than that ISO date, `before:2026-02-01` is strictly less.
+ */
+export interface SearchFilters {
+	tag: string[];
+	person: string[];
+	folder: string[];
+	type: MemoryType[];
+	has: Array<'audio' | 'transcript' | 'meeting' | 'summary'>;
+	after: string | null;
+	before: string | null;
+}
+
+export interface ParsedQuery {
+	text: string;
+	filters: SearchFilters;
+}
+
+const ALL_MEMORY_TYPES: MemoryType[] = [
+	'note',
+	'voice-memo',
+	'meeting',
+	'task',
+	'reference',
+	'file'
+];
+const ALL_HAS: SearchFilters['has'] = ['audio', 'transcript', 'meeting', 'summary'];
+
+function emptyFilters(): SearchFilters {
+	return {
+		tag: [],
+		person: [],
+		folder: [],
+		type: [],
+		has: [],
+		after: null,
+		before: null
+	};
+}
+
+function isIsoDate(value: string): boolean {
+	return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+/**
+ * Parse a query string into filter operators plus residual free text.
+ *
+ * Supported operators:
+ *   tag:<name>            — #tag filter (lowercased)
+ *   person:<name>         — @mentioned or participant (spaces stripped)
+ *   folder:<name>         — folder name substring match (case-insensitive)
+ *   after:<YYYY-MM-DD>    — createdAt >= date
+ *   before:<YYYY-MM-DD>   — createdAt < date
+ *   type:<memory-type>    — exact type match (note|voice-memo|meeting|…)
+ *   has:audio|transcript|meeting|summary
+ *
+ * Operators can be repeated (multi-value, ORed). Quoted values like
+ * `person:"Alice Smith"` are supported so names with spaces work.
+ * Anything that doesn't match an operator is appended to the free-text
+ * query that the MiniSearch index actually sees.
+ */
+export function parseSearchQuery(raw: string): ParsedQuery {
+	const filters = emptyFilters();
+	const textParts: string[] = [];
+
+	// Regex splits on whitespace but keeps quoted strings intact.
+	const tokenRegex = /("[^"]*"|\S+)/g;
+	const matches = raw.match(tokenRegex) ?? [];
+
+	for (const rawToken of matches) {
+		const token = rawToken.replace(/^"|"$/g, '');
+		const colonIndex = token.indexOf(':');
+		if (colonIndex <= 0 || colonIndex >= token.length - 1) {
+			if (token) textParts.push(token);
+			continue;
+		}
+		const key = token.slice(0, colonIndex).toLowerCase();
+		const rawValue = token.slice(colonIndex + 1).replace(/^"|"$/g, '');
+		const value = rawValue.trim();
+		if (!value) {
+			textParts.push(token);
+			continue;
+		}
+
+		switch (key) {
+			case 'tag':
+			case '#':
+				filters.tag.push(value.toLowerCase().replace(/^#/, ''));
+				break;
+			case 'person':
+			case '@':
+				filters.person.push(value.toLowerCase().replace(/^@/, ''));
+				break;
+			case 'folder':
+				filters.folder.push(value.toLowerCase());
+				break;
+			case 'after':
+			case 'from':
+				if (isIsoDate(value)) filters.after = value;
+				else textParts.push(token);
+				break;
+			case 'before':
+			case 'until':
+				if (isIsoDate(value)) filters.before = value;
+				else textParts.push(token);
+				break;
+			case 'type': {
+				const lower = value.toLowerCase() as MemoryType;
+				if ((ALL_MEMORY_TYPES as string[]).includes(lower)) {
+					filters.type.push(lower);
+				} else {
+					textParts.push(token);
+				}
+				break;
+			}
+			case 'has': {
+				const lower = value.toLowerCase() as SearchFilters['has'][number];
+				if ((ALL_HAS as string[]).includes(lower)) {
+					filters.has.push(lower);
+				} else {
+					textParts.push(token);
+				}
+				break;
+			}
+			default:
+				// Unknown operator — keep the raw token in the text so the
+				// user's typo doesn't silently swallow words.
+				textParts.push(token);
+		}
+	}
+
+	return {
+		text: textParts.join(' ').trim(),
+		filters
+	};
+}
+
+export function hasAnyFilter(filters: SearchFilters): boolean {
+	return (
+		filters.tag.length > 0 ||
+		filters.person.length > 0 ||
+		filters.folder.length > 0 ||
+		filters.type.length > 0 ||
+		filters.has.length > 0 ||
+		filters.after !== null ||
+		filters.before !== null
+	);
+}
+
+// --- Filter application -----------------------------------------------------
+
+function memoryMatchesFilters(memory: MemoryObject, filters: SearchFilters): boolean {
+	if (filters.type.length > 0 && !filters.type.includes(memory.type)) {
+		return false;
+	}
+	if (filters.after && memory.createdAt < Date.parse(`${filters.after}T00:00:00`)) {
+		return false;
+	}
+	if (filters.before && memory.createdAt >= Date.parse(`${filters.before}T00:00:00`)) {
+		return false;
+	}
+
+	if (filters.tag.length > 0) {
+		const memoryTags = new Set(
+			[...memory.tags, ...extractTags(memory.bodyMarkdown)].map((t) => t.toLowerCase())
+		);
+		const hit = filters.tag.some((t) => memoryTags.has(t));
+		if (!hit) return false;
+	}
+
+	if (filters.person.length > 0) {
+		const memoryPeople = new Set<string>();
+		for (const p of memory.participants ?? []) {
+			memoryPeople.add(p.toLowerCase());
+			memoryPeople.add(p.toLowerCase().replace(/\s+/g, ''));
+		}
+		for (const name of extractPeople(memory.bodyMarkdown)) {
+			memoryPeople.add(name.toLowerCase());
+			memoryPeople.add(name.toLowerCase().replace(/\s+/g, ''));
+		}
+		const hit = filters.person.some((p) => {
+			const normalized = p.replace(/\s+/g, '');
+			return memoryPeople.has(p) || memoryPeople.has(normalized);
+		});
+		if (!hit) return false;
+	}
+
+	if (filters.folder.length > 0) {
+		if (!memory.folderId) return false;
+		const path = getFolderPath(memory.folderId);
+		const pathNames = path.map((f) => f.name.toLowerCase());
+		const hit = filters.folder.some((f) => pathNames.some((name) => name.includes(f)));
+		if (!hit) return false;
+	}
+
+	if (filters.has.length > 0) {
+		for (const cap of filters.has) {
+			switch (cap) {
+				case 'audio':
+					if (!memory.rawAudioRef) return false;
+					break;
+				case 'transcript':
+					if (!memory.transcript || memory.transcript.trim().length === 0) return false;
+					break;
+				case 'meeting':
+					if (memory.type !== 'meeting') return false;
+					break;
+				case 'summary':
+					if (!memory.summaryShort && !memory.summaryLong) return false;
+					break;
+			}
+		}
+	}
+
+	return true;
+}
+
+export function filterMemories(
+	memories: MemoryObject[],
+	filters: SearchFilters
+): MemoryObject[] {
+	if (!hasAnyFilter(filters)) return memories;
+	return memories.filter((m) => memoryMatchesFilters(m, filters));
+}
+
+// --- Search index -----------------------------------------------------------
 
 let searchIndex: MiniSearch<MemoryObject>;
 
@@ -44,22 +278,84 @@ export function rebuildIndex(): void {
 	searchIndex.addAll(all);
 }
 
+/**
+ * Run a search query with optional filter operators.
+ *
+ * Three modes depending on what the parse produces:
+ *
+ *   1. Only filters (no text): return all memories matching the
+ *      filters, sorted by updatedAt desc. Used for queries like
+ *      "tag:work type:meeting" with no free-text.
+ *   2. Only text: existing MiniSearch behavior.
+ *   3. Text + filters: run MiniSearch on the free text, then filter
+ *      the result set. We apply the filter on the result side
+ *      (rather than pre-filtering the index) so MiniSearch can still
+ *      use its fuzzy/prefix ranking without a custom index.
+ */
 export function search(query: string): SearchResult[] {
-	if (!query.trim()) return [];
+	const trimmed = query.trim();
+	if (!trimmed) return [];
 
-	const results = searchIndex.search(query, {
-		boost: { title: 2 },
-		fuzzy: 0.2,
-		prefix: true
-	});
+	const parsed = parseSearchQuery(trimmed);
+	const hasFilters = hasAnyFilter(parsed.filters);
 
-	return results.map((result) => ({
-		id: result.id,
-		title: result.title || 'Untitled',
-		content: result.bodyMarkdown || '',
-		score: result.score,
-		match: result.match
-	}));
+	// Filters-only mode: bypass MiniSearch entirely.
+	if (!parsed.text && hasFilters) {
+		const filtered = filterMemories(get(memoryObjects), parsed.filters);
+		// Sort by updatedAt desc so the newest matches rise to the top.
+		return filtered
+			.slice()
+			.sort((a, b) => b.updatedAt - a.updatedAt)
+			.map((memory) => ({
+				id: memory.id,
+				title: memory.title || 'Untitled',
+				content: memory.bodyMarkdown || '',
+				score: 1,
+				match: {}
+			}));
+	}
+
+	// No filters and no text is already handled by the early return above.
+	const results = parsed.text
+		? searchIndex.search(parsed.text, {
+				boost: { title: 2 },
+				fuzzy: 0.2,
+				prefix: true
+			})
+		: [];
+
+	if (results.length === 0) return [];
+
+	// If there are no filters, return the raw MiniSearch results.
+	if (!hasFilters) {
+		return results.map((result) => ({
+			id: result.id,
+			title: result.title || 'Untitled',
+			content: result.bodyMarkdown || '',
+			score: result.score,
+			match: result.match
+		}));
+	}
+
+	// Filters + text: look up each hit in the store to run it through
+	// the filter predicate. Memories that no longer exist (race with
+	// deletion) are dropped.
+	const allMemories = get(memoryObjects);
+	const byId = new Map(allMemories.map((m) => [m.id, m]));
+	const filtered: SearchResult[] = [];
+	for (const result of results) {
+		const memory = byId.get(result.id as string);
+		if (!memory) continue;
+		if (!memoryMatchesFilters(memory, parsed.filters)) continue;
+		filtered.push({
+			id: result.id,
+			title: result.title || 'Untitled',
+			content: result.bodyMarkdown || '',
+			score: result.score,
+			match: result.match
+		});
+	}
+	return filtered;
 }
 
 export function addToIndex(memory: MemoryObject): void {

@@ -8,6 +8,7 @@
 		todayIso
 	} from '$lib/db';
 	import { askKurumi, isAskKurumiResult, type AskKurumiResult } from '$lib/ask';
+	import { parseSearchQuery, hasAnyFilter } from '$lib/search';
 	import { isAIConfigured } from '$lib/ai';
 	import { inferenceRouter } from '$lib/inference';
 	import { startPushToTalk, speak, stopSpeaking, type RecorderHandle } from '$lib/voice';
@@ -78,6 +79,11 @@
 	});
 
 	let question = $state('');
+	// Parse the in-flight question so we can render filter chips under
+	// the input as the user types. Gives immediate feedback that
+	// `tag:work` etc. is being recognized.
+	let parsedQuestion = $derived(parseSearchQuery(question));
+	let hasActiveFilters = $derived(hasAnyFilter(parsedQuestion.filters));
 	let asking = $state(false);
 	let askError = $state<string | null>(null);
 	// Conversation history for the current Ask thread. Each turn keeps the
@@ -453,7 +459,7 @@
 							? 'Transcribing…'
 							: turns.length > 0
 							? 'Follow up on this conversation…'
-							: 'Ask anything about your memories…'}
+							: 'Ask anything · try tag:work or person:alice'}
 						disabled={asking || recording || transcribing}
 						class="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-4 pr-24 text-base text-[var(--color-text)] placeholder-[var(--color-text-muted)] outline-none transition-colors focus:border-[var(--color-accent)] disabled:opacity-50"
 					/>
@@ -492,6 +498,33 @@
 						</button>
 					</div>
 				</form>
+
+				{#if hasActiveFilters}
+					<div class="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+						<span class="text-[var(--color-text-muted)]">Filters:</span>
+						{#each parsedQuestion.filters.tag as tag}
+							<span class="filter-chip">#{tag}</span>
+						{/each}
+						{#each parsedQuestion.filters.person as person}
+							<span class="filter-chip">@{person}</span>
+						{/each}
+						{#each parsedQuestion.filters.folder as folder}
+							<span class="filter-chip">folder: {folder}</span>
+						{/each}
+						{#each parsedQuestion.filters.type as type}
+							<span class="filter-chip">type: {type}</span>
+						{/each}
+						{#each parsedQuestion.filters.has as cap}
+							<span class="filter-chip">has: {cap}</span>
+						{/each}
+						{#if parsedQuestion.filters.after}
+							<span class="filter-chip">after {parsedQuestion.filters.after}</span>
+						{/if}
+						{#if parsedQuestion.filters.before}
+							<span class="filter-chip">before {parsedQuestion.filters.before}</span>
+						{/if}
+					</div>
+				{/if}
 
 				{#if asking}
 					<div class="mt-4 flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4 text-sm text-[var(--color-text-muted)]">
@@ -687,5 +720,16 @@
 		border-color: var(--color-accent);
 		color: var(--color-accent);
 		background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+	}
+
+	.filter-chip {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.125rem 0.5rem;
+		background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+		color: var(--color-accent);
+		border-radius: 999px;
+		font-family: ui-monospace, monospace;
+		font-size: 0.6875rem;
 	}
 </style>

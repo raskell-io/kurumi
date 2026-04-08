@@ -14,7 +14,7 @@
  * future epic that can plug in here without changing the call site.
  */
 
-import { search } from './search';
+import { search, parseSearchQuery, filterMemories, hasAnyFilter } from './search';
 import { getMemoryObject, memoryObjects } from './db';
 import type { MemoryObject } from './db/types';
 import { inferenceRouter } from './inference';
@@ -54,6 +54,11 @@ export function isAskKurumiAvailable(): boolean {
  * askKurumi() feeds to answerWithContext. Exported so other surfaces
  * (e.g. the Realtime voice session's search_memory tool) can reuse
  * the same retrieval without the full answer-generation step.
+ *
+ * Filter operators in the question (`tag:work`, `person:alice`,
+ * `type:meeting`, etc.) are honoured: keyword search already filters
+ * internally, and semantic hits are post-filtered with the same
+ * predicate so both retrieval paths respect the constraints.
  */
 export async function retrieveMemoryContext(
 	question: string,
@@ -62,10 +67,31 @@ export async function retrieveMemoryContext(
 	const trimmed = question.trim();
 	if (!trimmed) return [];
 
-	const [keywordHits, semanticHits] = await Promise.all([
+	// Parse once so both retrieval paths share the same filters and the
+	// semantic search runs against the plain-text portion only.
+	const parsed = parseSearchQuery(trimmed);
+	const filtersActive = hasAnyFilter(parsed.filters);
+	const semanticQuery = parsed.text || trimmed;
+
+	const [keywordHits, rawSemanticHits] = await Promise.all([
 		Promise.resolve(search(trimmed)),
-		semanticSearch(trimmed, limit).catch(() => [])
+		semanticSearch(semanticQuery, limit).catch(() => [])
 	]);
+
+	// Semantic search doesn't know about filters — post-filter its hits
+	// so a `tag:work` constraint still applies to embedding matches.
+	let semanticHits = rawSemanticHits;
+	if (filtersActive) {
+		const filteredIds = new Set(
+			filterMemories(
+				rawSemanticHits
+					.map((h) => getMemoryObject(h.memoryId))
+					.filter((m): m is MemoryObject => !!m),
+				parsed.filters
+			).map((m) => m.id)
+		);
+		semanticHits = rawSemanticHits.filter((h) => filteredIds.has(h.memoryId));
+	}
 
 	const seen = new Set<string>();
 	const candidates: MemoryObject[] = [];
@@ -84,8 +110,14 @@ export async function retrieveMemoryContext(
 	}
 
 	if (candidates.length === 0) {
-		const recent = get(memoryObjects).slice(0, limit);
-		for (const m of recent) pushMemory(m.id);
+		// Fallback: if nothing matched, use recent memories filtered by
+		// the same constraints. This way "tag:work" with no text still
+		// returns something useful even if neither retrieval path fired.
+		const recent = get(memoryObjects);
+		const pool = filtersActive
+			? filterMemories(recent, parsed.filters)
+			: recent;
+		for (const m of pool.slice(0, limit)) pushMemory(m.id);
 	}
 
 	return candidates;
