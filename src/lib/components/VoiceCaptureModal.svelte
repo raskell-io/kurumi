@@ -25,6 +25,7 @@
 	let saveError = $state<string | null>(null);
 	let selectedFolderId = $state<string | null>(null);
 	let captureStartedAt = $state<number | null>(null);
+	let captureTabAudio = $state(false);
 
 	// Reset folder selection when the modal opens
 	$effect(() => {
@@ -32,8 +33,16 @@
 			selectedFolderId = null;
 			saveError = null;
 			captureStartedAt = null;
+			captureTabAudio = false;
 		}
 	});
+
+	// Detect support for getDisplayMedia (used for tab/window audio capture)
+	let tabAudioSupported = $derived(
+		typeof navigator !== 'undefined' &&
+			!!navigator.mediaDevices &&
+			typeof navigator.mediaDevices.getDisplayMedia === 'function'
+	);
 
 	// Build a hierarchical label for each folder ("Parent / Child")
 	let folderOptions = $derived.by(() => {
@@ -85,7 +94,7 @@
 					? addMeetingMemo({
 							title: defaultTitle(),
 							rawAudioRef: ref,
-							captureMode: 'in-person-meeting',
+							captureMode: captureTabAudio ? 'remote-meeting-enhanced' : 'in-person-meeting',
 							folderId: selectedFolderId,
 							startedAt,
 							endedAt
@@ -183,6 +192,34 @@
 						Long-form recording. After you stop, the meeting is transcribed and a structured
 						summary is generated with action items, decisions, and key topics.
 					</div>
+
+					<!-- Tab/window audio toggle (remote-meeting-enhanced mode) -->
+					<div class="px-4 pt-3">
+						<label
+							class="flex items-start gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3"
+							class:opacity-50={!tabAudioSupported}
+						>
+							<input
+								type="checkbox"
+								bind:checked={captureTabAudio}
+								disabled={!tabAudioSupported}
+								class="mt-0.5 h-4 w-4 shrink-0 accent-[var(--color-accent)]"
+							/>
+							<div class="min-w-0 flex-1">
+								<div class="text-sm font-medium text-[var(--color-text)]">
+									Capture tab/window audio
+								</div>
+								<div class="mt-0.5 text-xs text-[var(--color-text-muted)]">
+									{#if tabAudioSupported}
+										Records the audio of a Zoom/Meet/Teams call alongside your mic. After
+										starting, pick the tab or window and check "Share tab audio".
+									{:else}
+										Not supported in this browser. Use Chrome, Edge, or Firefox.
+									{/if}
+								</div>
+							</div>
+						</label>
+					</div>
 				{/if}
 				{#if folderOptions.length > 0}
 					<div class="px-4 pt-4">
@@ -208,6 +245,7 @@
 					onComplete={handleComplete}
 					onCancel={onClose}
 					onStart={handleRecordingStart}
+					audioSources={mode === 'meeting' && captureTabAudio ? 'mic+tab' : 'mic'}
 				/>
 			{/if}
 		</div>

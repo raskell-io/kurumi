@@ -2,13 +2,16 @@
 	import { Mic, Square, Pause, Play, AlertCircle } from 'lucide-svelte';
 	import { onDestroy } from 'svelte';
 
+	export type AudioSources = 'mic' | 'mic+tab';
+
 	interface Props {
 		onComplete: (result: { blob: Blob; mimeType: string; durationMs: number }) => void;
 		onCancel?: () => void;
 		onStart?: () => void;
+		audioSources?: AudioSources;
 	}
 
-	let { onComplete, onCancel, onStart }: Props = $props();
+	let { onComplete, onCancel, onStart, audioSources = 'mic' }: Props = $props();
 
 	type RecorderState = 'idle' | 'requesting' | 'recording' | 'paused' | 'stopped' | 'error';
 
@@ -16,7 +19,13 @@
 	let errorMessage = $state<string | null>(null);
 	let elapsedMs = $state(0);
 
-	let mediaStream: MediaStream | null = null;
+	// The stream MediaRecorder records from. May be the raw mic stream, or a
+	// merged stream produced by the Web Audio graph below.
+	let recordStream: MediaStream | null = null;
+	// Original source streams we need to clean up explicitly. The merged
+	// stream lives inside audioContext and is released when the context closes.
+	let micStream: MediaStream | null = null;
+	let displayStream: MediaStream | null = null;
 	let mediaRecorder: MediaRecorder | null = null;
 	let chunks: Blob[] = [];
 
@@ -52,8 +61,9 @@
 		accumulatedMs = 0;
 		elapsedMs = 0;
 
+		// 1. Always grab the mic.
 		try {
-			mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+			micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 		} catch (err) {
 			recorderState = 'error';
 			errorMessage =
@@ -63,8 +73,100 @@
 			return;
 		}
 
+		// 2. If tab-audio mode, also grab a display stream and merge them.
+		if (audioSources === 'mic+tab') {
+			try {
+				displayStream = await navigator.mediaDevices.getDisplayMedia({
+					// Some browsers require video to be requested even if we
+					// only need audio. We stop the video tracks immediately.
+					video: true,
+					audio: true
+				});
+			} catch (err) {
+				cleanupAll();
+				recorderState = 'error';
+				errorMessage =
+					err instanceof Error && err.name === 'NotAllowedError'
+						? 'Tab/window audio permission denied or cancelled.'
+						: 'Could not capture tab/window audio.';
+				return;
+			}
+
+			const tabAudioTracks = displayStream.getAudioTracks();
+			if (tabAudioTracks.length === 0) {
+				cleanupAll();
+				recorderState = 'error';
+				errorMessage =
+					'No audio shared. When picking the tab/window, make sure to check "Share tab audio" (or the equivalent option in your browser).';
+				return;
+			}
+
+			// We don't need video, just audio.
+			displayStream.getVideoTracks().forEach((t) => t.stop());
+
+			// If a tab audio track stops on its own (e.g. user closes the tab),
+			// stop the recording cleanly.
+			tabAudioTracks[0].onended = () => {
+				if (recorderState === 'recording' || recorderState === 'paused') {
+					stopRecording();
+				}
+			};
+
+			// Build a Web Audio graph that mixes mic + tab audio into a single
+			// MediaStream that MediaRecorder can record.
+			try {
+				const Ctx =
+					window.AudioContext ||
+					(window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+				if (!Ctx) throw new Error('Web Audio API not available');
+
+				audioContext = new Ctx();
+				const micSource = audioContext.createMediaStreamSource(micStream);
+				const tabSource = audioContext.createMediaStreamSource(new MediaStream(tabAudioTracks));
+				const destination = audioContext.createMediaStreamDestination();
+				micSource.connect(destination);
+				tabSource.connect(destination);
+
+				// Tap an analyser off the merged signal for the waveform.
+				analyser = audioContext.createAnalyser();
+				analyser.fftSize = 256;
+				micSource.connect(analyser);
+				tabSource.connect(analyser);
+
+				recordStream = destination.stream;
+			} catch (err) {
+				cleanupAll();
+				recorderState = 'error';
+				errorMessage =
+					err instanceof Error
+						? `Failed to mix audio sources: ${err.message}`
+						: 'Failed to mix audio sources.';
+				return;
+			}
+		} else {
+			// Mic-only path
+			recordStream = micStream;
+
+			// Set up the analyser for the waveform
+			try {
+				const Ctx =
+					window.AudioContext ||
+					(window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+				if (Ctx) {
+					audioContext = new Ctx();
+					const source = audioContext.createMediaStreamSource(micStream);
+					analyser = audioContext.createAnalyser();
+					analyser.fftSize = 256;
+					source.connect(analyser);
+				}
+			} catch {
+				// Waveform is optional; carry on without it
+				analyser = null;
+			}
+		}
+
 		try {
-			mediaRecorder = new MediaRecorder(mediaStream);
+			mediaRecorder = new MediaRecorder(recordStream!);
 		} catch {
 			recorderState = 'error';
 			errorMessage = 'Recording is not supported in this browser.';
@@ -86,21 +188,6 @@
 			recorderState = 'stopped';
 			onComplete({ blob, mimeType, durationMs });
 		};
-
-		// Set up Web Audio analyser for waveform
-		try {
-			const Ctx = window.AudioContext || (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-			if (Ctx && mediaStream) {
-				audioContext = new Ctx();
-				const source = audioContext.createMediaStreamSource(mediaStream);
-				analyser = audioContext.createAnalyser();
-				analyser.fftSize = 256;
-				source.connect(analyser);
-			}
-		} catch {
-			// Waveform is optional; carry on without it
-			analyser = null;
-		}
 
 		segmentStartedAt = Date.now();
 		mediaRecorder.start();
@@ -206,10 +293,15 @@
 			cancelAnimationFrame(waveformAnimationFrame);
 			waveformAnimationFrame = null;
 		}
-		if (mediaStream) {
-			mediaStream.getTracks().forEach((track) => track.stop());
-			mediaStream = null;
+		if (micStream) {
+			micStream.getTracks().forEach((track) => track.stop());
+			micStream = null;
 		}
+		if (displayStream) {
+			displayStream.getTracks().forEach((track) => track.stop());
+			displayStream = null;
+		}
+		recordStream = null;
 		if (audioContext) {
 			audioContext.close().catch(() => {});
 			audioContext = null;
@@ -238,7 +330,11 @@
 		<div class="flex h-24 w-24 items-center justify-center rounded-full bg-[var(--color-bg-secondary)]">
 			<div class="h-8 w-8 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent"></div>
 		</div>
-		<p class="text-sm text-[var(--color-text-muted)]">Requesting microphone…</p>
+		<p class="text-sm text-[var(--color-text-muted)]">
+			{audioSources === 'mic+tab'
+				? 'Requesting microphone + tab/window audio…'
+				: 'Requesting microphone…'}
+		</p>
 	{:else if recorderState === 'recording' || recorderState === 'paused'}
 		<canvas
 			bind:this={waveformCanvas}
