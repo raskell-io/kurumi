@@ -61,7 +61,8 @@ export default defineConfig({
 					{
 						// Hugging Face model downloads — let them through to the
 						// network so transformers.js's own cache handles them.
-						urlPattern: /^https:\/\/huggingface\.co\/.*/i,
+						// Includes the LFS CDN where the actual model weights live.
+						urlPattern: /^https:\/\/(?:[a-z0-9-]+\.)?(?:huggingface\.co|hf\.co)\/.*/i,
 						handler: 'NetworkOnly'
 					}
 				]

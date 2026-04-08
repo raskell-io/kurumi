@@ -7,14 +7,15 @@
 		findBacklinks,
 		memoryObjects,
 		addMemoryObject,
-		folders
+		folders,
+		retryMemoryProcessing
 	} from '$lib/db';
 	import { get } from 'svelte/store';
 	import Editor from '$lib/components/Editor.svelte';
 	import { untrack } from 'svelte';
 	import { downloadSingleMemory, type MarkdownExportFormat } from '$lib/utils/markdown-export';
 	import { getBlob } from '$lib/db/blob-store';
-	import { Trash2, Download, ChevronDown, Mic } from 'lucide-svelte';
+	import { Trash2, Download, ChevronDown, Mic, RefreshCw } from 'lucide-svelte';
 
 	let title = $state('');
 	let content = $state('');
@@ -99,6 +100,37 @@
 			if (audioUrl) URL.revokeObjectURL(audioUrl);
 		};
 	});
+
+	// Auto-retry processing for voice memos that are stuck in 'pending'
+	// (e.g. created with an older app version, or crashed mid-pipeline).
+	// Fires once per page visit per memory.
+	let autoRetriedForId = $state('');
+	$effect(() => {
+		if (!memory) return;
+		if (memory.id === autoRetriedForId) return;
+		const isStuck =
+			memory.type === 'voice-memo' &&
+			memory.processingState === 'pending' &&
+			memory.rawAudioRef !== null &&
+			!memory.transcript;
+		if (isStuck) {
+			untrack(() => {
+				autoRetriedForId = memory!.id;
+				void retryMemoryProcessing(memory!.id);
+			});
+		}
+	});
+
+	let retrying = $state(false);
+	async function handleRetryProcessing() {
+		if (!memory || retrying) return;
+		retrying = true;
+		try {
+			await retryMemoryProcessing(memory.id);
+		} finally {
+			retrying = false;
+		}
+	}
 
 	function handleTitleChange(e: Event) {
 		const target = e.target as HTMLInputElement;
@@ -261,9 +293,35 @@
 							<div class="h-4 w-4 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent"></div>
 							Summarizing…
 						</div>
+					{:else if memory.processingState === 'pending' && audioUrl}
+						<div class="mb-4 flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 text-sm md:mb-6">
+							<div class="text-[var(--color-text-muted)]">
+								This voice memo hasn't been transcribed yet.
+							</div>
+							<button
+								type="button"
+								onclick={handleRetryProcessing}
+								disabled={retrying}
+								class="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-border)] disabled:opacity-50"
+							>
+								<RefreshCw class="h-3 w-3 {retrying ? 'animate-spin' : ''}" />
+								Transcribe
+							</button>
+						</div>
 					{:else if memory.processingState === 'failed'}
-						<div class="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-500 md:mb-6">
-							Processing failed{memory.processingError ? `: ${memory.processingError}` : ''}
+						<div class="mb-4 flex items-start justify-between gap-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-500 md:mb-6">
+							<div>
+								Processing failed{memory.processingError ? `: ${memory.processingError}` : ''}
+							</div>
+							<button
+								type="button"
+								onclick={handleRetryProcessing}
+								disabled={retrying}
+								class="flex shrink-0 items-center gap-2 rounded-lg border border-red-500/30 bg-[var(--color-bg)] px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-red-500/10 disabled:opacity-50"
+							>
+								<RefreshCw class="h-3 w-3 {retrying ? 'animate-spin' : ''}" />
+								Retry
+							</button>
 						</div>
 					{/if}
 

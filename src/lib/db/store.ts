@@ -1,7 +1,7 @@
 import * as Automerge from '@automerge/automerge';
 import { get, set } from 'idb-keyval';
 import { writable, derived, type Readable } from 'svelte/store';
-import { deleteBlob } from './blob-store';
+import { deleteBlob, getBlob } from './blob-store';
 import { inferenceRouter } from '$lib/inference';
 import {
 	createEmptyDocument,
@@ -721,6 +721,29 @@ export function addVoiceMemo(options: {
  * but no text provider can summarize, the transcript still lands and the
  * summary is just skipped.
  */
+/**
+ * Re-run the post-capture pipeline on an existing memory by id. Looks up
+ * the audio blob from the blob store and feeds it back into
+ * transcribeMemoryAudio. Used for the "Transcribe" / "Retry" button on the
+ * memory page so users can recover memos that got stuck (model wasn't
+ * downloaded, network failed, app was on an older code version, etc.).
+ */
+export async function retryMemoryProcessing(memoryId: string): Promise<void> {
+	const memory = doc?.memoryObjects[memoryId];
+	if (!memory || !memory.rawAudioRef) {
+		return;
+	}
+	const stored = await getBlob(memory.rawAudioRef);
+	if (!stored) {
+		updateMemoryObject(memoryId, {
+			processingState: 'failed',
+			processingError: 'Audio blob not found in local storage'
+		});
+		return;
+	}
+	await transcribeMemoryAudio(memoryId, stored.blob, stored.mimeType);
+}
+
 export async function transcribeMemoryAudio(
 	memoryId: string,
 	audio: Blob,
