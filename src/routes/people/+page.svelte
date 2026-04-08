@@ -2,11 +2,15 @@
 	import {
 		people,
 		mergePeople,
+		restoreFromPeopleMergeSnapshot,
 		proposePersonMerges,
 		deletePerson,
+		restorePerson,
 		getMemoryObjectsByPerson,
 		type Person
 	} from '$lib/db';
+	import { pushUndo } from '$lib/stores/undo';
+	import { onMount } from 'svelte';
 	import { Users, GitMerge, ArrowRight, Trash2, X } from 'lucide-svelte';
 
 	// Recompute proposals whenever people change.
@@ -34,19 +38,88 @@
 
 	function confirmMerge() {
 		if (!mergeSource || !mergeTarget) return;
-		mergePeople(mergeSource.id, mergeTarget.id);
+		const sourceName = mergeSource.name;
+		const targetName = mergeTarget.name;
+		const snapshot = mergePeople(mergeSource.id, mergeTarget.id);
+		if (snapshot) {
+			pushUndo({
+				label: `Merged ${sourceName} → ${targetName}`,
+				undo: () => restoreFromPeopleMergeSnapshot(snapshot)
+			});
+		}
 		cancelMerge();
 	}
 
 	function handleDelete(person: Person) {
 		if (confirm(`Delete ${person.name}? References in notes will be preserved as plain text.`)) {
+			const snapshot: Person = { ...person };
 			deletePerson(person.id);
+			pushUndo({
+				label: `Deleted ${person.name}`,
+				undo: () => restorePerson(snapshot)
+			});
 		}
 	}
 
 	function refCount(person: Person): number {
 		return getMemoryObjectsByPerson(person.name).length;
 	}
+
+	// Keyboard navigation: j/k moves focus, Enter jumps to the person
+	// read filter, d deletes, Escape unfocuses. No rename here because
+	// the people page doesn't have inline rename (people are edited
+	// via the memory @mention flow).
+	let focusIndex = $state(-1);
+
+	function handlePageKeydown(e: KeyboardEvent) {
+		const target = e.target as HTMLElement | null;
+		if (!target) return;
+		if (
+			target.tagName === 'INPUT' ||
+			target.tagName === 'TEXTAREA' ||
+			target.isContentEditable
+		) {
+			return;
+		}
+		if ($people.length === 0) return;
+
+		switch (e.key) {
+			case 'j':
+			case 'ArrowDown':
+				e.preventDefault();
+				focusIndex = Math.min($people.length - 1, focusIndex < 0 ? 0 : focusIndex + 1);
+				break;
+			case 'k':
+			case 'ArrowUp':
+				e.preventDefault();
+				focusIndex = Math.max(0, focusIndex < 0 ? 0 : focusIndex - 1);
+				break;
+			case 'Enter': {
+				const person = $people[focusIndex];
+				if (person) window.location.hash = `#/read/person/${encodeURIComponent(person.name)}`;
+				break;
+			}
+			case 'Delete':
+			case 'd':
+			case 'D': {
+				e.preventDefault();
+				const person = $people[focusIndex];
+				if (person) {
+					handleDelete(person);
+					focusIndex = Math.min(focusIndex, $people.length - 2);
+				}
+				break;
+			}
+			case 'Escape':
+				if (focusIndex >= 0) focusIndex = -1;
+				break;
+		}
+	}
+
+	onMount(() => {
+		window.addEventListener('keydown', handlePageKeydown);
+		return () => window.removeEventListener('keydown', handlePageKeydown);
+	});
 </script>
 
 <svelte:head>
@@ -59,7 +132,12 @@
 			<Users class="h-8 w-8" />
 		</div>
 		<h1>People</h1>
-		<p class="count">{$people.length} {$people.length === 1 ? 'person' : 'people'}</p>
+		<p class="count">
+			{$people.length} {$people.length === 1 ? 'person' : 'people'}
+			{#if $people.length > 0}
+				<span class="hint">j/k nav · Enter open · d delete</span>
+			{/if}
+		</p>
 	</header>
 
 	{#if proposals.length > 0}
@@ -91,8 +169,8 @@
 		<section class="all-people">
 			<h2 class="section-title">All people</h2>
 			<ul class="people-list">
-				{#each $people as person (person.id)}
-					<li class="person-row">
+				{#each $people as person, i (person.id)}
+					<li class="person-row" class:focused={focusIndex === i}>
 						<a href="/read/person/{person.name}" class="person-link">
 							<span class="person-name">{person.name}</span>
 							{#if person.title || person.company}
@@ -180,6 +258,13 @@
 	.count {
 		color: var(--color-text-muted);
 		font-size: 0.875rem;
+	}
+
+	.hint {
+		display: block;
+		margin-top: 0.25rem;
+		font-size: 0.75rem;
+		opacity: 0.7;
 	}
 
 	.section-title {
@@ -273,6 +358,10 @@
 
 	.person-row:hover {
 		border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+	}
+
+	.person-row.focused {
+		box-shadow: 0 0 0 2px var(--color-accent);
 	}
 
 	.person-link {

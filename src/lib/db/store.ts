@@ -1761,6 +1761,31 @@ export function restorePerson(person: Person): void {
 }
 
 /**
+ * Snapshot of the fields we rewrite during a merge/rename operation.
+ * Only the fields actually touched are populated so restoring can be
+ * surgical. Used by mergePeople / mergeTags / mergeTopics /
+ * mergeProjects to produce undoable deltas.
+ */
+export interface MemoryFieldSnapshot {
+	memoryId: string;
+	bodyMarkdown?: string;
+	participants?: string[];
+	topics?: string[];
+	projects?: string[];
+	tags?: string[];
+}
+
+export interface PeopleMergeSnapshot {
+	kind: 'people';
+	sourceId: string;
+	targetId: string;
+	sourcePerson: Person;
+	targetBefore: Person;
+	memories: MemoryFieldSnapshot[];
+	actionItems: Array<{ id: string; assignee: string | null }>;
+}
+
+/**
  * Merge two people entries. The source is deleted after moving its
  * metadata into the target and rewriting every reference across
  * memories and action items:
@@ -1773,45 +1798,89 @@ export function restorePerson(person: Person): void {
  *
  * The rewrite keeps IDs, so backlinks / search results / embeddings
  * stay valid.
+ *
+ * Returns a snapshot that can be passed to restoreFromPeopleMergeSnapshot
+ * to fully undo the operation. Returns null if the merge couldn't run
+ * (missing source or target).
  */
-export function mergePeople(sourceId: string, targetId: string): void {
-	if (sourceId === targetId) return;
+export function mergePeople(sourceId: string, targetId: string): PeopleMergeSnapshot | null {
+	if (!doc || sourceId === targetId) return null;
+	const source = doc.people?.[sourceId];
+	const target = doc.people?.[targetId];
+	if (!source || !target) return null;
+
+	const snapshot: PeopleMergeSnapshot = {
+		kind: 'people',
+		sourceId,
+		targetId,
+		sourcePerson: deepCopy(source),
+		targetBefore: deepCopy(target),
+		memories: [],
+		actionItems: []
+	};
+
+	// First pass: scan the memories we're going to touch and capture
+	// their pre-merge state. Done BEFORE the mutation so the snapshot
+	// is clean.
+	const sourceEsc = source.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	const scanRegex = new RegExp(`@${sourceEsc}(?![A-Za-z])`, 'g');
+	const lower = source.name.toLowerCase();
+	for (const memory of Object.values(doc.memoryObjects)) {
+		if (memory.vaultId !== target.vaultId) continue;
+		const bodyWillChange = scanRegex.test(memory.bodyMarkdown);
+		scanRegex.lastIndex = 0;
+		const participantsWillChange = (memory.participants ?? []).some(
+			(p) => p.toLowerCase() === lower
+		);
+		if (bodyWillChange || participantsWillChange) {
+			snapshot.memories.push({
+				memoryId: memory.id,
+				bodyMarkdown: bodyWillChange ? memory.bodyMarkdown : undefined,
+				participants: participantsWillChange ? [...memory.participants] : undefined
+			});
+		}
+	}
+	if (doc.actionItems) {
+		for (const item of Object.values(doc.actionItems)) {
+			if (item.assignee && item.assignee.toLowerCase() === lower) {
+				snapshot.actionItems.push({ id: item.id, assignee: item.assignee });
+			}
+		}
+	}
+
+	// Second pass: apply the actual merge.
 	updateDoc((d) => {
-		const source = d.people?.[sourceId];
-		const target = d.people?.[targetId];
-		if (!source || !target) return;
+		const src = d.people?.[sourceId];
+		const tgt = d.people?.[targetId];
+		if (!src || !tgt) return;
 
 		// Fill in missing fields on the target from the source
-		if (!target.email && source.email) target.email = source.email;
-		if (!target.phone && source.phone) target.phone = source.phone;
-		if (!target.company && source.company) target.company = source.company;
-		if (!target.title && source.title) target.title = source.title;
-		if (source.customFields) {
-			target.customFields = { ...(target.customFields ?? {}), ...source.customFields };
+		if (!tgt.email && src.email) tgt.email = src.email;
+		if (!tgt.phone && src.phone) tgt.phone = src.phone;
+		if (!tgt.company && src.company) tgt.company = src.company;
+		if (!tgt.title && src.title) tgt.title = src.title;
+		if (src.customFields) {
+			tgt.customFields = { ...(tgt.customFields ?? {}), ...src.customFields };
 		}
-		target.modified = Date.now();
+		tgt.modified = Date.now();
 
-		// Rewrite markdown bodies: @Source → @Target. Escape regex
-		// metacharacters in the source name and require a word boundary
-		// so "Alice" doesn't match inside "Alice Smith".
-		const sourceEsc = source.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+		// Rewrite markdown bodies + participants on every matched memory.
 		const atRegex = new RegExp(`@${sourceEsc}(?![A-Za-z])`, 'g');
 		for (const memory of Object.values(d.memoryObjects)) {
-			if (memory.vaultId !== target.vaultId) continue;
+			if (memory.vaultId !== tgt.vaultId) continue;
 
 			if (atRegex.test(memory.bodyMarkdown)) {
-				memory.bodyMarkdown = memory.bodyMarkdown.replace(atRegex, `@${target.name}`);
+				memory.bodyMarkdown = memory.bodyMarkdown.replace(atRegex, `@${tgt.name}`);
 				memory.updatedAt = Date.now();
 			}
 			atRegex.lastIndex = 0;
 
-			// Replace source name inside participants array, dedupe
 			const participants = memory.participants ?? [];
 			let changed = false;
 			const next: string[] = [];
 			const seen = new Set<string>();
 			for (const p of participants) {
-				const replacement = p.toLowerCase() === source.name.toLowerCase() ? target.name : p;
+				const replacement = p.toLowerCase() === lower ? tgt.name : p;
 				if (replacement !== p) changed = true;
 				const key = replacement.toLowerCase();
 				if (seen.has(key)) {
@@ -1828,11 +1897,10 @@ export function mergePeople(sourceId: string, targetId: string): void {
 			}
 		}
 
-		// Rewrite action item assignees (freeform name match)
 		if (d.actionItems) {
 			for (const item of Object.values(d.actionItems)) {
-				if (item.assignee && item.assignee.toLowerCase() === source.name.toLowerCase()) {
-					item.assignee = target.name;
+				if (item.assignee && item.assignee.toLowerCase() === lower) {
+					item.assignee = tgt.name;
 					item.updatedAt = Date.now();
 				}
 			}
@@ -1840,6 +1908,44 @@ export function mergePeople(sourceId: string, targetId: string): void {
 
 		// Finally drop the source Person
 		delete d.people![sourceId];
+	});
+
+	return snapshot;
+}
+
+/**
+ * Revert a people merge: re-creates the source person, restores the
+ * target's pre-merge state, and undoes every memory/action-item
+ * rewrite captured in the snapshot.
+ */
+export function restoreFromPeopleMergeSnapshot(snapshot: PeopleMergeSnapshot): void {
+	updateDoc((d) => {
+		if (!d.people) d.people = {};
+		d.people[snapshot.sourceId] = deepCopy(snapshot.sourcePerson);
+		// Restore target's fields (cleanly replace since we only added).
+		d.people[snapshot.targetId] = deepCopy(snapshot.targetBefore);
+
+		for (const m of snapshot.memories) {
+			const memory = d.memoryObjects[m.memoryId];
+			if (!memory) continue;
+			if (m.bodyMarkdown !== undefined) {
+				memory.bodyMarkdown = m.bodyMarkdown;
+			}
+			if (m.participants !== undefined) {
+				memory.participants.splice(0, memory.participants.length);
+				for (const p of m.participants) memory.participants.push(p);
+			}
+			memory.updatedAt = Date.now();
+		}
+
+		if (d.actionItems) {
+			for (const a of snapshot.actionItems) {
+				const item = d.actionItems[a.id];
+				if (!item) continue;
+				item.assignee = a.assignee;
+				item.updatedAt = Date.now();
+			}
+		}
 	});
 }
 
@@ -3350,51 +3456,72 @@ export function getMemoryObjectsByTag(tag: string): MemoryObject[] {
 	});
 }
 
+export interface TagRenameSnapshot {
+	kind: 'tag';
+	memories: MemoryFieldSnapshot[];
+}
+
 /**
  * Rename every occurrence of #oldTag in memory bodies (and in the
  * memory.tags arrays) to #newTag across the current vault. Bumps
- * updatedAt so the next sync picks up the change. Returns how many
- * memories were touched.
+ * updatedAt so the next sync picks up the change. Returns a snapshot
+ * the caller can pass to restoreFromTagRenameSnapshot to undo.
  *
  * Both inputs are normalized to lowercase; the regex requires a
  * word-boundary-style lookahead so "#projects" doesn't become
  * "#projectsnew" when renaming "projects" → "projectsnew".
  */
-export function renameTag(oldTag: string, newTag: string): number {
-	if (!doc) return 0;
+export function renameTag(oldTag: string, newTag: string): TagRenameSnapshot | null {
+	if (!doc) return null;
 	const vaultId = getCurrentVaultId();
 	const from = oldTag.toLowerCase();
 	const to = newTag.toLowerCase();
-	if (from === to || !from || !to) return 0;
+	if (from === to || !from || !to) return null;
 
 	// Require word-boundary after the tag so #proj doesn't match inside
 	// #projects. Tags allow letters/digits/underscore/hyphen.
 	const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-	const regex = new RegExp(`(^|\\s)#${escaped}(?![a-zA-Z0-9_-])`, 'g');
+	const scanRegex = new RegExp(`(^|\\s)#${escaped}(?![a-zA-Z0-9_-])`, 'g');
 
-	let touched = 0;
+	// First pass: snapshot touched memories BEFORE mutating.
+	const snapshot: TagRenameSnapshot = { kind: 'tag', memories: [] };
+	for (const memory of Object.values(doc.memoryObjects)) {
+		if (memory.vaultId !== vaultId) continue;
+		const bodyHasTag = scanRegex.test(memory.bodyMarkdown);
+		scanRegex.lastIndex = 0;
+		const tagsIndex = memory.tags.findIndex((t) => t.toLowerCase() === from);
+		if (!bodyHasTag && tagsIndex < 0) continue;
+		snapshot.memories.push({
+			memoryId: memory.id,
+			bodyMarkdown: bodyHasTag ? memory.bodyMarkdown : undefined,
+			tags: tagsIndex >= 0 ? [...memory.tags] : undefined
+		});
+	}
+
+	if (snapshot.memories.length === 0) return null;
+
+	const regex = new RegExp(`(^|\\s)#${escaped}(?![a-zA-Z0-9_-])`, 'g');
 	updateDoc((d) => {
 		for (const memory of Object.values(d.memoryObjects)) {
 			if (memory.vaultId !== vaultId) continue;
 			if (!regex.test(memory.bodyMarkdown)) {
 				regex.lastIndex = 0;
-				continue;
+				// Could still have the tag in the legacy array without the
+				// markdown body — handle that below.
+			} else {
+				regex.lastIndex = 0;
+				memory.bodyMarkdown = memory.bodyMarkdown.replace(regex, `$1#${to}`);
+				memory.updatedAt = Date.now();
 			}
-			regex.lastIndex = 0;
-			memory.bodyMarkdown = memory.bodyMarkdown.replace(regex, `$1#${to}`);
 
-			// Also rewrite the legacy tags array if the old tag is listed
-			// (stored lowercase by convention).
 			const tagIndex = memory.tags.findIndex((t) => t.toLowerCase() === from);
 			if (tagIndex >= 0) {
 				memory.tags[tagIndex] = to;
+				memory.updatedAt = Date.now();
 			}
-
-			memory.updatedAt = Date.now();
-			touched++;
 		}
 	});
-	return touched;
+	return snapshot;
 }
 
 /**
@@ -3402,8 +3529,29 @@ export function renameTag(oldTag: string, newTag: string): number {
  * a separate entry point so future work (e.g. keeping the source as
  * an alias) has an obvious hook.
  */
-export function mergeTags(sourceTag: string, targetTag: string): number {
+export function mergeTags(sourceTag: string, targetTag: string): TagRenameSnapshot | null {
 	return renameTag(sourceTag, targetTag);
+}
+
+/**
+ * Revert a tag rename/merge by restoring every captured memory's
+ * bodyMarkdown and tags array.
+ */
+export function restoreFromTagRenameSnapshot(snapshot: TagRenameSnapshot): void {
+	updateDoc((d) => {
+		for (const m of snapshot.memories) {
+			const memory = d.memoryObjects[m.memoryId];
+			if (!memory) continue;
+			if (m.bodyMarkdown !== undefined) {
+				memory.bodyMarkdown = m.bodyMarkdown;
+			}
+			if (m.tags !== undefined) {
+				memory.tags.splice(0, memory.tags.length);
+				for (const t of m.tags) memory.tags.push(t);
+			}
+			memory.updatedAt = Date.now();
+		}
+	});
 }
 
 /**
@@ -3551,17 +3699,28 @@ export function getMemoryObjectsByTopic(topic: string): MemoryObject[] {
 	});
 }
 
+export interface StringArrayRenameSnapshot {
+	kind: 'topics' | 'projects';
+	memories: MemoryFieldSnapshot[];
+}
+
 /**
  * Rename every occurrence of `oldTopic` in memory.topics arrays across
  * the current vault. Case-insensitive source match. If the target
  * already exists on a memory that also has the source, the source is
- * removed (dedupe). Returns memories touched.
+ * removed (dedupe). Returns a snapshot that can undo the change.
  */
-export function renameTopic(oldTopic: string, newTopic: string): number {
+export function renameTopic(
+	oldTopic: string,
+	newTopic: string
+): StringArrayRenameSnapshot | null {
 	return renameStringInArrays('topics', oldTopic, newTopic);
 }
 
-export function mergeTopics(sourceTopic: string, targetTopic: string): number {
+export function mergeTopics(
+	sourceTopic: string,
+	targetTopic: string
+): StringArrayRenameSnapshot | null {
 	return renameTopic(sourceTopic, targetTopic);
 }
 
@@ -3569,21 +3728,36 @@ export function mergeTopics(sourceTopic: string, targetTopic: string): number {
  * Generic rename-across-memory-arrays helper used by topic/project/
  * (and in principle any other bare-string array on MemoryObject).
  * Mutates the array in place via Automerge, dedupes against the
- * target, and bumps updatedAt for touched memories.
+ * target, and bumps updatedAt for touched memories. Returns a
+ * snapshot so the caller can undo.
  */
 function renameStringInArrays(
 	field: 'topics' | 'projects',
 	from: string,
 	to: string
-): number {
-	if (!doc) return 0;
+): StringArrayRenameSnapshot | null {
+	if (!doc) return null;
 	const vaultId = getCurrentVaultId();
 	const fromLower = from.toLowerCase().trim();
 	const toTrimmed = to.trim();
 	const toLower = toTrimmed.toLowerCase();
-	if (!fromLower || !toLower || fromLower === toLower) return 0;
+	if (!fromLower || !toLower || fromLower === toLower) return null;
 
-	let touched = 0;
+	const snapshot: StringArrayRenameSnapshot = { kind: field, memories: [] };
+	// First pass: capture the pre-change arrays of every memory we'll touch.
+	for (const memory of Object.values(doc.memoryObjects)) {
+		if (memory.vaultId !== vaultId) continue;
+		const arr = memory[field] as string[] | undefined;
+		if (!Array.isArray(arr)) continue;
+		if (!arr.some((v) => v.toLowerCase() === fromLower)) continue;
+		const entry: MemoryFieldSnapshot = { memoryId: memory.id };
+		if (field === 'topics') entry.topics = [...arr];
+		else entry.projects = [...arr];
+		snapshot.memories.push(entry);
+	}
+
+	if (snapshot.memories.length === 0) return null;
+
 	updateDoc((d) => {
 		for (const memory of Object.values(d.memoryObjects)) {
 			if (memory.vaultId !== vaultId) continue;
@@ -3601,10 +3775,31 @@ function renameStringInArrays(
 			}
 
 			memory.updatedAt = Date.now();
-			touched++;
 		}
 	});
-	return touched;
+	return snapshot;
+}
+
+/**
+ * Revert a topic/project rename by restoring every captured array.
+ */
+export function restoreFromStringArrayRenameSnapshot(
+	snapshot: StringArrayRenameSnapshot
+): void {
+	updateDoc((d) => {
+		for (const m of snapshot.memories) {
+			const memory = d.memoryObjects[m.memoryId];
+			if (!memory) continue;
+			const field = snapshot.kind;
+			const source = field === 'topics' ? m.topics : m.projects;
+			if (!source) continue;
+			const arr = memory[field];
+			if (!Array.isArray(arr)) continue;
+			arr.splice(0, arr.length);
+			for (const v of source) arr.push(v);
+			memory.updatedAt = Date.now();
+		}
+	});
 }
 
 /**
@@ -3696,11 +3891,17 @@ export function getMemoryObjectsByProject(project: string): MemoryObject[] {
 	});
 }
 
-export function renameProject(oldProject: string, newProject: string): number {
+export function renameProject(
+	oldProject: string,
+	newProject: string
+): StringArrayRenameSnapshot | null {
 	return renameStringInArrays('projects', oldProject, newProject);
 }
 
-export function mergeProjects(sourceProject: string, targetProject: string): number {
+export function mergeProjects(
+	sourceProject: string,
+	targetProject: string
+): StringArrayRenameSnapshot | null {
 	return renameProject(sourceProject, targetProject);
 }
 

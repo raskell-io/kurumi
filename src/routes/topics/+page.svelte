@@ -8,8 +8,11 @@
 		mergeTopics,
 		mergeProjects,
 		renameTopic,
-		renameProject
+		renameProject,
+		restoreFromStringArrayRenameSnapshot
 	} from '$lib/db';
+	import { pushUndo } from '$lib/stores/undo';
+	import { onMount } from 'svelte';
 	import { Tag, GitMerge, ArrowRight, Pencil, Check, X, FolderKanban, Hash } from 'lucide-svelte';
 
 	type Kind = 'topic' | 'project';
@@ -61,8 +64,17 @@
 			cancelRename();
 			return;
 		}
-		if (activeKind === 'topic') renameTopic(renaming, next);
-		else renameProject(renaming, next);
+		const from = renaming;
+		const kind = activeKind;
+		const snapshot = kind === 'topic'
+			? renameTopic(renaming, next)
+			: renameProject(renaming, next);
+		if (snapshot) {
+			pushUndo({
+				label: `Renamed ${kind} "${from}" → "${next}"`,
+				undo: () => restoreFromStringArrayRenameSnapshot(snapshot)
+			});
+		}
 		cancelRename();
 	}
 
@@ -75,6 +87,70 @@
 		}
 	}
 
+	// Keyboard navigation over the current tab's list.
+	let focusIndex = $state(-1);
+	// Reset focus when switching tabs so we don't point into a shorter list.
+	$effect(() => {
+		void activeKind;
+		focusIndex = -1;
+	});
+
+	function handlePageKeydown(e: KeyboardEvent) {
+		const target = e.target as HTMLElement | null;
+		if (!target) return;
+		if (
+			target.tagName === 'INPUT' ||
+			target.tagName === 'TEXTAREA' ||
+			target.isContentEditable
+		) {
+			return;
+		}
+		if (currentList.length === 0) return;
+
+		switch (e.key) {
+			case 'j':
+			case 'ArrowDown':
+				e.preventDefault();
+				focusIndex = Math.min(currentList.length - 1, focusIndex < 0 ? 0 : focusIndex + 1);
+				break;
+			case 'k':
+			case 'ArrowUp':
+				e.preventDefault();
+				focusIndex = Math.max(0, focusIndex < 0 ? 0 : focusIndex - 1);
+				break;
+			case 'Enter': {
+				if (activeKind !== 'topic') break;
+				const entry = currentList[focusIndex];
+				if (entry)
+					window.location.hash = `#/read/topic/${encodeURIComponent(entry.name)}`;
+				break;
+			}
+			case 'r':
+			case 'R': {
+				e.preventDefault();
+				const entry = currentList[focusIndex];
+				if (entry) startRename(entry.name);
+				break;
+			}
+			case '1':
+				e.preventDefault();
+				activeKind = 'topic';
+				break;
+			case '2':
+				e.preventDefault();
+				activeKind = 'project';
+				break;
+			case 'Escape':
+				if (focusIndex >= 0) focusIndex = -1;
+				break;
+		}
+	}
+
+	onMount(() => {
+		window.addEventListener('keydown', handlePageKeydown);
+		return () => window.removeEventListener('keydown', handlePageKeydown);
+	});
+
 	function handleMerge(source: string, target: string) {
 		const kindLabel = activeKind === 'topic' ? 'topic' : 'project';
 		if (
@@ -82,8 +158,15 @@
 				`Merge ${kindLabel} "${source}" → "${target}"?\n\nEvery memory that references "${source}" will be updated to reference "${target}" instead.`
 			)
 		) {
-			if (activeKind === 'topic') mergeTopics(source, target);
-			else mergeProjects(source, target);
+			const snapshot = activeKind === 'topic'
+				? mergeTopics(source, target)
+				: mergeProjects(source, target);
+			if (snapshot) {
+				pushUndo({
+					label: `Merged ${kindLabel} "${source}" → "${target}"`,
+					undo: () => restoreFromStringArrayRenameSnapshot(snapshot)
+				});
+			}
 		}
 	}
 
@@ -106,6 +189,7 @@
 		<p class="count">
 			{topics.length} topic{topics.length === 1 ? '' : 's'} ·
 			{projects.length} project{projects.length === 1 ? '' : 's'}
+			<span class="hint">1/2 tab · j/k nav · Enter open · r rename</span>
 		</p>
 	</header>
 
@@ -166,8 +250,8 @@
 	{:else}
 		<section class="all-items">
 			<ul class="items-list">
-				{#each currentList as { name, count } (name)}
-					<li class="item-row">
+				{#each currentList as { name, count }, i (name)}
+					<li class="item-row" class:focused={focusIndex === i}>
 						{#if renaming === name}
 							<!-- svelte-ignore a11y_autofocus -->
 							<input
@@ -237,6 +321,13 @@
 	.count {
 		color: var(--color-text-muted);
 		font-size: 0.875rem;
+	}
+
+	.hint {
+		display: block;
+		margin-top: 0.25rem;
+		font-size: 0.75rem;
+		opacity: 0.7;
 	}
 
 	.tabs {
@@ -361,6 +452,10 @@
 
 	.item-row:hover {
 		border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+	}
+
+	.item-row.focused {
+		box-shadow: 0 0 0 2px var(--color-accent);
 	}
 
 	.item-link {

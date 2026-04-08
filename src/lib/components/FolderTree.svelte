@@ -8,6 +8,8 @@
 		addMemoryObject,
 		deleteFolder,
 		deleteMemoryObject,
+		restoreMemoryObject,
+		restoreFolder,
 		updateFolder,
 		updateMemoryObject,
 		moveMemoryObjectToFolder,
@@ -33,6 +35,7 @@
 		AlignVerticalSpaceAround,
 		ChevronsDownUp
 	} from 'lucide-svelte';
+	import { pushUndo } from '$lib/stores/undo';
 
 	type Props = {
 		onNoteClick?: () => void;
@@ -692,9 +695,19 @@
 				}
 				deleteMemoryObject(id);
 				onNoteDelete?.(name);
+				// Cmd+Z restores the memory from trash directly, without
+				// needing to visit /trash.
+				pushUndo({
+					label: `Moved "${name}" to trash`,
+					undo: () => restoreMemoryObject(id)
+				});
 			} else {
 				deleteFolder(id, false);
 				onFolderDelete?.(name);
+				pushUndo({
+					label: `Moved "${name}" folder to trash`,
+					undo: () => restoreFolder(id, true)
+				});
 			}
 			deletingItem = null;
 		}, DELETE_ANIMATION_DURATION);

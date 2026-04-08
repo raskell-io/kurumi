@@ -4,9 +4,12 @@
 		getAllTags,
 		renameTag,
 		mergeTags,
+		restoreFromTagRenameSnapshot,
 		proposeTagMerges,
 		getLowValueTags
 	} from '$lib/db';
+	import { pushUndo } from '$lib/stores/undo';
+	import { onMount } from 'svelte';
 	import { Tag, GitMerge, ArrowRight, AlertTriangle, Pencil, Check, X } from 'lucide-svelte';
 
 	// Re-derive every time memory objects change (edits to bodyMarkdown).
@@ -46,7 +49,14 @@
 			cancelRename();
 			return;
 		}
-		renameTag(renamingTag, trimmed);
+		const from = renamingTag;
+		const snapshot = renameTag(renamingTag, trimmed);
+		if (snapshot) {
+			pushUndo({
+				label: `Renamed #${from} → #${trimmed}`,
+				undo: () => restoreFromTagRenameSnapshot(snapshot)
+			});
+		}
 		cancelRename();
 	}
 
@@ -59,13 +69,68 @@
 		}
 	}
 
+	// Keyboard navigation
+	let focusIndex = $state(-1);
+
+	function handlePageKeydown(e: KeyboardEvent) {
+		const target = e.target as HTMLElement | null;
+		if (!target) return;
+		if (
+			target.tagName === 'INPUT' ||
+			target.tagName === 'TEXTAREA' ||
+			target.isContentEditable
+		) {
+			return;
+		}
+		if (allTags.length === 0) return;
+
+		switch (e.key) {
+			case 'j':
+			case 'ArrowDown':
+				e.preventDefault();
+				focusIndex = Math.min(allTags.length - 1, focusIndex < 0 ? 0 : focusIndex + 1);
+				break;
+			case 'k':
+			case 'ArrowUp':
+				e.preventDefault();
+				focusIndex = Math.max(0, focusIndex < 0 ? 0 : focusIndex - 1);
+				break;
+			case 'Enter': {
+				const entry = allTags[focusIndex];
+				if (entry) window.location.hash = `#/read/tag/${encodeURIComponent(entry.tag)}`;
+				break;
+			}
+			case 'r':
+			case 'R': {
+				e.preventDefault();
+				const entry = allTags[focusIndex];
+				if (entry) startRename(entry.tag);
+				break;
+			}
+			case 'Escape':
+				if (focusIndex >= 0) focusIndex = -1;
+				break;
+		}
+	}
+
+	onMount(() => {
+		window.addEventListener('keydown', handlePageKeydown);
+		return () => window.removeEventListener('keydown', handlePageKeydown);
+	});
+
 	function handleMerge(source: string, target: string) {
 		if (
 			confirm(
 				`Merge #${source} → #${target}?\n\nEvery occurrence of #${source} will be rewritten to #${target} across all notes.`
 			)
 		) {
-			mergeTags(source, target);
+			const snapshot = mergeTags(source, target);
+			if (snapshot) {
+				pushUndo({
+					label: `Merged #${source} → #${target}`,
+					undo: () => restoreFromTagRenameSnapshot(snapshot)
+				});
+			}
 		}
 	}
 </script>
@@ -80,7 +145,12 @@
 			<Tag class="h-8 w-8" />
 		</div>
 		<h1>Tags</h1>
-		<p class="count">{allTags.length} {allTags.length === 1 ? 'tag' : 'tags'} in use</p>
+		<p class="count">
+			{allTags.length} {allTags.length === 1 ? 'tag' : 'tags'} in use
+			{#if allTags.length > 0}
+				<span class="hint">j/k nav · Enter open · r rename</span>
+			{/if}
+		</p>
 	</header>
 
 	{#if proposals.length > 0}
@@ -130,8 +200,8 @@
 		<section class="all-tags">
 			<h2 class="section-title">All tags</h2>
 			<ul class="tags-list">
-				{#each allTags as { tag, count } (tag)}
-					<li class="tag-row">
+				{#each allTags as { tag, count }, i (tag)}
+					<li class="tag-row" class:focused={focusIndex === i}>
 						{#if renamingTag === tag}
 							<!-- svelte-ignore a11y_autofocus -->
 							<input
@@ -199,6 +269,13 @@
 	.count {
 		color: var(--color-text-muted);
 		font-size: 0.875rem;
+	}
+
+	.hint {
+		display: block;
+		margin-top: 0.25rem;
+		font-size: 0.75rem;
+		opacity: 0.7;
 	}
 
 	.section-title {
@@ -323,6 +400,10 @@
 
 	.tag-row:hover {
 		border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+	}
+
+	.tag-row.focused {
+		box-shadow: 0 0 0 2px var(--color-accent);
 	}
 
 	.tag-link {
