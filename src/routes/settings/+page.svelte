@@ -13,6 +13,7 @@
 	} from '$lib/db';
 	import { exportVaultAsMarkdown, type MarkdownExportFormat } from '$lib/utils/markdown-export';
 	import { importObsidianVault, type ObsidianImportResult } from '$lib/utils/obsidian-import';
+	import { importRoamJSON, type RoamImportResult } from '$lib/utils/roam-import';
 	import { syncState, initSyncState, sync, testConnection, isSyncConfigured, getSyncMethod, setSyncMethod, isR2SyncConfigured, type SyncMethod } from '$lib/sync';
 	import {
 		gitSyncState,
@@ -165,6 +166,9 @@
 	// Obsidian import state
 	let isImportingObsidian = $state(false);
 	let obsidianImportResult = $state<ObsidianImportResult | null>(null);
+	let isImportingRoam = $state(false);
+	let roamImportResult = $state<RoamImportResult | null>(null);
+	let roamFileInputRef: HTMLInputElement | undefined = $state();
 
 	// Collapsible sections state
 	let sections = $state({
@@ -438,6 +442,25 @@
 			obsidianImportResult = await importObsidianVault();
 		} finally {
 			isImportingObsidian = false;
+		}
+	}
+
+	function triggerRoamImport() {
+		roamFileInputRef?.click();
+	}
+
+	async function handleRoamFileSelect(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		isImportingRoam = true;
+		roamImportResult = null;
+		try {
+			roamImportResult = await importRoamJSON(file);
+		} finally {
+			isImportingRoam = false;
+			// Reset the input so the same file can be picked again
+			if (roamFileInputRef) roamFileInputRef.value = '';
 		}
 	}
 
@@ -1454,11 +1477,13 @@
 						{$vaults.length} {$vaults.length === 1 ? 'vault' : 'vaults'} · {$folders.length} {$folders.length === 1 ? 'folder' : 'folders'} · {$memoryObjects.length} {$memoryObjects.length === 1 ? 'note' : 'notes'}
 					</div>
 
-					<!-- Obsidian Import -->
+					<!-- Markdown folder import (Obsidian / Logseq / Bear / Notion md / Foam) -->
 					<div class="mt-4 pt-4 border-t border-[var(--color-border)]">
-						<h3 class="mb-2 text-sm font-medium text-[var(--color-text)]">Import from Obsidian</h3>
+						<h3 class="mb-2 text-sm font-medium text-[var(--color-text)]">Import from markdown folder</h3>
 						<p class="mb-3 text-sm text-[var(--color-text-muted)]">
-							Import an Obsidian vault folder. All markdown files and folders will be imported into the current vault.
+							Import any folder of <code>.md</code> files: Obsidian vault, Logseq graph,
+							Bear export, Notion markdown export, or Foam workspace. Subfolders
+							become nested folders in Kurumi.
 						</p>
 						<button
 							onclick={handleObsidianImport}
@@ -1470,7 +1495,7 @@
 								Importing...
 							{:else}
 								<Upload class="h-4 w-4" />
-								Select Obsidian Vault Folder
+								Select folder
 							{/if}
 						</button>
 
@@ -1489,6 +1514,62 @@
 								<div class="mt-3 flex items-center gap-2 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-500">
 									<AlertTriangle class="h-4 w-4 shrink-0" />
 									{obsidianImportResult.error}
+								</div>
+							{/if}
+						{/if}
+					</div>
+
+					<!-- Roam Research JSON import -->
+					<div class="mt-4 pt-4 border-t border-[var(--color-border)]">
+						<h3 class="mb-2 text-sm font-medium text-[var(--color-text)]">Import from Roam Research</h3>
+						<p class="mb-3 text-sm text-[var(--color-text-muted)]">
+							Upload a Roam JSON export file. Each page becomes a memory with
+							its block outline flattened to nested markdown bullets.
+							<code>{'{{TODO}}'}</code> / <code>{'{{DONE}}'}</code> become
+							checklist items; wikilinks and tags are preserved as-is.
+						</p>
+						<input
+							bind:this={roamFileInputRef}
+							type="file"
+							accept=".json,application/json"
+							onchange={handleRoamFileSelect}
+							class="hidden"
+						/>
+						<button
+							onclick={triggerRoamImport}
+							disabled={isImportingRoam}
+							class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] active:scale-[0.98] disabled:opacity-50"
+						>
+							{#if isImportingRoam}
+								<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+								Importing...
+							{:else}
+								<Upload class="h-4 w-4" />
+								Select Roam JSON
+							{/if}
+						</button>
+
+						{#if roamImportResult}
+							{#if roamImportResult.success}
+								<div class="mt-3 flex items-start gap-2 rounded-lg bg-green-500/10 px-3 py-2 text-sm text-green-600 dark:text-green-400">
+									<Check class="h-4 w-4 shrink-0 mt-0.5" />
+									<div>
+										<p>
+											Imported {roamImportResult.pagesCreated}
+											{roamImportResult.pagesCreated === 1 ? 'page' : 'pages'}
+											({roamImportResult.blockCount} blocks)
+										</p>
+										{#if roamImportResult.skipped.length > 0}
+											<p class="mt-1 text-xs opacity-80">
+												Skipped {roamImportResult.skipped.length} items
+											</p>
+										{/if}
+									</div>
+								</div>
+							{:else if roamImportResult.error}
+								<div class="mt-3 flex items-center gap-2 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-500">
+									<AlertTriangle class="h-4 w-4 shrink-0" />
+									{roamImportResult.error}
 								</div>
 							{/if}
 						{/if}

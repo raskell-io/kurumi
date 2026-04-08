@@ -48,6 +48,68 @@ export function isAskKurumiAvailable(): boolean {
 	return !!inferenceRouter.findProvider(() => true);
 }
 
+/**
+ * Hybrid retrieval over the current vault for a given question.
+ * Returns a ranked list of candidate memories — the same list
+ * askKurumi() feeds to answerWithContext. Exported so other surfaces
+ * (e.g. the Realtime voice session's search_memory tool) can reuse
+ * the same retrieval without the full answer-generation step.
+ */
+export async function retrieveMemoryContext(
+	question: string,
+	limit: number = MAX_CONTEXT_MEMORIES
+): Promise<MemoryObject[]> {
+	const trimmed = question.trim();
+	if (!trimmed) return [];
+
+	const [keywordHits, semanticHits] = await Promise.all([
+		Promise.resolve(search(trimmed)),
+		semanticSearch(trimmed, limit).catch(() => [])
+	]);
+
+	const seen = new Set<string>();
+	const candidates: MemoryObject[] = [];
+	const pushMemory = (id: string) => {
+		if (seen.has(id)) return;
+		const memory = getMemoryObject(id);
+		if (!memory) return;
+		seen.add(id);
+		candidates.push(memory);
+	};
+
+	const maxLen = Math.max(keywordHits.length, semanticHits.length);
+	for (let i = 0; i < maxLen && candidates.length < limit; i++) {
+		if (i < keywordHits.length) pushMemory(keywordHits[i].id);
+		if (i < semanticHits.length) pushMemory(semanticHits[i].memoryId);
+	}
+
+	if (candidates.length === 0) {
+		const recent = get(memoryObjects).slice(0, limit);
+		for (const m of recent) pushMemory(m.id);
+	}
+
+	return candidates;
+}
+
+/**
+ * Build compact {memoryId, text} context blocks from a list of
+ * memories. Shared by askKurumi and the Realtime tool handler so both
+ * surfaces agree on how much text each memory contributes.
+ */
+export function buildContextBlocks(
+	memories: MemoryObject[]
+): Array<{ memoryId: string; text: string }> {
+	return memories.map((memory) => {
+		const sourceText = pickContextText(memory);
+		const excerpt = sourceText.slice(0, PER_MEMORY_CHAR_BUDGET);
+		const titleLine = `# ${memory.title || 'Untitled'}`;
+		return {
+			memoryId: memory.id,
+			text: `${titleLine}\n${excerpt}`
+		};
+	});
+}
+
 export async function askKurumi(
 	question: string,
 	priorTurns: AskTurn[] = []
@@ -57,55 +119,13 @@ export async function askKurumi(
 		return { error: 'Please enter a question.' };
 	}
 
-	// 1. Hybrid retrieval: union of keyword hits (MiniSearch) and semantic
-	// hits (local embeddings). Both run in parallel; we then dedupe by
-	// memory id and take the top N. The order interleaves the two ranked
-	// lists so the strongest match from each path is at the top.
-	const [keywordHits, semanticHits] = await Promise.all([
-		Promise.resolve(search(trimmed)),
-		semanticSearch(trimmed, MAX_CONTEXT_MEMORIES).catch(() => [])
-	]);
-
-	const seen = new Set<string>();
-	const candidateMemories: MemoryObject[] = [];
-	const pushMemory = (id: string) => {
-		if (seen.has(id)) return;
-		const memory = getMemoryObject(id);
-		if (!memory) return;
-		seen.add(id);
-		candidateMemories.push(memory);
-	};
-
-	// Interleave: best keyword, best semantic, second keyword, second semantic, ...
-	const maxLen = Math.max(keywordHits.length, semanticHits.length);
-	for (let i = 0; i < maxLen && candidateMemories.length < MAX_CONTEXT_MEMORIES; i++) {
-		if (i < keywordHits.length) pushMemory(keywordHits[i].id);
-		if (i < semanticHits.length) pushMemory(semanticHits[i].memoryId);
-	}
-
-	// Fallback: if both retrieval paths returned nothing (e.g. brand-new
-	// vault, no embeddings yet, very short question), use the most recent
-	// memories so the model has at least something to look at instead of
-	// failing immediately.
-	if (candidateMemories.length === 0) {
-		const recent = get(memoryObjects).slice(0, MAX_CONTEXT_MEMORIES);
-		for (const m of recent) pushMemory(m.id);
-	}
+	const candidateMemories = await retrieveMemoryContext(trimmed, MAX_CONTEXT_MEMORIES);
 
 	if (candidateMemories.length === 0) {
 		return { error: 'No memories yet. Capture a few notes or recordings first.' };
 	}
 
-	// 2. Build context blocks: title + best-available text excerpt.
-	const contextBlocks = candidateMemories.map((memory) => {
-		const sourceText = pickContextText(memory);
-		const excerpt = sourceText.slice(0, PER_MEMORY_CHAR_BUDGET);
-		const titleLine = `# ${memory.title || 'Untitled'}`;
-		return {
-			memoryId: memory.id,
-			text: `${titleLine}\n${excerpt}`
-		};
-	});
+	const contextBlocks = buildContextBlocks(candidateMemories);
 
 	// 3. Find a provider that can answer with context. The router doesn't
 	// have a per-task capability flag for this yet, so we walk providers

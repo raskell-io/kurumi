@@ -24,6 +24,7 @@ import {
 	type Template,
 	type ActionItem,
 	type ActionItemStatus,
+	type Recurrence,
 	type MeetingActionItemDraft,
 	type ReminderProposal,
 	type ReminderStatus,
@@ -552,6 +553,21 @@ export async function initDB(): Promise<void> {
 				await saveDoc();
 			}
 
+			// Migrate: add recurrence field to existing action items
+			// (v11 -> v12). Defaults to 'none' so legacy items behave
+			// identically to before the change.
+			if ((doc.version ?? 0) < 12) {
+				doc = Automerge.change(doc, (d) => {
+					for (const item of Object.values(d.actionItems ?? {})) {
+						if ((item as { recurrence?: unknown }).recurrence === undefined) {
+							(item as { recurrence: Recurrence }).recurrence = 'none';
+						}
+					}
+					d.version = 12;
+				});
+				await saveDoc();
+			}
+
 			// Update internal vault ID store
 			currentVaultIdStore.set(doc.currentVaultId || DEFAULT_VAULT_ID);
 		} else {
@@ -567,6 +583,10 @@ export async function initDB(): Promise<void> {
 		if (cleanedUp > 0) {
 			console.log(`Auto-cleaned ${cleanedUp} items from trash`);
 		}
+
+		// Roll any overdue recurring action items forward so the user
+		// sees the next occurrence waiting instead of a stale past date.
+		rolloverRecurringActionItems();
 	} catch (error) {
 		console.error('Failed to initialize database:', error);
 		// Start fresh if there's a corruption
@@ -2036,6 +2056,7 @@ export function addActionItem(options: {
 	dueDate?: string | null;
 	status?: ActionItemStatus;
 	confidence?: number;
+	recurrence?: Recurrence;
 }): ActionItem {
 	const now = Date.now();
 	const item: ActionItem = {
@@ -2046,6 +2067,7 @@ export function addActionItem(options: {
 		dueDate: options.dueDate ?? null,
 		status: options.status ?? 'open',
 		confidence: options.confidence ?? 1,
+		recurrence: options.recurrence ?? 'none',
 		vaultId: getCurrentVaultId(),
 		createdAt: now,
 		updatedAt: now
@@ -2076,7 +2098,12 @@ export function updateActionItemStatus(id: string, status: ActionItemStatus): vo
 
 export function updateActionItem(
 	id: string,
-	updates: { text?: string; assignee?: string | null; dueDate?: string | null }
+	updates: {
+		text?: string;
+		assignee?: string | null;
+		dueDate?: string | null;
+		recurrence?: Recurrence;
+	}
 ): void {
 	updateDoc((d) => {
 		const item = d.actionItems?.[id];
@@ -2084,8 +2111,146 @@ export function updateActionItem(
 		if (updates.text !== undefined) item.text = updates.text;
 		if (updates.assignee !== undefined) item.assignee = updates.assignee;
 		if (updates.dueDate !== undefined) item.dueDate = updates.dueDate;
+		if (updates.recurrence !== undefined) item.recurrence = updates.recurrence;
 		item.updatedAt = Date.now();
 	});
+}
+
+/**
+ * Compute the next occurrence date for a recurring action item.
+ * Input is an ISO YYYY-MM-DD and a recurrence. Returns the next
+ * ISO date; 'none' is a no-op and returns the input unchanged.
+ *
+ * Uses local-timezone Date arithmetic so "next week" from 2026-04-08
+ * Wednesday is 2026-04-15 Wednesday, not something offset by hours
+ * through UTC.
+ */
+export function nextOccurrence(isoDate: string, recurrence: Recurrence): string {
+	if (recurrence === 'none') return isoDate;
+	const parts = isoDate.split('-').map((n) => parseInt(n, 10));
+	if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return isoDate;
+	const [y, m, d] = parts;
+	const date = new Date(y, m - 1, d);
+
+	switch (recurrence) {
+		case 'daily':
+			date.setDate(date.getDate() + 1);
+			break;
+		case 'weekly':
+			date.setDate(date.getDate() + 7);
+			break;
+		case 'monthly':
+			date.setMonth(date.getMonth() + 1);
+			break;
+		case 'yearly':
+			date.setFullYear(date.getFullYear() + 1);
+			break;
+	}
+
+	const yy = date.getFullYear();
+	const mm = String(date.getMonth() + 1).padStart(2, '0');
+	const dd = String(date.getDate()).padStart(2, '0');
+	return `${yy}-${mm}-${dd}`;
+}
+
+/**
+ * Complete a recurring action item: mark the current occurrence as
+ * done and create a new open occurrence dated at the next
+ * recurrence step. Non-recurring items just transition to 'done'.
+ *
+ * Called from UI when the user checks off a recurring item.
+ */
+export function completeRecurring(id: string): void {
+	if (!doc) return;
+	const current = doc.actionItems?.[id];
+	if (!current) return;
+
+	// Non-recurring: just mark done.
+	if (current.recurrence === 'none') {
+		updateActionItemStatus(id, 'done');
+		return;
+	}
+
+	// Recurring: mark done AND create the next occurrence.
+	const nextDue = current.dueDate
+		? nextOccurrence(current.dueDate, current.recurrence)
+		: null;
+
+	updateActionItemStatus(id, 'done');
+	addActionItem({
+		memoryObjectId: current.memoryObjectId,
+		text: current.text,
+		assignee: current.assignee,
+		dueDate: nextDue,
+		confidence: current.confidence,
+		recurrence: current.recurrence
+	});
+}
+
+/**
+ * Roll any overdue recurring items forward to the next occurrence.
+ * Called on app boot so items that passed their due date while the
+ * app was closed don't stay stuck in the past.
+ *
+ * Only affects items with status 'open' or 'in_progress' — done /
+ * cancelled items are left alone. The current (overdue) item is
+ * kept at its original date so the user still sees they missed it;
+ * a new occurrence is created at the next step.
+ *
+ * To avoid runaway cloning if the app has been closed for a long
+ * time, we only create ONE new occurrence per overdue item per boot.
+ */
+export function rolloverRecurringActionItems(): void {
+	if (!doc) return;
+	const today = todayIso();
+	const toCreate: Array<{
+		memoryObjectId: string | null;
+		text: string;
+		assignee: string | null;
+		dueDate: string;
+		confidence: number;
+		recurrence: Recurrence;
+		sourceId: string;
+	}> = [];
+
+	for (const item of Object.values(doc.actionItems ?? {})) {
+		if (item.recurrence === 'none') continue;
+		if (item.status !== 'open' && item.status !== 'in_progress') continue;
+		if (!item.dueDate || item.dueDate >= today) continue;
+
+		// Only create a rollover if there isn't already a later
+		// occurrence of the same text in the same vault.
+		const nextDue = nextOccurrence(item.dueDate, item.recurrence);
+		const alreadyHasNext = Object.values(doc.actionItems ?? {}).some(
+			(other) =>
+				other.vaultId === item.vaultId &&
+				other.text === item.text &&
+				other.recurrence === item.recurrence &&
+				other.dueDate === nextDue
+		);
+		if (alreadyHasNext) continue;
+
+		toCreate.push({
+			memoryObjectId: item.memoryObjectId,
+			text: item.text,
+			assignee: item.assignee,
+			dueDate: nextDue,
+			confidence: item.confidence,
+			recurrence: item.recurrence,
+			sourceId: item.id
+		});
+	}
+
+	for (const seed of toCreate) {
+		addActionItem({
+			memoryObjectId: seed.memoryObjectId,
+			text: seed.text,
+			assignee: seed.assignee,
+			dueDate: seed.dueDate,
+			confidence: seed.confidence,
+			recurrence: seed.recurrence
+		});
+	}
 }
 
 export function deleteActionItem(id: string): void {
@@ -2791,7 +2956,7 @@ export interface KurumiExport {
 export function exportFullJSON(): string {
 	if (!doc)
 		return JSON.stringify({
-			version: 11,
+			version: 12,
 			exportedAt: new Date().toISOString(),
 			vaults: [],
 			folders: [],

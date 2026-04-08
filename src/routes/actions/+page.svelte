@@ -7,8 +7,10 @@
 		updateActionItemStatus,
 		deleteActionItem,
 		restoreActionItem,
+		completeRecurring,
 		type ActionItem,
-		type ActionItemStatus
+		type ActionItemStatus,
+		type Recurrence
 	} from '$lib/db';
 	import { pushUndo } from '$lib/stores/undo';
 	import {
@@ -21,9 +23,18 @@
 		Plus,
 		Pencil,
 		Check,
-		MinusSquare
+		MinusSquare,
+		Repeat
 	} from 'lucide-svelte';
 	import { onMount } from 'svelte';
+
+	const RECURRENCE_OPTIONS: Array<{ value: Recurrence; label: string }> = [
+		{ value: 'none', label: 'One-off' },
+		{ value: 'daily', label: 'Daily' },
+		{ value: 'weekly', label: 'Weekly' },
+		{ value: 'monthly', label: 'Monthly' },
+		{ value: 'yearly', label: 'Yearly' }
+	];
 
 	type Group = { label: string; status: ActionItemStatus; items: ActionItem[] };
 
@@ -100,6 +111,17 @@
 	function toggleDone(item: ActionItem) {
 		if (item.status === 'done') {
 			changeStatus(item, 'open', 'Reopened action item');
+		} else if (item.recurrence !== 'none') {
+			// Recurring: mark this occurrence done AND spawn the next one.
+			// Undo is best-effort — we restore the original status but
+			// leave the new occurrence in place (deleting it could lose
+			// user edits if they modified it already).
+			const previousStatus = item.status;
+			completeRecurring(item.id);
+			pushUndo({
+				label: `Completed recurring item`,
+				undo: () => updateActionItemStatus(item.id, previousStatus)
+			});
 		} else {
 			changeStatus(item, 'done', 'Marked done');
 		}
@@ -266,12 +288,14 @@
 	let editText = $state('');
 	let editAssignee = $state('');
 	let editDueDate = $state('');
+	let editRecurrence = $state<Recurrence>('none');
 
 	function startEdit(item: ActionItem) {
 		editingId = item.id;
 		editText = item.text;
 		editAssignee = item.assignee ?? '';
 		editDueDate = item.dueDate ?? '';
+		editRecurrence = item.recurrence ?? 'none';
 	}
 
 	function cancelEdit() {
@@ -279,6 +303,7 @@
 		editText = '';
 		editAssignee = '';
 		editDueDate = '';
+		editRecurrence = 'none';
 	}
 
 	function saveEdit() {
@@ -291,7 +316,8 @@
 			updateActionItem(editingId, {
 				text: trimmedText,
 				assignee: editAssignee.trim() || null,
-				dueDate: editDueDate.trim() || null
+				dueDate: editDueDate.trim() || null,
+				recurrence: editRecurrence
 			});
 		}
 		cancelEdit();
@@ -311,12 +337,14 @@
 	let newText = $state('');
 	let newAssignee = $state('');
 	let newDueDate = $state('');
+	let newRecurrence = $state<Recurrence>('none');
 
 	function openCreate() {
 		showCreate = true;
 		newText = '';
 		newAssignee = '';
 		newDueDate = '';
+		newRecurrence = 'none';
 	}
 
 	function cancelCreate() {
@@ -324,6 +352,7 @@
 		newText = '';
 		newAssignee = '';
 		newDueDate = '';
+		newRecurrence = 'none';
 	}
 
 	function submitCreate() {
@@ -332,7 +361,8 @@
 		addActionItem({
 			text: trimmed,
 			assignee: newAssignee.trim() || null,
-			dueDate: newDueDate.trim() || null
+			dueDate: newDueDate.trim() || null,
+			recurrence: newRecurrence
 		});
 		cancelCreate();
 	}
@@ -423,6 +453,11 @@
 						onkeydown={handleCreateKeydown}
 						class="form-input"
 					/>
+					<select bind:value={newRecurrence} class="form-input">
+						{#each RECURRENCE_OPTIONS as opt (opt.value)}
+							<option value={opt.value}>{opt.label}</option>
+						{/each}
+					</select>
 					<button class="form-btn-cancel" onclick={cancelCreate}>Cancel</button>
 					<button class="form-btn-submit" onclick={submitCreate} disabled={!newText.trim()}>
 						Create
@@ -506,6 +541,11 @@
 												onkeydown={handleEditKeydown}
 												class="form-input"
 											/>
+											<select bind:value={editRecurrence} class="form-input">
+												{#each RECURRENCE_OPTIONS as opt (opt.value)}
+													<option value={opt.value}>{opt.label}</option>
+												{/each}
+											</select>
 											<button class="form-btn-cancel" onclick={cancelEdit}>Cancel</button>
 											<button class="form-btn-submit" onclick={saveEdit}>
 												<Check class="h-4 w-4" />
@@ -519,6 +559,9 @@
 										<div class="meta">
 											{#if item.assignee}
 												<span class="assignee">@{item.assignee}</span>
+											{/if}
+											{#if item.recurrence && item.recurrence !== 'none'}
+												<span class="recurrence"><Repeat class="h-3 w-3" /> {item.recurrence}</span>
 											{/if}
 											{#if item.dueDate}
 												<span class="due"><Clock class="h-3 w-3" /> {item.dueDate}</span>
@@ -920,6 +963,17 @@
 	.assignee {
 		color: var(--color-accent);
 		font-weight: 500;
+	}
+
+	.recurrence {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		padding: 0.125rem 0.5rem;
+		background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+		color: var(--color-accent);
+		border-radius: 999px;
+		text-transform: capitalize;
 	}
 
 	.due {

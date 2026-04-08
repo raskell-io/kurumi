@@ -213,6 +213,8 @@ export interface MeetingMetadata {
 	summaryStatus: ProcessingState;
 }
 
+export type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
+
 export interface ActionItem {
 	id: string;
 	// null for manually-created items that aren't sourced from a memory
@@ -222,6 +224,10 @@ export interface ActionItem {
 	dueDate: string | null; // ISO date
 	status: ActionItemStatus;
 	confidence: number; // 0..1
+	// Recurrence configuration. 'none' means a one-shot item; any other
+	// value means the item rolls over to its next occurrence when
+	// completed or when its dueDate passes.
+	recurrence: Recurrence;
 	vaultId: string;
 	createdAt: number;
 	updatedAt: number;
@@ -361,7 +367,7 @@ export function createEmptyDocument(): KurumiDocument {
 		reminderProposals: {},
 		draftProposals: {},
 		currentVaultId: DEFAULT_VAULT_ID,
-		version: 11
+		version: 12
 	};
 }
 

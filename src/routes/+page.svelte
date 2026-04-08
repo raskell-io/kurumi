@@ -13,6 +13,7 @@
 	import { startPushToTalk, speak, stopSpeaking, type RecorderHandle } from '$lib/voice';
 	import type { MemoryObject } from '$lib/db/types';
 	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
+	import RealtimeSessionPanel from '$lib/components/RealtimeSessionPanel.svelte';
 	import { goto } from '$app/navigation';
 	import { onDestroy } from 'svelte';
 	import {
@@ -29,7 +30,8 @@
 		VolumeX,
 		CheckSquare,
 		Square,
-		Bell
+		Bell,
+		Radio
 	} from 'lucide-svelte';
 	import { showNewNoteSnackbar, triggerVoiceAssistant } from '$lib/stores/snackbar';
 
@@ -91,6 +93,12 @@
 	let transcribing = $state(false);
 	let speaking = $state(false);
 	let recorderHandle: RecorderHandle | null = null;
+
+	// Realtime voice session (OpenAI Realtime API via WebRTC).
+	// Separate from voiceMode — that's push-to-talk → transcribe →
+	// answer → TTS; Realtime is a continuous two-way voice session
+	// with the model calling search_memory as a tool.
+	let showRealtimePanel = $state(false);
 
 	let ttsAvailable = $derived(
 		inferenceRouter.findProvider((c) => c.supportsTts) !== null
@@ -400,18 +408,31 @@
 					<Sparkles class="h-5 w-5 text-[var(--color-accent)]" />
 					<h1 class="text-xl font-semibold text-[var(--color-text)]">Ask Kurumi</h1>
 				</div>
-				{#if aiAvailable && (ttsAvailable || transcribeAvailable)}
-					<button
-						type="button"
-						onclick={handleVoiceToggle}
-						class="voice-toggle flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition-colors"
-						class:voice-toggle-on={voiceMode}
-						title={voiceMode ? 'Disable voice mode' : 'Enable voice mode (push-to-talk + spoken answers)'}
-					>
-						<Mic class="h-3.5 w-3.5" />
-						Voice {voiceMode ? 'on' : 'off'}
-					</button>
-				{/if}
+				<div class="flex items-center gap-1.5">
+					{#if aiAvailable}
+						<button
+							type="button"
+							onclick={() => (showRealtimePanel = true)}
+							class="voice-toggle flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+							title="Open realtime voice session"
+						>
+							<Radio class="h-3.5 w-3.5" />
+							Realtime
+						</button>
+					{/if}
+					{#if aiAvailable && (ttsAvailable || transcribeAvailable)}
+						<button
+							type="button"
+							onclick={handleVoiceToggle}
+							class="voice-toggle flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition-colors"
+							class:voice-toggle-on={voiceMode}
+							title={voiceMode ? 'Disable voice mode' : 'Enable voice mode (push-to-talk + spoken answers)'}
+						>
+							<Mic class="h-3.5 w-3.5" />
+							Voice {voiceMode ? 'on' : 'off'}
+						</button>
+					{/if}
+				</div>
 			</div>
 
 			{#if aiAvailable}
@@ -632,6 +653,10 @@
 		</div>
 	{/if}
 </div>
+
+{#if showRealtimePanel}
+	<RealtimeSessionPanel onClose={() => (showRealtimePanel = false)} />
+{/if}
 
 <style>
 	:global(.markdown-content sup .ask-citation) {
