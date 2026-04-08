@@ -86,6 +86,36 @@
 		return cleaned.length > max ? cleaned.slice(0, max) + '…' : cleaned;
 	}
 
+	function escapeAttr(s: string): string {
+		return s.replace(
+			/[&<>"']/g,
+			(c) =>
+				({
+					'&': '&amp;',
+					'<': '&lt;',
+					'>': '&gt;',
+					'"': '&quot;',
+					"'": '&#39;'
+				})[c] ?? c
+		);
+	}
+
+	/**
+	 * Replace inline [n] markers in the LLM answer with clickable HTML
+	 * superscripts that link to the matching candidate memory. Marked
+	 * passes inline HTML through, so the resulting markdown still renders
+	 * normally.
+	 */
+	function renderInlineCitations(answerText: string, candidates: typeof recentMemories): string {
+		return answerText.replace(/\[(\d+)\]/g, (match, numStr) => {
+			const n = parseInt(numStr, 10);
+			const memory = candidates[n - 1];
+			if (!memory) return match;
+			const title = escapeAttr(memory.title || 'Untitled');
+			return `<sup><a href="/memory/${memory.id}" class="ask-citation" title="${title}">[${n}]</a></sup>`;
+		});
+	}
+
 	const tips = [
 		{ icon: '[[', text: 'Use [[Note Title]] to link notes together' },
 		{ icon: '#', text: 'Add #tags to organize your thoughts' },
@@ -193,7 +223,9 @@
 					<div class="mt-4 space-y-4">
 						<div class="rounded-xl border border-[var(--color-accent)]/30 bg-[var(--color-accent)]/5 p-4">
 							<div class="markdown-content text-sm text-[var(--color-text)]">
-								<MarkdownRenderer content={answer.answer} />
+								<MarkdownRenderer
+									content={renderInlineCitations(answer.answer, answer.candidates)}
+								/>
 							</div>
 							<div class="mt-3 flex items-center justify-between text-xs text-[var(--color-text-muted)]">
 								<span>{answer.candidates.length} memories searched · {answer.citations.length} cited</span>
@@ -287,3 +319,24 @@
 		</div>
 	{/if}
 </div>
+
+<style>
+	:global(.markdown-content sup .ask-citation) {
+		display: inline-block;
+		min-width: 1.25em;
+		padding: 0 0.25em;
+		margin: 0 0.05em;
+		border-radius: 4px;
+		background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+		color: var(--color-accent);
+		font-size: 0.75em;
+		font-weight: 600;
+		text-align: center;
+		text-decoration: none;
+		transition: background 0.15s;
+	}
+	:global(.markdown-content sup .ask-citation:hover) {
+		background: color-mix(in srgb, var(--color-accent) 35%, transparent);
+		text-decoration: none;
+	}
+</style>

@@ -523,26 +523,29 @@ Rules:
 			};
 		}
 
-		// Build context blocks tagged with memory IDs so the model can cite.
+		// Build context blocks tagged with [n] markers and memory IDs so the
+		// model can cite reliably with inline footnotes.
 		const contextBlocks = input.context
 			.map((c, i) => `[${i + 1}] (id: ${c.memoryId})\n${c.text}`)
 			.join('\n\n---\n\n');
 
 		const system = `You answer questions about a user's personal memories (notes, voice memos, meeting transcripts).
 
-You are given the user's question and a set of candidate memories that may be relevant. Each memory is tagged with [number] and an id. Read all the memories carefully, then answer the question accurately and concisely.
+You are given the user's question and a set of candidate memories that may be relevant. Each memory is tagged with a [n] marker and an id. Read all the memories carefully, then answer the question accurately and concisely.
 
 Rules:
 - Base your answer ONLY on the provided memories. Do not invent facts.
 - If the memories don't contain enough information, say so plainly.
-- Cite the memories you actually used by their id, not by [number].
+- Use INLINE [n] markers in your answer text to cite each claim, where n matches the candidate memory number. For example: "Alice agreed to lead the redesign [2] and we set a Q4 deadline [2][5]."
+- Place markers right after the claim they support. Multiple markers can be stacked: [1][2].
 - Keep the answer focused — typically 2-5 sentences unless the question demands more detail.
 - You may use markdown for formatting (bullets, bold).
+- The "citations" array in the JSON output must list the memory IDs in the same order they first appear as inline markers in the answer.
 
 Return ONLY a JSON object with this exact shape:
 {
-  "answer": "your answer in markdown",
-  "citations": ["memory_id_1", "memory_id_2"]
+  "answer": "your answer in markdown with inline [n] markers",
+  "citations": ["memory_id_for_1", "memory_id_for_2"]
 }`;
 
 		const userPrompt = `Question:\n${input.question}\n\nCandidate memories:\n\n${contextBlocks}`;
