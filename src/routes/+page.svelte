@@ -2,9 +2,12 @@
 	import { memoryObjects, addMemoryObject } from '$lib/db';
 	import { askKurumi, isAskKurumiResult, type AskKurumiResult } from '$lib/ask';
 	import { isAIConfigured } from '$lib/ai';
+	import { inferenceRouter } from '$lib/inference';
+	import { startPushToTalk, speak, stopSpeaking, type RecorderHandle } from '$lib/voice';
 	import type { MemoryObject } from '$lib/db/types';
 	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
 	import { goto } from '$app/navigation';
+	import { onDestroy } from 'svelte';
 	import {
 		Plus,
 		FileText,
@@ -13,7 +16,10 @@
 		Send,
 		AlertCircle,
 		Settings,
-		RotateCcw
+		RotateCcw,
+		Mic,
+		Volume2,
+		VolumeX
 	} from 'lucide-svelte';
 	import { showNewNoteSnackbar } from '$lib/stores/snackbar';
 
@@ -49,6 +55,101 @@
 	// raw question and the full result (so we can re-render citations).
 	let turns = $state<Turn[]>([]);
 
+	// Voice assistant mode
+	// - voiceMode on: TTS plays answers automatically, and the question
+	//   input shows a push-to-talk mic button
+	// - voiceMode off: text-only (existing behavior)
+	let voiceMode = $state(false);
+	let recording = $state(false);
+	let transcribing = $state(false);
+	let speaking = $state(false);
+	let recorderHandle: RecorderHandle | null = null;
+
+	let ttsAvailable = $derived(
+		inferenceRouter.findProvider((c) => c.supportsTts) !== null
+	);
+	let transcribeAvailable = $derived(
+		inferenceRouter.findProvider((c) => c.supportsTranscribe) !== null
+	);
+
+	async function handleVoiceToggle() {
+		if (!voiceMode) {
+			voiceMode = true;
+		} else {
+			voiceMode = false;
+			stopSpeaking();
+			speaking = false;
+		}
+	}
+
+	async function handleStartRecording() {
+		if (recording || asking || transcribing) return;
+		askError = null;
+		try {
+			recorderHandle = await startPushToTalk();
+			recording = true;
+		} catch (err) {
+			askError = err instanceof Error ? err.message : 'Microphone unavailable';
+		}
+	}
+
+	async function handleStopRecording() {
+		if (!recorderHandle || !recording) return;
+		recording = false;
+		transcribing = true;
+		try {
+			const blob = await recorderHandle.stop();
+			recorderHandle = null;
+			const provider = inferenceRouter.findProvider((c) => c.supportsTranscribe);
+			if (!provider) throw new Error('No transcription provider configured');
+			const result = await provider.transcribe({
+				audio: blob,
+				mimeType: blob.type || 'audio/webm'
+			});
+			if (!result.ok || !result.value) {
+				throw new Error(result.error || 'Transcription failed');
+			}
+			question = result.value.text.trim();
+			transcribing = false;
+			if (question) {
+				await handleAsk();
+			}
+		} catch (err) {
+			askError = err instanceof Error ? err.message : 'Voice capture failed';
+			transcribing = false;
+			recorderHandle = null;
+		}
+	}
+
+	/** Remove inline [n] citation markers before speaking the answer aloud. */
+	function stripCitations(text: string): string {
+		return text.replace(/\[\d+\]/g, '').replace(/\s+/g, ' ').trim();
+	}
+
+	async function handleSpeak(text: string) {
+		if (!ttsAvailable || speaking) return;
+		speaking = true;
+		try {
+			await speak(stripCitations(text));
+		} catch (err) {
+			askError = err instanceof Error ? err.message : 'TTS playback failed';
+		} finally {
+			speaking = false;
+		}
+	}
+
+	function handleStopSpeaking() {
+		stopSpeaking();
+		speaking = false;
+	}
+
+	onDestroy(() => {
+		stopSpeaking();
+		if (recorderHandle) {
+			void recorderHandle.stop();
+		}
+	});
+
 	async function handleAsk() {
 		const trimmed = question.trim();
 		if (!trimmed || asking) return;
@@ -64,6 +165,11 @@
 			if (isAskKurumiResult(result)) {
 				turns = [...turns, { question: trimmed, result }];
 				question = '';
+				// In voice mode, auto-play the answer so the user can keep
+				// their hands off the keyboard.
+				if (voiceMode && ttsAvailable) {
+					void handleSpeak(result.answer);
+				}
 			} else {
 				askError = result.error;
 			}
@@ -192,9 +298,23 @@
 	{:else}
 		<!-- Ask Kurumi (or fallback if no AI key) + recent activity -->
 		<div class="mb-8">
-			<div class="mb-3 flex items-center gap-2">
-				<Sparkles class="h-5 w-5 text-[var(--color-accent)]" />
-				<h1 class="text-xl font-semibold text-[var(--color-text)]">Ask Kurumi</h1>
+			<div class="mb-3 flex items-center justify-between gap-2">
+				<div class="flex items-center gap-2">
+					<Sparkles class="h-5 w-5 text-[var(--color-accent)]" />
+					<h1 class="text-xl font-semibold text-[var(--color-text)]">Ask Kurumi</h1>
+				</div>
+				{#if aiAvailable && (ttsAvailable || transcribeAvailable)}
+					<button
+						type="button"
+						onclick={handleVoiceToggle}
+						class="voice-toggle flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition-colors"
+						class:voice-toggle-on={voiceMode}
+						title={voiceMode ? 'Disable voice mode' : 'Enable voice mode (push-to-talk + spoken answers)'}
+					>
+						<Mic class="h-3.5 w-3.5" />
+						Voice {voiceMode ? 'on' : 'off'}
+					</button>
+				{/if}
 			</div>
 
 			{#if aiAvailable}
@@ -209,24 +329,50 @@
 						type="text"
 						bind:value={question}
 						onkeydown={handleAskKeydown}
-						placeholder={turns.length > 0
+						placeholder={recording
+							? 'Listening…'
+							: transcribing
+							? 'Transcribing…'
+							: turns.length > 0
 							? 'Follow up on this conversation…'
 							: 'Ask anything about your memories…'}
-						disabled={asking}
-						class="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-4 pr-14 text-base text-[var(--color-text)] placeholder-[var(--color-text-muted)] outline-none transition-colors focus:border-[var(--color-accent)] disabled:opacity-50"
+						disabled={asking || recording || transcribing}
+						class="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-4 pr-24 text-base text-[var(--color-text)] placeholder-[var(--color-text-muted)] outline-none transition-colors focus:border-[var(--color-accent)] disabled:opacity-50"
 					/>
-					<button
-						type="submit"
-						disabled={!question.trim() || asking}
-						class="absolute right-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-lg bg-[var(--color-accent)] text-white transition-all hover:bg-[var(--color-accent-hover)] disabled:opacity-50 disabled:hover:bg-[var(--color-accent)]"
-						aria-label="Ask"
-					>
-						{#if asking}
-							<div class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-						{:else}
-							<Send class="h-4 w-4" />
+					<div class="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
+						{#if voiceMode && transcribeAvailable}
+							<!-- Push-to-talk: press and hold -->
+							<button
+								type="button"
+								disabled={asking || transcribing}
+								onpointerdown={handleStartRecording}
+								onpointerup={handleStopRecording}
+								onpointerleave={() => recording && handleStopRecording()}
+								class="flex h-10 w-10 items-center justify-center rounded-lg transition-all disabled:opacity-50"
+								class:bg-red-500={recording}
+								class:text-white={recording}
+								class:animate-pulse={recording}
+								class:bg-[var(--color-border)]={!recording}
+								class:text-[var(--color-text)]={!recording}
+								aria-label={recording ? 'Release to send' : 'Hold to talk'}
+								title="Hold to talk"
+							>
+								<Mic class="h-4 w-4" />
+							</button>
 						{/if}
-					</button>
+						<button
+							type="submit"
+							disabled={!question.trim() || asking || recording || transcribing}
+							class="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--color-accent)] text-white transition-all hover:bg-[var(--color-accent-hover)] disabled:opacity-50 disabled:hover:bg-[var(--color-accent)]"
+							aria-label="Ask"
+						>
+							{#if asking}
+								<div class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+							{:else}
+								<Send class="h-4 w-4" />
+							{/if}
+						</button>
+					</div>
 				</form>
 
 				{#if asking}
@@ -262,8 +408,34 @@
 											content={renderInlineCitations(turn.result.answer, turn.result.candidates)}
 										/>
 									</div>
-									<div class="mt-3 text-xs text-[var(--color-text-muted)]">
-										{turn.result.candidates.length} memories searched · {turn.result.citations.length} cited
+									<div class="mt-3 flex items-center justify-between gap-2 text-xs text-[var(--color-text-muted)]">
+										<span>
+											{turn.result.candidates.length} memories searched · {turn.result.citations.length} cited
+										</span>
+										{#if ttsAvailable}
+											{#if speaking && idx === turns.length - 1}
+												<button
+													type="button"
+													onclick={handleStopSpeaking}
+													class="flex items-center gap-1 rounded-md border border-[var(--color-border)] px-2 py-1 hover:bg-[var(--color-bg-secondary)]"
+													title="Stop playback"
+												>
+													<VolumeX class="h-3 w-3" />
+													Stop
+												</button>
+											{:else}
+												<button
+													type="button"
+													onclick={() => handleSpeak(turn.result.answer)}
+													disabled={speaking}
+													class="flex items-center gap-1 rounded-md border border-[var(--color-border)] px-2 py-1 hover:bg-[var(--color-bg-secondary)] disabled:opacity-50"
+													title="Speak answer"
+												>
+													<Volume2 class="h-3 w-3" />
+													Speak
+												</button>
+											{/if}
+										{/if}
 									</div>
 								</div>
 
@@ -382,5 +554,16 @@
 	:global(.markdown-content sup .ask-citation:hover) {
 		background: color-mix(in srgb, var(--color-accent) 35%, transparent);
 		text-decoration: none;
+	}
+
+	.voice-toggle {
+		border-color: var(--color-border);
+		color: var(--color-text-muted);
+	}
+
+	.voice-toggle-on {
+		border-color: var(--color-accent);
+		color: var(--color-accent);
+		background: color-mix(in srgb, var(--color-accent) 10%, transparent);
 	}
 </style>

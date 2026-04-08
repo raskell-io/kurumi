@@ -137,10 +137,10 @@ export class OpenAIProvider implements InferenceProvider {
 		id: 'openai',
 		target: 'remote',
 		supportsRealtime: false,
-		supportsTts: false,
+		supportsTts: true,
 		supportsTranscribe: true,
 		maxContextTokens: 128_000,
-		models: ['gpt-4o', 'gpt-4o-mini', TRANSCRIBE_MODEL]
+		models: ['gpt-4o', 'gpt-4o-mini', TRANSCRIBE_MODEL, 'gpt-4o-mini-tts']
 	};
 
 	async transcribe(
@@ -687,8 +687,68 @@ Return ONLY a JSON object with this exact shape:
 		return notImplemented('mergeAliasCandidates', 'remote');
 	}
 
-	async tts(_input: TtsInput, _options?: TaskOptions): Promise<InferenceResult<TtsResult>> {
-		return notImplemented('tts', 'remote');
+	async tts(input: TtsInput, _options?: TaskOptions): Promise<InferenceResult<TtsResult>> {
+		const apiKey = getApiKey();
+		const startedAt = Date.now();
+		const model = 'gpt-4o-mini-tts';
+
+		if (!apiKey) {
+			return {
+				ok: false,
+				error: 'OpenAI API key not configured',
+				target: 'remote',
+				providerId: 'openai',
+				model,
+				latencyMs: 0
+			};
+		}
+
+		try {
+			const response = await fetch('https://api.openai.com/v1/audio/speech', {
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${apiKey}`,
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					model,
+					input: input.text,
+					voice: input.voice ?? 'alloy',
+					response_format: 'mp3'
+				})
+			});
+
+			if (!response.ok) {
+				const text = await response.text().catch(() => '');
+				return {
+					ok: false,
+					error: `OpenAI TTS failed (${response.status}): ${text || 'no body'}`,
+					target: 'remote',
+					providerId: 'openai',
+					model,
+					latencyMs: Date.now() - startedAt
+				};
+			}
+
+			const audio = await response.arrayBuffer();
+			return {
+				ok: true,
+				value: { audio, mimeType: 'audio/mpeg' },
+				target: 'remote',
+				providerId: 'openai',
+				model,
+				latencyMs: Date.now() - startedAt
+			};
+		} catch (err) {
+			return {
+				ok: false,
+				error: err instanceof Error ? err.message : 'TTS network error',
+				target: 'remote',
+				providerId: 'openai',
+				model,
+				latencyMs: Date.now() - startedAt
+			};
+		}
 	}
 
 	async realtimeSessionStart(
