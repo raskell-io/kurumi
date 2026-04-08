@@ -227,6 +227,35 @@ export interface ActionItem {
 	[key: string]: unknown; // Automerge compatibility
 }
 
+/**
+ * Reminder proposal — Phase 9 controlled action layer. Produced by
+ * `proposeReminders` during memory processing. Lives as a user-review
+ * queue: approving turns a proposal into a real ActionItem with a
+ * dueDate; rejecting leaves an audit record.
+ *
+ * Proposals are kept forever even after decision so there's a
+ * transparent log of what the assistant suggested and what the user
+ * accepted.
+ */
+export type ReminderStatus = 'pending' | 'approved' | 'rejected' | 'snoozed';
+
+export interface ReminderProposal {
+	id: string;
+	memoryObjectId: string; // source memory that triggered the proposal
+	text: string; // e.g. "Follow up with Alice about Q4 deck"
+	suggestedDate: string; // ISO YYYY-MM-DD, resolved against memory.capturedAt
+	reason: string | null; // short quote or rationale for user context
+	confidence: number; // 0..1
+	status: ReminderStatus;
+	vaultId: string;
+	createdAt: number;
+	decidedAt: number | null; // when the user approved/rejected
+	// ActionItem id created on approval, for round-tripping and to
+	// prevent duplicate promotions on retry.
+	actionItemId: string | null;
+	[key: string]: unknown; // Automerge compatibility
+}
+
 export interface Entity {
 	id: string;
 	type: EntityType;
@@ -258,6 +287,7 @@ export interface KurumiDocument {
 	events: Record<string, Event>;
 	templates: Record<string, Template>;
 	actionItems: Record<string, ActionItem>;
+	reminderProposals: Record<string, ReminderProposal>;
 	currentVaultId: string;
 	version: number;
 	[key: string]: unknown; // Required for Automerge compatibility
@@ -294,8 +324,9 @@ export function createEmptyDocument(): KurumiDocument {
 		events: {},
 		templates: {},
 		actionItems: {},
+		reminderProposals: {},
 		currentVaultId: DEFAULT_VAULT_ID,
-		version: 9
+		version: 10
 	};
 }
 

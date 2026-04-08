@@ -12,7 +12,8 @@
 		getAllTags,
 		folders,
 		trashCount,
-		actionItems
+		actionItems,
+		reminderProposals
 	} from '$lib/db';
 	import { storeBlob } from '$lib/db/blob-store';
 	import { initHashRouter, updateHashFromPath } from '$lib/hash-router';
@@ -35,7 +36,7 @@
 	import TemplatePicker from '$lib/components/TemplatePicker.svelte';
 	import VoiceCaptureModal from '$lib/components/VoiceCaptureModal.svelte';
 	import Snackbar from '$lib/components/Snackbar.svelte';
-	import { X, Plus, Search, ChevronDown, GitFork, BookOpen, Settings, ListTree, Cloud, RefreshCw, CheckCircle, AlertCircle, Pencil, Tag, Trash2, Mic, Users, CalendarDays, CheckSquare } from 'lucide-svelte';
+	import { X, Plus, Search, ChevronDown, GitFork, BookOpen, Settings, ListTree, Cloud, RefreshCw, CheckCircle, AlertCircle, Pencil, Tag, Trash2, Mic, Users, CalendarDays, CheckSquare, Bell } from 'lucide-svelte';
 	import {
 		showNewNoteSnackbar,
 		triggerSearch,
@@ -672,25 +673,41 @@
 						{navigator?.platform?.includes('Mac') ? '⌘' : 'Ctrl'}K
 					</kbd>
 				</button>
-				<div class="grid grid-cols-2 gap-2">
+				<div class="grid grid-cols-3 gap-1.5">
 					<a
 						href="/daily"
 						onclick={handleNoteClick}
-						class="flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
+						class="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2 py-2 text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
+						title="Today's daily note"
 					>
 						<CalendarDays class="h-4 w-4 shrink-0" />
-						<span class="text-sm truncate">Today</span>
+						<span class="text-xs truncate">Today</span>
 					</a>
 					<a
 						href="/actions"
 						onclick={handleNoteClick}
-						class="relative flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
+						class="relative flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2 py-2 text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
+						title="Action items"
 					>
 						<CheckSquare class="h-4 w-4 shrink-0" />
-						<span class="text-sm truncate">Actions</span>
+						<span class="text-xs truncate">Actions</span>
 						{#if $actionItems.filter((i) => i.status === 'open').length > 0}
-							<span class="ml-auto rounded-full bg-[var(--color-accent)] px-1.5 text-[10px] font-medium text-white">
+							<span class="ml-auto rounded-full bg-[var(--color-accent)] px-1 text-[10px] font-medium text-white">
 								{$actionItems.filter((i) => i.status === 'open').length}
+							</span>
+						{/if}
+					</a>
+					<a
+						href="/proposals"
+						onclick={handleNoteClick}
+						class="relative flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2 py-2 text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
+						title="Reminder proposals"
+					>
+						<Bell class="h-4 w-4 shrink-0" />
+						<span class="text-xs truncate">Proposals</span>
+						{#if $reminderProposals.filter((p) => p.status === 'pending').length > 0}
+							<span class="ml-auto rounded-full bg-yellow-500 px-1 text-[10px] font-medium text-white">
+								{$reminderProposals.filter((p) => p.status === 'pending').length}
 							</span>
 						{/if}
 					</a>

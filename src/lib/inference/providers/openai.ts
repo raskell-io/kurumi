@@ -23,6 +23,8 @@ import type {
 	RewriteTranscriptInput,
 	ExtractedEntity,
 	ExtractedActionItem,
+	ExtractedReminder,
+	ProposeRemindersInput,
 	ClassifyResult,
 	AnswerWithContextInput,
 	AnsweredQuestion,
@@ -486,6 +488,142 @@ Rules:
 		_options?: TaskOptions
 	): Promise<InferenceResult<ExtractedActionItem[]>> {
 		return notImplemented('extractActionItems', 'remote');
+	}
+
+	async proposeReminders(
+		input: ProposeRemindersInput,
+		options?: TaskOptions
+	): Promise<InferenceResult<ExtractedReminder[]>> {
+		const apiKey = getApiKey();
+		const startedAt = Date.now();
+		const model = CHAT_MODEL;
+
+		if (!apiKey) {
+			return {
+				ok: false,
+				error: 'OpenAI API key not configured',
+				target: 'remote',
+				providerId: 'openai',
+				model,
+				latencyMs: 0
+			};
+		}
+
+		const system = [
+			'You extract time-anchored reminders from a memory.',
+			'A reminder is a follow-up action that has a clear due date or time window',
+			'("tomorrow", "next Monday", "in two weeks", "before the end of the month",',
+			'"2026-05-01"). Do NOT invent reminders that aren\'t grounded in the text.',
+			'',
+			`Resolve every relative date against ANCHOR_DATE (ISO YYYY-MM-DD): ${input.anchorDate}.`,
+			'Return absolute ISO YYYY-MM-DD dates only — never relative phrases.',
+			'',
+			'Respond with strict JSON of shape:',
+			'{"reminders": [{"text": string, "suggestedDate": "YYYY-MM-DD",',
+			'                "reason": string | null, "confidence": number}]}',
+			'',
+			'If no time-anchored reminders exist, return {"reminders": []}.'
+		].join('\n');
+
+		try {
+			const response = await fetch('https://api.openai.com/v1/chat/completions', {
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${apiKey}`,
+					'Content-Type': 'application/json'
+				},
+				signal: options?.signal,
+				body: JSON.stringify({
+					model,
+					temperature: 0.1,
+					response_format: { type: 'json_object' },
+					messages: [
+						{ role: 'system', content: system },
+						{ role: 'user', content: input.text }
+					]
+				})
+			});
+
+			if (!response.ok) {
+				const text = await response.text().catch(() => '');
+				return {
+					ok: false,
+					error: `OpenAI proposeReminders failed (${response.status}): ${text || 'no body'}`,
+					target: 'remote',
+					providerId: 'openai',
+					model,
+					latencyMs: Date.now() - startedAt
+				};
+			}
+
+			const data = await response.json();
+			const raw = data.choices?.[0]?.message?.content;
+			if (!raw) {
+				return {
+					ok: true,
+					value: [],
+					target: 'remote',
+					providerId: 'openai',
+					model,
+					latencyMs: Date.now() - startedAt
+				};
+			}
+
+			let parsed: unknown;
+			try {
+				parsed = JSON.parse(raw);
+			} catch {
+				return {
+					ok: false,
+					error: 'OpenAI returned non-JSON reminders payload',
+					target: 'remote',
+					providerId: 'openai',
+					model,
+					latencyMs: Date.now() - startedAt
+				};
+			}
+
+			const list = Array.isArray((parsed as { reminders?: unknown })?.reminders)
+				? (parsed as { reminders: unknown[] }).reminders
+				: [];
+
+			const isoDate = /^\d{4}-\d{2}-\d{2}$/;
+			const reminders: ExtractedReminder[] = [];
+			for (const raw of list) {
+				if (!raw || typeof raw !== 'object') continue;
+				const item = raw as Record<string, unknown>;
+				const text = typeof item.text === 'string' ? item.text.trim() : '';
+				const suggestedDate = typeof item.suggestedDate === 'string' ? item.suggestedDate : '';
+				if (!text || !isoDate.test(suggestedDate)) continue;
+				reminders.push({
+					text,
+					suggestedDate,
+					reason: typeof item.reason === 'string' ? item.reason : null,
+					confidence:
+						typeof item.confidence === 'number' && item.confidence >= 0 && item.confidence <= 1
+							? item.confidence
+							: 0.7
+				});
+			}
+
+			return {
+				ok: true,
+				value: reminders,
+				target: 'remote',
+				providerId: 'openai',
+				model,
+				latencyMs: Date.now() - startedAt
+			};
+		} catch (err) {
+			return {
+				ok: false,
+				error: err instanceof Error ? err.message : 'proposeReminders network error',
+				target: 'remote',
+				providerId: 'openai',
+				model,
+				latencyMs: Date.now() - startedAt
+			};
+		}
 	}
 
 	async classifyMemory(

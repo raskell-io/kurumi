@@ -1,5 +1,12 @@
 <script lang="ts">
-	import { memoryObjects, addMemoryObject } from '$lib/db';
+	import {
+		memoryObjects,
+		addMemoryObject,
+		actionItems,
+		reminderProposals,
+		updateActionItemStatus,
+		todayIso
+	} from '$lib/db';
 	import { askKurumi, isAskKurumiResult, type AskKurumiResult } from '$lib/ask';
 	import { isAIConfigured } from '$lib/ai';
 	import { inferenceRouter } from '$lib/inference';
@@ -19,7 +26,10 @@
 		RotateCcw,
 		Mic,
 		Volume2,
-		VolumeX
+		VolumeX,
+		CheckSquare,
+		Square,
+		Bell
 	} from 'lucide-svelte';
 	import { showNewNoteSnackbar, triggerVoiceAssistant } from '$lib/stores/snackbar';
 
@@ -37,6 +47,23 @@
 	// Get 5 most recently edited memories
 	let recentMemories = $derived(
 		[...$memoryObjects].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5)
+	);
+
+	// Action items due on or before today, still open — the Phase 9
+	// "actually show me what's next" surface. Done / cancelled items
+	// are excluded so the list stays actionable.
+	let dueToday = $derived.by(() => {
+		const today = todayIso();
+		return $actionItems.filter(
+			(a) =>
+				(a.status === 'open' || a.status === 'in_progress') &&
+				a.dueDate !== null &&
+				a.dueDate <= today
+		);
+	});
+
+	let pendingProposalsCount = $derived(
+		$reminderProposals.filter((p) => p.status === 'pending').length
 	);
 
 	// Ask Kurumi state
@@ -314,6 +341,58 @@
 			</div>
 		</div>
 	{:else}
+		<!-- Due today + pending proposals strip -->
+		{#if dueToday.length > 0 || pendingProposalsCount > 0}
+			<div class="mb-6 space-y-3">
+				{#if dueToday.length > 0}
+					<div class="rounded-xl border border-[var(--color-accent)]/30 bg-[var(--color-accent)]/5 p-4">
+						<div class="mb-2 flex items-center justify-between">
+							<div class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+								<CheckSquare class="h-4 w-4 text-[var(--color-accent)]" />
+								Due today or earlier
+								<span class="rounded-full bg-[var(--color-bg-secondary)] px-2 text-xs text-[var(--color-text-muted)]">
+									{dueToday.length}
+								</span>
+							</div>
+							<a href="/actions" class="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-accent)]">
+								View all →
+							</a>
+						</div>
+						<ul class="space-y-1">
+							{#each dueToday.slice(0, 5) as item (item.id)}
+								<li class="flex items-center gap-2 text-sm">
+									<button
+										class="flex h-5 w-5 shrink-0 items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-accent)]"
+										onclick={() => updateActionItemStatus(item.id, 'done')}
+										aria-label="Mark done"
+									>
+										<Square class="h-4 w-4" />
+									</button>
+									<span class="flex-1 truncate text-[var(--color-text)]">{item.text}</span>
+									{#if item.dueDate}
+										<span class="shrink-0 text-xs text-[var(--color-text-muted)]">{item.dueDate}</span>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
+				{#if pendingProposalsCount > 0}
+					<a
+						href="/proposals"
+						class="flex items-center gap-3 rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-3 text-sm text-[var(--color-text)] transition-colors hover:border-yellow-500/50"
+					>
+						<Bell class="h-4 w-4 text-yellow-500" />
+						<span class="flex-1">
+							{pendingProposalsCount} reminder proposal{pendingProposalsCount === 1 ? '' : 's'}
+							waiting for your review
+						</span>
+						<span class="text-xs text-[var(--color-text-muted)]">Review →</span>
+					</a>
+				{/if}
+			</div>
+		{/if}
+
 		<!-- Ask Kurumi (or fallback if no AI key) + recent activity -->
 		<div class="mb-8">
 			<div class="mb-3 flex items-center justify-between gap-2">

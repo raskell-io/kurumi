@@ -24,6 +24,8 @@ import type {
 	RewriteTranscriptInput,
 	ExtractedEntity,
 	ExtractedActionItem,
+	ExtractedReminder,
+	ProposeRemindersInput,
 	ClassifyResult,
 	AnswerWithContextInput,
 	AnsweredQuestion,
@@ -263,6 +265,16 @@ export class TextLocalProvider implements InferenceProvider {
 		_options?: TaskOptions
 	): Promise<InferenceResult<ExtractedActionItem[]>> {
 		return notImplemented('extractActionItems');
+	}
+
+	async proposeReminders(
+		_input: ProposeRemindersInput,
+		_options?: TaskOptions
+	): Promise<InferenceResult<ExtractedReminder[]>> {
+		// Date-anchored reminder extraction needs reliable JSON-mode, which
+		// small local text models don't do well. Fall back to the remote
+		// provider via the router.
+		return notImplemented('proposeReminders');
 	}
 
 	async classifyMemory(

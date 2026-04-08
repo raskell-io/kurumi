@@ -109,6 +109,32 @@ export interface ExtractedActionItem {
 	confidence: number;
 }
 
+/**
+ * Time-anchored nudge extracted from a memory, e.g.
+ *   "Follow up with Alice about the Q4 deck"  → suggestedDate=2026-04-22
+ *
+ * `suggestedDate` is always resolved to an absolute ISO YYYY-MM-DD by
+ * the provider. `reason` is an optional short quote from the source
+ * that the reviewer can use to decide whether to approve.
+ */
+export interface ExtractedReminder {
+	text: string;
+	suggestedDate: string;
+	reason: string | null;
+	confidence: number;
+}
+
+export interface ProposeRemindersInput {
+	text: string;
+	/**
+	 * Anchor date the model resolves relative dates against (ISO
+	 * YYYY-MM-DD). Usually the memory's capturedAt in the user's local
+	 * timezone. Required so "tomorrow" in a week-old voice memo
+	 * produces the right absolute date.
+	 */
+	anchorDate: string;
+}
+
 export interface ClassifyResult {
 	labels: ControlledLabel[];
 	confidence: number;
@@ -212,6 +238,11 @@ export interface InferenceProvider {
 		input: { text: string },
 		options?: TaskOptions
 	): Promise<InferenceResult<ExtractedActionItem[]>>;
+
+	proposeReminders(
+		input: ProposeRemindersInput,
+		options?: TaskOptions
+	): Promise<InferenceResult<ExtractedReminder[]>>;
 
 	classifyMemory(
 		input: { text: string },

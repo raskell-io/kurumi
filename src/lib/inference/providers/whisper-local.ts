@@ -26,6 +26,8 @@ import type {
 	RewriteTranscriptInput,
 	ExtractedEntity,
 	ExtractedActionItem,
+	ExtractedReminder,
+	ProposeRemindersInput,
 	ClassifyResult,
 	AnswerWithContextInput,
 	AnsweredQuestion,
@@ -171,6 +173,13 @@ export class WhisperLocalProvider implements InferenceProvider {
 		_options?: TaskOptions
 	): Promise<InferenceResult<ExtractedActionItem[]>> {
 		return notImplemented('extractActionItems');
+	}
+
+	async proposeReminders(
+		_input: ProposeRemindersInput,
+		_options?: TaskOptions
+	): Promise<InferenceResult<ExtractedReminder[]>> {
+		return notImplemented('proposeReminders');
 	}
 
 	async classifyMemory(

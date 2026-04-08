@@ -24,7 +24,9 @@ import {
 	type Template,
 	type ActionItem,
 	type ActionItemStatus,
-	type MeetingActionItemDraft
+	type MeetingActionItemDraft,
+	type ReminderProposal,
+	type ReminderStatus
 } from './types';
 
 const STORAGE_KEY = 'kurumi-doc';
@@ -144,6 +146,31 @@ export const actionItems: Readable<ActionItem[]> = derived(
 				if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
 				if (a.dueDate) return -1;
 				if (b.dueDate) return 1;
+				return b.createdAt - a.createdAt;
+			});
+	}
+);
+
+// Derived store for reminder proposals in the current vault. Pending
+// first, then sorted by suggestedDate asc. Decided proposals (approved/
+// rejected) stay visible as an audit trail but after pending ones.
+export const reminderProposals: Readable<ReminderProposal[]> = derived(
+	[docStore, currentVaultId],
+	([$doc, $vaultId]) => {
+		if (!$doc || !$doc.reminderProposals) return [];
+		const statusOrder: Record<ReminderStatus, number> = {
+			pending: 0,
+			snoozed: 1,
+			approved: 2,
+			rejected: 3
+		};
+		return Object.values($doc.reminderProposals)
+			.filter((p) => p.vaultId === $vaultId)
+			.sort((a, b) => {
+				const s = statusOrder[a.status] - statusOrder[b.status];
+				if (s !== 0) return s;
+				if (a.suggestedDate && b.suggestedDate)
+					return a.suggestedDate.localeCompare(b.suggestedDate);
 				return b.createdAt - a.createdAt;
 			});
 	}
@@ -477,6 +504,17 @@ export async function initDB(): Promise<void> {
 				doc = Automerge.change(doc, (d) => {
 					if (!d.actionItems) d.actionItems = {};
 					d.version = 9;
+				});
+				await saveDoc();
+			}
+
+			// Migrate: add reminderProposals collection (v9 -> v10) for the
+			// Phase 9 controlled action layer. Proposals are persisted
+			// forever as an audit trail.
+			if ((doc.version ?? 0) < 10) {
+				doc = Automerge.change(doc, (d) => {
+					if (!d.reminderProposals) d.reminderProposals = {};
+					d.version = 10;
 				});
 				await saveDoc();
 			}
@@ -907,11 +945,23 @@ export async function transcribeMemoryAudio(
 		p.extractEntities({ text: transcriptText })
 	);
 
+	// Reminder proposal extraction also runs in parallel. Anchored to
+	// the memory's capturedAt so "tomorrow" resolves relative to when
+	// the memo was taken, not when we happen to process it.
+	const anchorDate = (() => {
+		const captured = doc?.memoryObjects[memoryId]?.capturedAt ?? Date.now();
+		return new Date(captured).toISOString().split('T')[0];
+	})();
+	const remindersPromise = runFirstSuccessful((p) =>
+		p.proposeReminders({ text: transcriptText, anchorDate })
+	);
+
 	if (memoryType === 'meeting') {
 		// Meetings get a structured summary with action items, decisions, etc.
-		const [meetingSummary, entities] = await Promise.all([
+		const [meetingSummary, entities, reminders] = await Promise.all([
 			runFirstSuccessful((p) => p.summarizeMeeting({ transcript: transcriptText })),
-			entitiesPromise
+			entitiesPromise,
+			remindersPromise
 		]);
 
 		updateDoc((d) => {
@@ -969,6 +1019,8 @@ export async function transcribeMemoryAudio(
 		// entities so they surface on the /actions dashboard. Safe to call
 		// repeatedly (dedupes by text).
 		promoteDraftActionItems(memoryId);
+		// Stash any extracted reminders as pending proposals for user review.
+		if (reminders) stashReminderProposals(memoryId, reminders);
 		// Refresh the embedding so semantic search picks up the new transcript
 		// + summary immediately rather than waiting for the next ask.
 		void embedMemory(memoryId);
@@ -976,10 +1028,11 @@ export async function transcribeMemoryAudio(
 	}
 
 	// Voice memo / default path: simple summary + title + entities
-	const [summary, title, entities] = await Promise.all([
+	const [summary, title, entities, reminders] = await Promise.all([
 		runFirstSuccessful((p) => p.summarize({ text: transcriptText, style: 'short' })),
 		runFirstSuccessful((p) => p.generateTitle({ text: transcriptText })),
-		entitiesPromise
+		entitiesPromise,
+		remindersPromise
 	]);
 
 	updateDoc((d) => {
@@ -1005,9 +1058,45 @@ export async function transcribeMemoryAudio(
 		memory.processingError = null;
 		memory.updatedAt = Date.now();
 	});
+	if (reminders) stashReminderProposals(memoryId, reminders);
 	// Refresh the embedding so semantic search picks up the new transcript
 	// + summary immediately rather than waiting for the next ask.
 	void embedMemory(memoryId);
+}
+
+/**
+ * Persist extracted reminders as pending proposals. Dedupes against
+ * existing proposals for the same memory by exact text + suggestedDate
+ * pair so re-running the pipeline doesn't create duplicates.
+ */
+function stashReminderProposals(
+	memoryId: string,
+	reminders: Array<{
+		text: string;
+		suggestedDate: string;
+		reason: string | null;
+		confidence: number;
+	}>
+): void {
+	if (!doc || reminders.length === 0) return;
+	const existing = new Set<string>();
+	for (const p of Object.values(doc.reminderProposals ?? {})) {
+		if (p.memoryObjectId === memoryId) {
+			existing.add(`${p.text}|${p.suggestedDate}`);
+		}
+	}
+	for (const r of reminders) {
+		const key = `${r.text}|${r.suggestedDate}`;
+		if (existing.has(key)) continue;
+		addReminderProposal({
+			memoryObjectId: memoryId,
+			text: r.text,
+			suggestedDate: r.suggestedDate,
+			reason: r.reason,
+			confidence: r.confidence
+		});
+		existing.add(key);
+	}
 }
 
 /**
@@ -1901,6 +1990,103 @@ export function deleteActionItem(id: string): void {
 	});
 }
 
+// ============ ReminderProposal CRUD ============
+
+export function addReminderProposal(options: {
+	memoryObjectId: string;
+	text: string;
+	suggestedDate: string;
+	reason?: string | null;
+	confidence?: number;
+}): ReminderProposal {
+	const now = Date.now();
+	const proposal: ReminderProposal = {
+		id: generateId(),
+		memoryObjectId: options.memoryObjectId,
+		text: options.text,
+		suggestedDate: options.suggestedDate,
+		reason: options.reason ?? null,
+		confidence: options.confidence ?? 0.8,
+		status: 'pending',
+		vaultId: getCurrentVaultId(),
+		createdAt: now,
+		decidedAt: null,
+		actionItemId: null
+	};
+	updateDoc((d) => {
+		if (!d.reminderProposals) d.reminderProposals = {};
+		d.reminderProposals[proposal.id] = proposal;
+	});
+	return proposal;
+}
+
+/**
+ * Approve a pending proposal: creates an ActionItem linked to the
+ * source memory (status 'open', due date = suggestedDate) and stamps
+ * the proposal with the new action item id so re-approval is
+ * idempotent.
+ */
+export function approveReminderProposal(id: string): void {
+	if (!doc) return;
+	const proposal = doc.reminderProposals?.[id];
+	if (!proposal || proposal.status === 'approved') return;
+
+	const actionItem = addActionItem({
+		memoryObjectId: proposal.memoryObjectId,
+		text: proposal.text,
+		dueDate: proposal.suggestedDate,
+		confidence: proposal.confidence
+	});
+
+	updateDoc((d) => {
+		const p = d.reminderProposals?.[id];
+		if (!p) return;
+		p.status = 'approved';
+		p.decidedAt = Date.now();
+		p.actionItemId = actionItem.id;
+	});
+}
+
+export function rejectReminderProposal(id: string): void {
+	updateDoc((d) => {
+		const p = d.reminderProposals?.[id];
+		if (!p) return;
+		p.status = 'rejected';
+		p.decidedAt = Date.now();
+	});
+}
+
+export function snoozeReminderProposal(id: string, newDate: string): void {
+	updateDoc((d) => {
+		const p = d.reminderProposals?.[id];
+		if (!p) return;
+		p.suggestedDate = newDate;
+		p.status = 'snoozed';
+		p.decidedAt = Date.now();
+	});
+}
+
+/**
+ * Revert a previously decided proposal back to pending. Useful if the
+ * user changes their mind, or if the approval created an ActionItem
+ * they then deleted and want to re-create.
+ */
+export function reopenReminderProposal(id: string): void {
+	updateDoc((d) => {
+		const p = d.reminderProposals?.[id];
+		if (!p) return;
+		p.status = 'pending';
+		p.decidedAt = null;
+		p.actionItemId = null;
+	});
+}
+
+export function deleteReminderProposal(id: string): void {
+	updateDoc((d) => {
+		if (d.reminderProposals) delete d.reminderProposals[id];
+	});
+}
+
 /**
  * Promote the draft action items sitting on a meeting's meetingExtras
  * into top-level ActionItem entities. Called after meeting summarization
@@ -2092,7 +2278,8 @@ function manualMerge(
 		memoryObjects: localDoc.memoryObjects || {},
 		people: localDoc.people || {},
 		events: localDoc.events || {},
-		actionItems: localDoc.actionItems || {}
+		actionItems: localDoc.actionItems || {},
+		reminderProposals: localDoc.reminderProposals || {}
 	});
 	const remoteData = deepCopy({
 		vaults: remoteDoc.vaults || {},
@@ -2100,7 +2287,8 @@ function manualMerge(
 		memoryObjects: remoteDoc.memoryObjects || {},
 		people: remoteDoc.people || {},
 		events: remoteDoc.events || {},
-		actionItems: remoteDoc.actionItems || {}
+		actionItems: remoteDoc.actionItems || {},
+		reminderProposals: remoteDoc.reminderProposals || {}
 	});
 
 	return Automerge.change(baseDoc, (d) => {
@@ -2182,6 +2370,40 @@ function manualMerge(
 			);
 			if (newest) {
 				d.actionItems[id] = newest;
+			}
+		}
+
+		// Merge reminder proposals. These don't have updatedAt; use a
+		// preference for decided > pending (so an approval on one device
+		// wins over a still-pending copy on another), then fall back to
+		// createdAt.
+		if (!d.reminderProposals) d.reminderProposals = {};
+		const allProposalIds = new Set([
+			...Object.keys(localData.reminderProposals),
+			...Object.keys(remoteData.reminderProposals)
+		]);
+		for (const id of allProposalIds) {
+			const local = localData.reminderProposals[id];
+			const remote = remoteData.reminderProposals[id];
+			if (!local && remote) {
+				d.reminderProposals[id] = remote;
+			} else if (local && !remote) {
+				d.reminderProposals[id] = local;
+			} else if (local && remote) {
+				// Prefer the side that's been decided (has a non-null decidedAt).
+				const localDecided = local.decidedAt != null;
+				const remoteDecided = remote.decidedAt != null;
+				if (localDecided && !remoteDecided) {
+					d.reminderProposals[id] = local;
+				} else if (remoteDecided && !localDecided) {
+					d.reminderProposals[id] = remote;
+				} else if (localDecided && remoteDecided) {
+					d.reminderProposals[id] =
+						(local.decidedAt ?? 0) >= (remote.decidedAt ?? 0) ? local : remote;
+				} else {
+					d.reminderProposals[id] =
+						local.createdAt >= remote.createdAt ? local : remote;
+				}
 			}
 		}
 	});
@@ -2287,7 +2509,7 @@ export interface KurumiExport {
 export function exportFullJSON(): string {
 	if (!doc)
 		return JSON.stringify({
-			version: 9,
+			version: 10,
 			exportedAt: new Date().toISOString(),
 			vaults: [],
 			folders: [],
