@@ -12,8 +12,13 @@ import { writable, get, type Writable } from 'svelte/store';
 const STORAGE_KEY = 'kurumi-local-inference';
 
 export type WhisperModelSize = 'tiny' | 'base' | 'small';
-export type TextModelChoice = 'smollm2-360m' | 'qwen2-0_5b' | 'llama-3_2-1b';
-export type EmbedModelChoice = 'mini-lm-l6';
+export type TextModelChoice =
+	| 'smollm2-360m'
+	| 'qwen2-0_5b'
+	| 'llama-3_2-1b'
+	| 'llama-3_2-3b'
+	| 'qwen2_5-3b';
+export type EmbedModelChoice = 'mini-lm-l6' | 'multilingual-e5-small';
 
 export interface LocalInferenceSettings {
 	enabled: boolean;
@@ -121,6 +126,10 @@ export function textModelId(choice: TextModelChoice): string {
 			return 'onnx-community/Qwen2.5-0.5B-Instruct';
 		case 'llama-3_2-1b':
 			return 'onnx-community/Llama-3.2-1B-Instruct';
+		case 'llama-3_2-3b':
+			return 'onnx-community/Llama-3.2-3B-Instruct';
+		case 'qwen2_5-3b':
+			return 'onnx-community/Qwen2.5-3B-Instruct';
 	}
 }
 
@@ -131,7 +140,11 @@ export function textModelLabel(choice: TextModelChoice): string {
 		case 'qwen2-0_5b':
 			return 'Qwen2.5 0.5B (~500 MB) — slightly bigger';
 		case 'llama-3_2-1b':
-			return 'Llama 3.2 1B (~900 MB) — large enough for Q&A';
+			return 'Llama 3.2 1B (~900 MB) — basic Q&A, fast';
+		case 'llama-3_2-3b':
+			return 'Llama 3.2 3B (~1.7 GB) — solid local Q&A';
+		case 'qwen2_5-3b':
+			return 'Qwen2.5 3B (~1.8 GB) — strong local Q&A, multilingual';
 	}
 }
 
@@ -139,6 +152,8 @@ export function embedModelId(choice: EmbedModelChoice): string {
 	switch (choice) {
 		case 'mini-lm-l6':
 			return 'Xenova/all-MiniLM-L6-v2';
+		case 'multilingual-e5-small':
+			return 'Xenova/multilingual-e5-small';
 	}
 }
 
@@ -146,5 +161,7 @@ export function embedModelLabel(choice: EmbedModelChoice): string {
 	switch (choice) {
 		case 'mini-lm-l6':
 			return 'all-MiniLM-L6-v2 (~25 MB) — fast, English-focused';
+		case 'multilingual-e5-small':
+			return 'multilingual-e5-small (~120 MB) — supports 100+ languages';
 	}
 }

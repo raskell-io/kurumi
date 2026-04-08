@@ -1013,6 +1013,8 @@
 									<option value="smollm2-360m">{textModelLabel('smollm2-360m')}</option>
 									<option value="qwen2-0_5b">{textModelLabel('qwen2-0_5b')}</option>
 									<option value="llama-3_2-1b">{textModelLabel('llama-3_2-1b')}</option>
+									<option value="llama-3_2-3b">{textModelLabel('llama-3_2-3b')}</option>
+									<option value="qwen2_5-3b">{textModelLabel('qwen2_5-3b')}</option>
 								</select>
 							</div>
 
@@ -1079,8 +1081,27 @@
 						</label>
 
 						{#if $localInferenceSettings.embedModelEnabled}
-							<div class="mt-3 text-xs text-[var(--color-text-muted)]">
-								{embedModelLabel($localInferenceSettings.embedModel)}
+							<div class="mt-3">
+								<label
+									for="embed-model"
+									class="mb-1 block text-sm font-medium text-[var(--color-text)]"
+								>
+									Embedding model
+								</label>
+								<select
+									id="embed-model"
+									value={$localInferenceSettings.embedModel}
+									onchange={(e) =>
+										updateLocalInferenceSettings({
+											embedModel: (e.target as HTMLSelectElement).value as EmbedModelChoice
+										})}
+									class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-sm text-[var(--color-text)]"
+								>
+									<option value="mini-lm-l6">{embedModelLabel('mini-lm-l6')}</option>
+									<option value="multilingual-e5-small">
+										{embedModelLabel('multilingual-e5-small')}
+									</option>
+								</select>
 							</div>
 
 							<div class="mt-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3">
