@@ -951,7 +951,7 @@
 							{#if currentStatus.state !== 'loading' && currentStatus.state !== 'ready'}
 								<button
 									type="button"
-									onclick={() => preloadPipeline('transcribe', currentModelId)}
+									onclick={() => preloadPipeline('transcribe', currentModelId, { dtype: 'q8' })}
 									class="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-border)]"
 								>
 									Download now

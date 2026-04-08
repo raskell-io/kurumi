@@ -273,7 +273,9 @@
 		if (localSettings.enabled && localSettings.preloadOnStartup) {
 			// Slight delay so we don't compete with the initial app render.
 			setTimeout(() => {
-				preloadPipeline('transcribe', whisperModelId(localSettings.whisperModel));
+				preloadPipeline('transcribe', whisperModelId(localSettings.whisperModel), {
+					dtype: 'q8'
+				});
 				if (localSettings.textModelEnabled) {
 					preloadPipeline('text-generation', textModelId(localSettings.textModel));
 				}

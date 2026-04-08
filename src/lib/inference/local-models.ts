@@ -57,8 +57,17 @@ interface ProgressEvent {
  * Load (or retrieve from cache) the transformers.js pipeline for a given
  * task + model. Updates the localModelStatus store as the download/load
  * progresses so UI can show feedback.
+ *
+ * `extraOptions` is forwarded to the underlying `pipeline()` call. The most
+ * common use is `{ dtype: 'q4' | 'q8' | 'fp16' | 'fp32' }` to pin a known-
+ * working quantization variant when the default is broken for a given
+ * model + runtime combination.
  */
-export async function loadPipeline(task: LocalTask, model: string): Promise<unknown> {
+export async function loadPipeline(
+	task: LocalTask,
+	model: string,
+	extraOptions: Record<string, unknown> = {}
+): Promise<unknown> {
 	const key = `${task}:${model}`;
 
 	// Already loaded
@@ -81,6 +90,7 @@ export async function loadPipeline(task: LocalTask, model: string): Promise<unkn
 
 			const transformersTask = mapTaskToTransformers(task) as Parameters<typeof pipeline>[0];
 			const instance = await pipeline(transformersTask, model, {
+				...extraOptions,
 				progress_callback: (event: ProgressEvent) => {
 					if (event.status === 'progress' && typeof event.progress === 'number') {
 						setStatus(key, {
@@ -94,7 +104,7 @@ export async function loadPipeline(task: LocalTask, model: string): Promise<unkn
 						setStatus(key, { state: 'ready' });
 					}
 				}
-			});
+			} as Parameters<typeof pipeline>[2]);
 
 			pipelineCache.set(key, instance);
 			setStatus(key, { state: 'ready' });
@@ -116,8 +126,12 @@ export async function loadPipeline(task: LocalTask, model: string): Promise<unkn
  * Trigger a pipeline load without awaiting it. Used for boot-time preloading.
  * Errors are swallowed because preload is best-effort.
  */
-export function preloadPipeline(task: LocalTask, model: string): void {
-	loadPipeline(task, model).catch((err) => {
+export function preloadPipeline(
+	task: LocalTask,
+	model: string,
+	extraOptions: Record<string, unknown> = {}
+): void {
+	loadPipeline(task, model, extraOptions).catch((err) => {
 		console.warn(`[local-models] preload of ${task}:${model} failed:`, err);
 	});
 }

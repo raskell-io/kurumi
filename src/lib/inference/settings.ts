@@ -69,23 +69,28 @@ export function updateLocalInferenceSettings(patch: Partial<LocalInferenceSettin
 
 /**
  * Map a Whisper model size to the actual transformers.js model id.
- * The Xenova org publishes ONNX-quantized variants of OpenAI Whisper.
+ *
+ * We use the `onnx-community` org's exports rather than the older
+ * `Xenova/*` ones. The Xenova exports use a quantization metadata format
+ * that the current onnxruntime-web (shipped with transformers.js v4)
+ * rejects with "Missing required scale" errors. The onnx-community
+ * variants are maintained against the current runtime.
  */
 export function whisperModelId(size: WhisperModelSize): string {
 	switch (size) {
 		case 'tiny':
-			return 'Xenova/whisper-tiny';
+			return 'onnx-community/whisper-tiny';
 		case 'base':
-			return 'Xenova/whisper-base';
+			return 'onnx-community/whisper-base';
 		case 'small':
-			return 'Xenova/whisper-small';
+			return 'onnx-community/whisper-small';
 	}
 }
 
 export function whisperModelLabel(size: WhisperModelSize): string {
 	switch (size) {
 		case 'tiny':
-			return 'Whisper Tiny (~75 MB) — fastest, lower accuracy';
+			return 'Whisper Tiny (~80 MB) — fastest, lower accuracy';
 		case 'base':
 			return 'Whisper Base (~150 MB) — balanced (default)';
 		case 'small':
