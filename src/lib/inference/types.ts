@@ -135,6 +135,27 @@ export interface ProposeRemindersInput {
 	anchorDate: string;
 }
 
+/**
+ * A draft email or calendar event extracted from a memory.
+ * `suggestedDate` / `suggestedTime` are only populated for calendar
+ * events and are always in the user's local timezone, resolved against
+ * the anchor date supplied to the provider.
+ */
+export interface ExtractedDraft {
+	kind: 'email' | 'calendar-event';
+	target: string | null;
+	subject: string;
+	body: string;
+	suggestedDate: string | null;
+	suggestedTime: string | null;
+	confidence: number;
+}
+
+export interface ProposeDraftsInput {
+	text: string;
+	anchorDate: string;
+}
+
 export interface ClassifyResult {
 	labels: ControlledLabel[];
 	confidence: number;
@@ -243,6 +264,11 @@ export interface InferenceProvider {
 		input: ProposeRemindersInput,
 		options?: TaskOptions
 	): Promise<InferenceResult<ExtractedReminder[]>>;
+
+	proposeDrafts(
+		input: ProposeDraftsInput,
+		options?: TaskOptions
+	): Promise<InferenceResult<ExtractedDraft[]>>;
 
 	classifyMemory(
 		input: { text: string },

@@ -25,6 +25,8 @@ import type {
 	ExtractedActionItem,
 	ExtractedReminder,
 	ProposeRemindersInput,
+	ExtractedDraft,
+	ProposeDraftsInput,
 	ClassifyResult,
 	AnswerWithContextInput,
 	AnsweredQuestion,
@@ -618,6 +620,153 @@ Rules:
 			return {
 				ok: false,
 				error: err instanceof Error ? err.message : 'proposeReminders network error',
+				target: 'remote',
+				providerId: 'openai',
+				model,
+				latencyMs: Date.now() - startedAt
+			};
+		}
+	}
+
+	async proposeDrafts(
+		input: ProposeDraftsInput,
+		options?: TaskOptions
+	): Promise<InferenceResult<ExtractedDraft[]>> {
+		const apiKey = getApiKey();
+		const startedAt = Date.now();
+		const model = CHAT_MODEL;
+
+		if (!apiKey) {
+			return {
+				ok: false,
+				error: 'OpenAI API key not configured',
+				target: 'remote',
+				providerId: 'openai',
+				model,
+				latencyMs: 0
+			};
+		}
+
+		const system = [
+			'You identify outgoing follow-ups a user might draft from a memory:',
+			'1. An "email" — a short follow-up message to someone mentioned',
+			'2. A "calendar-event" — a meeting or block the user should schedule',
+			'',
+			`Anchor date (ISO YYYY-MM-DD): ${input.anchorDate}. Resolve every relative`,
+			'date ("next Tuesday", "in 2 weeks") to an absolute ISO YYYY-MM-DD.',
+			'Only propose drafts that are clearly supported by the memory text.',
+			'Do NOT invent drafts to fill quota.',
+			'',
+			'Each draft must have:',
+			'- kind: "email" | "calendar-event"',
+			'- target: recipient name or attendee list (null if unknown)',
+			'- subject: short, under 80 chars',
+			'- body: 1-4 sentences, written in the user\'s first person',
+			'- suggestedDate: ISO YYYY-MM-DD (calendar-event only, else null)',
+			'- suggestedTime: "HH:MM" 24h local (calendar-event only, else null)',
+			'- confidence: 0..1',
+			'',
+			'Respond with strict JSON: {"drafts": [...]}. Empty array if nothing obvious.'
+		].join('\n');
+
+		try {
+			const response = await fetch('https://api.openai.com/v1/chat/completions', {
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${apiKey}`,
+					'Content-Type': 'application/json'
+				},
+				signal: options?.signal,
+				body: JSON.stringify({
+					model,
+					temperature: 0.2,
+					response_format: { type: 'json_object' },
+					messages: [
+						{ role: 'system', content: system },
+						{ role: 'user', content: input.text }
+					]
+				})
+			});
+
+			if (!response.ok) {
+				const text = await response.text().catch(() => '');
+				return {
+					ok: false,
+					error: `OpenAI proposeDrafts failed (${response.status}): ${text || 'no body'}`,
+					target: 'remote',
+					providerId: 'openai',
+					model,
+					latencyMs: Date.now() - startedAt
+				};
+			}
+
+			const data = await response.json();
+			const raw = data.choices?.[0]?.message?.content;
+			let parsed: unknown = {};
+			if (typeof raw === 'string') {
+				try {
+					parsed = JSON.parse(raw);
+				} catch {
+					return {
+						ok: true,
+						value: [],
+						target: 'remote',
+						providerId: 'openai',
+						model,
+						latencyMs: Date.now() - startedAt
+					};
+				}
+			}
+
+			const list = Array.isArray((parsed as { drafts?: unknown })?.drafts)
+				? (parsed as { drafts: unknown[] }).drafts
+				: [];
+
+			const isoDate = /^\d{4}-\d{2}-\d{2}$/;
+			const isoTime = /^\d{2}:\d{2}$/;
+			const drafts: ExtractedDraft[] = [];
+			for (const rawItem of list) {
+				if (!rawItem || typeof rawItem !== 'object') continue;
+				const item = rawItem as Record<string, unknown>;
+				const kind = item.kind === 'email' || item.kind === 'calendar-event' ? item.kind : null;
+				if (!kind) continue;
+				const subject = typeof item.subject === 'string' ? item.subject.trim() : '';
+				const body = typeof item.body === 'string' ? item.body.trim() : '';
+				if (!subject || !body) continue;
+				const suggestedDate =
+					typeof item.suggestedDate === 'string' && isoDate.test(item.suggestedDate)
+						? item.suggestedDate
+						: null;
+				const suggestedTime =
+					typeof item.suggestedTime === 'string' && isoTime.test(item.suggestedTime)
+						? item.suggestedTime
+						: null;
+				drafts.push({
+					kind,
+					target: typeof item.target === 'string' ? item.target : null,
+					subject,
+					body,
+					suggestedDate,
+					suggestedTime,
+					confidence:
+						typeof item.confidence === 'number' && item.confidence >= 0 && item.confidence <= 1
+							? item.confidence
+							: 0.6
+				});
+			}
+
+			return {
+				ok: true,
+				value: drafts,
+				target: 'remote',
+				providerId: 'openai',
+				model,
+				latencyMs: Date.now() - startedAt
+			};
+		} catch (err) {
+			return {
+				ok: false,
+				error: err instanceof Error ? err.message : 'proposeDrafts network error',
 				target: 'remote',
 				providerId: 'openai',
 				model,

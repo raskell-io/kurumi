@@ -44,13 +44,19 @@
 		extractingReminders = true;
 		extractionResult = null;
 		try {
-			const added = await extractRemindersFromMemory(memory.id);
-			if (added === -1) {
-				extractionResult = 'No reminders extracted — provider may not support this task';
-			} else if (added === 0) {
-				extractionResult = 'No new reminders found';
+			const { reminders, drafts } = await extractRemindersFromMemory(memory.id);
+			if (reminders === -1 && drafts === -1) {
+				extractionResult = 'Extraction unavailable — provider not configured';
 			} else {
-				extractionResult = `${added} reminder${added === 1 ? '' : 's'} added for review`;
+				const parts: string[] = [];
+				if (reminders > 0)
+					parts.push(`${reminders} reminder${reminders === 1 ? '' : 's'}`);
+				if (drafts > 0) parts.push(`${drafts} draft${drafts === 1 ? '' : 's'}`);
+				if (parts.length === 0) {
+					extractionResult = 'No new proposals found';
+				} else {
+					extractionResult = `${parts.join(' + ')} added for review`;
+				}
 			}
 		} catch (err) {
 			extractionResult = err instanceof Error ? err.message : 'Extraction failed';

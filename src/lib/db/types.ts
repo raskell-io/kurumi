@@ -229,6 +229,38 @@ export interface ActionItem {
 }
 
 /**
+ * Draft proposal — Phase 9 controlled action layer companion to
+ * ReminderProposal. Extracted from memories when the LLM spots an
+ * obvious follow-up email or calendar invite. Deliberately NOT sent
+ * to anything — the user copies the draft into their real mail/
+ * calendar client. Aliasing outgoing side-effects behind OAuth would
+ * require a much larger scope.
+ */
+export type DraftStatus = 'pending' | 'used' | 'rejected';
+export type DraftKind = 'email' | 'calendar-event';
+
+export interface DraftProposal {
+	id: string;
+	memoryObjectId: string;
+	kind: DraftKind;
+	// Who / what is it directed at
+	target: string | null; // recipient name, attendee list, etc.
+	// For email: subject; for calendar-event: event title
+	subject: string;
+	// Main body (markdown ok for email, calendar description for events)
+	body: string;
+	// For calendar-event: suggested ISO date (YYYY-MM-DD) or datetime
+	suggestedDate: string | null;
+	suggestedTime: string | null; // HH:MM local, optional
+	confidence: number;
+	status: DraftStatus;
+	vaultId: string;
+	createdAt: number;
+	decidedAt: number | null;
+	[key: string]: unknown; // Automerge compatibility
+}
+
+/**
  * Reminder proposal — Phase 9 controlled action layer. Produced by
  * `proposeReminders` during memory processing. Lives as a user-review
  * queue: approving turns a proposal into a real ActionItem with a
@@ -289,6 +321,7 @@ export interface KurumiDocument {
 	templates: Record<string, Template>;
 	actionItems: Record<string, ActionItem>;
 	reminderProposals: Record<string, ReminderProposal>;
+	draftProposals: Record<string, DraftProposal>;
 	currentVaultId: string;
 	version: number;
 	[key: string]: unknown; // Required for Automerge compatibility
@@ -326,8 +359,9 @@ export function createEmptyDocument(): KurumiDocument {
 		templates: {},
 		actionItems: {},
 		reminderProposals: {},
+		draftProposals: {},
 		currentVaultId: DEFAULT_VAULT_ID,
-		version: 10
+		version: 11
 	};
 }
 

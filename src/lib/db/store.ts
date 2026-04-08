@@ -26,7 +26,10 @@ import {
 	type ActionItemStatus,
 	type MeetingActionItemDraft,
 	type ReminderProposal,
-	type ReminderStatus
+	type ReminderStatus,
+	type DraftProposal,
+	type DraftStatus,
+	type DraftKind
 } from './types';
 
 const STORAGE_KEY = 'kurumi-doc';
@@ -171,6 +174,26 @@ export const reminderProposals: Readable<ReminderProposal[]> = derived(
 				if (s !== 0) return s;
 				if (a.suggestedDate && b.suggestedDate)
 					return a.suggestedDate.localeCompare(b.suggestedDate);
+				return b.createdAt - a.createdAt;
+			});
+	}
+);
+
+// Derived store for draft proposals (email / calendar-event).
+export const draftProposals: Readable<DraftProposal[]> = derived(
+	[docStore, currentVaultId],
+	([$doc, $vaultId]) => {
+		if (!$doc || !$doc.draftProposals) return [];
+		const statusOrder: Record<DraftStatus, number> = {
+			pending: 0,
+			used: 1,
+			rejected: 2
+		};
+		return Object.values($doc.draftProposals)
+			.filter((p) => p.vaultId === $vaultId)
+			.sort((a, b) => {
+				const s = statusOrder[a.status] - statusOrder[b.status];
+				if (s !== 0) return s;
 				return b.createdAt - a.createdAt;
 			});
 	}
@@ -515,6 +538,16 @@ export async function initDB(): Promise<void> {
 				doc = Automerge.change(doc, (d) => {
 					if (!d.reminderProposals) d.reminderProposals = {};
 					d.version = 10;
+				});
+				await saveDoc();
+			}
+
+			// Migrate: add draftProposals collection (v10 -> v11). Same
+			// audit-log semantics as reminderProposals.
+			if ((doc.version ?? 0) < 11) {
+				doc = Automerge.change(doc, (d) => {
+					if (!d.draftProposals) d.draftProposals = {};
+					d.version = 11;
 				});
 				await saveDoc();
 			}
@@ -955,13 +988,17 @@ export async function transcribeMemoryAudio(
 	const remindersPromise = runFirstSuccessful((p) =>
 		p.proposeReminders({ text: transcriptText, anchorDate })
 	);
+	const draftsPromise = runFirstSuccessful((p) =>
+		p.proposeDrafts({ text: transcriptText, anchorDate })
+	);
 
 	if (memoryType === 'meeting') {
 		// Meetings get a structured summary with action items, decisions, etc.
-		const [meetingSummary, entities, reminders] = await Promise.all([
+		const [meetingSummary, entities, reminders, drafts] = await Promise.all([
 			runFirstSuccessful((p) => p.summarizeMeeting({ transcript: transcriptText })),
 			entitiesPromise,
-			remindersPromise
+			remindersPromise,
+			draftsPromise
 		]);
 
 		updateDoc((d) => {
@@ -1019,8 +1056,9 @@ export async function transcribeMemoryAudio(
 		// entities so they surface on the /actions dashboard. Safe to call
 		// repeatedly (dedupes by text).
 		promoteDraftActionItems(memoryId);
-		// Stash any extracted reminders as pending proposals for user review.
+		// Stash any extracted reminders / drafts as pending proposals.
 		if (reminders) stashReminderProposals(memoryId, reminders);
+		if (drafts) stashDraftProposals(memoryId, drafts);
 		// Refresh the embedding so semantic search picks up the new transcript
 		// + summary immediately rather than waiting for the next ask.
 		void embedMemory(memoryId);
@@ -1028,11 +1066,12 @@ export async function transcribeMemoryAudio(
 	}
 
 	// Voice memo / default path: simple summary + title + entities
-	const [summary, title, entities, reminders] = await Promise.all([
+	const [summary, title, entities, reminders, drafts] = await Promise.all([
 		runFirstSuccessful((p) => p.summarize({ text: transcriptText, style: 'short' })),
 		runFirstSuccessful((p) => p.generateTitle({ text: transcriptText })),
 		entitiesPromise,
-		remindersPromise
+		remindersPromise,
+		draftsPromise
 	]);
 
 	updateDoc((d) => {
@@ -1059,47 +1098,67 @@ export async function transcribeMemoryAudio(
 		memory.updatedAt = Date.now();
 	});
 	if (reminders) stashReminderProposals(memoryId, reminders);
+	if (drafts) stashDraftProposals(memoryId, drafts);
 	// Refresh the embedding so semantic search picks up the new transcript
 	// + summary immediately rather than waiting for the next ask.
 	void embedMemory(memoryId);
 }
 
 /**
- * Manually run reminder extraction against a memory. Works for any
- * memory type — the audio pipeline runs it automatically after
+ * Manually run reminder + draft extraction against a memory. Works for
+ * any memory type — the audio pipeline runs it automatically after
  * transcription, but notes need an explicit trigger. Uses the memory's
  * transcript (if present) otherwise its bodyMarkdown, and anchors
  * relative dates to capturedAt.
  *
- * Returns the number of NEW proposals created (dedupe drops repeats).
- * Returns -1 if no provider supports the task or the memory has no
- * processable text.
+ * Returns an object with the count of NEW reminders and NEW drafts
+ * created (dedupe drops repeats). Both fields are -1 if no provider
+ * supports the task or the memory has no processable text.
  */
-export async function extractRemindersFromMemory(memoryId: string): Promise<number> {
-	if (!doc) return -1;
+export async function extractRemindersFromMemory(
+	memoryId: string
+): Promise<{ reminders: number; drafts: number }> {
+	if (!doc) return { reminders: -1, drafts: -1 };
 	const memory = doc.memoryObjects[memoryId];
-	if (!memory) return -1;
+	if (!memory) return { reminders: -1, drafts: -1 };
 
 	const text = (memory.transcript?.trim() || memory.bodyMarkdown?.trim()) ?? '';
-	if (!text) return -1;
+	if (!text) return { reminders: -1, drafts: -1 };
 
 	const anchorDate = new Date(memory.capturedAt ?? Date.now())
 		.toISOString()
 		.split('T')[0];
 
-	const reminders = await runFirstSuccessful((p) =>
-		p.proposeReminders({ text, anchorDate })
-	);
-	if (!reminders) return -1;
+	const [reminders, drafts] = await Promise.all([
+		runFirstSuccessful((p) => p.proposeReminders({ text, anchorDate })),
+		runFirstSuccessful((p) => p.proposeDrafts({ text, anchorDate }))
+	]);
 
-	const before = Object.values(doc.reminderProposals ?? {}).filter(
-		(p) => p.memoryObjectId === memoryId
-	).length;
-	stashReminderProposals(memoryId, reminders);
-	const after = Object.values(doc.reminderProposals ?? {}).filter(
-		(p) => p.memoryObjectId === memoryId
-	).length;
-	return after - before;
+	let remindersAdded = -1;
+	if (reminders) {
+		const before = Object.values(doc.reminderProposals ?? {}).filter(
+			(p) => p.memoryObjectId === memoryId
+		).length;
+		stashReminderProposals(memoryId, reminders);
+		const after = Object.values(doc.reminderProposals ?? {}).filter(
+			(p) => p.memoryObjectId === memoryId
+		).length;
+		remindersAdded = after - before;
+	}
+
+	let draftsAdded = -1;
+	if (drafts) {
+		const before = Object.values(doc.draftProposals ?? {}).filter(
+			(p) => p.memoryObjectId === memoryId
+		).length;
+		stashDraftProposals(memoryId, drafts);
+		const after = Object.values(doc.draftProposals ?? {}).filter(
+			(p) => p.memoryObjectId === memoryId
+		).length;
+		draftsAdded = after - before;
+	}
+
+	return { reminders: remindersAdded, drafts: draftsAdded };
 }
 
 /**
@@ -2129,6 +2188,105 @@ export function deleteReminderProposal(id: string): void {
 	});
 }
 
+// ============ DraftProposal CRUD ============
+
+export function addDraftProposal(options: {
+	memoryObjectId: string;
+	kind: DraftKind;
+	target?: string | null;
+	subject: string;
+	body: string;
+	suggestedDate?: string | null;
+	suggestedTime?: string | null;
+	confidence?: number;
+}): DraftProposal {
+	const now = Date.now();
+	const draft: DraftProposal = {
+		id: generateId(),
+		memoryObjectId: options.memoryObjectId,
+		kind: options.kind,
+		target: options.target ?? null,
+		subject: options.subject,
+		body: options.body,
+		suggestedDate: options.suggestedDate ?? null,
+		suggestedTime: options.suggestedTime ?? null,
+		confidence: options.confidence ?? 0.7,
+		status: 'pending',
+		vaultId: getCurrentVaultId(),
+		createdAt: now,
+		decidedAt: null
+	};
+	updateDoc((d) => {
+		if (!d.draftProposals) d.draftProposals = {};
+		d.draftProposals[draft.id] = draft;
+	});
+	return draft;
+}
+
+export function markDraftUsed(id: string): void {
+	updateDoc((d) => {
+		const draft = d.draftProposals?.[id];
+		if (!draft) return;
+		draft.status = 'used';
+		draft.decidedAt = Date.now();
+	});
+}
+
+export function rejectDraftProposal(id: string): void {
+	updateDoc((d) => {
+		const draft = d.draftProposals?.[id];
+		if (!draft) return;
+		draft.status = 'rejected';
+		draft.decidedAt = Date.now();
+	});
+}
+
+export function deleteDraftProposal(id: string): void {
+	updateDoc((d) => {
+		if (d.draftProposals) delete d.draftProposals[id];
+	});
+}
+
+/**
+ * Stash extracted drafts as pending proposals, dedupe by
+ * memoryId + kind + subject so retries don't create duplicates.
+ */
+function stashDraftProposals(
+	memoryId: string,
+	drafts: Array<{
+		kind: DraftKind;
+		target: string | null;
+		subject: string;
+		body: string;
+		suggestedDate: string | null;
+		suggestedTime: string | null;
+		confidence: number;
+	}>
+): void {
+	if (!doc || drafts.length === 0) return;
+	const existing = new Set<string>();
+	for (const p of Object.values(doc.draftProposals ?? {})) {
+		if (p.memoryObjectId === memoryId) {
+			existing.add(`${p.kind}|${p.subject}`);
+		}
+	}
+	for (const d2 of drafts) {
+		const key = `${d2.kind}|${d2.subject}`;
+		if (existing.has(key)) continue;
+		addDraftProposal({
+			memoryObjectId: memoryId,
+			kind: d2.kind,
+			target: d2.target,
+			subject: d2.subject,
+			body: d2.body,
+			suggestedDate: d2.suggestedDate,
+			suggestedTime: d2.suggestedTime,
+			confidence: d2.confidence
+		});
+		existing.add(key);
+	}
+}
+
 /**
  * Promote the draft action items sitting on a meeting's meetingExtras
  * into top-level ActionItem entities. Called after meeting summarization
@@ -2321,7 +2479,8 @@ function manualMerge(
 		people: localDoc.people || {},
 		events: localDoc.events || {},
 		actionItems: localDoc.actionItems || {},
-		reminderProposals: localDoc.reminderProposals || {}
+		reminderProposals: localDoc.reminderProposals || {},
+		draftProposals: localDoc.draftProposals || {}
 	});
 	const remoteData = deepCopy({
 		vaults: remoteDoc.vaults || {},
@@ -2330,7 +2489,8 @@ function manualMerge(
 		people: remoteDoc.people || {},
 		events: remoteDoc.events || {},
 		actionItems: remoteDoc.actionItems || {},
-		reminderProposals: remoteDoc.reminderProposals || {}
+		reminderProposals: remoteDoc.reminderProposals || {},
+		draftProposals: remoteDoc.draftProposals || {}
 	});
 
 	return Automerge.change(baseDoc, (d) => {
@@ -2448,6 +2608,34 @@ function manualMerge(
 				}
 			}
 		}
+
+		// Merge draft proposals — same decided-wins strategy
+		if (!d.draftProposals) d.draftProposals = {};
+		const allDraftIds = new Set([
+			...Object.keys(localData.draftProposals),
+			...Object.keys(remoteData.draftProposals)
+		]);
+		for (const id of allDraftIds) {
+			const local = localData.draftProposals[id];
+			const remote = remoteData.draftProposals[id];
+			if (!local && remote) {
+				d.draftProposals[id] = remote;
+			} else if (local && !remote) {
+				d.draftProposals[id] = local;
+			} else if (local && remote) {
+				const localDecided = local.decidedAt != null;
+				const remoteDecided = remote.decidedAt != null;
+				if (localDecided && !remoteDecided) d.draftProposals[id] = local;
+				else if (remoteDecided && !localDecided) d.draftProposals[id] = remote;
+				else if (localDecided && remoteDecided) {
+					d.draftProposals[id] =
+						(local.decidedAt ?? 0) >= (remote.decidedAt ?? 0) ? local : remote;
+				} else {
+					d.draftProposals[id] =
+						local.createdAt >= remote.createdAt ? local : remote;
+				}
+			}
+		}
 	});
 }
 
@@ -2551,7 +2739,7 @@ export interface KurumiExport {
 export function exportFullJSON(): string {
 	if (!doc)
 		return JSON.stringify({
-			version: 10,
+			version: 11,
 			exportedAt: new Date().toISOString(),
 			vaults: [],
 			folders: [],

@@ -14,7 +14,7 @@ import { writable, get, type Writable } from 'svelte/store';
 
 // --- Public types -----------------------------------------------------------
 
-export type LocalTask = 'transcribe' | 'text-generation' | 'embed';
+export type LocalTask = 'transcribe' | 'text-generation' | 'embed' | 'tts';
 
 export type ModelStatus =
 	| { state: 'idle' }
@@ -189,6 +189,8 @@ function mapTaskToTransformers(task: LocalTask): string {
 			return 'text-generation';
 		case 'embed':
 			return 'feature-extraction';
+		case 'tts':
+			return 'text-to-speech';
 		default:
 			throw new Error(`Unknown local task: ${task}`);
 	}

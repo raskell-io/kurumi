@@ -26,6 +26,8 @@ import type {
 	ExtractedActionItem,
 	ExtractedReminder,
 	ProposeRemindersInput,
+	ExtractedDraft,
+	ProposeDraftsInput,
 	ClassifyResult,
 	AnswerWithContextInput,
 	AnsweredQuestion,
@@ -275,6 +277,13 @@ export class TextLocalProvider implements InferenceProvider {
 		// small local text models don't do well. Fall back to the remote
 		// provider via the router.
 		return notImplemented('proposeReminders');
+	}
+
+	async proposeDrafts(
+		_input: ProposeDraftsInput,
+		_options?: TaskOptions
+	): Promise<InferenceResult<ExtractedDraft[]>> {
+		return notImplemented('proposeDrafts');
 	}
 
 	async classifyMemory(

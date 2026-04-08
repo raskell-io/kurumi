@@ -96,13 +96,28 @@ export async function speak(text: string, voice?: string): Promise<void> {
 	if (!text.trim()) return;
 	stopSpeaking();
 
-	const provider = inferenceRouter.findProvider((c) => c.supportsTts);
-	if (!provider) throw new Error('No inference provider supports TTS yet');
+	// Iterate providers in registration order and try each until one
+	// returns ok. This gives us a graceful fallback: if OpenAI TTS fails
+	// (no API key, network down, etc.), the local MMS provider is
+	// tried next.
+	const candidates = inferenceRouter
+		.allProviders()
+		.filter((p) => p.capabilities.supportsTts);
+	if (candidates.length === 0) {
+		throw new Error('No inference provider supports TTS yet');
+	}
 
 	const input: TtsInput = { text, voice };
-	const result = await provider.tts(input);
-	if (!result.ok || !result.value) {
-		throw new Error(result.error || 'TTS failed');
+	let lastError = 'TTS failed';
+	let result: Awaited<ReturnType<(typeof candidates)[number]['tts']>> | null = null;
+	for (const provider of candidates) {
+		result = await provider.tts(input);
+		if (result.ok && result.value) break;
+		lastError = result.error || lastError;
+		result = null;
+	}
+	if (!result || !result.ok || !result.value) {
+		throw new Error(lastError);
 	}
 
 	const blob = new Blob([result.value.audio], { type: result.value.mimeType });
