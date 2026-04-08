@@ -520,9 +520,15 @@ Rules:
 			`Resolve every relative date against ANCHOR_DATE (ISO YYYY-MM-DD): ${input.anchorDate}.`,
 			'Return absolute ISO YYYY-MM-DD dates only — never relative phrases.',
 			'',
+			'If the source text describes the reminder as a RECURRING task ("every',
+			'week", "daily standup", "monthly review", "weekly 1:1"), set recurrence',
+			'to one of "daily" / "weekly" / "monthly" / "yearly". Otherwise omit or',
+			'set recurrence to "none".',
+			'',
 			'Respond with strict JSON of shape:',
 			'{"reminders": [{"text": string, "suggestedDate": "YYYY-MM-DD",',
-			'                "reason": string | null, "confidence": number}]}',
+			'                "reason": string | null, "confidence": number,',
+			'                "recurrence": "none" | "daily" | "weekly" | "monthly" | "yearly"}]}',
 			'',
 			'If no time-anchored reminders exist, return {"reminders": []}.'
 		].join('\n');
@@ -590,6 +596,13 @@ Rules:
 				: [];
 
 			const isoDate = /^\d{4}-\d{2}-\d{2}$/;
+			const validRecurrence = new Set<string>([
+				'none',
+				'daily',
+				'weekly',
+				'monthly',
+				'yearly'
+			]);
 			const reminders: ExtractedReminder[] = [];
 			for (const raw of list) {
 				if (!raw || typeof raw !== 'object') continue;
@@ -597,6 +610,10 @@ Rules:
 				const text = typeof item.text === 'string' ? item.text.trim() : '';
 				const suggestedDate = typeof item.suggestedDate === 'string' ? item.suggestedDate : '';
 				if (!text || !isoDate.test(suggestedDate)) continue;
+				const recurrence =
+					typeof item.recurrence === 'string' && validRecurrence.has(item.recurrence)
+						? (item.recurrence as ExtractedReminder['recurrence'])
+						: 'none';
 				reminders.push({
 					text,
 					suggestedDate,
@@ -604,7 +621,8 @@ Rules:
 					confidence:
 						typeof item.confidence === 'number' && item.confidence >= 0 && item.confidence <= 1
 							? item.confidence
-							: 0.7
+							: 0.7,
+					recurrence
 				});
 			}
 

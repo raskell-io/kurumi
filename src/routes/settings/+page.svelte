@@ -61,7 +61,12 @@
 		notificationPermission,
 		notificationsEnabled,
 		setNotificationsEnabled,
-		requestNotificationPermission
+		requestNotificationPermission,
+		backgroundNotificationsEnabled,
+		setBackgroundNotificationsEnabled,
+		periodicSyncSupported,
+		ensurePeriodicSyncRegistered,
+		unregisterPeriodicSync
 	} from '$lib/notifications';
 
 	let syncToken = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-token') || '' : '');
@@ -111,6 +116,9 @@
 	let notifEnabled = $state(false);
 	let notifPermission = $state<NotificationPermission>('default');
 	let notifSupported = $state(false);
+	let bgNotifEnabled = $state(false);
+	let bgNotifSupported = $state(false);
+	let bgNotifError = $state<string | null>(null);
 
 	async function handleNotifToggle() {
 		if (!notifSupported) return;
@@ -125,6 +133,36 @@
 		} else {
 			setNotificationsEnabled(false);
 			notifEnabled = false;
+		}
+	}
+
+	async function handleBackgroundNotifToggle() {
+		bgNotifError = null;
+		if (!bgNotifEnabled) {
+			// Registering periodicsync requires the foreground notification
+			// permission and the service worker to be ready. Both should
+			// already be true if the user is here, but we bail cleanly on
+			// any failure.
+			if (Notification.permission !== 'granted') {
+				const perm = await requestNotificationPermission();
+				if (perm !== 'granted') {
+					bgNotifError = 'Notification permission required';
+					return;
+				}
+				notifPermission = perm;
+			}
+			const ok = await ensurePeriodicSyncRegistered();
+			if (!ok) {
+				bgNotifError =
+					'Background notifications need an installed PWA and browser support (currently Chromium-only).';
+				return;
+			}
+			setBackgroundNotificationsEnabled(true);
+			bgNotifEnabled = true;
+		} else {
+			await unregisterPeriodicSync();
+			setBackgroundNotificationsEnabled(false);
+			bgNotifEnabled = false;
 		}
 	}
 
@@ -212,6 +250,13 @@
 			notifPermission = notificationPermission();
 			notifEnabled = notificationsEnabled() && notifPermission === 'granted';
 		}
+
+		// Feature-detect periodicsync asynchronously. If it's not there
+		// or the SW registration fails we just hide the background toggle.
+		void (async () => {
+			bgNotifSupported = await periodicSyncSupported();
+			bgNotifEnabled = bgNotifSupported && backgroundNotificationsEnabled();
+		})();
 
 		// Load sync method
 		syncMethod = getSyncMethod();
@@ -1251,7 +1296,7 @@
 				</div>
 			</button>
 			{#if sections.notifications}
-				<div class="border-t border-[var(--color-border)] p-4">
+				<div class="border-t border-[var(--color-border)] p-4 space-y-4">
 					{#if !notifSupported}
 						<p class="text-sm text-[var(--color-text-muted)]">
 							Your browser doesn't support notifications.
@@ -1262,25 +1307,71 @@
 							browser site settings and reload the page.
 						</p>
 					{:else}
-						<p class="mb-3 text-sm text-[var(--color-text-muted)]">
-							When enabled, Kurumi will show a browser notification for every
-							action item whose due date has arrived. Checks run every minute
-							while the app is open. Clicking a notification jumps to the
-							/actions dashboard.
-						</p>
-						<button
-							onclick={handleNotifToggle}
-							class="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors"
-							class:bg-[var(--color-accent)]={!notifEnabled}
-							class:text-white={!notifEnabled}
-							class:bg-[var(--color-bg-secondary)]={notifEnabled}
-							class:text-[var(--color-text)]={notifEnabled}
-							class:border={notifEnabled}
-							class:border-[var(--color-border)]={notifEnabled}
-						>
-							<Bell class="h-4 w-4" />
-							{notifEnabled ? 'Disable notifications' : 'Enable notifications'}
-						</button>
+						<div>
+							<h3 class="mb-1 text-sm font-medium text-[var(--color-text)]">While the app is open</h3>
+							<p class="mb-3 text-sm text-[var(--color-text-muted)]">
+								Kurumi will show a browser notification for every action item
+								whose due date has arrived. Checks run every minute while a
+								tab is open. Clicking a notification jumps to /actions.
+							</p>
+							<button
+								onclick={handleNotifToggle}
+								class="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+								class:bg-[var(--color-accent)]={!notifEnabled}
+								class:text-white={!notifEnabled}
+								class:bg-[var(--color-bg-secondary)]={notifEnabled}
+								class:text-[var(--color-text)]={notifEnabled}
+								class:border={notifEnabled}
+								class:border-[var(--color-border)]={notifEnabled}
+							>
+								<Bell class="h-4 w-4" />
+								{notifEnabled ? 'Disable notifications' : 'Enable notifications'}
+							</button>
+						</div>
+
+						<div class="pt-4 border-t border-[var(--color-border)]">
+							<h3 class="mb-1 text-sm font-medium text-[var(--color-text)]">
+								When the app is closed
+								<span class="ml-1 text-xs font-normal text-[var(--color-text-muted)]">
+									(experimental)
+								</span>
+							</h3>
+							<p class="mb-3 text-sm text-[var(--color-text-muted)]">
+								Register a background periodic sync with the service worker
+								so notifications can fire even when no Kurumi tab is open.
+								Requires the PWA to be installed and a browser that supports
+								the Periodic Background Sync API — currently that means
+								Chrome or Edge as an installed PWA. The browser decides the
+								real check interval based on your usage; typically every few
+								hours.
+							</p>
+							{#if !bgNotifSupported}
+								<p class="text-sm text-[var(--color-text-muted)]">
+									Periodic Background Sync isn't available in this browser /
+									installation. Install Kurumi as a PWA on Chrome or Edge to
+									enable it.
+								</p>
+							{:else}
+								<button
+									onclick={handleBackgroundNotifToggle}
+									class="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+									class:bg-[var(--color-accent)]={!bgNotifEnabled}
+									class:text-white={!bgNotifEnabled}
+									class:bg-[var(--color-bg-secondary)]={bgNotifEnabled}
+									class:text-[var(--color-text)]={bgNotifEnabled}
+									class:border={bgNotifEnabled}
+									class:border-[var(--color-border)]={bgNotifEnabled}
+								>
+									<Bell class="h-4 w-4" />
+									{bgNotifEnabled
+										? 'Disable background notifications'
+										: 'Enable background notifications'}
+								</button>
+								{#if bgNotifError}
+									<p class="mt-2 text-sm text-red-500">{bgNotifError}</p>
+								{/if}
+							{/if}
+						</div>
 					{/if}
 				</div>
 			{/if}

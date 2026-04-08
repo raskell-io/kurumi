@@ -24,7 +24,11 @@
 	import GitConflictModal from '$lib/components/GitConflictModal.svelte';
 	import UndoToast from '$lib/components/UndoToast.svelte';
 	import { undoLast } from '$lib/stores/undo';
-	import { bootNotifications, stopNotificationLoop } from '$lib/notifications';
+	import {
+		bootNotifications,
+		stopNotificationLoop,
+		stopDueCacheSync
+	} from '$lib/notifications';
 	import {
 		getLocalInferenceSettings,
 		preloadPipeline,
@@ -437,6 +441,7 @@
 			teardownVisibilitySync();
 			cleanupHashRouter?.();
 			stopNotificationLoop();
+			stopDueCacheSync();
 		};
 	});
 

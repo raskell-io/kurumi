@@ -53,6 +53,11 @@ export default defineConfig({
 				// own IndexedDB cache make subsequent loads instant.
 				globIgnores: ['**/ort-*.wasm', '**/onnxruntime-*.wasm'],
 				maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MiB for Automerge WASM
+				// Inject our custom notification handlers into the generated
+				// Workbox service worker. sw-notify.js adds the periodicsync
+				// + notificationclick listeners without disturbing the
+				// auto-generated precache + runtime routes below.
+				importScripts: ['sw-notify.js'],
 				runtimeCaching: [
 					{
 						urlPattern: /^https:\/\/api\.(openai|anthropic)\.com\/.*/i,

@@ -8,7 +8,9 @@
 		reopenReminderProposal,
 		deleteReminderProposal,
 		restoreReminderProposal,
-		type ReminderProposal
+		updateReminderProposalRecurrence,
+		type ReminderProposal,
+		type Recurrence
 	} from '$lib/db';
 	import { pushUndo } from '$lib/stores/undo';
 	import { onMount } from 'svelte';
@@ -22,8 +24,17 @@
 		RotateCcw,
 		Square,
 		MinusSquare,
-		CheckSquare
+		CheckSquare,
+		Repeat
 	} from 'lucide-svelte';
+
+	const RECURRENCE_OPTIONS: Array<{ value: Recurrence; label: string }> = [
+		{ value: 'none', label: 'One-off' },
+		{ value: 'daily', label: 'Daily' },
+		{ value: 'weekly', label: 'Weekly' },
+		{ value: 'monthly', label: 'Monthly' },
+		{ value: 'yearly', label: 'Yearly' }
+	];
 
 	type Group = { label: string; status: ReminderProposal['status']; items: ReminderProposal[] };
 
@@ -355,6 +366,28 @@
 											<Clock class="h-3 w-3" />
 											{formatDate(proposal.suggestedDate)}
 										</span>
+										{#if proposal.status === 'pending' || proposal.status === 'snoozed'}
+											<label class="recurrence-picker">
+												<Repeat class="h-3 w-3" />
+												<select
+													value={proposal.recurrence ?? 'none'}
+													onchange={(e) =>
+														updateReminderProposalRecurrence(
+															proposal.id,
+															(e.currentTarget as HTMLSelectElement).value as Recurrence
+														)}
+												>
+													{#each RECURRENCE_OPTIONS as opt (opt.value)}
+														<option value={opt.value}>{opt.label}</option>
+													{/each}
+												</select>
+											</label>
+										{:else if proposal.recurrence && proposal.recurrence !== 'none'}
+											<span class="recurrence-pill">
+												<Repeat class="h-3 w-3" />
+												{proposal.recurrence}
+											</span>
+										{/if}
 										{#if proposal.reason}
 											<span class="reason">"{proposal.reason}"</span>
 										{/if}
@@ -635,6 +668,39 @@
 		gap: 0.25rem;
 		color: var(--color-accent);
 		font-weight: 500;
+	}
+
+	.recurrence-picker {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		padding: 0.125rem 0.375rem;
+		background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+		color: var(--color-accent);
+		border-radius: 999px;
+		cursor: pointer;
+	}
+
+	.recurrence-picker select {
+		background: transparent;
+		border: none;
+		color: var(--color-accent);
+		font-size: 0.75rem;
+		font-family: inherit;
+		cursor: pointer;
+		outline: none;
+		padding: 0;
+	}
+
+	.recurrence-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		padding: 0.125rem 0.5rem;
+		background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+		color: var(--color-accent);
+		border-radius: 999px;
+		text-transform: capitalize;
 	}
 
 	.reason {

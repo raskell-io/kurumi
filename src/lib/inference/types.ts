@@ -116,12 +116,20 @@ export interface ExtractedActionItem {
  * `suggestedDate` is always resolved to an absolute ISO YYYY-MM-DD by
  * the provider. `reason` is an optional short quote from the source
  * that the reviewer can use to decide whether to approve.
+ *
+ * `recurrence` is an optional hint: if the source text says "every
+ * Monday" or "weekly check-in", the provider can populate this so
+ * approving the proposal creates a recurring ActionItem instead of a
+ * one-shot. 'none' (or missing) means a single occurrence.
  */
+export type ExtractedRecurrence = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
+
 export interface ExtractedReminder {
 	text: string;
 	suggestedDate: string;
 	reason: string | null;
 	confidence: number;
+	recurrence?: ExtractedRecurrence;
 }
 
 export interface ProposeRemindersInput {

@@ -568,6 +568,21 @@ export async function initDB(): Promise<void> {
 				await saveDoc();
 			}
 
+			// Migrate: add recurrence field to existing reminder proposals
+			// (v12 -> v13). Defaults to 'none' so legacy proposals behave
+			// identically to before the change.
+			if ((doc.version ?? 0) < 13) {
+				doc = Automerge.change(doc, (d) => {
+					for (const proposal of Object.values(d.reminderProposals ?? {})) {
+						if ((proposal as { recurrence?: unknown }).recurrence === undefined) {
+							(proposal as { recurrence: Recurrence }).recurrence = 'none';
+						}
+					}
+					d.version = 13;
+				});
+				await saveDoc();
+			}
+
 			// Update internal vault ID store
 			currentVaultIdStore.set(doc.currentVaultId || DEFAULT_VAULT_ID);
 		} else {
@@ -1184,7 +1199,8 @@ export async function extractRemindersFromMemory(
 /**
  * Persist extracted reminders as pending proposals. Dedupes against
  * existing proposals for the same memory by exact text + suggestedDate
- * pair so re-running the pipeline doesn't create duplicates.
+ * pair so re-running the pipeline doesn't create duplicates. Carries
+ * the recurrence hint through from the extraction.
  */
 function stashReminderProposals(
 	memoryId: string,
@@ -1193,6 +1209,7 @@ function stashReminderProposals(
 		suggestedDate: string;
 		reason: string | null;
 		confidence: number;
+		recurrence?: Recurrence;
 	}>
 ): void {
 	if (!doc || reminders.length === 0) return;
@@ -1210,7 +1227,8 @@ function stashReminderProposals(
 			text: r.text,
 			suggestedDate: r.suggestedDate,
 			reason: r.reason,
-			confidence: r.confidence
+			confidence: r.confidence,
+			recurrence: r.recurrence ?? 'none'
 		});
 		existing.add(key);
 	}
@@ -2307,6 +2325,7 @@ export function addReminderProposal(options: {
 	suggestedDate: string;
 	reason?: string | null;
 	confidence?: number;
+	recurrence?: Recurrence;
 }): ReminderProposal {
 	const now = Date.now();
 	const proposal: ReminderProposal = {
@@ -2316,6 +2335,7 @@ export function addReminderProposal(options: {
 		suggestedDate: options.suggestedDate,
 		reason: options.reason ?? null,
 		confidence: options.confidence ?? 0.8,
+		recurrence: options.recurrence ?? 'none',
 		status: 'pending',
 		vaultId: getCurrentVaultId(),
 		createdAt: now,
@@ -2331,20 +2351,29 @@ export function addReminderProposal(options: {
 
 /**
  * Approve a pending proposal: creates an ActionItem linked to the
- * source memory (status 'open', due date = suggestedDate) and stamps
- * the proposal with the new action item id so re-approval is
- * idempotent.
+ * source memory (status 'open', due date = suggestedDate, recurrence
+ * carried over from the proposal) and stamps the proposal with the
+ * new action item id so re-approval is idempotent.
+ *
+ * The caller can override the recurrence — useful if the user edited
+ * the picker on the /proposals page before clicking Approve.
  */
-export function approveReminderProposal(id: string): void {
+export function approveReminderProposal(
+	id: string,
+	recurrenceOverride?: Recurrence
+): void {
 	if (!doc) return;
 	const proposal = doc.reminderProposals?.[id];
 	if (!proposal || proposal.status === 'approved') return;
+
+	const recurrence = recurrenceOverride ?? proposal.recurrence ?? 'none';
 
 	const actionItem = addActionItem({
 		memoryObjectId: proposal.memoryObjectId,
 		text: proposal.text,
 		dueDate: proposal.suggestedDate,
-		confidence: proposal.confidence
+		confidence: proposal.confidence,
+		recurrence
 	});
 
 	updateDoc((d) => {
@@ -2353,6 +2382,18 @@ export function approveReminderProposal(id: string): void {
 		p.status = 'approved';
 		p.decidedAt = Date.now();
 		p.actionItemId = actionItem.id;
+	});
+}
+
+/**
+ * Update the recurrence on a pending proposal. Called from the UI
+ * picker so the user can change the recurrence before approving.
+ */
+export function updateReminderProposalRecurrence(id: string, recurrence: Recurrence): void {
+	updateDoc((d) => {
+		const p = d.reminderProposals?.[id];
+		if (!p) return;
+		p.recurrence = recurrence;
 	});
 }
 
@@ -2969,7 +3010,7 @@ export interface KurumiExport {
 export function exportFullJSON(): string {
 	if (!doc)
 		return JSON.stringify({
-			version: 12,
+			version: 13,
 			exportedAt: new Date().toISOString(),
 			vaults: [],
 			folders: [],

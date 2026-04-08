@@ -285,6 +285,10 @@ export interface ReminderProposal {
 	suggestedDate: string; // ISO YYYY-MM-DD, resolved against memory.capturedAt
 	reason: string | null; // short quote or rationale for user context
 	confidence: number; // 0..1
+	// Optional recurrence hint. If set, approving this proposal creates
+	// an ActionItem with the matching recurrence so it rolls forward
+	// automatically. Defaults to 'none' for legacy proposals.
+	recurrence: Recurrence;
 	status: ReminderStatus;
 	vaultId: string;
 	createdAt: number;
@@ -367,7 +371,7 @@ export function createEmptyDocument(): KurumiDocument {
 		reminderProposals: {},
 		draftProposals: {},
 		currentVaultId: DEFAULT_VAULT_ID,
-		version: 12
+		version: 13
 	};
 }
 
