@@ -496,10 +496,114 @@ Rules:
 	}
 
 	async answerWithContext(
-		_input: AnswerWithContextInput,
-		_options?: TaskOptions
+		input: AnswerWithContextInput,
+		options?: TaskOptions
 	): Promise<InferenceResult<AnsweredQuestion>> {
-		return notImplemented('answerWithContext', 'remote');
+		const apiKey = getApiKey();
+		const startedAt = Date.now();
+		if (!apiKey) {
+			return {
+				ok: false,
+				error: 'OpenAI API key not configured',
+				target: 'remote',
+				providerId: 'openai',
+				model: CHAT_MODEL,
+				latencyMs: 0
+			};
+		}
+
+		if (input.context.length === 0) {
+			return {
+				ok: false,
+				error: 'No context memories to answer from',
+				target: 'remote',
+				providerId: 'openai',
+				model: CHAT_MODEL,
+				latencyMs: 0
+			};
+		}
+
+		// Build context blocks tagged with memory IDs so the model can cite.
+		const contextBlocks = input.context
+			.map((c, i) => `[${i + 1}] (id: ${c.memoryId})\n${c.text}`)
+			.join('\n\n---\n\n');
+
+		const system = `You answer questions about a user's personal memories (notes, voice memos, meeting transcripts).
+
+You are given the user's question and a set of candidate memories that may be relevant. Each memory is tagged with [number] and an id. Read all the memories carefully, then answer the question accurately and concisely.
+
+Rules:
+- Base your answer ONLY on the provided memories. Do not invent facts.
+- If the memories don't contain enough information, say so plainly.
+- Cite the memories you actually used by their id, not by [number].
+- Keep the answer focused — typically 2-5 sentences unless the question demands more detail.
+- You may use markdown for formatting (bullets, bold).
+
+Return ONLY a JSON object with this exact shape:
+{
+  "answer": "your answer in markdown",
+  "citations": ["memory_id_1", "memory_id_2"]
+}`;
+
+		const userPrompt = `Question:\n${input.question}\n\nCandidate memories:\n\n${contextBlocks}`;
+
+		const result = await callChat(apiKey, system, userPrompt, {
+			...options,
+			jsonMode: true,
+			maxTokens: options?.maxTokens ?? 800,
+			temperature: options?.temperature ?? 0.2
+		});
+
+		if (!result.ok) {
+			return {
+				ok: false,
+				error: result.error,
+				target: 'remote',
+				providerId: 'openai',
+				model: CHAT_MODEL,
+				latencyMs: Date.now() - startedAt
+			};
+		}
+
+		try {
+			const parsed = JSON.parse(result.text) as {
+				answer?: string;
+				citations?: string[];
+			};
+			const answer = (parsed.answer ?? '').trim();
+			if (!answer) {
+				return {
+					ok: false,
+					error: 'OpenAI returned an empty answer',
+					target: 'remote',
+					providerId: 'openai',
+					model: CHAT_MODEL,
+					latencyMs: Date.now() - startedAt
+				};
+			}
+			// Filter citations to ones that actually exist in the candidate set
+			// — guards against hallucinated IDs.
+			const validIds = new Set(input.context.map((c) => c.memoryId));
+			const citations = (parsed.citations ?? []).filter((id) => validIds.has(id));
+
+			return {
+				ok: true,
+				value: { answer, citations },
+				target: 'remote',
+				providerId: 'openai',
+				model: CHAT_MODEL,
+				latencyMs: Date.now() - startedAt
+			};
+		} catch (err) {
+			return {
+				ok: false,
+				error: `Failed to parse answer JSON: ${err instanceof Error ? err.message : 'unknown'}`,
+				target: 'remote',
+				providerId: 'openai',
+				model: CHAT_MODEL,
+				latencyMs: Date.now() - startedAt
+			};
+		}
 	}
 
 	async generateTitle(
