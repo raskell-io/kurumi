@@ -215,7 +215,8 @@ export interface MeetingMetadata {
 
 export interface ActionItem {
 	id: string;
-	memoryObjectId: string;
+	// null for manually-created items that aren't sourced from a memory
+	memoryObjectId: string | null;
 	text: string;
 	assignee: string | null; // entity id or freeform
 	dueDate: string | null; // ISO date

@@ -53,8 +53,15 @@
 		type EmbedModelChoice
 	} from '$lib/inference';
 	import { onMount } from 'svelte';
-	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2, RefreshCw, CheckCircle, XCircle, Wifi, Sparkles, ChevronDown, Database, Cloud, Lock, Shield, BookOpen, Palette, HardDrive, Info, Type, GitBranch, Cpu } from 'lucide-svelte';
+	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2, RefreshCw, CheckCircle, XCircle, Wifi, Sparkles, ChevronDown, Database, Cloud, Lock, Shield, BookOpen, Palette, HardDrive, Info, Type, GitBranch, Cpu, Bell } from 'lucide-svelte';
 	import GitConflictModal from '$lib/components/GitConflictModal.svelte';
+	import {
+		notificationsSupported,
+		notificationPermission,
+		notificationsEnabled,
+		setNotificationsEnabled,
+		requestNotificationPermission
+	} from '$lib/notifications';
 
 	let syncToken = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-token') || '' : '');
 	let syncUrl = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-url') || '' : '');
@@ -98,6 +105,27 @@
 			showConflictModal = true;
 		}
 	});
+
+	// Notifications state — refreshed on mount and when the user toggles.
+	let notifEnabled = $state(false);
+	let notifPermission = $state<NotificationPermission>('default');
+	let notifSupported = $state(false);
+
+	async function handleNotifToggle() {
+		if (!notifSupported) return;
+		if (!notifEnabled) {
+			// Turning on: request permission first
+			const perm = await requestNotificationPermission();
+			notifPermission = perm;
+			if (perm === 'granted') {
+				setNotificationsEnabled(true);
+				notifEnabled = true;
+			}
+		} else {
+			setNotificationsEnabled(false);
+			notifEnabled = false;
+		}
+	}
 
 	// Sync test state
 	let isTesting = $state(false);
@@ -144,6 +172,7 @@
 		sync: false,
 		localAi: false,
 		ai: false,
+		notifications: false,
 		data: false,
 		danger: false,
 		about: false
@@ -173,6 +202,12 @@
 
 		initSyncState();
 		initGitSyncState();
+
+		notifSupported = notificationsSupported();
+		if (notifSupported) {
+			notifPermission = notificationPermission();
+			notifEnabled = notificationsEnabled() && notifPermission === 'granted';
+		}
 
 		// Load sync method
 		syncMethod = getSyncMethod();
@@ -1166,6 +1201,64 @@
 							</div>
 						{/if}
 					</div>
+				</div>
+			{/if}
+		</section>
+
+		<!-- Notifications -->
+		<section class="mb-4 rounded-lg border border-[var(--color-border)] overflow-hidden">
+			<button
+				onclick={() => toggleSection('notifications')}
+				class="flex w-full items-center justify-between bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-border)]"
+			>
+				<div class="flex items-center gap-3">
+					<Bell class="h-5 w-5 text-[var(--color-accent)]" />
+					<div>
+						<h2 class="font-semibold text-[var(--color-text)]">Notifications</h2>
+						<p class="text-sm text-[var(--color-text-muted)]">
+							Browser alerts for overdue action items
+						</p>
+					</div>
+				</div>
+				<div class="flex items-center gap-2">
+					{#if notifEnabled}
+						<span class="flex h-2 w-2 rounded-full bg-green-500"></span>
+					{/if}
+					<ChevronDown class="h-5 w-5 text-[var(--color-text-muted)] transition-transform {sections.notifications ? 'rotate-180' : ''}" />
+				</div>
+			</button>
+			{#if sections.notifications}
+				<div class="border-t border-[var(--color-border)] p-4">
+					{#if !notifSupported}
+						<p class="text-sm text-[var(--color-text-muted)]">
+							Your browser doesn't support notifications.
+						</p>
+					{:else if notifPermission === 'denied'}
+						<p class="text-sm text-[var(--color-text-muted)]">
+							Notifications are blocked by the browser. Re-enable them in your
+							browser site settings and reload the page.
+						</p>
+					{:else}
+						<p class="mb-3 text-sm text-[var(--color-text-muted)]">
+							When enabled, Kurumi will show a browser notification for every
+							action item whose due date has arrived. Checks run every minute
+							while the app is open. Clicking a notification jumps to the
+							/actions dashboard.
+						</p>
+						<button
+							onclick={handleNotifToggle}
+							class="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+							class:bg-[var(--color-accent)]={!notifEnabled}
+							class:text-white={!notifEnabled}
+							class:bg-[var(--color-bg-secondary)]={notifEnabled}
+							class:text-[var(--color-text)]={notifEnabled}
+							class:border={notifEnabled}
+							class:border-[var(--color-border)]={notifEnabled}
+						>
+							<Bell class="h-4 w-4" />
+							{notifEnabled ? 'Disable notifications' : 'Enable notifications'}
+						</button>
+					{/if}
 				</div>
 			{/if}
 		</section>

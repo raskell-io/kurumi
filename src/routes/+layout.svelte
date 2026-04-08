@@ -21,6 +21,7 @@
 	import { setupVisibilitySync, teardownVisibilitySync, syncState, isSyncConfigured, sync } from '$lib/sync';
 	import { gitSyncState } from '$lib/git';
 	import GitConflictModal from '$lib/components/GitConflictModal.svelte';
+	import { bootNotifications, stopNotificationLoop } from '$lib/notifications';
 	import {
 		getLocalInferenceSettings,
 		preloadPipeline,
@@ -363,6 +364,9 @@
 			initSearch();
 			setupVisibilitySync();
 			initialized = true;
+			// Start the notification loop if the user previously opted in.
+			// No-op if disabled or permission not granted.
+			bootNotifications();
 		});
 
 		// Preload local inference models if enabled (default). Fire-and-forget;
@@ -401,6 +405,7 @@
 			window.removeEventListener('keydown', handleKeydown);
 			teardownVisibilitySync();
 			cleanupHashRouter?.();
+			stopNotificationLoop();
 		};
 	});
 

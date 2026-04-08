@@ -1065,6 +1065,44 @@ export async function transcribeMemoryAudio(
 }
 
 /**
+ * Manually run reminder extraction against a memory. Works for any
+ * memory type — the audio pipeline runs it automatically after
+ * transcription, but notes need an explicit trigger. Uses the memory's
+ * transcript (if present) otherwise its bodyMarkdown, and anchors
+ * relative dates to capturedAt.
+ *
+ * Returns the number of NEW proposals created (dedupe drops repeats).
+ * Returns -1 if no provider supports the task or the memory has no
+ * processable text.
+ */
+export async function extractRemindersFromMemory(memoryId: string): Promise<number> {
+	if (!doc) return -1;
+	const memory = doc.memoryObjects[memoryId];
+	if (!memory) return -1;
+
+	const text = (memory.transcript?.trim() || memory.bodyMarkdown?.trim()) ?? '';
+	if (!text) return -1;
+
+	const anchorDate = new Date(memory.capturedAt ?? Date.now())
+		.toISOString()
+		.split('T')[0];
+
+	const reminders = await runFirstSuccessful((p) =>
+		p.proposeReminders({ text, anchorDate })
+	);
+	if (!reminders) return -1;
+
+	const before = Object.values(doc.reminderProposals ?? {}).filter(
+		(p) => p.memoryObjectId === memoryId
+	).length;
+	stashReminderProposals(memoryId, reminders);
+	const after = Object.values(doc.reminderProposals ?? {}).filter(
+		(p) => p.memoryObjectId === memoryId
+	).length;
+	return after - before;
+}
+
+/**
  * Persist extracted reminders as pending proposals. Dedupes against
  * existing proposals for the same memory by exact text + suggestedDate
  * pair so re-running the pipeline doesn't create duplicates.
@@ -1922,7 +1960,7 @@ export function deleteTemplate(id: string): void {
 // ============ ActionItem CRUD ============
 
 export function addActionItem(options: {
-	memoryObjectId: string;
+	memoryObjectId?: string | null;
 	text: string;
 	assignee?: string | null;
 	dueDate?: string | null;
@@ -1932,7 +1970,7 @@ export function addActionItem(options: {
 	const now = Date.now();
 	const item: ActionItem = {
 		id: generateId(),
-		memoryObjectId: options.memoryObjectId,
+		memoryObjectId: options.memoryObjectId ?? null,
 		text: options.text,
 		assignee: options.assignee ?? null,
 		dueDate: options.dueDate ?? null,
@@ -1946,9 +1984,11 @@ export function addActionItem(options: {
 		if (!d.actionItems) d.actionItems = {};
 		d.actionItems[item.id] = item;
 		// Also record the id on the source memory for fast lookup.
-		const memory = d.memoryObjects[options.memoryObjectId];
-		if (memory && !memory.actionItems.includes(item.id)) {
-			memory.actionItems.push(item.id);
+		if (options.memoryObjectId) {
+			const memory = d.memoryObjects[options.memoryObjectId];
+			if (memory && !memory.actionItems.includes(item.id)) {
+				memory.actionItems.push(item.id);
+			}
 		}
 	});
 	return item;
@@ -1982,9 +2022,11 @@ export function deleteActionItem(id: string): void {
 	updateDoc((d) => {
 		const item = d.actionItems?.[id];
 		if (!item) return;
-		const memory = d.memoryObjects[item.memoryObjectId];
-		if (memory) {
-			memory.actionItems = memory.actionItems.filter((x) => x !== id);
+		if (item.memoryObjectId) {
+			const memory = d.memoryObjects[item.memoryObjectId];
+			if (memory) {
+				memory.actionItems = memory.actionItems.filter((x) => x !== id);
+			}
 		}
 		delete d.actionItems![id];
 	});

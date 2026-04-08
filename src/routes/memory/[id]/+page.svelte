@@ -8,7 +8,8 @@
 		memoryObjects,
 		addMemoryObject,
 		folders,
-		retryMemoryProcessing
+		retryMemoryProcessing,
+		extractRemindersFromMemory
 	} from '$lib/db';
 	import { get } from 'svelte/store';
 	import Editor from '$lib/components/Editor.svelte';
@@ -25,7 +26,8 @@
 		CheckSquare,
 		Lightbulb,
 		HelpCircle,
-		ArrowRight
+		ArrowRight,
+		Bell
 	} from 'lucide-svelte';
 
 	let title = $state('');
@@ -34,6 +36,28 @@
 	let showDeleteConfirm = $state(false);
 	let showExportMenu = $state(false);
 	let initializedForId = $state('');
+	let extractingReminders = $state(false);
+	let extractionResult = $state<string | null>(null);
+
+	async function handleExtractReminders() {
+		if (!memory || extractingReminders) return;
+		extractingReminders = true;
+		extractionResult = null;
+		try {
+			const added = await extractRemindersFromMemory(memory.id);
+			if (added === -1) {
+				extractionResult = 'No reminders extracted — provider may not support this task';
+			} else if (added === 0) {
+				extractionResult = 'No new reminders found';
+			} else {
+				extractionResult = `${added} reminder${added === 1 ? '' : 's'} added for review`;
+			}
+		} catch (err) {
+			extractionResult = err instanceof Error ? err.message : 'Extraction failed';
+		} finally {
+			extractingReminders = false;
+		}
+	}
 	// Last memory.title we synced into the local `title` state. Used to
 	// detect external title changes (e.g. LLM auto-rename) so we can pick
 	// them up without clobbering live user typing.
@@ -256,6 +280,20 @@
 				{/if}
 			</div>
 
+			<!-- Extract reminders button -->
+			<button
+				onclick={handleExtractReminders}
+				disabled={extractingReminders}
+				class="rounded-lg p-2 text-[var(--color-text-muted)] transition-all hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-accent)] active:scale-95 disabled:opacity-50"
+				title="Extract reminder proposals from this note"
+			>
+				{#if extractingReminders}
+					<RefreshCw class="h-5 w-5 animate-spin" />
+				{:else}
+					<Bell class="h-5 w-5" />
+				{/if}
+			</button>
+
 			<!-- Delete button -->
 			<button
 				onclick={() => (showDeleteConfirm = true)}
@@ -265,6 +303,18 @@
 				<Trash2 class="h-5 w-5" />
 			</button>
 		</div>
+
+		{#if extractionResult}
+			<div class="absolute bottom-20 right-4 z-10 flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-xs text-[var(--color-text)] shadow-lg md:right-6">
+				<Bell class="h-3 w-3 text-[var(--color-accent)]" />
+				{extractionResult}
+				<button
+					onclick={() => (extractionResult = null)}
+					class="ml-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+					aria-label="Dismiss"
+				>×</button>
+			</div>
+		{/if}
 
 		<!-- Editor -->
 		<div class="flex-1 overflow-y-auto overscroll-contain p-4 md:p-6">
