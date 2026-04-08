@@ -32,7 +32,7 @@
 	import TemplatePicker from '$lib/components/TemplatePicker.svelte';
 	import VoiceCaptureModal from '$lib/components/VoiceCaptureModal.svelte';
 	import Snackbar from '$lib/components/Snackbar.svelte';
-	import { X, Plus, Search, ChevronDown, GitFork, BookOpen, Settings, ListTree, Cloud, RefreshCw, CheckCircle, AlertCircle, Pencil, Tag, Trash2, Mic, Users } from 'lucide-svelte';
+	import { X, Plus, Search, ChevronDown, GitFork, BookOpen, Settings, ListTree, Cloud, RefreshCw, CheckCircle, AlertCircle, Pencil, Tag, Trash2, Mic, Users, CalendarDays } from 'lucide-svelte';
 	import {
 		showNewNoteSnackbar,
 		triggerSearch,
@@ -249,6 +249,11 @@
 				case 'n':
 					e.preventDefault();
 					handleNewNote();
+					break;
+				case 'd':
+					e.preventDefault();
+					goto('/daily');
+					if (isMobile) sidebarOpen = false;
 					break;
 				case 'g':
 					e.preventDefault();
@@ -621,8 +626,8 @@
 				</div>
 			</div>
 
-			<!-- Search -->
-			<div class="p-3 pt-0 md:pt-3">
+			<!-- Search + Today -->
+			<div class="space-y-2 p-3 pt-0 md:pt-3">
 				<button
 					onclick={openSearch}
 					class="flex w-full items-center justify-between rounded-lg border border-[var(--color-border)] px-3 py-2 text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
@@ -637,6 +642,14 @@
 						{navigator?.platform?.includes('Mac') ? '⌘' : 'Ctrl'}K
 					</kbd>
 				</button>
+				<a
+					href="/daily"
+					onclick={handleNoteClick}
+					class="flex w-full items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
+				>
+					<CalendarDays class="h-4 w-4" />
+					<span class="text-sm">Today's note</span>
+				</a>
 			</div>
 
 			<!-- Tags Filter -->

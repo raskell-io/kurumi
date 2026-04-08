@@ -1570,6 +1570,59 @@ export function getTemplateByName(name: string): Template | undefined {
 	return Object.values(doc.templates).find((t) => t.name === name && t.vaultId === vaultId);
 }
 
+/**
+ * Format a date for the daily note title. Uses a single consistent format
+ * (`YYYY-MM-DD`) so lookups are deterministic across vaults.
+ */
+export function dailyNoteTitle(isoDate: string): string {
+	return `Daily • ${isoDate}`;
+}
+
+/**
+ * Find an existing daily note for a given ISO date (YYYY-MM-DD), or create
+ * one from the "Daily Journal" template if none exists yet. Returns the
+ * memory. Date variables in the template are resolved relative to the
+ * requested date, not "today", so past dates generate correct weekday
+ * names.
+ */
+export function getOrCreateDailyNote(isoDate: string): MemoryObject {
+	const vaultId = getCurrentVaultId();
+	const expectedTitle = dailyNoteTitle(isoDate);
+
+	// Look up by title within current vault (excludes soft-deleted).
+	if (doc?.memoryObjects) {
+		for (const m of Object.values(doc.memoryObjects)) {
+			if (
+				m.vaultId === vaultId &&
+				!m.deletedAt &&
+				m.title === expectedTitle
+			) {
+				return m;
+			}
+		}
+	}
+
+	const template = getTemplateByName('Daily Journal');
+	const body = template
+		? applyTemplateVariables(template.content, { date: isoDate })
+		: `# ${isoDate}\n\n`;
+
+	return addMemoryObject(expectedTitle, body, null);
+}
+
+/**
+ * Today's date in ISO (YYYY-MM-DD) format, local timezone. Kept here so
+ * callers share one definition and the "Today" button always matches the
+ * daily note route.
+ */
+export function todayIso(): string {
+	const now = new Date();
+	const y = now.getFullYear();
+	const m = String(now.getMonth() + 1).padStart(2, '0');
+	const d = String(now.getDate()).padStart(2, '0');
+	return `${y}-${m}-${d}`;
+}
+
 export function updateTemplate(
 	id: string,
 	updates: { name?: string; content?: string; description?: string }
@@ -1605,7 +1658,7 @@ export function applyTemplateVariables(
 	content: string,
 	overrides?: Record<string, string>
 ): string {
-	const now = new Date();
+	const now = overrides?.date ? new Date(overrides.date + 'T00:00:00') : new Date();
 	const variables: Record<string, string> = {
 		date: now.toISOString().split('T')[0],
 		datetime: now.toISOString(),
