@@ -2,7 +2,6 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import {
-		getMemoryObject,
 		updateMemoryObject,
 		deleteMemoryObject,
 		findBacklinks,
@@ -17,45 +16,58 @@
 	import { getBlob } from '$lib/db/blob-store';
 	import { Trash2, Download, ChevronDown, Mic } from 'lucide-svelte';
 
-	let memory = $state<ReturnType<typeof getMemoryObject>>(undefined);
 	let title = $state('');
 	let content = $state('');
 	let backlinks = $state<ReturnType<typeof findBacklinks>>([]);
 	let showDeleteConfirm = $state(false);
 	let showExportMenu = $state(false);
-	let currentId = $state('');
+	let initializedForId = $state('');
 
 	// Audio playback for voice memos
 	let audioUrl = $state<string | null>(null);
+	let loadedAudioRef = $state<string | null>(null);
 
 	// Debounce timer for auto-save
 	let saveTimeout: ReturnType<typeof setTimeout>;
 
-	// Load memory when page ID changes
+	// Reactive memory object — stays in sync with the store so async updates
+	// (transcription, sync) propagate to the UI without a manual refresh.
+	let memory = $derived($memoryObjects.find((m) => m.id === $page.params.id));
+
+	// Initialize the editor fields once per memory id change. Subsequent store
+	// updates do NOT clobber title/content (otherwise typing would be lost).
 	$effect(() => {
 		const id = $page.params.id;
-		if (id && id !== currentId) {
+		if (memory && id && id !== initializedForId) {
 			untrack(() => {
-				currentId = id;
-				memory = getMemoryObject(id);
-				if (memory) {
-					title = memory.title;
-					content = memory.bodyMarkdown;
-					backlinks = findBacklinks(id);
-				}
-				loadAudioForCurrentMemory();
+				title = memory!.title;
+				content = memory!.bodyMarkdown;
+				backlinks = findBacklinks(id);
+				initializedForId = id;
 			});
 		}
 	});
 
-	async function loadAudioForCurrentMemory() {
+	// Load audio when the memory's audio ref changes (covers id change and the
+	// rare case of an audio ref being attached after the page loads).
+	$effect(() => {
+		const ref = memory?.rawAudioRef ?? null;
+		if (ref !== loadedAudioRef) {
+			untrack(() => {
+				loadAudioForRef(ref);
+				loadedAudioRef = ref;
+			});
+		}
+	});
+
+	async function loadAudioForRef(ref: string | null) {
 		// Revoke any previous audio URL
 		if (audioUrl) {
 			URL.revokeObjectURL(audioUrl);
 			audioUrl = null;
 		}
-		if (!memory || !memory.rawAudioRef) return;
-		const stored = await getBlob(memory.rawAudioRef);
+		if (!ref) return;
+		const stored = await getBlob(ref);
 		if (!stored) return;
 		audioUrl = URL.createObjectURL(stored.blob);
 	}
@@ -216,6 +228,27 @@
 							<span class="text-sm text-[var(--color-text-muted)]">Audio unavailable</span>
 						{/if}
 					</div>
+
+					<!-- Transcript / processing state -->
+					{#if memory.processingState === 'transcribing'}
+						<div class="mb-4 flex items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 text-sm text-[var(--color-text-muted)] md:mb-6">
+							<div class="h-4 w-4 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent"></div>
+							Transcribing…
+						</div>
+					{:else if memory.processingState === 'failed'}
+						<div class="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-500 md:mb-6">
+							Transcription failed{memory.summaryShort ? `: ${memory.summaryShort}` : ''}
+						</div>
+					{:else if memory.transcript}
+						<details class="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] md:mb-6" open>
+							<summary class="cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+								Transcript
+							</summary>
+							<div class="whitespace-pre-wrap px-3 pb-3 text-sm text-[var(--color-text)]">
+								{memory.transcript}
+							</div>
+						</details>
+					{/if}
 				{/if}
 
 				<!-- Milkdown Editor -->

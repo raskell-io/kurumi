@@ -23,7 +23,7 @@
 	import VoiceCaptureModal from '$lib/components/VoiceCaptureModal.svelte';
 	import Snackbar from '$lib/components/Snackbar.svelte';
 	import { X, Plus, Search, ChevronDown, GitFork, BookOpen, Settings, ListTree, Cloud, RefreshCw, CheckCircle, AlertCircle, Pencil, Tag, Trash2, Mic } from 'lucide-svelte';
-	import { showNewNoteSnackbar, triggerSearch } from '$lib/stores/snackbar';
+	import { showNewNoteSnackbar, triggerSearch, triggerVoiceCapture } from '$lib/stores/snackbar';
 
 	let { children } = $props();
 
@@ -58,6 +58,17 @@
 			if (value) {
 				showSearch = true;
 				triggerSearch.set(false);
+			}
+		});
+		return unsubscribe;
+	});
+
+	// Subscribe to voice-capture trigger from other pages
+	$effect(() => {
+		const unsubscribe = triggerVoiceCapture.subscribe((value) => {
+			if (value) {
+				showVoiceCapture = true;
+				triggerVoiceCapture.set(false);
 			}
 		});
 		return unsubscribe;
@@ -484,8 +495,8 @@
 				</button>
 			</div>
 
-			<!-- New Note + Voice Memo Buttons (desktop only) -->
-			<div class="hidden space-y-2 p-3 md:block">
+			<!-- New Note + Voice Memo Buttons -->
+			<div class="space-y-2 p-3">
 				<button
 					type="button"
 					onclick={handleNewNote}
@@ -496,8 +507,11 @@
 				</button>
 				<button
 					type="button"
-					onclick={() => (showVoiceCapture = true)}
-					class="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-bg-secondary)] active:scale-[0.98]"
+					onclick={() => {
+						showVoiceCapture = true;
+						if (isMobile) sidebarOpen = false;
+					}}
+					class="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-bg)] active:scale-[0.98]"
 				>
 					<Mic class="h-4 w-4" />
 					Voice memo

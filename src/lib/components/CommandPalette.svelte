@@ -14,6 +14,7 @@
 	import { syncState } from '$lib/sync/status';
 	import { resourceColors } from '$lib/types/resources';
 	import { exportVaultAsMarkdown, type MarkdownExportFormat } from '$lib/utils/markdown-export';
+	import { triggerVoiceCapture } from '$lib/stores/snackbar';
 	import { Search, Cloud, CloudOff, Download } from 'lucide-svelte';
 
 	interface Props {
@@ -58,6 +59,17 @@
 				const memory = addMemoryObject();
 				goto(`/memory/${memory.id}`);
 				onClose();
+			}
+		},
+		{
+			id: 'new-voice-memo',
+			type: 'action',
+			title: 'Record voice memo',
+			description: 'Capture a quick audio note',
+			icon: 'plus',
+			action: () => {
+				onClose();
+				triggerVoiceCapture.set(true);
 			}
 		},
 		{

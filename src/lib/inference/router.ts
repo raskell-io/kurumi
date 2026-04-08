@@ -48,6 +48,20 @@ export class SimpleInferenceRouter implements InferenceRouter {
 		}
 		return provider;
 	}
+
+	/**
+	 * Find the first registered provider that satisfies a capability predicate.
+	 * Used by call sites that need a specific feature (e.g. transcription)
+	 * before the full task→provider routing matrix is in place.
+	 */
+	findProvider(
+		predicate: (capabilities: InferenceProvider['capabilities']) => boolean
+	): InferenceProvider | null {
+		for (const provider of this.providers.values()) {
+			if (predicate(provider.capabilities)) return provider;
+		}
+		return null;
+	}
 }
 
 function pickTarget(ctx: RoutingContext): ExecutionTarget {

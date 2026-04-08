@@ -130,6 +130,18 @@ export interface AliasMergeProposal {
 	confidence: number;
 }
 
+export interface TranscribeInput {
+	audio: Blob;
+	mimeType: string;
+	language?: string; // ISO 639-1 hint, e.g. "en"
+}
+
+export interface TranscribeResult {
+	text: string;
+	segments: TranscriptSegment[];
+	language?: string;
+}
+
 export interface TtsInput {
 	text: string;
 	voice?: string;
@@ -157,6 +169,7 @@ export interface ProviderCapabilities {
 	target: ExecutionTarget;
 	supportsRealtime: boolean;
 	supportsTts: boolean;
+	supportsTranscribe: boolean;
 	maxContextTokens: number;
 	models: string[];
 }
@@ -213,6 +226,11 @@ export interface InferenceProvider {
 		input: { names: string[] },
 		options?: TaskOptions
 	): Promise<InferenceResult<AliasMergeProposal[]>>;
+
+	transcribe(
+		input: TranscribeInput,
+		options?: TaskOptions
+	): Promise<InferenceResult<TranscribeResult>>;
 
 	tts(input: TtsInput, options?: TaskOptions): Promise<InferenceResult<TtsResult>>;
 

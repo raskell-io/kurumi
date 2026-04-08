@@ -1,6 +1,6 @@
 <script lang="ts">
 	import VoiceRecorder from './VoiceRecorder.svelte';
-	import { addVoiceMemo } from '$lib/db';
+	import { addVoiceMemo, folders, getFolderPath, transcribeMemoryAudio } from '$lib/db';
 	import { storeBlob } from '$lib/db/blob-store';
 	import { goto } from '$app/navigation';
 	import { X } from 'lucide-svelte';
@@ -14,6 +14,26 @@
 
 	let saving = $state(false);
 	let saveError = $state<string | null>(null);
+	let selectedFolderId = $state<string | null>(null);
+
+	// Reset folder selection when the modal opens
+	$effect(() => {
+		if (open) {
+			selectedFolderId = null;
+			saveError = null;
+		}
+	});
+
+	// Build a hierarchical label for each folder ("Parent / Child")
+	let folderOptions = $derived.by(() => {
+		return $folders
+			.map((f) => {
+				const path = getFolderPath(f.id);
+				const label = path.map((p) => p.name).join(' / ');
+				return { id: f.id, label };
+			})
+			.sort((a, b) => a.label.localeCompare(b.label));
+	});
 
 	function defaultTitle(): string {
 		const now = new Date();
@@ -36,10 +56,14 @@
 			const ref = await storeBlob(blob, mimeType);
 			const memory = addVoiceMemo({
 				title: defaultTitle(),
-				rawAudioRef: ref
+				rawAudioRef: ref,
+				folderId: selectedFolderId
 			});
 			onClose();
 			await goto(`/memory/${memory.id}`);
+			// Kick off transcription as fire-and-forget; the memory page will react
+			// to the processingState/transcript updates as they land.
+			void transcribeMemoryAudio(memory.id, blob, mimeType);
 		} catch (err) {
 			saveError = err instanceof Error ? err.message : 'Failed to save voice memo';
 			saving = false;
@@ -101,6 +125,26 @@
 					</button>
 				</div>
 			{:else}
+				{#if folderOptions.length > 0}
+					<div class="px-4 pt-4">
+						<label
+							for="voice-folder"
+							class="mb-1 block text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]"
+						>
+							Save to
+						</label>
+						<select
+							id="voice-folder"
+							bind:value={selectedFolderId}
+							class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-sm text-[var(--color-text)]"
+						>
+							<option value={null}>Root</option>
+							{#each folderOptions as option (option.id)}
+								<option value={option.id}>{option.label}</option>
+							{/each}
+						</select>
+					</div>
+				{/if}
 				<VoiceRecorder onComplete={handleComplete} onCancel={onClose} />
 			{/if}
 		</div>

@@ -2,6 +2,7 @@ import * as Automerge from '@automerge/automerge';
 import { get, set } from 'idb-keyval';
 import { writable, derived, type Readable } from 'svelte/store';
 import { deleteBlob } from './blob-store';
+import { inferenceRouter } from '$lib/inference';
 import {
 	createEmptyDocument,
 	createMemoryObject,
@@ -683,10 +684,66 @@ export function addVoiceMemo(options: {
 		vaultId
 	});
 	memory.rawAudioRef = options.rawAudioRef;
+	memory.processingState = 'pending';
 	updateDoc((d) => {
 		d.memoryObjects[memory.id] = memory;
 	});
 	return memory;
+}
+
+/**
+ * Run transcription on a voice memo's audio. Updates processingState as the
+ * job progresses and stores the result on memory.transcript on success.
+ *
+ * If no provider is registered or none supports transcription, the memory is
+ * silently marked 'ready' so the user isn't left in a permanent "transcribing"
+ * limbo. Errors are stored on memory.summaryShort for visibility (until we
+ * add a dedicated error field to the schema).
+ */
+export async function transcribeMemoryAudio(
+	memoryId: string,
+	audio: Blob,
+	mimeType: string
+): Promise<void> {
+	const provider = inferenceRouter.findProvider((cap) => cap.supportsTranscribe);
+	if (!provider) {
+		updateMemoryObject(memoryId, { processingState: 'ready' });
+		return;
+	}
+
+	updateMemoryObject(memoryId, { processingState: 'transcribing' });
+
+	try {
+		const result = await provider.transcribe({ audio, mimeType });
+		if (!result.ok || !result.value) {
+			updateMemoryObject(memoryId, {
+				processingState: 'failed',
+				summaryShort: result.error ?? 'Transcription failed'
+			});
+			return;
+		}
+
+		updateDoc((d) => {
+			const memory = d.memoryObjects[memoryId];
+			if (!memory) return;
+			memory.transcript = result.value!.text;
+			memory.processingState = 'ready';
+			// Replace transcript segments
+			memory.transcriptSegments.splice(0, memory.transcriptSegments.length);
+			for (const seg of result.value!.segments) {
+				memory.transcriptSegments.push(seg);
+			}
+			if (result.value!.language) {
+				memory.language = result.value!.language;
+			}
+			memory.updatedAt = Date.now();
+		});
+	} catch (err) {
+		updateMemoryObject(memoryId, {
+			processingState: 'failed',
+			summaryShort: err instanceof Error ? err.message : 'Transcription error'
+		});
+	}
 }
 
 export function getMemoryObject(id: string): MemoryObject | undefined {
