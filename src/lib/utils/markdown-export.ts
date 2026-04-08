@@ -177,6 +177,49 @@ function generateZolaFrontMatter(memory: MemoryObject): string {
 }
 
 /**
+ * Build supplementary sections for memory types that carry data outside
+ * `bodyMarkdown` (voice memos carry transcripts, meetings carry structured
+ * extras). Returns '' for plain text notes.
+ */
+function buildExtraSections(memory: MemoryObject): string {
+	const sections: string[] = [];
+
+	if (memory.summaryShort) {
+		sections.push('## Summary', '', memory.summaryShort, '');
+	}
+
+	if (memory.meetingExtras) {
+		const { actionItems, unresolvedQuestions, followUpSuggestions } = memory.meetingExtras;
+		if (actionItems.length > 0) {
+			sections.push('## Action items', '');
+			for (const item of actionItems) {
+				const parts = [`- [ ] ${item.text}`];
+				if (item.assignee) parts.push(`— ${item.assignee}`);
+				if (item.dueDate) parts.push(`(due ${item.dueDate})`);
+				sections.push(parts.join(' '));
+			}
+			sections.push('');
+		}
+		if (unresolvedQuestions.length > 0) {
+			sections.push('## Open questions', '');
+			for (const q of unresolvedQuestions) sections.push(`- ${q}`);
+			sections.push('');
+		}
+		if (followUpSuggestions.length > 0) {
+			sections.push('## Follow-ups', '');
+			for (const s of followUpSuggestions) sections.push(`- ${s}`);
+			sections.push('');
+		}
+	}
+
+	if (memory.transcript && memory.transcript.trim()) {
+		sections.push('## Transcript', '', memory.transcript.trim(), '');
+	}
+
+	return sections.length > 0 ? '\n\n' + sections.join('\n') : '';
+}
+
+/**
  * Export a single memory to markdown with the specified format
  */
 export function exportMemoryToMarkdown(
@@ -199,9 +242,10 @@ export function exportMemoryToMarkdown(
 			break;
 	}
 
-	const content = convertWikilinks(memory.bodyMarkdown, memories, memory, folders);
+	const body = convertWikilinks(memory.bodyMarkdown, memories, memory, folders);
+	const extras = buildExtraSections(memory);
 
-	return frontMatter + content;
+	return frontMatter + body + extras;
 }
 
 /**
