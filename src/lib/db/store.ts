@@ -2188,17 +2188,24 @@ export function completeRecurring(id: string): void {
 }
 
 /**
- * Roll any overdue recurring items forward to the next occurrence.
- * Called on app boot so items that passed their due date while the
- * app was closed don't stay stuck in the past.
+ * Roll any overdue recurring items forward to the NEXT occurrence that
+ * is today or in the future. Called on app boot AND periodically while
+ * the app is running (see layout's setInterval) so long-lived tabs
+ * don't miss rollover just because they were never reloaded.
  *
  * Only affects items with status 'open' or 'in_progress' — done /
- * cancelled items are left alone. The current (overdue) item is
- * kept at its original date so the user still sees they missed it;
- * a new occurrence is created at the next step.
+ * cancelled items are left alone. The overdue item is kept at its
+ * original date so the user still sees they missed it; a single new
+ * occurrence is created at the next valid date.
  *
- * To avoid runaway cloning if the app has been closed for a long
- * time, we only create ONE new occurrence per overdue item per boot.
+ * Idempotency: if an occurrence at the target date already exists
+ * (same text + recurrence + vault), we skip creation. This means
+ * calling this function many times in quick succession is safe.
+ *
+ * Important: advances `nextOccurrence` in a loop until we reach a
+ * date ≥ today, so a daily item that's 30 days overdue produces a
+ * single new occurrence dated tomorrow, not a chain of 30 backfilled
+ * items. Bounded to 1000 iterations as a cheap runaway guard.
  */
 export function rolloverRecurringActionItems(): void {
 	if (!doc) return;
@@ -2218,9 +2225,15 @@ export function rolloverRecurringActionItems(): void {
 		if (item.status !== 'open' && item.status !== 'in_progress') continue;
 		if (!item.dueDate || item.dueDate >= today) continue;
 
+		// Advance to the first recurrence step that's today or later.
+		let nextDue = nextOccurrence(item.dueDate, item.recurrence);
+		let guard = 0;
+		while (nextDue < today && guard++ < 1000) {
+			nextDue = nextOccurrence(nextDue, item.recurrence);
+		}
+
 		// Only create a rollover if there isn't already a later
 		// occurrence of the same text in the same vault.
-		const nextDue = nextOccurrence(item.dueDate, item.recurrence);
 		const alreadyHasNext = Object.values(doc.actionItems ?? {}).some(
 			(other) =>
 				other.vaultId === item.vaultId &&

@@ -13,7 +13,8 @@
 		folders,
 		trashCount,
 		actionItems,
-		reminderProposals
+		reminderProposals,
+		rolloverRecurringActionItems
 	} from '$lib/db';
 	import { storeBlob } from '$lib/db/blob-store';
 	import { initHashRouter, updateHashFromPath } from '$lib/hash-router';
@@ -409,9 +410,30 @@
 		window.addEventListener('resize', checkMobile);
 		window.addEventListener('keydown', handleKeydown);
 
+		// Periodic + visibility-triggered recurring rollover so long-lived
+		// tabs don't miss rollover just because they never reloaded.
+		// One hour is well under the shortest recurrence granularity
+		// (daily), and the function is idempotent so extra calls are free.
+		// The visibility listener also fires when the laptop wakes from
+		// sleep, catching up anything that drifted while the timer was
+		// paused by the browser's background throttling.
+		const rolloverTick = () => {
+			rolloverRecurringActionItems();
+		};
+		const ROLLOVER_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+		const rolloverInterval = window.setInterval(rolloverTick, ROLLOVER_INTERVAL_MS);
+		const handleVisibility = () => {
+			if (document.visibilityState === 'visible') {
+				rolloverTick();
+			}
+		};
+		document.addEventListener('visibilitychange', handleVisibility);
+
 		return () => {
 			window.removeEventListener('resize', checkMobile);
 			window.removeEventListener('keydown', handleKeydown);
+			document.removeEventListener('visibilitychange', handleVisibility);
+			window.clearInterval(rolloverInterval);
 			teardownVisibilitySync();
 			cleanupHashRouter?.();
 			stopNotificationLoop();
