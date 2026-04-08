@@ -34,14 +34,31 @@ interface StoredEmbedding {
 	updatedAt: number;
 }
 
+/**
+ * transformers.js feature-extraction pipelines accept either a single string
+ * or an array. Single → returns a 2D tensor with one row. Array → returns
+ * a 2D tensor with N rows. We use both shapes (single for queries, batched
+ * for indexing) so the type permits both.
+ */
+interface EmbedTensor {
+	data: Float32Array | number[];
+	dims: number[];
+}
 interface EmbedPipelineFn {
-	(text: string, options?: { pooling?: 'mean'; normalize?: boolean }): Promise<{
-		data: Float32Array | number[];
-	}>;
+	(
+		text: string | string[],
+		options?: { pooling?: 'mean'; normalize?: boolean }
+	): Promise<EmbedTensor>;
 }
 
 let pipelineCache: EmbedPipelineFn | null = null;
 let pipelineModelId: string | null = null;
+
+// Number of memories to embed per pipeline call. transformers.js batches
+// internally for feature-extraction, so this is mostly a memory cap rather
+// than a parallelism knob. 16 is a sweet spot for ~80 MB models on most
+// devices; larger models or constrained mobile may want smaller.
+const EMBED_BATCH_SIZE = 16;
 
 /**
  * Cheap content hash so we re-embed only when the source text actually
@@ -97,10 +114,44 @@ export async function embedText(text: string): Promise<number[] | null> {
 }
 
 /**
+ * Encode N texts in a single pipeline call. transformers.js handles the
+ * actual batching internally — this just amortizes the JS-side overhead
+ * across multiple memories. Returns one vector per input, in order.
+ */
+export async function embedTexts(texts: string[]): Promise<(number[] | null)[]> {
+	const pipeline = await getEmbedPipeline();
+	if (!pipeline || texts.length === 0) return texts.map(() => null);
+	if (texts.length === 1) {
+		const single = await embedText(texts[0]);
+		return [single];
+	}
+	const result = await pipeline(texts, { pooling: 'mean', normalize: true });
+	// dims is typically [batch, hiddenSize] for pooled output
+	const dims = result.dims;
+	const flat = Array.from(result.data);
+	if (dims.length !== 2 || dims[0] !== texts.length) {
+		// Unexpected shape — fall back to per-item calls
+		const out: (number[] | null)[] = [];
+		for (const t of texts) out.push(await embedText(t));
+		return out;
+	}
+	const hidden = dims[1];
+	const vectors: number[][] = [];
+	for (let i = 0; i < texts.length; i++) {
+		vectors.push(flat.slice(i * hidden, (i + 1) * hidden));
+	}
+	return vectors;
+}
+
+/**
  * Generate or refresh embeddings for every memory in the current vault that
- * doesn't have a stored embedding for its current content. Idempotent — safe
- * to call repeatedly. Best-effort: errors on individual memories are logged
- * but don't abort the whole pass.
+ * doesn't have a stored embedding for its current content.
+ *
+ * Batched: collects everything that needs (re-)embedding first, then runs
+ * the pipeline in groups of EMBED_BATCH_SIZE so the model amortizes JS
+ * overhead and uses its internal batching path. Idempotent — safe to call
+ * repeatedly. Best-effort: errors on individual batches are logged but
+ * don't abort the whole pass.
  */
 export async function indexAllMemories(): Promise<{
 	processed: number;
@@ -113,10 +164,13 @@ export async function indexAllMemories(): Promise<{
 	}
 
 	const memories = svelteGet(memoryObjects);
-	let processed = 0;
 	let skipped = 0;
 	let errors = 0;
 
+	// First pass: figure out which memories actually need embedding work.
+	// Skip empty bodies and anything whose stored hash already matches.
+	type Pending = { memory: MemoryObject; text: string; hash: string };
+	const pending: Pending[] = [];
 	for (const memory of memories) {
 		const text = buildEmbedText(memory);
 		if (!text.trim()) {
@@ -130,26 +184,98 @@ export async function indexAllMemories(): Promise<{
 				skipped++;
 				continue;
 			}
-			const vector = await embedText(text);
-			if (!vector) {
-				skipped++;
-				continue;
+		} catch {
+			// fall through to (re)embed
+		}
+		pending.push({ memory, text, hash });
+	}
+
+	// Second pass: embed in batches. transformers.js feature-extraction
+	// accepts an array of texts and returns one vector per input.
+	let processed = 0;
+	for (let i = 0; i < pending.length; i += EMBED_BATCH_SIZE) {
+		const batch = pending.slice(i, i + EMBED_BATCH_SIZE);
+		try {
+			const vectors = await embedTexts(batch.map((p) => p.text));
+			for (let j = 0; j < batch.length; j++) {
+				const item = batch[j];
+				const vector = vectors[j];
+				if (!vector) {
+					errors++;
+					continue;
+				}
+				const stored: StoredEmbedding = {
+					memoryId: item.memory.id,
+					contentHash: item.hash,
+					vector,
+					updatedAt: Date.now()
+				};
+				await set(item.memory.id, stored, embeddingsStore);
+				processed++;
 			}
-			const stored: StoredEmbedding = {
-				memoryId: memory.id,
-				contentHash: hash,
-				vector,
-				updatedAt: Date.now()
-			};
-			await set(memory.id, stored, embeddingsStore);
-			processed++;
 		} catch (err) {
-			console.warn('[embeddings] failed to index memory', memory.id, err);
-			errors++;
+			console.warn('[embeddings] batch failed, retrying individually', err);
+			// Fall back to per-item embedding so a single bad input doesn't
+			// take down the whole batch.
+			for (const item of batch) {
+				try {
+					const vector = await embedText(item.text);
+					if (!vector) {
+						errors++;
+						continue;
+					}
+					const stored: StoredEmbedding = {
+						memoryId: item.memory.id,
+						contentHash: item.hash,
+						vector,
+						updatedAt: Date.now()
+					};
+					await set(item.memory.id, stored, embeddingsStore);
+					processed++;
+				} catch (innerErr) {
+					console.warn('[embeddings] failed to index memory', item.memory.id, innerErr);
+					errors++;
+				}
+			}
 		}
 	}
 
 	return { processed, skipped, errors };
+}
+
+/**
+ * Embed a single memory by id and store the result. Used after an in-place
+ * update (e.g. transcript landing) so the embedding is fresh immediately
+ * instead of waiting for the next semantic search to trigger a full pass.
+ */
+export async function embedMemory(memoryId: string): Promise<boolean> {
+	const settings = getLocalInferenceSettings();
+	if (!settings.enabled || !settings.embedModelEnabled) return false;
+
+	const memory = svelteGet(memoryObjects).find((m) => m.id === memoryId);
+	if (!memory) return false;
+
+	const text = buildEmbedText(memory);
+	if (!text.trim()) return false;
+	const hash = contentHash(text);
+
+	try {
+		const existing = await get<StoredEmbedding>(memoryId, embeddingsStore);
+		if (existing && existing.contentHash === hash) return true;
+		const vector = await embedText(text);
+		if (!vector) return false;
+		const stored: StoredEmbedding = {
+			memoryId,
+			contentHash: hash,
+			vector,
+			updatedAt: Date.now()
+		};
+		await set(memoryId, stored, embeddingsStore);
+		return true;
+	} catch (err) {
+		console.warn('[embeddings] embedMemory failed', memoryId, err);
+		return false;
+	}
 }
 
 /**

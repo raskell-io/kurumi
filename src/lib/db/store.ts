@@ -2,7 +2,7 @@ import * as Automerge from '@automerge/automerge';
 import { get, set } from 'idb-keyval';
 import { writable, derived, type Readable } from 'svelte/store';
 import { deleteBlob, getBlob } from './blob-store';
-import { deleteEmbedding } from '$lib/embeddings';
+import { deleteEmbedding, embedMemory } from '$lib/embeddings';
 import { inferenceRouter } from '$lib/inference';
 import {
 	createEmptyDocument,
@@ -924,6 +924,9 @@ export async function transcribeMemoryAudio(
 			memory.processingError = null;
 			memory.updatedAt = Date.now();
 		});
+		// Refresh the embedding so semantic search picks up the new transcript
+		// + summary immediately rather than waiting for the next ask.
+		void embedMemory(memoryId);
 		return;
 	}
 
@@ -957,6 +960,9 @@ export async function transcribeMemoryAudio(
 		memory.processingError = null;
 		memory.updatedAt = Date.now();
 	});
+	// Refresh the embedding so semantic search picks up the new transcript
+	// + summary immediately rather than waiting for the next ask.
+	void embedMemory(memoryId);
 }
 
 /**
