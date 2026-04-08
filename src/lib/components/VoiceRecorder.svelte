@@ -5,9 +5,10 @@
 	interface Props {
 		onComplete: (result: { blob: Blob; mimeType: string; durationMs: number }) => void;
 		onCancel?: () => void;
+		onStart?: () => void;
 	}
 
-	let { onComplete, onCancel }: Props = $props();
+	let { onComplete, onCancel, onStart }: Props = $props();
 
 	type RecorderState = 'idle' | 'requesting' | 'recording' | 'paused' | 'stopped' | 'error';
 
@@ -104,6 +105,7 @@
 		segmentStartedAt = Date.now();
 		mediaRecorder.start();
 		recorderState = 'recording';
+		onStart?.();
 
 		timerInterval = setInterval(() => {
 			elapsedMs = currentElapsed();

@@ -135,6 +135,31 @@ export interface ControlledLabel {
 	value: string;
 }
 
+/**
+ * Lightweight action item shape used inside MeetingExtras. The full
+ * ActionItem entity (with status, confidence, links to Person entities)
+ * comes later when there's a real action management UI; for now we just
+ * capture the text and any obvious metadata an LLM extracts.
+ */
+export interface MeetingActionItemDraft {
+	text: string;
+	assignee: string | null;
+	dueDate: string | null;
+}
+
+/**
+ * Structured output produced by the meeting summarization pipeline.
+ * Stored on MemoryObject.meetingExtras when type === 'meeting'.
+ */
+export interface MeetingExtras {
+	captureMode: CaptureMode;
+	startedAt: number;
+	endedAt: number | null;
+	actionItems: MeetingActionItemDraft[];
+	unresolvedQuestions: string[];
+	followUpSuggestions: string[];
+}
+
 export interface MemoryObject {
 	id: string;
 	type: MemoryType;
@@ -171,6 +196,7 @@ export interface MemoryObject {
 	processingError: string | null;
 	confidenceScores: Record<string, number>;
 	embeddingRef: string | null;
+	meetingExtras: MeetingExtras | null;
 	vaultId: string;
 	deletedAt: number | null;
 }
@@ -265,7 +291,7 @@ export function createEmptyDocument(): KurumiDocument {
 		events: {},
 		templates: {},
 		currentVaultId: DEFAULT_VAULT_ID,
-		version: 7
+		version: 8
 	};
 }
 
@@ -317,6 +343,7 @@ export function createMemoryObject(
 		processingError: null,
 		confidenceScores: {},
 		embeddingRef: null,
+		meetingExtras: null,
 		vaultId: options.vaultId ?? DEFAULT_VAULT_ID,
 		deletedAt: null
 	};

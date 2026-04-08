@@ -358,6 +358,7 @@ export function parseNotesFromFiles(
 			processingError: null,
 			confidenceScores: {},
 			embeddingRef: null,
+			meetingExtras: null,
 			vaultId,
 			deletedAt: null
 		});

@@ -3,18 +3,25 @@
 	import { goto } from '$app/navigation';
 	import {
 		addMemoryObject,
+		addMeetingMemo,
 		folders,
 		memoryObjects,
 		vaults,
 		currentVaultId,
 		setCurrentVault,
-		addVault
+		addVault,
+		transcribeMemoryAudio
 	} from '$lib/db';
+	import { storeBlob } from '$lib/db/blob-store';
 	import { getIconById } from '$lib/icons/vault-icons';
 	import { syncState } from '$lib/sync/status';
 	import { resourceColors } from '$lib/types/resources';
 	import { exportVaultAsMarkdown, type MarkdownExportFormat } from '$lib/utils/markdown-export';
-	import { triggerVoiceCapture } from '$lib/stores/snackbar';
+	import {
+		triggerVoiceCapture,
+		triggerMeetingCapture,
+		triggerUploadRecording
+	} from '$lib/stores/snackbar';
 	import { Search, Cloud, CloudOff, Download } from 'lucide-svelte';
 
 	interface Props {
@@ -70,6 +77,28 @@
 			action: () => {
 				onClose();
 				triggerVoiceCapture.set(true);
+			}
+		},
+		{
+			id: 'new-meeting',
+			type: 'action',
+			title: 'Record meeting',
+			description: 'Long-form recording with structured summary',
+			icon: 'plus',
+			action: () => {
+				onClose();
+				triggerMeetingCapture.set(true);
+			}
+		},
+		{
+			id: 'upload-recording',
+			type: 'action',
+			title: 'Upload audio/video file',
+			description: 'Import an existing recording for transcription',
+			icon: 'plus',
+			action: () => {
+				onClose();
+				triggerUploadRecording.set(true);
 			}
 		},
 		{

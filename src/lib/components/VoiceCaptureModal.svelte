@@ -1,26 +1,37 @@
 <script lang="ts">
 	import VoiceRecorder from './VoiceRecorder.svelte';
-	import { addVoiceMemo, folders, getFolderPath, transcribeMemoryAudio } from '$lib/db';
+	import {
+		addVoiceMemo,
+		addMeetingMemo,
+		folders,
+		getFolderPath,
+		transcribeMemoryAudio
+	} from '$lib/db';
 	import { storeBlob } from '$lib/db/blob-store';
 	import { goto } from '$app/navigation';
-	import { X } from 'lucide-svelte';
+	import { X, Mic, Users } from 'lucide-svelte';
+
+	type CaptureMode = 'voice-memo' | 'meeting';
 
 	interface Props {
 		open: boolean;
+		mode?: CaptureMode;
 		onClose: () => void;
 	}
 
-	let { open, onClose }: Props = $props();
+	let { open, mode = 'voice-memo', onClose }: Props = $props();
 
 	let saving = $state(false);
 	let saveError = $state<string | null>(null);
 	let selectedFolderId = $state<string | null>(null);
+	let captureStartedAt = $state<number | null>(null);
 
 	// Reset folder selection when the modal opens
 	$effect(() => {
 		if (open) {
 			selectedFolderId = null;
 			saveError = null;
+			captureStartedAt = null;
 		}
 	});
 
@@ -46,28 +57,59 @@
 			hour: 'numeric',
 			minute: '2-digit'
 		});
-		return `Voice memo — ${date}, ${time}`;
+		const prefix = mode === 'meeting' ? 'Meeting' : 'Voice memo';
+		return `${prefix} — ${date}, ${time}`;
 	}
 
-	async function handleComplete({ blob, mimeType }: { blob: Blob; mimeType: string }) {
+	let modalTitle = $derived(mode === 'meeting' ? 'Meeting' : 'Voice memo');
+	let modalIcon = $derived(mode === 'meeting' ? Users : Mic);
+
+	async function handleComplete({
+		blob,
+		mimeType,
+		durationMs
+	}: {
+		blob: Blob;
+		mimeType: string;
+		durationMs: number;
+	}) {
 		saving = true;
 		saveError = null;
 		try {
 			const ref = await storeBlob(blob, mimeType);
-			const memory = addVoiceMemo({
-				title: defaultTitle(),
-				rawAudioRef: ref,
-				folderId: selectedFolderId
-			});
+			const startedAt = captureStartedAt ?? Date.now() - durationMs;
+			const endedAt = startedAt + durationMs;
+
+			const memory =
+				mode === 'meeting'
+					? addMeetingMemo({
+							title: defaultTitle(),
+							rawAudioRef: ref,
+							captureMode: 'in-person-meeting',
+							folderId: selectedFolderId,
+							startedAt,
+							endedAt
+						})
+					: addVoiceMemo({
+							title: defaultTitle(),
+							rawAudioRef: ref,
+							folderId: selectedFolderId
+						});
+
 			onClose();
 			await goto(`/memory/${memory.id}`);
-			// Kick off transcription as fire-and-forget; the memory page will react
-			// to the processingState/transcript updates as they land.
+			// Kick off the post-capture pipeline as fire-and-forget; the memory
+			// page reacts to processingState/transcript/meetingExtras updates as
+			// they land.
 			void transcribeMemoryAudio(memory.id, blob, mimeType);
 		} catch (err) {
-			saveError = err instanceof Error ? err.message : 'Failed to save voice memo';
+			saveError = err instanceof Error ? err.message : `Failed to save ${modalTitle.toLowerCase()}`;
 			saving = false;
 		}
+	}
+
+	function handleRecordingStart() {
+		captureStartedAt = Date.now();
 	}
 
 	function handleBackdropClick(e: MouseEvent) {
@@ -95,8 +137,17 @@
 		tabindex="-1"
 	>
 		<div class="w-full max-w-sm rounded-xl bg-[var(--color-bg)] shadow-2xl">
-			<div class="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
-				<h2 class="text-base font-semibold text-[var(--color-text)]">Voice memo</h2>
+			<div
+				class="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3"
+			>
+				<div class="flex items-center gap-2">
+					{#if mode === 'meeting'}
+						<Users class="h-5 w-5 text-[var(--color-accent)]" />
+					{:else}
+						<Mic class="h-5 w-5 text-[var(--color-accent)]" />
+					{/if}
+					<h2 class="text-base font-semibold text-[var(--color-text)]">{modalTitle}</h2>
+				</div>
 				<button
 					type="button"
 					onclick={onClose}
@@ -110,8 +161,10 @@
 
 			{#if saving}
 				<div class="flex flex-col items-center gap-3 p-8">
-					<div class="h-8 w-8 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent"></div>
-					<p class="text-sm text-[var(--color-text-muted)]">Saving voice memo…</p>
+					<div
+						class="h-8 w-8 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent"
+					></div>
+					<p class="text-sm text-[var(--color-text-muted)]">Saving {modalTitle.toLowerCase()}…</p>
 				</div>
 			{:else if saveError}
 				<div class="flex flex-col items-center gap-3 p-6 text-center">
@@ -125,6 +178,12 @@
 					</button>
 				</div>
 			{:else}
+				{#if mode === 'meeting'}
+					<div class="px-4 pt-4 text-xs text-[var(--color-text-muted)]">
+						Long-form recording. After you stop, the meeting is transcribed and a structured
+						summary is generated with action items, decisions, and key topics.
+					</div>
+				{/if}
 				{#if folderOptions.length > 0}
 					<div class="px-4 pt-4">
 						<label
@@ -145,7 +204,11 @@
 						</select>
 					</div>
 				{/if}
-				<VoiceRecorder onComplete={handleComplete} onCancel={onClose} />
+				<VoiceRecorder
+					onComplete={handleComplete}
+					onCancel={onClose}
+					onStart={handleRecordingStart}
+				/>
 			{/if}
 		</div>
 	</div>

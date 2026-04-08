@@ -76,29 +76,37 @@ interface ChatCompletionResponse {
 /**
  * Shared helper for chat-completion calls. Returns the assistant text or
  * an error message; latency is computed by the caller.
+ *
+ * Pass `jsonMode: true` when the system prompt asks for JSON output. Sets
+ * response_format=json_object so the model is constrained to valid JSON.
  */
 async function callChat(
 	apiKey: string,
 	system: string,
 	user: string,
-	options?: TaskOptions
+	options?: TaskOptions & { jsonMode?: boolean }
 ): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
 	try {
+		const body: Record<string, unknown> = {
+			model: CHAT_MODEL,
+			messages: [
+				{ role: 'system', content: system },
+				{ role: 'user', content: user }
+			],
+			max_tokens: options?.maxTokens ?? 512,
+			temperature: options?.temperature ?? 0.3
+		};
+		if (options?.jsonMode) {
+			body.response_format = { type: 'json_object' };
+		}
+
 		const response = await fetch('https://api.openai.com/v1/chat/completions', {
 			method: 'POST',
 			headers: {
 				Authorization: `Bearer ${apiKey}`,
 				'Content-Type': 'application/json'
 			},
-			body: JSON.stringify({
-				model: CHAT_MODEL,
-				messages: [
-					{ role: 'system', content: system },
-					{ role: 'user', content: user }
-				],
-				max_tokens: options?.maxTokens ?? 512,
-				temperature: options?.temperature ?? 0.3
-			}),
+			body: JSON.stringify(body),
 			signal: options?.signal
 		});
 
@@ -272,14 +280,105 @@ export class OpenAIProvider implements InferenceProvider {
 		};
 	}
 
-	// --- stubs for tasks not yet implemented on this provider ---------------
-
 	async summarizeMeeting(
-		_input: MeetingSummaryInput,
-		_options?: TaskOptions
+		input: MeetingSummaryInput,
+		options?: TaskOptions
 	): Promise<InferenceResult<MeetingSummary>> {
-		return notImplemented('summarizeMeeting', 'remote');
+		const apiKey = getApiKey();
+		const startedAt = Date.now();
+		if (!apiKey) {
+			return {
+				ok: false,
+				error: 'OpenAI API key not configured',
+				target: 'remote',
+				providerId: 'openai',
+				model: CHAT_MODEL,
+				latencyMs: 0
+			};
+		}
+
+		const system = `You analyze meeting transcripts and produce structured summaries.
+Return ONLY a JSON object with this exact shape (no markdown, no preamble):
+{
+  "title": "short descriptive title (3-8 words)",
+  "summaryShort": "concise 1-2 sentence summary",
+  "summaryLong": "thorough multi-paragraph summary",
+  "participants": ["names mentioned"],
+  "keyTopics": ["topic 1", "topic 2"],
+  "actionItems": [{"text": "action description", "assignee": "name or null", "dueDate": "ISO date or null", "confidence": 0.9}],
+  "decisions": ["decision 1"],
+  "unresolvedQuestions": ["open question 1"],
+  "followUpSuggestions": ["follow-up 1"]
+}
+If the transcript is too short or unclear for a section, return an empty array for that field.`;
+
+		const userPrompt = input.knownParticipants?.length
+			? `Known participants: ${input.knownParticipants.join(', ')}\n\nTranscript:\n${input.transcript}`
+			: `Transcript:\n${input.transcript}`;
+
+		const result = await callChat(apiKey, system, userPrompt, {
+			...options,
+			jsonMode: true,
+			maxTokens: options?.maxTokens ?? 1500,
+			temperature: options?.temperature ?? 0.2
+		});
+
+		if (!result.ok) {
+			return {
+				ok: false,
+				error: result.error,
+				target: 'remote',
+				providerId: 'openai',
+				model: CHAT_MODEL,
+				latencyMs: Date.now() - startedAt
+			};
+		}
+
+		try {
+			const parsed = JSON.parse(result.text) as Partial<MeetingSummary>;
+			const value: MeetingSummary = {
+				title: parsed.title ?? '',
+				summaryShort: parsed.summaryShort ?? '',
+				summaryLong: parsed.summaryLong ?? '',
+				participants: Array.isArray(parsed.participants) ? parsed.participants : [],
+				keyTopics: Array.isArray(parsed.keyTopics) ? parsed.keyTopics : [],
+				actionItems: Array.isArray(parsed.actionItems)
+					? parsed.actionItems.map((a) => ({
+							text: a.text ?? '',
+							assignee: a.assignee ?? null,
+							dueDate: a.dueDate ?? null,
+							confidence: typeof a.confidence === 'number' ? a.confidence : 0.5
+						}))
+					: [],
+				decisions: Array.isArray(parsed.decisions) ? parsed.decisions : [],
+				unresolvedQuestions: Array.isArray(parsed.unresolvedQuestions)
+					? parsed.unresolvedQuestions
+					: [],
+				followUpSuggestions: Array.isArray(parsed.followUpSuggestions)
+					? parsed.followUpSuggestions
+					: []
+			};
+			return {
+				ok: true,
+				value,
+				target: 'remote',
+				providerId: 'openai',
+				model: CHAT_MODEL,
+				latencyMs: Date.now() - startedAt
+			};
+		} catch (err) {
+			return {
+				ok: false,
+				error: `Failed to parse meeting summary JSON: ${err instanceof Error ? err.message : 'unknown'}`,
+				target: 'remote',
+				providerId: 'openai',
+				model: CHAT_MODEL,
+				latencyMs: Date.now() - startedAt
+			};
+		}
 	}
+
+	// --- stubs for tasks not yet implemented on this provider ---------------
 
 	async rewriteTranscript(
 		_input: RewriteTranscriptInput,

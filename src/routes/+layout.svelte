@@ -7,10 +7,13 @@
 		initDB,
 		memoryObjects,
 		addMemoryObject,
+		addMeetingMemo,
+		transcribeMemoryAudio,
 		getAllTags,
 		folders,
 		trashCount
 	} from '$lib/db';
+	import { storeBlob } from '$lib/db/blob-store';
 	import { initHashRouter, updateHashFromPath } from '$lib/hash-router';
 	import { initSearch, rebuildIndex } from '$lib/search';
 	import { setupVisibilitySync, teardownVisibilitySync, syncState, isSyncConfigured, sync } from '$lib/sync';
@@ -28,8 +31,14 @@
 	import TemplatePicker from '$lib/components/TemplatePicker.svelte';
 	import VoiceCaptureModal from '$lib/components/VoiceCaptureModal.svelte';
 	import Snackbar from '$lib/components/Snackbar.svelte';
-	import { X, Plus, Search, ChevronDown, GitFork, BookOpen, Settings, ListTree, Cloud, RefreshCw, CheckCircle, AlertCircle, Pencil, Tag, Trash2, Mic } from 'lucide-svelte';
-	import { showNewNoteSnackbar, triggerSearch, triggerVoiceCapture } from '$lib/stores/snackbar';
+	import { X, Plus, Search, ChevronDown, GitFork, BookOpen, Settings, ListTree, Cloud, RefreshCw, CheckCircle, AlertCircle, Pencil, Tag, Trash2, Mic, Users } from 'lucide-svelte';
+	import {
+		showNewNoteSnackbar,
+		triggerSearch,
+		triggerVoiceCapture,
+		triggerMeetingCapture,
+		triggerUploadRecording
+	} from '$lib/stores/snackbar';
 
 	let { children } = $props();
 
@@ -39,6 +48,35 @@
 	let showSearch = $state(false);
 	let showTemplatePicker = $state(false);
 	let showVoiceCapture = $state(false);
+	let captureMode = $state<'voice-memo' | 'meeting'>('voice-memo');
+	let uploadFileInput = $state<HTMLInputElement | undefined>();
+	let uploadingFile = $state(false);
+
+	async function handleUploadFile(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+
+		uploadingFile = true;
+		try {
+			const ref = await storeBlob(file, file.type || 'audio/webm');
+			const now = Date.now();
+			const memory = addMeetingMemo({
+				title: file.name.replace(/\.[^.]+$/, '') || 'Uploaded recording',
+				rawAudioRef: ref,
+				captureMode: 'upload',
+				startedAt: now,
+				endedAt: now
+			});
+			await goto(`/memory/${memory.id}`);
+			void transcribeMemoryAudio(memory.id, file, file.type || 'audio/webm');
+		} catch (err) {
+			console.error('Upload failed:', err);
+		} finally {
+			uploadingFile = false;
+			input.value = '';
+		}
+	}
 	let selectedTag = $state<string | null>(null);
 	let showTags = $state(false);
 	let theme = $state<'light' | 'dark' | 'system'>('system');
@@ -73,8 +111,32 @@
 	$effect(() => {
 		const unsubscribe = triggerVoiceCapture.subscribe((value) => {
 			if (value) {
+				captureMode = 'voice-memo';
 				showVoiceCapture = true;
 				triggerVoiceCapture.set(false);
+			}
+		});
+		return unsubscribe;
+	});
+
+	// Subscribe to meeting-capture trigger
+	$effect(() => {
+		const unsubscribe = triggerMeetingCapture.subscribe((value) => {
+			if (value) {
+				captureMode = 'meeting';
+				showVoiceCapture = true;
+				triggerMeetingCapture.set(false);
+			}
+		});
+		return unsubscribe;
+	});
+
+	// Subscribe to upload-recording trigger — open the hidden file picker
+	$effect(() => {
+		const unsubscribe = triggerUploadRecording.subscribe((value) => {
+			if (value) {
+				uploadFileInput?.click();
+				triggerUploadRecording.set(false);
 			}
 		});
 		return unsubscribe;
@@ -527,17 +589,32 @@
 					<Plus class="h-5 w-5" />
 					New Note
 				</button>
-				<button
-					type="button"
-					onclick={() => {
-						showVoiceCapture = true;
-						if (isMobile) sidebarOpen = false;
-					}}
-					class="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-bg)] active:scale-[0.98]"
-				>
-					<Mic class="h-4 w-4" />
-					Voice memo
-				</button>
+				<div class="flex gap-2">
+					<button
+						type="button"
+						onclick={() => {
+							showVoiceCapture = true;
+							captureMode = 'voice-memo';
+							if (isMobile) sidebarOpen = false;
+						}}
+						class="flex flex-1 items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-bg)] active:scale-[0.98]"
+					>
+						<Mic class="h-4 w-4" />
+						Voice memo
+					</button>
+					<button
+						type="button"
+						onclick={() => {
+							showVoiceCapture = true;
+							captureMode = 'meeting';
+							if (isMobile) sidebarOpen = false;
+						}}
+						class="flex flex-1 items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-bg)] active:scale-[0.98]"
+					>
+						<Users class="h-4 w-4" />
+						Meeting
+					</button>
+				</div>
 			</div>
 
 			<!-- Search -->
@@ -768,7 +845,20 @@
 	<TemplatePicker bind:open={showTemplatePicker} onClose={() => (showTemplatePicker = false)} />
 
 	<!-- Voice Capture Modal -->
-	<VoiceCaptureModal open={showVoiceCapture} onClose={() => (showVoiceCapture = false)} />
+	<VoiceCaptureModal
+		open={showVoiceCapture}
+		mode={captureMode}
+		onClose={() => (showVoiceCapture = false)}
+	/>
+
+	<!-- Hidden file input for "Upload audio/video file" command palette action -->
+	<input
+		bind:this={uploadFileInput}
+		type="file"
+		accept="audio/*,video/*"
+		class="hidden"
+		onchange={handleUploadFile}
+	/>
 
 	<!-- Snackbars -->
 	{#if showNewNoteAnimation}

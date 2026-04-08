@@ -15,7 +15,18 @@
 	import { untrack } from 'svelte';
 	import { downloadSingleMemory, type MarkdownExportFormat } from '$lib/utils/markdown-export';
 	import { getBlob } from '$lib/db/blob-store';
-	import { Trash2, Download, ChevronDown, Mic, RefreshCw } from 'lucide-svelte';
+	import {
+		Trash2,
+		Download,
+		ChevronDown,
+		Mic,
+		RefreshCw,
+		Users,
+		CheckSquare,
+		Lightbulb,
+		HelpCircle,
+		ArrowRight
+	} from 'lucide-svelte';
 
 	let title = $state('');
 	let content = $state('');
@@ -101,7 +112,7 @@
 		};
 	});
 
-	// Auto-retry processing for voice memos that are stuck in 'pending'
+	// Auto-retry processing for voice memos / meetings stuck in 'pending'
 	// (e.g. created with an older app version, or crashed mid-pipeline).
 	// Fires once per page visit per memory.
 	let autoRetriedForId = $state('');
@@ -109,7 +120,7 @@
 		if (!memory) return;
 		if (memory.id === autoRetriedForId) return;
 		const isStuck =
-			memory.type === 'voice-memo' &&
+			(memory.type === 'voice-memo' || memory.type === 'meeting') &&
 			memory.processingState === 'pending' &&
 			memory.rawAudioRef !== null &&
 			!memory.transcript;
@@ -269,10 +280,14 @@
 					style="font-family: var(--font-editor);"
 				/>
 
-				<!-- Audio playback for voice memos -->
-				{#if memory.type === 'voice-memo'}
+				<!-- Audio playback for voice memos and meetings -->
+				{#if memory.type === 'voice-memo' || memory.type === 'meeting'}
 					<div class="mb-4 flex items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 md:mb-6">
-						<Mic class="h-5 w-5 shrink-0 text-[var(--color-accent)]" />
+						{#if memory.type === 'meeting'}
+							<Users class="h-5 w-5 shrink-0 text-[var(--color-accent)]" />
+						{:else}
+							<Mic class="h-5 w-5 shrink-0 text-[var(--color-accent)]" />
+						{/if}
 						{#if audioUrl}
 							<audio controls src={audioUrl} class="w-full">
 								Your browser does not support audio playback.
@@ -296,7 +311,7 @@
 					{:else if memory.processingState === 'pending' && audioUrl}
 						<div class="mb-4 flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 text-sm md:mb-6">
 							<div class="text-[var(--color-text-muted)]">
-								This voice memo hasn't been transcribed yet.
+								This recording hasn't been transcribed yet.
 							</div>
 							<button
 								type="button"
@@ -333,6 +348,97 @@
 							</div>
 							<div class="whitespace-pre-wrap">{memory.summaryShort}</div>
 						</div>
+					{/if}
+
+					<!-- Meeting structured output -->
+					{#if memory.type === 'meeting' && memory.meetingExtras}
+						{@const extras = memory.meetingExtras}
+
+						{#if extras.actionItems.length > 0}
+							<div class="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 md:mb-6">
+								<div class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+									<CheckSquare class="h-3 w-3" />
+									Action items
+								</div>
+								<ul class="space-y-1 text-sm text-[var(--color-text)]">
+									{#each extras.actionItems as item}
+										<li class="flex items-start gap-2">
+											<span class="mt-1 h-1 w-1 shrink-0 rounded-full bg-[var(--color-accent)]"></span>
+											<div>
+												<span>{item.text}</span>
+												{#if item.assignee}
+													<span class="ml-1 text-[var(--color-text-muted)]">— {item.assignee}</span>
+												{/if}
+												{#if item.dueDate}
+													<span class="ml-1 text-[var(--color-text-muted)]">({item.dueDate})</span>
+												{/if}
+											</div>
+										</li>
+									{/each}
+								</ul>
+							</div>
+						{/if}
+
+						{#if memory.decisions.length > 0}
+							<div class="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 md:mb-6">
+								<div class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+									<Lightbulb class="h-3 w-3" />
+									Decisions
+								</div>
+								<ul class="space-y-1 text-sm text-[var(--color-text)]">
+									{#each memory.decisions as decision}
+										<li class="flex items-start gap-2">
+											<span class="mt-1 h-1 w-1 shrink-0 rounded-full bg-[var(--color-accent)]"></span>
+											<span>{decision}</span>
+										</li>
+									{/each}
+								</ul>
+							</div>
+						{/if}
+
+						{#if memory.topics.length > 0}
+							<div class="mb-4 flex flex-wrap gap-2 md:mb-6">
+								{#each memory.topics as topic}
+									<span class="rounded-full bg-[var(--color-bg-secondary)] px-3 py-1 text-xs text-[var(--color-text-muted)]">
+										{topic}
+									</span>
+								{/each}
+							</div>
+						{/if}
+
+						{#if extras.unresolvedQuestions.length > 0}
+							<div class="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 md:mb-6">
+								<div class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+									<HelpCircle class="h-3 w-3" />
+									Open questions
+								</div>
+								<ul class="space-y-1 text-sm text-[var(--color-text)]">
+									{#each extras.unresolvedQuestions as q}
+										<li class="flex items-start gap-2">
+											<span class="mt-1 h-1 w-1 shrink-0 rounded-full bg-[var(--color-accent)]"></span>
+											<span>{q}</span>
+										</li>
+									{/each}
+								</ul>
+							</div>
+						{/if}
+
+						{#if extras.followUpSuggestions.length > 0}
+							<div class="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 md:mb-6">
+								<div class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+									<ArrowRight class="h-3 w-3" />
+									Follow-ups
+								</div>
+								<ul class="space-y-1 text-sm text-[var(--color-text)]">
+									{#each extras.followUpSuggestions as f}
+										<li class="flex items-start gap-2">
+											<span class="mt-1 h-1 w-1 shrink-0 rounded-full bg-[var(--color-accent)]"></span>
+											<span>{f}</span>
+										</li>
+									{/each}
+								</ul>
+							</div>
+						{/if}
 					{/if}
 
 					<!-- Transcript -->

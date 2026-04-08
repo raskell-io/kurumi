@@ -399,6 +399,7 @@ export async function initDB(): Promise<void> {
 								processingError: null,
 								confidenceScores: {},
 								embeddingRef: null,
+								meetingExtras: null,
 								vaultId: note.vaultId ?? DEFAULT_VAULT_ID,
 								deletedAt: note.deletedAt ?? null
 							};
@@ -420,6 +421,20 @@ export async function initDB(): Promise<void> {
 						}
 					}
 					d.version = 7;
+				});
+				await saveDoc();
+			}
+
+			// Migrate: add meetingExtras field for the meeting capture path
+			// (version 7 -> version 8). Defaults to null for non-meetings.
+			if ((doc.version ?? 0) < 8) {
+				doc = Automerge.change(doc, (d) => {
+					for (const memory of Object.values(d.memoryObjects)) {
+						if ((memory as { meetingExtras?: unknown }).meetingExtras === undefined) {
+							(memory as { meetingExtras: null }).meetingExtras = null;
+						}
+					}
+					d.version = 8;
 				});
 				await saveDoc();
 			}
@@ -707,6 +722,47 @@ export function addVoiceMemo(options: {
 }
 
 /**
+ * Create a meeting memory from a recording or upload. Same shape as a voice
+ * memo but with type='meeting' and meetingExtras populated with capture
+ * metadata so the post-transcribe pipeline knows to run summarizeMeeting().
+ */
+export function addMeetingMemo(options: {
+	title: string;
+	rawAudioRef: string;
+	captureMode: import('./types').CaptureMode;
+	folderId?: string | null;
+	startedAt?: number;
+	endedAt?: number | null;
+}): MemoryObject {
+	if (!doc) {
+		console.error('Cannot add meeting: database not initialized');
+		doc = Automerge.from<KurumiDocument>(createEmptyDocument());
+		docStore.set(doc);
+	}
+	const vaultId = getCurrentVaultId();
+	const memory = createMemoryObject({
+		type: 'meeting',
+		title: options.title,
+		folderId: options.folderId ?? null,
+		vaultId
+	});
+	memory.rawAudioRef = options.rawAudioRef;
+	memory.processingState = 'pending';
+	memory.meetingExtras = {
+		captureMode: options.captureMode,
+		startedAt: options.startedAt ?? Date.now(),
+		endedAt: options.endedAt ?? null,
+		actionItems: [],
+		unresolvedQuestions: [],
+		followUpSuggestions: []
+	};
+	updateDoc((d) => {
+		d.memoryObjects[memory.id] = memory;
+	});
+	return memory;
+}
+
+/**
  * Run the post-capture pipeline on a voice memo's audio:
  *   1. Transcribe via the first registered provider that supports it.
  *   2. If transcription succeeds, run summarize() and generateTitle() in
@@ -798,6 +854,62 @@ export async function transcribeMemoryAudio(
 		return;
 	}
 
+	const memoryType = doc?.memoryObjects[memoryId]?.type;
+
+	if (memoryType === 'meeting') {
+		// Meetings get a structured summary with action items, decisions, etc.
+		const meetingSummary = await runFirstSuccessful((p) =>
+			p.summarizeMeeting({ transcript: transcriptText })
+		);
+
+		updateDoc((d) => {
+			const memory = d.memoryObjects[memoryId];
+			if (!memory) return;
+			if (meetingSummary) {
+				if (meetingSummary.summaryShort) memory.summaryShort = meetingSummary.summaryShort;
+				if (meetingSummary.summaryLong) memory.summaryLong = meetingSummary.summaryLong;
+
+				// Replace decisions and topics arrays (Automerge needs in-place mutation)
+				memory.decisions.splice(0, memory.decisions.length);
+				for (const d2 of meetingSummary.decisions) memory.decisions.push(d2);
+
+				memory.topics.splice(0, memory.topics.length);
+				for (const t of meetingSummary.keyTopics) memory.topics.push(t);
+
+				// Stuff the meeting-specific bits into meetingExtras
+				const existing = memory.meetingExtras;
+				memory.meetingExtras = {
+					captureMode: existing?.captureMode ?? 'in-person-meeting',
+					startedAt: existing?.startedAt ?? memory.capturedAt,
+					endedAt: existing?.endedAt ?? null,
+					actionItems: meetingSummary.actionItems.map((a) => ({
+						text: a.text,
+						assignee: a.assignee,
+						dueDate: a.dueDate
+					})),
+					unresolvedQuestions: [...meetingSummary.unresolvedQuestions],
+					followUpSuggestions: [...meetingSummary.followUpSuggestions]
+				};
+
+				// Auto-title if user hasn't set one
+				if (meetingSummary.title) {
+					const looksAutoTitled =
+						memory.title.startsWith('Meeting —') ||
+						memory.title.startsWith('Voice memo —') ||
+						memory.title === 'Untitled';
+					if (looksAutoTitled) {
+						memory.title = meetingSummary.title;
+					}
+				}
+			}
+			memory.processingState = 'ready';
+			memory.processingError = null;
+			memory.updatedAt = Date.now();
+		});
+		return;
+	}
+
+	// Voice memo / default path: simple summary + title
 	const [summary, title] = await Promise.all([
 		runFirstSuccessful((p) => p.summarize({ text: transcriptText, style: 'short' })),
 		runFirstSuccessful((p) => p.generateTitle({ text: transcriptText }))
@@ -827,20 +939,22 @@ export async function transcribeMemoryAudio(
 
 /**
  * Walk every registered provider in priority order and return the first
- * successful string result. Returns null if no provider produces a value
- * (e.g. no provider supports the task or every one errors).
+ * successful result. Returns null if no provider produces a value (e.g. no
+ * provider supports the task or every one errors). Generic over the result
+ * value type so callers can use it for both string-typed and structured
+ * results (meeting summaries, etc.).
  */
-async function runFirstSuccessful(
+async function runFirstSuccessful<T>(
 	call: (provider: import('$lib/inference').InferenceProvider) => Promise<{
 		ok: boolean;
-		value?: string;
+		value?: T;
 		error?: string;
 	}>
-): Promise<string | null> {
+): Promise<T | null> {
 	for (const provider of inferenceRouter.allProviders()) {
 		try {
 			const result = await call(provider);
-			if (result.ok && result.value) {
+			if (result.ok && result.value !== undefined) {
 				return result.value;
 			}
 		} catch {
@@ -1726,7 +1840,7 @@ export interface KurumiExport {
 export function exportFullJSON(): string {
 	if (!doc)
 		return JSON.stringify({
-			version: 7,
+			version: 8,
 			exportedAt: new Date().toISOString(),
 			vaults: [],
 			folders: [],
@@ -1810,6 +1924,7 @@ function legacyNoteToMemoryObject(note: LegacyNoteImport, defaultVaultId: string
 		processingError: null,
 		confidenceScores: {},
 		embeddingRef: null,
+		meetingExtras: null,
 		vaultId: note.vaultId ?? defaultVaultId,
 		deletedAt: note.deletedAt ?? null
 	};
