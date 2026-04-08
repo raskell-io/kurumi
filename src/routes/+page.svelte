@@ -21,7 +21,7 @@
 		Volume2,
 		VolumeX
 	} from 'lucide-svelte';
-	import { showNewNoteSnackbar } from '$lib/stores/snackbar';
+	import { showNewNoteSnackbar, triggerVoiceAssistant } from '$lib/stores/snackbar';
 
 	type Turn = {
 		question: string;
@@ -147,6 +147,24 @@
 		stopSpeaking();
 		if (recorderHandle) {
 			void recorderHandle.stop();
+		}
+	});
+
+	// Cmd+Shift+V global hotkey: alternate start / stop-and-submit. The
+	// layout increments the counter; we react to the change (skipping the
+	// initial value of 0) and flip recording state accordingly. Auto-
+	// enables voice mode on first use so the user hears the answer.
+	let lastVoiceSignal = $state(0);
+	$effect(() => {
+		const signal = $triggerVoiceAssistant;
+		if (signal === 0 || signal === lastVoiceSignal) return;
+		lastVoiceSignal = signal;
+		if (!aiAvailable || !transcribeAvailable) return;
+		if (!voiceMode) voiceMode = true;
+		if (recording) {
+			void handleStopRecording();
+		} else if (!asking && !transcribing) {
+			void handleStartRecording();
 		}
 	});
 

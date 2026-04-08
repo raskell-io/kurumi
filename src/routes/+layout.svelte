@@ -41,7 +41,8 @@
 		triggerSearch,
 		triggerVoiceCapture,
 		triggerMeetingCapture,
-		triggerUploadRecording
+		triggerUploadRecording,
+		triggerVoiceAssistant
 	} from '$lib/stores/snackbar';
 
 	let { children } = $props();
@@ -253,6 +254,19 @@
 			if (e.shiftKey && e.key === 'a') {
 				e.preventDefault();
 				goto('/actions');
+				if (isMobile) sidebarOpen = false;
+				return;
+			}
+			if (e.shiftKey && (e.key === 'V' || e.key === 'v')) {
+				// Global push-to-talk toggle: hop to home and flip the
+				// voice assistant signal. The home page's Ask Kurumi view
+				// picks it up via a $effect and runs start / stop-and-submit
+				// alternately.
+				e.preventDefault();
+				if ($page.url.pathname !== '/') {
+					goto('/');
+				}
+				triggerVoiceAssistant.update((n) => n + 1);
 				if (isMobile) sidebarOpen = false;
 				return;
 			}

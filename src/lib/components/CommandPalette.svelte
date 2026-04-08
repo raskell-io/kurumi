@@ -10,7 +10,8 @@
 		currentVaultId,
 		setCurrentVault,
 		addVault,
-		transcribeMemoryAudio
+		transcribeMemoryAudio,
+		todayIso
 	} from '$lib/db';
 	import { storeBlob } from '$lib/db/blob-store';
 	import { getIconById } from '$lib/icons/vault-icons';
@@ -153,6 +154,50 @@
 			icon: 'home',
 			action: () => {
 				goto('/');
+				onClose();
+			}
+		},
+		{
+			id: 'ask-kurumi',
+			type: 'action',
+			title: 'Ask Kurumi',
+			description: 'Question your memories with AI',
+			icon: 'sparkles',
+			action: () => {
+				goto('/');
+				onClose();
+			}
+		},
+		{
+			id: 'daily-note',
+			type: 'action',
+			title: "Today's daily note",
+			description: 'Open or create the daily note for today',
+			icon: 'calendar',
+			action: () => {
+				goto(`/daily/${todayIso()}`);
+				onClose();
+			}
+		},
+		{
+			id: 'actions',
+			type: 'action',
+			title: 'Action items',
+			description: 'Open the tasks extracted from meetings',
+			icon: 'check',
+			action: () => {
+				goto('/actions');
+				onClose();
+			}
+		},
+		{
+			id: 'people',
+			type: 'action',
+			title: 'People',
+			description: 'Manage and merge duplicate people',
+			icon: 'users',
+			action: () => {
+				goto('/people');
 				onClose();
 			}
 		},
@@ -378,6 +423,14 @@
 				return 'M4 3a2 2 0 100 4h12a2 2 0 100-4H4zM3 8h14v7a2 2 0 01-2 2H5a2 2 0 01-2-2V8zm5 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z';
 			case 'download':
 				return 'M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z';
+			case 'sparkles':
+				return 'M5 2a1 1 0 011 1v1h1a1 1 0 010 2H6v1a1 1 0 01-2 0V6H3a1 1 0 010-2h1V3a1 1 0 011-1zm0 10a1 1 0 011 1v1h1a1 1 0 110 2H6v1a1 1 0 11-2 0v-1H3a1 1 0 110-2h1v-1a1 1 0 011-1zm7-10a1 1 0 01.967.744L14.146 7.2 17.5 9.134a1 1 0 010 1.732l-3.354 1.935-1.18 4.455a1 1 0 01-1.933 0L9.854 12.8 6.5 10.866a1 1 0 010-1.732l3.354-1.935 1.18-4.455A1 1 0 0112 2z';
+			case 'calendar':
+				return 'M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z';
+			case 'check':
+				return 'M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z';
+			case 'users':
+				return 'M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z';
 			default:
 				return 'M9 2a1 1 0 000 2h2a1 1 0 100-2H9z M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z';
 		}
