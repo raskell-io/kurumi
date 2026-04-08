@@ -350,6 +350,28 @@
 						</div>
 					{/if}
 
+					<!-- People + Topics (extracted entities, applies to voice memos AND meetings) -->
+					{#if memory.participants.length > 0 || memory.topics.length > 0}
+						<div class="mb-4 flex flex-wrap items-center gap-2 md:mb-6">
+							{#each memory.participants as person}
+								<a
+									href="/read/person/{encodeURIComponent(person)}"
+									class="inline-flex items-center gap-1 rounded-full bg-[var(--color-bg-secondary)] px-3 py-1 text-xs text-[var(--color-text)] hover:bg-[var(--color-border)]"
+								>
+									<span class="text-[var(--color-text-muted)]">@</span>{person}
+								</a>
+							{/each}
+							{#each memory.topics as topic}
+								<a
+									href="/read/topic/{encodeURIComponent(topic)}"
+									class="inline-flex items-center gap-1 rounded-full bg-[var(--color-bg-secondary)] px-3 py-1 text-xs text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
+								>
+									{topic}
+								</a>
+							{/each}
+						</div>
+					{/if}
+
 					<!-- Meeting structured output -->
 					{#if memory.type === 'meeting' && memory.meetingExtras}
 						{@const extras = memory.meetingExtras}
@@ -393,16 +415,6 @@
 										</li>
 									{/each}
 								</ul>
-							</div>
-						{/if}
-
-						{#if memory.topics.length > 0}
-							<div class="mb-4 flex flex-wrap gap-2 md:mb-6">
-								{#each memory.topics as topic}
-									<span class="rounded-full bg-[var(--color-bg-secondary)] px-3 py-1 text-xs text-[var(--color-text-muted)]">
-										{topic}
-									</span>
-								{/each}
 							</div>
 						{/if}
 

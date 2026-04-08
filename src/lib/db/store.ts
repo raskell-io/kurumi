@@ -856,11 +856,19 @@ export async function transcribeMemoryAudio(
 
 	const memoryType = doc?.memoryObjects[memoryId]?.type;
 
+	// Entity extraction runs in parallel with summarization for both meeting
+	// and voice-memo paths. The pipeline degrades gracefully if no provider
+	// supports it (returns null → we just skip the storage step).
+	const entitiesPromise = runFirstSuccessful((p) =>
+		p.extractEntities({ text: transcriptText })
+	);
+
 	if (memoryType === 'meeting') {
 		// Meetings get a structured summary with action items, decisions, etc.
-		const meetingSummary = await runFirstSuccessful((p) =>
-			p.summarizeMeeting({ transcript: transcriptText })
-		);
+		const [meetingSummary, entities] = await Promise.all([
+			runFirstSuccessful((p) => p.summarizeMeeting({ transcript: transcriptText })),
+			entitiesPromise
+		]);
 
 		updateDoc((d) => {
 			const memory = d.memoryObjects[memoryId];
@@ -902,6 +910,13 @@ export async function transcribeMemoryAudio(
 					}
 				}
 			}
+
+			// Merge extracted entities into the memory's participant/project/topic
+			// arrays. The summarizeMeeting result already populated participants
+			// for meetings, so we union with anything extractEntities found that
+			// isn't already there.
+			applyExtractedEntities(memory, entities, meetingSummary?.participants ?? []);
+
 			memory.processingState = 'ready';
 			memory.processingError = null;
 			memory.updatedAt = Date.now();
@@ -909,10 +924,11 @@ export async function transcribeMemoryAudio(
 		return;
 	}
 
-	// Voice memo / default path: simple summary + title
-	const [summary, title] = await Promise.all([
+	// Voice memo / default path: simple summary + title + entities
+	const [summary, title, entities] = await Promise.all([
 		runFirstSuccessful((p) => p.summarize({ text: transcriptText, style: 'short' })),
-		runFirstSuccessful((p) => p.generateTitle({ text: transcriptText }))
+		runFirstSuccessful((p) => p.generateTitle({ text: transcriptText })),
+		entitiesPromise
 	]);
 
 	updateDoc((d) => {
@@ -931,10 +947,76 @@ export async function transcribeMemoryAudio(
 				memory.title = title;
 			}
 		}
+
+		applyExtractedEntities(memory, entities, []);
+
 		memory.processingState = 'ready';
 		memory.processingError = null;
 		memory.updatedAt = Date.now();
 	});
+}
+
+/**
+ * Merge extractEntities() results into the memory's participants/projects/
+ * topics arrays. Dedupes case-insensitively against existing values.
+ * `seedParticipants` is an optional list (e.g. from summarizeMeeting) that's
+ * unioned in alongside the LLM's entity extraction.
+ */
+function applyExtractedEntities(
+	memory: MemoryObject,
+	entities: Array<{ type: string; canonicalName: string }> | null,
+	seedParticipants: string[]
+): void {
+	const personNames = new Set<string>();
+	const projectNames = new Set<string>();
+	const topicNames = new Set<string>();
+	const orgNames = new Set<string>();
+
+	for (const seed of seedParticipants) {
+		if (seed) personNames.add(seed.trim());
+	}
+
+	if (entities) {
+		for (const entity of entities) {
+			const name = entity.canonicalName.trim();
+			if (!name) continue;
+			switch (entity.type) {
+				case 'person':
+					personNames.add(name);
+					break;
+				case 'project':
+					projectNames.add(name);
+					break;
+				case 'topic':
+					topicNames.add(name);
+					break;
+				case 'organization':
+					orgNames.add(name);
+					break;
+			}
+		}
+	}
+
+	mergeIntoArray(memory.participants, [...personNames]);
+	mergeIntoArray(memory.projects, [...projectNames]);
+	mergeIntoArray(memory.topics, [...topicNames]);
+	// Organizations don't have a dedicated field on MemoryObject; surface them
+	// as topics for now so they're at least findable. Can be split out later.
+	mergeIntoArray(memory.topics, [...orgNames]);
+}
+
+/**
+ * Push items into an existing Automerge array, deduplicating against the
+ * existing entries case-insensitively. Mutates `target` in place.
+ */
+function mergeIntoArray(target: string[], incoming: string[]): void {
+	const existing = new Set(target.map((v) => v.toLowerCase()));
+	for (const item of incoming) {
+		if (!existing.has(item.toLowerCase())) {
+			target.push(item);
+			existing.add(item.toLowerCase());
+		}
+	}
 }
 
 /**
@@ -2191,34 +2273,120 @@ export function extractPeople(content: string): string[] {
 	return Array.from(people);
 }
 
-// Get all unique people across memories in current vault
+// Get all unique people across memories in current vault. Combines two
+// sources: @-mentions in markdown bodies (via extractPeople regex) AND
+// LLM-extracted entities stored in memory.participants. Counts are summed
+// case-insensitively.
 export function getAllPeople(): { name: string; count: number }[] {
 	if (!doc) return [];
 	const vaultId = getCurrentVaultId();
-	const peopleCounts = new Map<string, number>();
+	const peopleCounts = new Map<string, { name: string; count: number }>();
+
+	const bump = (rawName: string) => {
+		const key = rawName.toLowerCase();
+		const existing = peopleCounts.get(key);
+		if (existing) {
+			existing.count++;
+		} else {
+			peopleCounts.set(key, { name: rawName, count: 1 });
+		}
+	};
 
 	for (const memory of Object.values(doc.memoryObjects)) {
 		if (memory.vaultId !== vaultId) continue;
-		const people = extractPeople(memory.bodyMarkdown);
-		for (const person of people) {
-			peopleCounts.set(person, (peopleCounts.get(person) || 0) + 1);
+		// @-mentions in markdown
+		for (const person of extractPeople(memory.bodyMarkdown)) {
+			bump(person);
+		}
+		// LLM-extracted participants from transcripts
+		for (const person of memory.participants ?? []) {
+			bump(person);
 		}
 	}
 
-	return Array.from(peopleCounts.entries())
-		.map(([name, count]) => ({ name, count }))
-		.sort((a, b) => b.count - a.count);
+	return Array.from(peopleCounts.values()).sort((a, b) => b.count - a.count);
 }
 
-// Get memories mentioning a specific person in current vault
+// Get memories mentioning a specific person in current vault. Matches both
+// @-mentions in bodyMarkdown and entities in memory.participants.
 export function getMemoryObjectsByPerson(name: string): MemoryObject[] {
 	if (!doc) return [];
 	const vaultId = getCurrentVaultId();
+	const target = name.toLowerCase();
 
 	return Object.values(doc.memoryObjects).filter((memory) => {
 		if (memory.vaultId !== vaultId) return false;
-		const people = extractPeople(memory.bodyMarkdown);
-		return people.some((p) => p.toLowerCase() === name.toLowerCase());
+		const fromMarkdown = extractPeople(memory.bodyMarkdown).some(
+			(p) => p.toLowerCase() === target
+		);
+		if (fromMarkdown) return true;
+		return (memory.participants ?? []).some((p) => p.toLowerCase() === target);
+	});
+}
+
+// Get all unique extracted topics across memories in current vault.
+export function getAllExtractedTopics(): { name: string; count: number }[] {
+	if (!doc) return [];
+	const vaultId = getCurrentVaultId();
+	const counts = new Map<string, { name: string; count: number }>();
+
+	for (const memory of Object.values(doc.memoryObjects)) {
+		if (memory.vaultId !== vaultId) continue;
+		for (const topic of memory.topics ?? []) {
+			const key = topic.toLowerCase();
+			const existing = counts.get(key);
+			if (existing) {
+				existing.count++;
+			} else {
+				counts.set(key, { name: topic, count: 1 });
+			}
+		}
+	}
+
+	return Array.from(counts.values()).sort((a, b) => b.count - a.count);
+}
+
+export function getMemoryObjectsByTopic(topic: string): MemoryObject[] {
+	if (!doc) return [];
+	const vaultId = getCurrentVaultId();
+	const target = topic.toLowerCase();
+
+	return Object.values(doc.memoryObjects).filter((memory) => {
+		if (memory.vaultId !== vaultId) return false;
+		return (memory.topics ?? []).some((t) => t.toLowerCase() === target);
+	});
+}
+
+// Get all unique extracted projects across memories in current vault.
+export function getAllExtractedProjects(): { name: string; count: number }[] {
+	if (!doc) return [];
+	const vaultId = getCurrentVaultId();
+	const counts = new Map<string, { name: string; count: number }>();
+
+	for (const memory of Object.values(doc.memoryObjects)) {
+		if (memory.vaultId !== vaultId) continue;
+		for (const project of memory.projects ?? []) {
+			const key = project.toLowerCase();
+			const existing = counts.get(key);
+			if (existing) {
+				existing.count++;
+			} else {
+				counts.set(key, { name: project, count: 1 });
+			}
+		}
+	}
+
+	return Array.from(counts.values()).sort((a, b) => b.count - a.count);
+}
+
+export function getMemoryObjectsByProject(project: string): MemoryObject[] {
+	if (!doc) return [];
+	const vaultId = getCurrentVaultId();
+	const target = project.toLowerCase();
+
+	return Object.values(doc.memoryObjects).filter((memory) => {
+		if (memory.vaultId !== vaultId) return false;
+		return (memory.projects ?? []).some((p) => p.toLowerCase() === target);
 	});
 }
 
@@ -2362,43 +2530,61 @@ export interface DateWithEvents {
 }
 
 /**
- * Get all people with their metadata from Person objects
+ * Get all people with their metadata from Person objects. Combines:
+ *   1. @-mentions in memory.bodyMarkdown (typed notes)
+ *   2. LLM-extracted entities in memory.participants (voice memos / meetings)
+ *   3. Person records in doc.people
+ *
+ * Names are deduped case-insensitively but the display form preserves the
+ * casing of whichever source named the person first.
  */
 export function getAllPeopleWithMetadata(): PersonWithMetadata[] {
 	if (!doc) return [];
 	const vaultId = getCurrentVaultId();
+	// Key by lowercased name so "alice" and "Alice" don't double-count.
 	const peopleMap = new Map<string, PersonWithMetadata>();
 
-	// First pass: collect all mentions from memories
+	const addMention = (rawName: string, memory: MemoryObject) => {
+		const key = rawName.toLowerCase();
+		let entry = peopleMap.get(key);
+		if (!entry) {
+			entry = {
+				name: rawName,
+				count: 0,
+				person: null,
+				mentioningMemories: []
+			};
+			peopleMap.set(key, entry);
+		}
+		entry.count++;
+		// Avoid double-counting the same memory (markdown + extracted both
+		// referencing the same person should only show one mentioning memory).
+		if (!entry.mentioningMemories.some((m) => m.id === memory.id)) {
+			entry.mentioningMemories.push(memory);
+		}
+	};
+
+	// First pass: collect mentions from both regex and extracted entities
 	for (const memory of Object.values(doc.memoryObjects)) {
 		if (memory.vaultId !== vaultId) continue;
-		const peopleNames = extractPeople(memory.bodyMarkdown);
-
-		for (const name of peopleNames) {
-			if (!peopleMap.has(name)) {
-				peopleMap.set(name, {
-					name,
-					count: 0,
-					person: null,
-					mentioningMemories: []
-				});
-			}
-			const personData = peopleMap.get(name)!;
-			personData.count++;
-			personData.mentioningMemories.push(memory);
+		for (const name of extractPeople(memory.bodyMarkdown)) {
+			addMention(name, memory);
+		}
+		for (const name of memory.participants ?? []) {
+			addMention(name, memory);
 		}
 	}
 
-	// Second pass: link Person objects
+	// Second pass: link Person objects (vault contacts)
 	if (doc.people) {
 		for (const personObj of Object.values(doc.people)) {
 			if (personObj.vaultId !== vaultId) continue;
-
-			if (peopleMap.has(personObj.name)) {
-				peopleMap.get(personObj.name)!.person = personObj;
+			const key = personObj.name.toLowerCase();
+			const existing = peopleMap.get(key);
+			if (existing) {
+				existing.person = personObj;
 			} else {
-				// Person exists but has no mentions
-				peopleMap.set(personObj.name, {
+				peopleMap.set(key, {
 					name: personObj.name,
 					count: 0,
 					person: personObj,

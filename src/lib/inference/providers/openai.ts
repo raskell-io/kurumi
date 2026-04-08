@@ -388,10 +388,97 @@ If the transcript is too short or unclear for a section, return an empty array f
 	}
 
 	async extractEntities(
-		_input: { text: string },
-		_options?: TaskOptions
+		input: { text: string },
+		options?: TaskOptions
 	): Promise<InferenceResult<ExtractedEntity[]>> {
-		return notImplemented('extractEntities', 'remote');
+		const apiKey = getApiKey();
+		const startedAt = Date.now();
+		if (!apiKey) {
+			return {
+				ok: false,
+				error: 'OpenAI API key not configured',
+				target: 'remote',
+				providerId: 'openai',
+				model: CHAT_MODEL,
+				latencyMs: 0
+			};
+		}
+
+		const system = `You extract named entities from text. Return ONLY a JSON object with this exact shape (no markdown, no preamble):
+{
+  "entities": [
+    {"type": "person", "name": "Alice Smith"},
+    {"type": "project", "name": "Q4 Roadmap"},
+    {"type": "topic", "name": "performance optimization"},
+    {"type": "organization", "name": "Acme Corp"}
+  ]
+}
+
+Rules:
+- type must be one of: person, project, topic, organization, place
+- name should be the canonical form (full names for people, proper case for projects)
+- only include entities that are clearly mentioned, not implied
+- topics are subject-matter themes (not generic words like "the meeting" or "the project")
+- if nothing is found, return {"entities": []}`;
+
+		const result = await callChat(apiKey, system, input.text, {
+			...options,
+			jsonMode: true,
+			maxTokens: options?.maxTokens ?? 600,
+			temperature: options?.temperature ?? 0.2
+		});
+
+		if (!result.ok) {
+			return {
+				ok: false,
+				error: result.error,
+				target: 'remote',
+				providerId: 'openai',
+				model: CHAT_MODEL,
+				latencyMs: Date.now() - startedAt
+			};
+		}
+
+		try {
+			const parsed = JSON.parse(result.text) as {
+				entities?: Array<{ type?: string; name?: string }>;
+			};
+			const allowedTypes = new Set([
+				'person',
+				'project',
+				'topic',
+				'organization',
+				'place',
+				'source'
+			]);
+			const entities: ExtractedEntity[] = (parsed.entities ?? [])
+				.filter((e) => e.name && typeof e.name === 'string' && e.type && allowedTypes.has(e.type))
+				.map((e) => ({
+					type: e.type as ExtractedEntity['type'],
+					canonicalName: e.name!.trim(),
+					aliases: [],
+					confidence: 0.8
+				}))
+				.filter((e) => e.canonicalName.length > 0);
+
+			return {
+				ok: true,
+				value: entities,
+				target: 'remote',
+				providerId: 'openai',
+				model: CHAT_MODEL,
+				latencyMs: Date.now() - startedAt
+			};
+		} catch (err) {
+			return {
+				ok: false,
+				error: `Failed to parse entities JSON: ${err instanceof Error ? err.message : 'unknown'}`,
+				target: 'remote',
+				providerId: 'openai',
+				model: CHAT_MODEL,
+				latencyMs: Date.now() - startedAt
+			};
+		}
 	}
 
 	async extractActionItems(

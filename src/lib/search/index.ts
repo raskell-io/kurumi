@@ -15,15 +15,18 @@ let searchIndex: MiniSearch<MemoryObject>;
 
 function createIndex(): MiniSearch<MemoryObject> {
 	return new MiniSearch<MemoryObject>({
-		fields: ['title', 'bodyMarkdown', 'transcript'],
+		fields: ['title', 'bodyMarkdown', 'transcript', 'participants', 'topics', 'projects'],
 		storeFields: ['title', 'bodyMarkdown'],
 		extractField: (memory, fieldName) => {
 			if (fieldName === 'transcript') return memory.transcript ?? '';
+			if (fieldName === 'participants') return (memory.participants ?? []).join(' ');
+			if (fieldName === 'topics') return (memory.topics ?? []).join(' ');
+			if (fieldName === 'projects') return (memory.projects ?? []).join(' ');
 			const value = (memory as unknown as Record<string, unknown>)[fieldName];
 			return typeof value === 'string' ? value : '';
 		},
 		searchOptions: {
-			boost: { title: 2 },
+			boost: { title: 2, participants: 1.5, topics: 1.2 },
 			fuzzy: 0.2,
 			prefix: true
 		}
