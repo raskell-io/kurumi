@@ -93,10 +93,11 @@ export class WhisperLocalProvider implements InferenceProvider {
 			// (Whisper's required input format).
 			const samples = await decodeAudioToFloat32(input.audio, 16000);
 
-			// dtype: 'q8' is the safest quantization for the onnx-community
-			// Whisper exports — works on both WebGPU and WASM with current ORT.
+			// dtype: 'fp32' avoids onnx-runtime QDQ bugs that hit q4/q8 variants
+			// of the merged decoder. Bigger files but actually works in current
+			// transformers.js + onnxruntime-web combinations.
 			const pipeline = (await loadPipeline('transcribe', modelId, {
-				dtype: 'q8'
+				dtype: 'fp32'
 			})) as WhisperPipelineFn;
 
 			const output = await pipeline(samples, {

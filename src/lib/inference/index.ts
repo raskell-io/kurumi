@@ -41,6 +41,7 @@ export {
 	loadPipeline,
 	preloadPipeline,
 	isPipelineReady,
+	clearLocalModelCache,
 	type ModelStatus,
 	type LocalTask
 } from './local-models';

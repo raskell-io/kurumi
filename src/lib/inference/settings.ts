@@ -27,7 +27,9 @@ export interface LocalInferenceSettings {
 const DEFAULTS: LocalInferenceSettings = {
 	enabled: true,
 	preloadOnStartup: true,
-	whisperModel: 'base',
+	// Default to tiny because we run it un-quantized (fp32) for compatibility,
+	// which makes base/small unreasonably large as a default download.
+	whisperModel: 'tiny',
 	textModelEnabled: false,
 	textModel: 'smollm2-360m'
 };
@@ -88,13 +90,15 @@ export function whisperModelId(size: WhisperModelSize): string {
 }
 
 export function whisperModelLabel(size: WhisperModelSize): string {
+	// Sizes assume fp32 weights — we use unquantized models to avoid the
+	// onnx-runtime QDQ bugs that hit q4 variants.
 	switch (size) {
 		case 'tiny':
-			return 'Whisper Tiny (~80 MB) — fastest, lower accuracy';
+			return 'Whisper Tiny (~150 MB) — fastest, default';
 		case 'base':
-			return 'Whisper Base (~150 MB) — balanced (default)';
+			return 'Whisper Base (~290 MB) — balanced';
 		case 'small':
-			return 'Whisper Small (~470 MB) — slower, best accuracy';
+			return 'Whisper Small (~970 MB) — slower, best accuracy';
 	}
 }
 

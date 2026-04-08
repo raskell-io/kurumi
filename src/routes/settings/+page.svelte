@@ -45,6 +45,7 @@
 		textModelLabel,
 		localModelStatus,
 		preloadPipeline,
+		clearLocalModelCache,
 		type WhisperModelSize,
 		type TextModelChoice
 	} from '$lib/inference';
@@ -951,13 +952,29 @@
 							{#if currentStatus.state !== 'loading' && currentStatus.state !== 'ready'}
 								<button
 									type="button"
-									onclick={() => preloadPipeline('transcribe', currentModelId, { dtype: 'q8' })}
+									onclick={() => preloadPipeline('transcribe', currentModelId, { dtype: 'fp32' })}
 									class="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-border)]"
 								>
 									Download now
 								</button>
 							{/if}
 						</div>
+					</div>
+
+					<!-- Cache management -->
+					<div class="text-xs text-[var(--color-text-muted)]">
+						Stuck on a broken model download?
+						<button
+							type="button"
+							onclick={async () => {
+								await clearLocalModelCache();
+								// Re-trigger preload with the current settings
+								preloadPipeline('transcribe', currentModelId, { dtype: 'fp32' });
+							}}
+							class="ml-1 underline hover:text-[var(--color-text)]"
+						>
+							Clear local model cache
+						</button>
 					</div>
 
 					<!-- Text generation (opt-in) -->

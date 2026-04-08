@@ -140,6 +140,45 @@ export function isPipelineReady(task: LocalTask, model: string): boolean {
 	return pipelineCache.has(`${task}:${model}`);
 }
 
+/**
+ * Wipe transformers.js's IndexedDB caches and the in-memory pipeline cache.
+ * Used to recover from broken model downloads (e.g. when an export's
+ * quantization metadata is incompatible with the current ONNX runtime).
+ */
+export async function clearLocalModelCache(): Promise<void> {
+	// Drop in-memory pipelines so the next call re-initializes from scratch.
+	pipelineCache.clear();
+	pendingLoads.clear();
+	localModelStatus.set({});
+
+	if (typeof indexedDB === 'undefined') return;
+
+	// transformers.js v3+ uses Cache API with names containing "transformers".
+	// We try both Cache Storage and IndexedDB to cover all versions.
+	if (typeof caches !== 'undefined') {
+		try {
+			const keys = await caches.keys();
+			await Promise.all(
+				keys
+					.filter((k) => k.toLowerCase().includes('transformers'))
+					.map((k) => caches.delete(k))
+			);
+		} catch {
+			// Ignore — best effort
+		}
+	}
+
+	// Older versions used a named IndexedDB database.
+	const candidates = ['transformers-cache', 'transformers.js'];
+	for (const name of candidates) {
+		try {
+			indexedDB.deleteDatabase(name);
+		} catch {
+			// Ignore
+		}
+	}
+}
+
 // --- Internal helpers -------------------------------------------------------
 
 function mapTaskToTransformers(task: LocalTask): string {
