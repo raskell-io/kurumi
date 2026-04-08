@@ -14,6 +14,7 @@
 	import { initHashRouter, updateHashFromPath } from '$lib/hash-router';
 	import { initSearch, rebuildIndex } from '$lib/search';
 	import { setupVisibilitySync, teardownVisibilitySync, syncState, isSyncConfigured, sync } from '$lib/sync';
+	import { getLocalInferenceSettings, preloadPipeline, whisperModelId } from '$lib/inference';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
@@ -259,6 +260,17 @@
 			setupVisibilitySync();
 			initialized = true;
 		});
+
+		// Preload local inference models if enabled (default). Fire-and-forget;
+		// the model manager updates its own status store and the UI can reflect
+		// progress in the Local AI settings panel.
+		const localSettings = getLocalInferenceSettings();
+		if (localSettings.enabled && localSettings.preloadOnStartup) {
+			// Slight delay so we don't compete with the initial app render.
+			setTimeout(() => {
+				preloadPipeline('transcribe', whisperModelId(localSettings.whisperModel));
+			}, 1500);
+		}
 
 		checkMobile();
 

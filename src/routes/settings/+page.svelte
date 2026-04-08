@@ -36,8 +36,17 @@
 		isAIConfigured,
 		testConnection as testAIConnection
 	} from '$lib/ai';
+	import {
+		localInferenceSettings,
+		updateLocalInferenceSettings,
+		whisperModelId,
+		whisperModelLabel,
+		localModelStatus,
+		preloadPipeline,
+		type WhisperModelSize
+	} from '$lib/inference';
 	import { onMount } from 'svelte';
-	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2, RefreshCw, CheckCircle, XCircle, Wifi, Sparkles, ChevronDown, Database, Cloud, Lock, Shield, BookOpen, Palette, HardDrive, Info, Type, GitBranch } from 'lucide-svelte';
+	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2, RefreshCw, CheckCircle, XCircle, Wifi, Sparkles, ChevronDown, Database, Cloud, Lock, Shield, BookOpen, Palette, HardDrive, Info, Type, GitBranch, Cpu } from 'lucide-svelte';
 
 	let syncToken = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-token') || '' : '');
 	let syncUrl = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-url') || '' : '');
@@ -106,6 +115,7 @@
 	let sections = $state({
 		appearance: true,
 		sync: false,
+		localAi: false,
 		ai: false,
 		data: false,
 		danger: false,
@@ -827,6 +837,122 @@
 			</div>
 		{/if}
 	</section>
+
+		<!-- Local AI -->
+		<section class="mb-4 rounded-lg border border-[var(--color-border)] overflow-hidden">
+			<button
+				onclick={() => toggleSection('localAi')}
+				class="flex w-full items-center justify-between bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-border)]"
+			>
+				<div class="flex items-center gap-3">
+					<Cpu class="h-5 w-5 text-[var(--color-accent)]" />
+					<div>
+						<h2 class="font-semibold text-[var(--color-text)]">Local AI</h2>
+						<p class="text-sm text-[var(--color-text-muted)]">
+							On-device transcription via Whisper. Default — works offline, no API keys.
+						</p>
+					</div>
+				</div>
+				<div class="flex items-center gap-2">
+					{#if $localInferenceSettings.enabled}
+						<span class="flex h-2 w-2 rounded-full bg-green-500"></span>
+					{/if}
+					<ChevronDown class="h-5 w-5 text-[var(--color-text-muted)] transition-transform {sections.localAi ? 'rotate-180' : ''}" />
+				</div>
+			</button>
+			{#if sections.localAi}
+				{@const currentModelId = whisperModelId($localInferenceSettings.whisperModel)}
+				{@const currentStatus = $localModelStatus[`transcribe:${currentModelId}`] ?? { state: 'idle' }}
+				<div class="space-y-4 border-t border-[var(--color-border)] p-4">
+					<p class="text-sm text-[var(--color-text-muted)]">
+						Models run entirely in your browser via WebGPU/WASM and are cached after the first download. Nothing is sent to any server.
+					</p>
+
+					<!-- Enable toggle -->
+					<label class="flex items-center justify-between gap-3">
+						<div>
+							<div class="text-sm font-medium text-[var(--color-text)]">Enable local inference</div>
+							<div class="text-xs text-[var(--color-text-muted)]">When off, transcription falls back to a remote provider if configured.</div>
+						</div>
+						<input
+							type="checkbox"
+							checked={$localInferenceSettings.enabled}
+							onchange={(e) => updateLocalInferenceSettings({ enabled: (e.target as HTMLInputElement).checked })}
+							class="h-5 w-5 accent-[var(--color-accent)]"
+						/>
+					</label>
+
+					<!-- Preload toggle -->
+					<label class="flex items-center justify-between gap-3">
+						<div>
+							<div class="text-sm font-medium text-[var(--color-text)]">Preload on startup</div>
+							<div class="text-xs text-[var(--color-text-muted)]">Download the model in the background when the app loads, so capture is instant.</div>
+						</div>
+						<input
+							type="checkbox"
+							checked={$localInferenceSettings.preloadOnStartup}
+							onchange={(e) => updateLocalInferenceSettings({ preloadOnStartup: (e.target as HTMLInputElement).checked })}
+							class="h-5 w-5 accent-[var(--color-accent)]"
+						/>
+					</label>
+
+					<!-- Model selection -->
+					<div>
+						<label for="whisper-model" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+							Whisper model
+						</label>
+						<select
+							id="whisper-model"
+							value={$localInferenceSettings.whisperModel}
+							onchange={(e) => updateLocalInferenceSettings({ whisperModel: (e.target as HTMLSelectElement).value as WhisperModelSize })}
+							class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-sm text-[var(--color-text)]"
+						>
+							<option value="tiny">{whisperModelLabel('tiny')}</option>
+							<option value="base">{whisperModelLabel('base')}</option>
+							<option value="small">{whisperModelLabel('small')}</option>
+						</select>
+					</div>
+
+					<!-- Status + manual download -->
+					<div class="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3">
+						<div class="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+							Status
+						</div>
+						<div class="flex items-center justify-between gap-3">
+							<div class="text-sm text-[var(--color-text)]">
+								{#if currentStatus.state === 'ready'}
+									<span class="inline-flex items-center gap-2">
+										<span class="h-2 w-2 rounded-full bg-green-500"></span>
+										Ready
+									</span>
+								{:else if currentStatus.state === 'loading'}
+									<span class="inline-flex items-center gap-2">
+										<div class="h-3 w-3 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent"></div>
+										Downloading… {Math.round(currentStatus.progress)}% ({currentStatus.phase})
+									</span>
+								{:else if currentStatus.state === 'error'}
+									<span class="inline-flex items-center gap-2 text-red-500">
+										<AlertTriangle class="h-3 w-3" />
+										{currentStatus.error}
+									</span>
+								{:else}
+									<span class="text-[var(--color-text-muted)]">Not downloaded</span>
+								{/if}
+							</div>
+							{#if currentStatus.state !== 'loading' && currentStatus.state !== 'ready'}
+								<button
+									type="button"
+									onclick={() => preloadPipeline('transcribe', currentModelId)}
+									class="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-border)]"
+								>
+									Download now
+								</button>
+							{/if}
+						</div>
+					</div>
+				</div>
+			{/if}
+		</section>
 
 		<!-- AI Assistant -->
 		<section class="mb-4 rounded-lg border border-[var(--color-border)] overflow-hidden">

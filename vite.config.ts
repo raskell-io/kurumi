@@ -47,10 +47,21 @@ export default defineConfig({
 			},
 			workbox: {
 				globPatterns: ['**/*.{js,css,html,ico,png,svg,avif,woff,woff2,wasm}'],
+				// Exclude the ONNX runtime WASM (~22 MB) and Hugging Face model
+				// weights from precache. They're loaded on demand the first time
+				// local inference is used; the browser cache + transformers.js's
+				// own IndexedDB cache make subsequent loads instant.
+				globIgnores: ['**/ort-*.wasm', '**/onnxruntime-*.wasm'],
 				maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MiB for Automerge WASM
 				runtimeCaching: [
 					{
 						urlPattern: /^https:\/\/api\.(openai|anthropic)\.com\/.*/i,
+						handler: 'NetworkOnly'
+					},
+					{
+						// Hugging Face model downloads — let them through to the
+						// network so transformers.js's own cache handles them.
+						urlPattern: /^https:\/\/huggingface\.co\/.*/i,
 						handler: 'NetworkOnly'
 					}
 				]
@@ -61,6 +72,6 @@ export default defineConfig({
 		})
 	],
 	optimizeDeps: {
-		exclude: ['@automerge/automerge']
+		exclude: ['@automerge/automerge', '@huggingface/transformers']
 	}
 });
