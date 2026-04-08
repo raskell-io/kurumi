@@ -5,7 +5,7 @@
 	import NoteCard from '$lib/components/NoteCard.svelte';
 	import { User } from 'lucide-svelte';
 
-	let name = $derived(decodeURIComponent($page.params.name));
+	let name = $derived(decodeURIComponent($page.params.name ?? ''));
 	let memories = $derived(getMemoryObjectsByPerson(name));
 
 	let breadcrumbs = $derived([{ label: `@${name}`, href: `/read/person/${encodeURIComponent(name)}` }]);
@@ -58,11 +58,6 @@
 		margin: 0 auto 1rem;
 		padding: 1rem;
 		border-radius: 1rem;
-	}
-
-	.header-icon svg {
-		width: 100%;
-		height: 100%;
 	}
 
 	.person-icon {

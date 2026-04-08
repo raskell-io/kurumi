@@ -250,13 +250,7 @@
 					<textarea
 						id="template-content"
 						bind:value={templateContent}
-						placeholder="# {title}
-
-**Date:** {date}
-
-## Notes
-
-"
+						placeholder={'# {title}\n\n**Date:** {date}\n\n## Notes\n\n'}
 						rows="10"
 						class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 font-mono text-sm text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:border-[var(--color-accent)] focus:outline-none"
 					></textarea>

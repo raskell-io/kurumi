@@ -1572,7 +1572,7 @@ export function getTemplateByName(name: string): Template | undefined {
 
 export function updateTemplate(
 	id: string,
-	updates: Partial<Omit<Template, 'id' | 'created' | 'vaultId'>>
+	updates: { name?: string; content?: string; description?: string }
 ): void {
 	updateDoc((d) => {
 		const template = d.templates?.[id];

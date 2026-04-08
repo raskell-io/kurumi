@@ -33,7 +33,7 @@
 				class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
 				style="background: {colors.bgAlpha}; color: {colors.color};"
 			>
-				<svelte:component this={IconComponent} class="h-4 w-4" />
+				<IconComponent class="h-4 w-4" />
 			</div>
 		{/if}
 		<span class="text-sm font-medium text-[var(--color-text)]">{message}</span>

@@ -5,7 +5,7 @@
 	import NoteCard from '$lib/components/NoteCard.svelte';
 	import { Calendar } from 'lucide-svelte';
 
-	let dateStr = $derived($page.params.date);
+	let dateStr = $derived($page.params.date ?? '');
 	let memories = $derived(getMemoryObjectsByDate(dateStr));
 
 	let breadcrumbs = $derived([{ label: formatDate(dateStr), href: `/read/date/${dateStr}` }]);
@@ -89,11 +89,6 @@
 		margin: 0 auto 1rem;
 		padding: 1rem;
 		border-radius: 1rem;
-	}
-
-	.header-icon svg {
-		width: 100%;
-		height: 100%;
 	}
 
 	.date-icon {

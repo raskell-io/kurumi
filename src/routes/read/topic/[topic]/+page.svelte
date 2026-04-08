@@ -64,11 +64,6 @@
 		border-radius: 1rem;
 	}
 
-	.header-icon svg {
-		width: 100%;
-		height: 100%;
-	}
-
 	.topic-icon {
 		background: color-mix(in srgb, var(--color-accent) 15%, transparent);
 		color: var(--color-accent);

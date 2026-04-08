@@ -480,27 +480,6 @@
 		color: #f59e0b;
 	}
 
-	.link-icon {
-		background: rgba(168, 85, 247, 0.15);
-		color: #a855f7;
-	}
-
-	.link-info {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		gap: 0.125rem;
-		min-width: 0;
-	}
-
-	.link-url {
-		font-size: 0.75rem;
-		color: var(--color-text-muted);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
 	.external-link-btn {
 		display: flex;
 		align-items: center;
@@ -528,17 +507,6 @@
 		background: var(--color-bg-secondary);
 		padding: 0.25rem 0.5rem;
 		border-radius: 1rem;
-	}
-
-	.chevron {
-		width: 1.25rem;
-		height: 1.25rem;
-		color: var(--color-text-muted);
-		transition: transform 0.15s ease;
-	}
-
-	.chevron.rotated {
-		transform: rotate(90deg);
 	}
 
 	.notes-list {
@@ -618,12 +586,6 @@
 		background: var(--color-bg-secondary);
 	}
 
-	.domain-icon {
-		width: 1.25rem;
-		height: 1.25rem;
-		color: #a855f7;
-	}
-
 	.domain-name {
 		flex: 1;
 		font-weight: 600;
@@ -636,17 +598,6 @@
 		background: var(--color-bg-secondary);
 		padding: 0.25rem 0.5rem;
 		border-radius: 1rem;
-	}
-
-	.domain-chevron {
-		width: 1.25rem;
-		height: 1.25rem;
-		color: var(--color-text-muted);
-		transition: transform 0.15s ease;
-	}
-
-	.domain-chevron.rotated {
-		transform: rotate(180deg);
 	}
 
 	.domain-links {
@@ -682,13 +633,6 @@
 		background: var(--color-bg);
 	}
 
-	.link-icon-small {
-		width: 1rem;
-		height: 1rem;
-		color: var(--color-text-muted);
-		flex-shrink: 0;
-	}
-
 	.link-url-text {
 		flex: 1;
 		font-size: 0.875rem;
@@ -706,17 +650,6 @@
 		border-radius: 0.25rem;
 		min-width: 1.25rem;
 		text-align: center;
-	}
-
-	.link-chevron {
-		width: 1rem;
-		height: 1rem;
-		color: var(--color-text-muted);
-		transition: transform 0.15s ease;
-	}
-
-	.link-chevron.rotated {
-		transform: rotate(90deg);
 	}
 
 	.link-item .notes-list {

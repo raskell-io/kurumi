@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { getFolder, extractTags } from '$lib/db';
 	import type { MemoryObject } from '$lib/db';
 	import { Folder } from 'lucide-svelte';
@@ -75,16 +76,34 @@
 			<span class="note-date">{formatDate(memory.updatedAt)}</span>
 
 			{#if showFolder && folderName}
-				<a href="/read/folder/{memory.folderId}" class="note-folder" onclick={(e) => e.stopPropagation()}>
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<span
+					class="note-folder"
+					onclick={(e) => {
+						e.preventDefault();
+						e.stopPropagation();
+						goto(`/read/folder/${memory.folderId}`);
+					}}
+				>
 					<Folder class="h-3 w-3" />
 					{folderName}
-				</a>
+				</span>
 			{/if}
 
 			{#if tags.length > 0}
 				<div class="note-tags">
 					{#each tags.slice(0, 3) as tag}
-						<a href="/read/tag/{tag}" class="tag" onclick={(e) => e.stopPropagation()}>#{tag}</a>
+						<!-- svelte-ignore a11y_click_events_have_key_events -->
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<span
+							class="tag"
+							onclick={(e) => {
+								e.preventDefault();
+								e.stopPropagation();
+								goto(`/read/tag/${tag}`);
+							}}>#{tag}</span
+						>
 					{/each}
 					{#if tags.length > 3}
 						<span class="more-tags">+{tags.length - 3}</span>

@@ -328,17 +328,6 @@
 		border-radius: 1rem;
 	}
 
-	.chevron {
-		width: 1.25rem;
-		height: 1.25rem;
-		color: var(--color-text-muted);
-		transition: transform 0.15s ease;
-	}
-
-	.chevron.rotated {
-		transform: rotate(90deg);
-	}
-
 	.card-content {
 		border-top: 1px solid var(--color-border);
 		background: var(--color-bg-secondary);
@@ -452,13 +441,6 @@
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-	}
-
-	.field-icon {
-		width: 1rem;
-		height: 1rem;
-		color: var(--color-text-muted);
-		flex-shrink: 0;
 	}
 
 	.edit-input {

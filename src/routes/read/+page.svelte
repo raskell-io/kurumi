@@ -396,11 +396,6 @@
 		color: var(--color-text);
 	}
 
-	.sort-icon {
-		width: 1.25rem;
-		height: 1.25rem;
-	}
-
 	.sort-menu {
 		position: absolute;
 		top: 100%;
@@ -455,13 +450,6 @@
 		border-color: var(--color-accent);
 	}
 
-	.search-filter .search-icon {
-		width: 1rem;
-		height: 1rem;
-		color: var(--color-text-muted);
-		flex-shrink: 0;
-	}
-
 	.search-filter .search-input {
 		flex: 1;
 		background: transparent;
@@ -492,11 +480,6 @@
 	.clear-btn:hover {
 		background: var(--color-border);
 		color: var(--color-text);
-	}
-
-	.clear-icon {
-		width: 0.875rem;
-		height: 0.875rem;
 	}
 
 	/* Tags */
@@ -585,25 +568,6 @@
 		font-weight: 600;
 		color: var(--color-text);
 		margin-bottom: 1rem;
-	}
-
-	.chevron {
-		width: 1.25rem;
-		height: 1.25rem;
-		color: var(--color-text-muted);
-		transition: transform 0.15s;
-		flex-shrink: 0;
-	}
-
-	.chevron.expanded {
-		transform: rotate(90deg);
-	}
-
-	.folder-icon {
-		width: 1.25rem;
-		height: 1.25rem;
-		color: var(--color-accent);
-		flex-shrink: 0;
 	}
 
 	.folder-name {

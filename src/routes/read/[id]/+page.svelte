@@ -51,7 +51,7 @@
 	}
 
 	// Get current memory
-	let memory = $derived(getMemoryObject($page.params.id));
+	let memory = $derived(getMemoryObject($page.params.id ?? ''));
 
 	// Get folder info
 	let folder = $derived(memory?.folderId ? getFolder(memory.folderId) : null);
@@ -314,12 +314,6 @@
 		background: color-mix(in srgb, var(--color-accent) 15%, transparent);
 	}
 
-	.meta-icon {
-		width: 0.5rem;
-		height: 0.5rem;
-		flex-shrink: 0;
-	}
-
 	.meta-tags {
 		display: flex;
 		flex-wrap: wrap;
@@ -360,12 +354,6 @@
 		font-weight: 600;
 		color: var(--color-text);
 		margin-bottom: 1rem;
-	}
-
-	.backlinks-icon {
-		width: 1.25rem;
-		height: 1.25rem;
-		color: var(--color-accent);
 	}
 
 	.backlinks-list {
@@ -445,17 +433,6 @@
 		gap: 0.25rem;
 		padding: 1rem;
 		grid-column: 2;
-	}
-
-	.home-icon {
-		width: 1.5rem;
-		height: 1.5rem;
-		color: var(--color-text-muted);
-		transition: color 0.15s;
-	}
-
-	.nav-link.home:hover .home-icon {
-		color: var(--color-accent);
 	}
 
 	.nav-link.home .nav-label {

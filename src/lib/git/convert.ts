@@ -251,7 +251,8 @@ export function reconstructFolders(
 				parentId: info.parentId,
 				vaultId: metadata.vault.id,
 				created: now,
-				modified: now
+				modified: now,
+				deletedAt: null
 			});
 		}
 		return { folders, pathToFolderId };
@@ -282,7 +283,8 @@ export function reconstructFolders(
 					parentId,
 					vaultId: '', // Will be set by caller
 					created: now,
-					modified: now
+					modified: now,
+					deletedAt: null
 				});
 
 				parentId = folderId;

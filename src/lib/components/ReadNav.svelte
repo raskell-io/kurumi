@@ -19,7 +19,7 @@
 	let searchOpen = $state(false);
 	let searchResults = $state<{ id: string; title: string }[]>([]);
 	let selectedIndex = $state(0);
-	let searchInputRef: HTMLInputElement;
+	let searchInputRef: HTMLInputElement | undefined = $state();
 
 	$effect(() => {
 		if (searchQuery.trim()) {
@@ -286,13 +286,6 @@
 		border-color: var(--color-accent);
 	}
 
-	.search-icon {
-		width: 1rem;
-		height: 1rem;
-		color: var(--color-text-muted);
-		flex-shrink: 0;
-	}
-
 	.search-input {
 		flex: 1;
 		background: transparent;
@@ -343,13 +336,6 @@
 	.search-result:hover,
 	.search-result.selected {
 		background: var(--color-bg-secondary);
-	}
-
-	.result-icon {
-		width: 1rem;
-		height: 1rem;
-		color: var(--color-text-muted);
-		flex-shrink: 0;
 	}
 
 	.nav-actions {

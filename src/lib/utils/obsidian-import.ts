@@ -117,7 +117,12 @@ async function readDirectory(
 	folders: FolderEntry[],
 	skipped: string[]
 ): Promise<void> {
-	for await (const entry of dirHandle.values()) {
+	// FileSystemDirectoryHandle.values() exists in browsers but isn't in
+	// the standard DOM types yet. Cast to access the async iterator.
+	const handle = dirHandle as FileSystemDirectoryHandle & {
+		values(): AsyncIterableIterator<FileSystemHandle>;
+	};
+	for await (const entry of handle.values()) {
 		const entryPath = currentPath ? `${currentPath}/${entry.name}` : entry.name;
 
 		if (entry.kind === 'directory') {

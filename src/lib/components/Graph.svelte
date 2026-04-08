@@ -12,7 +12,7 @@
 	let { highlightNoteId }: Props = $props();
 
 	let containerRef: HTMLDivElement;
-	let graph: ReturnType<typeof ForceGraph> | null = null;
+	let graph: ForceGraph<GraphNode, GraphLink> | null = null;
 
 	// Store subscriptions for Svelte 5 runes mode
 	let memoriesData = $state<MemoryObject[]>([]);
@@ -89,7 +89,7 @@
 	let searchQuery = $state('');
 	let filterMode = $state<'highlight' | 'filter'>('highlight');
 	let showSearch = $state(false);
-	let searchInputRef: HTMLInputElement;
+	let searchInputRef: HTMLInputElement | undefined = $state();
 
 	interface GraphNode {
 		id: string;
@@ -259,7 +259,7 @@
 			.trim() || '#818cf8';
 		const { nodes, links } = buildGraphData();
 
-		graph = ForceGraph()(containerRef)
+		graph = new ForceGraph<GraphNode, GraphLink>(containerRef)
 			.graphData({ nodes, links })
 			.nodeLabel(() => '') // Disable default tooltip, we use custom
 			.nodeColor((node: GraphNode) => node.color || (isDark ? '#9ca3af' : '#6b7280'))
@@ -760,6 +760,7 @@
 		margin-bottom: 0.75rem;
 		display: -webkit-box;
 		-webkit-line-clamp: 3;
+		line-clamp: 3;
 		-webkit-box-orient: vertical;
 		overflow: hidden;
 	}
@@ -857,13 +858,6 @@
 		background: var(--color-bg-secondary);
 		border-radius: 0.5rem;
 		padding: 0.5rem 0.75rem;
-	}
-
-	.search-icon {
-		width: 1rem;
-		height: 1rem;
-		color: var(--color-text-muted);
-		flex-shrink: 0;
 	}
 
 	.search-input {

@@ -668,6 +668,7 @@
 										onclick={() => (selectedTag = tag)}
 										class="rounded-full bg-[var(--color-border)] px-2 py-0.5 text-xs text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-accent)] hover:text-white"
 										role="option"
+										aria-selected="false"
 										aria-label="Filter by tag: {tag}, {count} notes"
 									>
 										#{tag}
@@ -795,7 +796,7 @@
 		{/if}
 
 		<!-- Main Content -->
-		<main class="relative flex flex-1 flex-col" class:overflow-hidden={!isReadMode} role="main" aria-label="Main content">
+		<main class="relative flex flex-1 flex-col" class:overflow-hidden={!isReadMode} aria-label="Main content">
 			<!-- Mobile header (hidden in read mode and on desktop) -->
 			{#if !isReadMode}
 			<header

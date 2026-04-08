@@ -81,7 +81,7 @@
 	let importSuccess = $state<{ vaults: number; folders: number; memoryObjects: number } | null>(
 		null
 	);
-	let fileInputRef: HTMLInputElement;
+	let fileInputRef: HTMLInputElement | undefined = $state();
 
 	// Clear data state
 	let showClearConfirm1 = $state(false);
@@ -576,7 +576,7 @@
 				<div class="border-t border-[var(--color-border)] p-4">
 					<!-- Sync Method Toggle -->
 					<div class="mb-4">
-						<label class="mb-2 block text-sm font-medium text-[var(--color-text)]">Sync Method</label>
+						<span class="mb-2 block text-sm font-medium text-[var(--color-text)]">Sync Method</span>
 						<div class="flex gap-2">
 							<button
 								onclick={() => handleSyncMethodChange('r2')}
@@ -604,7 +604,7 @@
 
 							<!-- Provider Selection -->
 							<div>
-								<label class="mb-2 block text-sm font-medium text-[var(--color-text)]">Provider</label>
+								<span class="mb-2 block text-sm font-medium text-[var(--color-text)]">Provider</span>
 								<div class="flex gap-2">
 									{#each Object.values(GIT_PROVIDERS) as provider}
 										<button
@@ -1175,9 +1175,9 @@
 					<div class="space-y-4">
 						<!-- Provider Selection -->
 						<div>
-							<label class="mb-2 block text-sm font-medium text-[var(--color-text)]">
+							<span class="mb-2 block text-sm font-medium text-[var(--color-text)]">
 								AI Provider
-							</label>
+							</span>
 							<div class="flex gap-2">
 								<button
 									onclick={() => handleProviderChange('openai')}
@@ -1654,6 +1654,8 @@ mise run setup</code></pre>
 		aria-modal="true"
 		tabindex="-1"
 	>
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 		<div
 			class="w-full max-w-md rounded-xl bg-[var(--color-bg)] p-6 shadow-2xl"
 			onclick={(e) => e.stopPropagation()}
@@ -1771,6 +1773,8 @@ mise run setup</code></pre>
 		aria-modal="true"
 		tabindex="-1"
 	>
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 		<div
 			class="w-full max-w-md rounded-xl bg-[var(--color-bg)] p-6 shadow-2xl"
 			onclick={(e) => e.stopPropagation()}
@@ -1833,6 +1837,8 @@ mise run setup</code></pre>
 		aria-modal="true"
 		tabindex="-1"
 	>
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 		<div
 			class="w-full max-w-md rounded-xl bg-[var(--color-bg)] p-6 shadow-2xl"
 			onclick={(e) => e.stopPropagation()}

@@ -98,7 +98,10 @@ export async function pullChanges(config: GitSyncConfig): Promise<boolean> {
 	setGitPulling();
 
 	try {
-		const result = await git.pull({
+		// isomorphic-git's type definition says git.pull returns void, but at
+		// runtime it returns an object with `alreadyUpToDate`. Cast to a
+		// minimal shape so we can read it without `as any`.
+		const result = (await git.pull({
 			fs: getFs(),
 			http,
 			dir: REPO_DIR,
@@ -111,7 +114,7 @@ export async function pullChanges(config: GitSyncConfig): Promise<boolean> {
 				name: config.authorName,
 				email: config.authorEmail
 			}
-		});
+		})) as unknown as { alreadyUpToDate?: boolean };
 
 		return result.alreadyUpToDate !== true;
 	} catch (error) {
@@ -212,14 +215,14 @@ export async function writeNotesToRepo(
 
 	// Write metadata file
 	await ensureDir(`${REPO_DIR}/.kurumi`);
-	await pfs.writeFile(`${REPO_DIR}/${METADATA_PATH}`, metadataJson, { encoding: 'utf8' });
+	await pfs.writeFile(`${REPO_DIR}/${METADATA_PATH}`, metadataJson, 'utf8');
 
 	// Write markdown files
 	for (const file of markdownFiles) {
 		const fullPath = `${REPO_DIR}/${file.path}`;
 		const dirPath = fullPath.split('/').slice(0, -1).join('/');
 		await ensureDir(dirPath);
-		await pfs.writeFile(fullPath, file.content, { encoding: 'utf8' });
+		await pfs.writeFile(fullPath, file.content, 'utf8');
 	}
 }
 

@@ -33,9 +33,10 @@
 	{#each Object.entries(groupConfig) as [key, config]}
 		{@const groupDates = groups[key as keyof typeof groups]}
 		{#if groupDates.length > 0}
+			{@const Icon = config.icon}
 			<div class="agenda-group">
 				<div class="group-header">
-					<svelte:component this={config.icon} class="h-4 w-4 {config.color}" />
+					<Icon class="h-4 w-4 {config.color}" />
 					<h3>{config.label}</h3>
 					<span class="group-count">{groupDates.length}</span>
 				</div>
@@ -66,10 +67,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1.5rem;
-	}
-
-	.agenda-group {
-		/* Group container */
 	}
 
 	.group-header {

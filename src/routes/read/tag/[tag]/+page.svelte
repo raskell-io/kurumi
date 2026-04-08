@@ -5,7 +5,7 @@
 	import NoteCard from '$lib/components/NoteCard.svelte';
 	import { Tag } from 'lucide-svelte';
 
-	let tag = $derived($page.params.tag);
+	let tag = $derived($page.params.tag ?? '');
 	let memories = $derived(getMemoryObjectsByTag(tag));
 
 	let breadcrumbs = $derived([{ label: `#${tag}`, href: `/read/tag/${tag}` }]);
@@ -58,11 +58,6 @@
 		margin: 0 auto 1rem;
 		padding: 1rem;
 		border-radius: 1rem;
-	}
-
-	.header-icon svg {
-		width: 100%;
-		height: 100%;
 	}
 
 	.tag-icon {

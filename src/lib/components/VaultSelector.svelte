@@ -20,7 +20,7 @@
 	let showIconPicker = $state(false);
 
 	let dropdownRef: HTMLDivElement;
-	let iconPickerRef: HTMLDivElement;
+	let iconPickerRef: HTMLDivElement | undefined = $state();
 
 	let filteredIcons = $derived(searchIcons(iconSearchQuery));
 	let selectedIcon = $derived(formIconId ? getIconById(formIconId) : null);
@@ -271,6 +271,8 @@
 		aria-modal="true"
 		tabindex="-1"
 	>
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 		<div
 			class="w-full max-w-md rounded-xl bg-[var(--color-bg)] p-6 shadow-2xl"
 			onclick={(e) => e.stopPropagation()}
@@ -297,9 +299,9 @@
 				</div>
 
 				<div>
-					<label class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+					<span class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						Icon (optional)
-					</label>
+					</span>
 					<div class="relative" bind:this={iconPickerRef}>
 						<button
 							type="button"
@@ -316,8 +318,11 @@
 									<path fill-rule="evenodd" d={selectedIcon.path} clip-rule="evenodd" />
 								</svg>
 								<span class="flex-1 text-[var(--color-text)]">{selectedIcon.name}</span>
-								<button
-									type="button"
+								<!-- svelte-ignore a11y_click_events_have_key_events -->
+								<!-- svelte-ignore a11y_no_static_element_interactions -->
+								<span
+									role="button"
+									tabindex="0"
 									onclick={(e) => {
 										e.stopPropagation();
 										clearIcon();
@@ -325,7 +330,7 @@
 									class="rounded p-0.5 text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
 								>
 									<X class="h-4 w-4" />
-								</button>
+								</span>
 							{:else}
 								<Archive class="h-5 w-5 text-[var(--color-text-muted)]" />
 								<span class="flex-1 text-[var(--color-text-muted)]">Choose an icon...</span>

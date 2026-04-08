@@ -848,6 +848,7 @@
 	ondrop={(e) => handleDrop(e, null)}
 	class:drop-target-root={dropTargetRoot}
 	role="tree"
+	tabindex="-1"
 >
 	<!-- Toolbar -->
 	<div class="mb-3 flex items-center justify-center gap-3">
@@ -892,6 +893,7 @@
 	{#if creatingFolderIn === 'root'}
 		<div class="mb-0.5 flex items-center rounded-lg bg-[var(--color-bg-secondary)] px-2 py-2">
 			<Folder class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
+			<!-- svelte-ignore a11y_autofocus -->
 			<input
 				type="text"
 				bind:value={newFolderName}
@@ -928,6 +930,7 @@
 					<Trash2 class="h-5 w-5" />
 				</button>
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
 				<div
 					class="folder-row group relative flex items-center rounded-lg bg-[var(--color-bg-secondary)] px-2 py-2 transition-transform hover:bg-[var(--color-border)]"
 					class:drop-target={isDraggedOver(folder.id)}
@@ -947,6 +950,8 @@
 					onclick={(e) => handleRowClick(e, 'folder', folder.id)}
 					oncontextmenu={(e) => handleFolderContextMenu(e, folder.id)}
 					role="treeitem"
+					aria-selected={isSelected}
+					tabindex="-1"
 				>
 					{#if isExpanded && hasContents}
 						<FolderOpen class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
@@ -954,6 +959,7 @@
 						<Folder class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
 					{/if}
 					{#if renamingFolder === folder.id}
+						<!-- svelte-ignore a11y_autofocus -->
 						<input
 							type="text"
 							bind:value={renameValue}
@@ -967,9 +973,12 @@
 							onclick={(e) => e.stopPropagation()}
 						/>
 					{:else}
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<span
 							class="truncate text-base text-[var(--color-text)]"
 							ondblclick={(e) => handleDoubleClick(e, 'folder', folder.id)}
+							role="button"
+							tabindex="-1"
 						>{folder.name}</span>
 					{/if}
 					<button onclick={(e) => { e.stopPropagation(); toggleFolder(folder.id); }} class="ml-1 shrink-0 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
@@ -988,6 +997,7 @@
 					{#if creatingFolderIn === folder.id}
 						<div class="mb-0.5 flex items-center rounded-lg bg-[var(--color-bg-secondary)] px-2 py-2">
 							<Folder class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
+							<!-- svelte-ignore a11y_autofocus -->
 							<input
 								type="text"
 								bind:value={newFolderName}
@@ -1047,6 +1057,7 @@
 			>
 				<NotebookText class="mr-2 h-5 w-5 shrink-0 {!isNoteActive(memory.id) ? 'text-[var(--color-text-muted)]' : ''}" />
 				{#if renamingNote === memory.id}
+					<!-- svelte-ignore a11y_autofocus -->
 					<input
 						type="text"
 						bind:value={renameValue}
@@ -1060,9 +1071,12 @@
 						autofocus
 					/>
 				{:else}
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<span
 						class="truncate text-base"
 						ondblclick={(e) => handleDoubleClick(e, 'note', memory.id)}
+						role="button"
+						tabindex="-1"
 					>{memory.title || 'Untitled'}</span>
 				{/if}
 			</a>
@@ -1089,6 +1103,7 @@
 		style="left: {contextMenuPosition.x}px; top: {contextMenuPosition.y}px;"
 		onclick={(e) => e.stopPropagation()}
 		role="menu"
+		tabindex="-1"
 	>
 		<button
 			onclick={() => handleCreateNote(contextMenuFolder)}
@@ -1165,6 +1180,7 @@
 		style="left: {contextMenuPosition.x}px; top: {contextMenuPosition.y}px;"
 		onclick={(e) => e.stopPropagation()}
 		role="menu"
+		tabindex="-1"
 	>
 		{#if memory?.folderId}
 			<button

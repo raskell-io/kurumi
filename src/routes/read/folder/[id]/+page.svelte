@@ -5,10 +5,11 @@
 	import NoteCard from '$lib/components/NoteCard.svelte';
 	import { Folder } from 'lucide-svelte';
 
-	let folder = $derived(getFolder($page.params.id));
-	let folderPath = $derived(getFolderPath($page.params.id));
-	let memories = $derived(getMemoryObjectsInFolder($page.params.id));
-	let subfolders = $derived(getSubfolders($page.params.id));
+	let folderId = $derived($page.params.id ?? '');
+	let folder = $derived(getFolder(folderId));
+	let folderPath = $derived(getFolderPath(folderId));
+	let memories = $derived(getMemoryObjectsInFolder(folderId));
+	let subfolders = $derived(getSubfolders(folderId));
 
 	let breadcrumbs = $derived(
 		folderPath.map((f) => ({ label: f.name, href: `/read/folder/${f.id}` }))
@@ -88,11 +89,6 @@
 		border-radius: 1rem;
 	}
 
-	.header-icon svg {
-		width: 100%;
-		height: 100%;
-	}
-
 	.folder-icon {
 		background: color-mix(in srgb, var(--color-accent) 15%, transparent);
 		color: var(--color-accent);
@@ -144,12 +140,6 @@
 
 	.subfolder-card:hover {
 		background: var(--color-border);
-	}
-
-	.subfolder-icon {
-		width: 1.25rem;
-		height: 1.25rem;
-		color: var(--color-accent);
 	}
 
 	.notes-grid {

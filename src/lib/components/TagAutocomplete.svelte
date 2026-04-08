@@ -11,9 +11,13 @@
 
 	let { position, initialQuery, onSelect, onClose }: Props = $props();
 
-	let query = $state(initialQuery || '');
+	let query = $state('');
 	let selectedIndex = $state(0);
 	let inputRef: HTMLInputElement;
+
+	$effect(() => {
+		query = initialQuery || '';
+	});
 
 	// Get all existing tags
 	let allTags = $derived(getAllTags());

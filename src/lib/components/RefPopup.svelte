@@ -227,24 +227,6 @@
 		background: var(--color-bg-secondary);
 	}
 
-	.header-icon {
-		width: 1.25rem;
-		height: 1.25rem;
-		flex-shrink: 0;
-	}
-
-	.header-icon.person {
-		color: #22c55e;
-	}
-
-	.header-icon.date {
-		color: #3b82f6;
-	}
-
-	.header-icon.tag {
-		color: #f59e0b;
-	}
-
 	.header-title {
 		flex: 1;
 		font-weight: 600;
@@ -299,13 +281,6 @@
 
 	.metadata-row a:hover {
 		text-decoration: underline;
-	}
-
-	.meta-icon {
-		width: 1rem;
-		height: 1rem;
-		color: var(--color-text-muted);
-		flex-shrink: 0;
 	}
 
 	.custom-key {
