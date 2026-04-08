@@ -6,7 +6,31 @@
 import { writable } from 'svelte/store';
 import type { GitProviderId } from './providers';
 
-export type GitSyncStatus = 'idle' | 'cloning' | 'pulling' | 'pushing' | 'syncing' | 'success' | 'error';
+export type GitSyncStatus =
+	| 'idle'
+	| 'cloning'
+	| 'pulling'
+	| 'pushing'
+	| 'syncing'
+	| 'success'
+	| 'error'
+	| 'conflict';
+
+export type ConflictResolution = 'local' | 'remote';
+
+/**
+ * A single memory that has divergent local and remote versions. Both
+ * sides changed since the last known common ancestor's updatedAt, so
+ * we can't pick a winner automatically.
+ */
+export interface MemoryConflict {
+	memoryId: string;
+	title: string;
+	localUpdatedAt: number;
+	remoteUpdatedAt: number;
+	localBody: string;
+	remoteBody: string;
+}
 
 export interface GitSyncState {
 	status: GitSyncStatus;
@@ -18,6 +42,7 @@ export interface GitSyncState {
 		loaded: number;
 		total: number;
 	};
+	conflicts: MemoryConflict[];
 }
 
 export interface GitSyncConfig {
@@ -45,7 +70,8 @@ const initialState: GitSyncState = {
 	status: 'idle',
 	error: null,
 	lastSyncedAt: null,
-	lastCommitHash: null
+	lastCommitHash: null,
+	conflicts: []
 };
 
 // Create the store
@@ -166,6 +192,32 @@ export function setGitIdle(): void {
 		status: 'idle',
 		error: null,
 		progress: undefined
+	}));
+}
+
+/**
+ * Record a set of conflicts that the sync loop couldn't auto-merge.
+ * Puts the state machine into 'conflict' mode so the settings UI can
+ * surface the resolution modal.
+ */
+export function setGitConflicts(conflicts: MemoryConflict[]): void {
+	gitSyncState.update((state) => ({
+		...state,
+		status: 'conflict',
+		error: null,
+		conflicts,
+		progress: undefined
+	}));
+}
+
+/**
+ * Clear all conflicts (called after the user has resolved every pair).
+ * Leaves status as-is so callers can decide whether to re-sync.
+ */
+export function clearGitConflicts(): void {
+	gitSyncState.update((state) => ({
+		...state,
+		conflicts: []
 	}));
 }
 

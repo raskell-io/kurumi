@@ -54,6 +54,7 @@
 	} from '$lib/inference';
 	import { onMount } from 'svelte';
 	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2, RefreshCw, CheckCircle, XCircle, Wifi, Sparkles, ChevronDown, Database, Cloud, Lock, Shield, BookOpen, Palette, HardDrive, Info, Type, GitBranch, Cpu } from 'lucide-svelte';
+	import GitConflictModal from '$lib/components/GitConflictModal.svelte';
 
 	let syncToken = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-token') || '' : '');
 	let syncUrl = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-url') || '' : '');
@@ -88,6 +89,15 @@
 	let showClearConfirm2 = $state(false);
 	let clearConfirmText = $state('');
 	let isClearing = $state(false);
+
+	// Git conflict modal
+	let showConflictModal = $state(false);
+	// Auto-open when conflicts arrive from a sync attempt.
+	$effect(() => {
+		if ($gitSyncState.status === 'conflict' && $gitSyncState.conflicts.length > 0) {
+			showConflictModal = true;
+		}
+	});
 
 	// Sync test state
 	let isTesting = $state(false);
@@ -711,6 +721,11 @@
 													<span class="text-[var(--color-text)]">
 														{$gitSyncState.status === 'cloning' ? 'Cloning...' : $gitSyncState.status === 'pulling' ? 'Pulling...' : $gitSyncState.status === 'pushing' ? 'Pushing...' : 'Syncing...'}
 													</span>
+												{:else if $gitSyncState.status === 'conflict'}
+													<div class="h-3 w-3 rounded-full bg-yellow-500"></div>
+													<span class="text-yellow-500">
+														{$gitSyncState.conflicts.length} conflict{$gitSyncState.conflicts.length === 1 ? '' : 's'} need resolution
+													</span>
 												{:else if $gitSyncState.status === 'success'}
 													<div class="h-3 w-3 rounded-full bg-green-500"></div>
 													<span class="text-[var(--color-text)]">Synced</span>
@@ -723,14 +738,23 @@
 												{/if}
 											</div>
 
-											<button
-												onclick={handleSync}
-												disabled={['cloning', 'pulling', 'pushing', 'syncing'].includes($gitSyncState.status)}
-												class="flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-white transition-colors hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
-											>
-												<RefreshCw class="h-4 w-4 {['cloning', 'pulling', 'pushing', 'syncing'].includes($gitSyncState.status) ? 'animate-spin' : ''}" />
-												Sync Now
-											</button>
+											{#if $gitSyncState.status === 'conflict'}
+												<button
+													onclick={() => (showConflictModal = true)}
+													class="flex items-center gap-2 rounded-lg bg-yellow-500 px-4 py-2 text-white transition-colors hover:bg-yellow-600"
+												>
+													Resolve
+												</button>
+											{:else}
+												<button
+													onclick={handleSync}
+													disabled={['cloning', 'pulling', 'pushing', 'syncing'].includes($gitSyncState.status)}
+													class="flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-white transition-colors hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
+												>
+													<RefreshCw class="h-4 w-4 {['cloning', 'pulling', 'pushing', 'syncing'].includes($gitSyncState.status) ? 'animate-spin' : ''}" />
+													Sync Now
+												</button>
+											{/if}
 										</div>
 
 										{#if $gitSyncState.lastSyncedAt}
@@ -1886,6 +1910,10 @@ mise run setup</code></pre>
 			</div>
 		</div>
 	</div>
+{/if}
+
+{#if showConflictModal}
+	<GitConflictModal onClose={() => (showConflictModal = false)} />
 {/if}
 
 <style>

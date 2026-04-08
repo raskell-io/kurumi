@@ -18,6 +18,8 @@
 	import { initHashRouter, updateHashFromPath } from '$lib/hash-router';
 	import { initSearch, rebuildIndex } from '$lib/search';
 	import { setupVisibilitySync, teardownVisibilitySync, syncState, isSyncConfigured, sync } from '$lib/sync';
+	import { gitSyncState } from '$lib/git';
+	import GitConflictModal from '$lib/components/GitConflictModal.svelte';
 	import {
 		getLocalInferenceSettings,
 		preloadPipeline,
@@ -86,6 +88,13 @@
 	let showNewFolderAnimation = $state(false);
 	let deleteNoteSnackbar = $state<string | null>(null);
 	let deleteFolderSnackbar = $state<string | null>(null);
+	let showConflictModal = $state(false);
+	// Auto-open when a sync attempt surfaces conflicts.
+	$effect(() => {
+		if ($gitSyncState.status === 'conflict' && $gitSyncState.conflicts.length > 0) {
+			showConflictModal = true;
+		}
+	});
 
 	// Subscribe to snackbar store from other pages
 	$effect(() => {
@@ -727,15 +736,26 @@
 						/>
 			</nav>
 
-			<!-- Sync Status (clickable to force sync) -->
+			<!-- Sync Status (clickable to force sync, or open conflict modal) -->
 			{#if showSyncStatus}
 				<button
-					onclick={() => sync()}
+					onclick={() => {
+						if ($gitSyncState.status === 'conflict') {
+							showConflictModal = true;
+						} else {
+							sync();
+						}
+					}}
 					disabled={$syncState.status === 'syncing'}
 					class="flex w-full items-center gap-2 border-t border-[var(--color-border)] px-3 py-2 text-left transition-colors hover:bg-[var(--color-border)] disabled:opacity-70"
-					title="Click to sync"
+					title={$gitSyncState.status === 'conflict' ? 'Resolve conflicts' : 'Click to sync'}
 				>
-					{#if $syncState.status === 'syncing'}
+					{#if $gitSyncState.status === 'conflict'}
+						<AlertCircle class="h-4 w-4 text-yellow-500" />
+						<span class="text-xs text-yellow-500">
+							{$gitSyncState.conflicts.length} conflict{$gitSyncState.conflicts.length === 1 ? '' : 's'}
+						</span>
+					{:else if $syncState.status === 'syncing'}
 						<RefreshCw class="h-4 w-4 animate-spin text-[var(--color-accent)]" />
 						<span class="text-xs text-[var(--color-text-muted)]">Syncing...</span>
 					{:else if $syncState.status === 'success'}
@@ -932,5 +952,9 @@
 			duration={2000}
 			onClose={() => deleteFolderSnackbar = null}
 		/>
+	{/if}
+
+	{#if showConflictModal}
+		<GitConflictModal onClose={() => (showConflictModal = false)} />
 	{/if}
 {/if}

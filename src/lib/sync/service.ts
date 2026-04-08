@@ -244,6 +244,7 @@ async function syncGitMethod(): Promise<{ success: boolean; error?: string }> {
 			});
 		};
 
+		const lastSyncedAt = get(gitSyncState).lastSyncedAt;
 		await syncGit(
 			localMemories,
 			localFolders,
@@ -251,11 +252,19 @@ async function syncGitMethod(): Promise<{ success: boolean; error?: string }> {
 			localPeople,
 			localEvents,
 			localActionItems,
+			lastSyncedAt,
 			onImport
 		);
 		return { success: true };
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Git sync failed';
+		// Conflicts aren't really errors — they need user input. The
+		// git service already transitioned gitSyncState to 'conflict',
+		// so we just report the pause without flagging an error.
+		if (message.includes('conflict')) {
+			console.log('Git sync paused for conflict resolution');
+			return { success: false, error: message };
+		}
 		console.error('Git sync error:', err);
 		return { success: false, error: message };
 	}

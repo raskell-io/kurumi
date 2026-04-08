@@ -25,7 +25,9 @@ import {
 	setGitSyncSuccess,
 	setGitSyncError,
 	setGitProgress,
-	type GitSyncConfig
+	setGitConflicts,
+	type GitSyncConfig,
+	type MemoryConflict
 } from './status';
 import type { MemoryObject, Folder, Vault, Person, Event, ActionItem } from '../db/types';
 
@@ -401,6 +403,42 @@ export async function testGitConnection(
 }
 
 /**
+ * Detect memories whose local and remote versions have both changed
+ * since the last successful sync. Uses this device's lastSyncedAt as a
+ * proxy for the last known common ancestor:
+ *
+ * - If both sides updated AFTER lastSyncedAt and the bodies actually
+ *   differ, it's a conflict.
+ * - If only one side updated, last-write-wins is fine.
+ * - If bodies are byte-identical, no conflict regardless of timestamps.
+ */
+function detectConflicts(
+	local: MemoryObject[],
+	remote: MemoryObject[],
+	lastSyncedAt: number | null
+): MemoryConflict[] {
+	if (!lastSyncedAt) return []; // First sync: nothing to conflict against
+	const remoteById = new Map(remote.map((m) => [m.id, m]));
+	const conflicts: MemoryConflict[] = [];
+	for (const l of local) {
+		const r = remoteById.get(l.id);
+		if (!r) continue;
+		if (l.updatedAt <= lastSyncedAt) continue; // Local unchanged since sync
+		if (r.updatedAt <= lastSyncedAt) continue; // Remote unchanged since sync
+		if (l.bodyMarkdown === r.bodyMarkdown && l.title === r.title) continue;
+		conflicts.push({
+			memoryId: l.id,
+			title: l.title || 'Untitled',
+			localUpdatedAt: l.updatedAt,
+			remoteUpdatedAt: r.updatedAt,
+			localBody: l.bodyMarkdown,
+			remoteBody: r.bodyMarkdown
+		});
+	}
+	return conflicts;
+}
+
+/**
  * Full sync cycle: pull, merge, push
  */
 export async function syncGit(
@@ -410,6 +448,7 @@ export async function syncGit(
 	people: Person[],
 	events: Event[],
 	localActionItems: ActionItem[],
+	lastSyncedAt: number | null,
 	onImport: (
 		memories: MemoryObject[],
 		folders: Folder[],
@@ -450,8 +489,18 @@ export async function syncGit(
 			? Object.values(metadata.actionItems)
 			: [];
 
-		// Merge: for now, prefer remote (last-write-wins based on updatedAt)
-		// This could be made smarter with proper conflict resolution
+		// Detect real conflicts before merging: anything touched on both
+		// sides since the last sync is surfaced to the user instead of
+		// silently losing data.
+		const conflicts = detectConflicts(localMemories, remoteMemories, lastSyncedAt);
+		if (conflicts.length > 0) {
+			setGitConflicts(conflicts);
+			// Stop the sync here. The user resolves via the settings UI,
+			// which then calls resolveConflict() + syncGit() again.
+			throw new Error(`${conflicts.length} conflict(s) need resolution`);
+		}
+
+		// Merge non-conflicting changes: prefer newer by updatedAt
 		const mergedMemories = mergeMemoryLists(localMemories, remoteMemories);
 		const mergedFolders = mergeFolderLists(localFolders, remoteFolders);
 		const mergedActionItems = mergeActionItemLists(localActionItems, remoteActionItems);
@@ -528,6 +577,27 @@ function mergeFolderLists(local: Folder[], remote: Folder[]): Folder[] {
 	}
 
 	return Array.from(merged.values());
+}
+
+/**
+ * Apply a user-selected resolution for a single memory conflict by
+ * writing the chosen body back into the memory and bumping updatedAt
+ * past the current instant so the next sync treats it as the winner.
+ *
+ * Takes the raw memory list and returns a new list (doesn't mutate the
+ * store; the caller is responsible for persisting via onImport).
+ */
+export function applyConflictResolution(
+	memories: MemoryObject[],
+	conflict: MemoryConflict,
+	choice: 'local' | 'remote'
+): MemoryObject[] {
+	const chosenBody = choice === 'local' ? conflict.localBody : conflict.remoteBody;
+	const now = Date.now();
+	return memories.map((m) => {
+		if (m.id !== conflict.memoryId) return m;
+		return { ...m, bodyMarkdown: chosenBody, updatedAt: now };
+	});
 }
 
 /**
