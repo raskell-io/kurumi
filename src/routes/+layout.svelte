@@ -21,7 +21,8 @@
 		getLocalInferenceSettings,
 		preloadPipeline,
 		whisperModelId,
-		textModelId
+		textModelId,
+		embedModelId
 	} from '$lib/inference';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
@@ -340,6 +341,9 @@
 				});
 				if (localSettings.textModelEnabled) {
 					preloadPipeline('text-generation', textModelId(localSettings.textModel));
+				}
+				if (localSettings.embedModelEnabled) {
+					preloadPipeline('embed', embedModelId(localSettings.embedModel));
 				}
 			}, 1500);
 		}

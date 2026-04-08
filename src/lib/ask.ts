@@ -19,6 +19,7 @@ import { getMemoryObject, memoryObjects } from './db';
 import type { MemoryObject } from './db/types';
 import { inferenceRouter } from './inference';
 import type { AskTurn } from './inference';
+import { semanticSearch } from './embeddings';
 import { get } from 'svelte/store';
 
 const MAX_CONTEXT_MEMORIES = 8;
@@ -56,20 +57,39 @@ export async function askKurumi(
 		return { error: 'Please enter a question.' };
 	}
 
-	// 1. Retrieve candidates via the existing search index.
-	const searchResults = search(trimmed);
+	// 1. Hybrid retrieval: union of keyword hits (MiniSearch) and semantic
+	// hits (local embeddings). Both run in parallel; we then dedupe by
+	// memory id and take the top N. The order interleaves the two ranked
+	// lists so the strongest match from each path is at the top.
+	const [keywordHits, semanticHits] = await Promise.all([
+		Promise.resolve(search(trimmed)),
+		semanticSearch(trimmed, MAX_CONTEXT_MEMORIES).catch(() => [])
+	]);
+
+	const seen = new Set<string>();
 	const candidateMemories: MemoryObject[] = [];
-	for (const result of searchResults.slice(0, MAX_CONTEXT_MEMORIES)) {
-		const memory = getMemoryObject(result.id);
-		if (memory) candidateMemories.push(memory);
+	const pushMemory = (id: string) => {
+		if (seen.has(id)) return;
+		const memory = getMemoryObject(id);
+		if (!memory) return;
+		seen.add(id);
+		candidateMemories.push(memory);
+	};
+
+	// Interleave: best keyword, best semantic, second keyword, second semantic, ...
+	const maxLen = Math.max(keywordHits.length, semanticHits.length);
+	for (let i = 0; i < maxLen && candidateMemories.length < MAX_CONTEXT_MEMORIES; i++) {
+		if (i < keywordHits.length) pushMemory(keywordHits[i].id);
+		if (i < semanticHits.length) pushMemory(semanticHits[i].memoryId);
 	}
 
-	// Fallback: if MiniSearch found nothing (e.g. very short question, no
-	// keyword overlap), use the most recent memories so the model has at
-	// least something to look at instead of failing immediately.
+	// Fallback: if both retrieval paths returned nothing (e.g. brand-new
+	// vault, no embeddings yet, very short question), use the most recent
+	// memories so the model has at least something to look at instead of
+	// failing immediately.
 	if (candidateMemories.length === 0) {
 		const recent = get(memoryObjects).slice(0, MAX_CONTEXT_MEMORIES);
-		candidateMemories.push(...recent);
+		for (const m of recent) pushMemory(m.id);
 	}
 
 	if (candidateMemories.length === 0) {

@@ -2,6 +2,7 @@ import * as Automerge from '@automerge/automerge';
 import { get, set } from 'idb-keyval';
 import { writable, derived, type Readable } from 'svelte/store';
 import { deleteBlob, getBlob } from './blob-store';
+import { deleteEmbedding } from '$lib/embeddings';
 import { inferenceRouter } from '$lib/inference';
 import {
 	createEmptyDocument,
@@ -519,8 +520,9 @@ function updateDoc(changeFn: (doc: KurumiDocument) => void): void {
 	saveDoc(); // Fire and forget, we have local state
 }
 
-// Fire-and-forget deletion of any blob refs attached to a memory.
-// Used when permanently deleting memories so blobs don't leak in IndexedDB.
+// Fire-and-forget deletion of any blob refs and the cached embedding for
+// a memory. Used when permanently deleting memories so blobs and vectors
+// don't leak in IndexedDB.
 function deleteBlobsForMemory(memory: MemoryObject): void {
 	if (memory.rawAudioRef) {
 		void deleteBlob(memory.rawAudioRef);
@@ -528,6 +530,7 @@ function deleteBlobsForMemory(memory: MemoryObject): void {
 	if (memory.rawMediaRef) {
 		void deleteBlob(memory.rawMediaRef);
 	}
+	void deleteEmbedding(memory.id);
 }
 
 // Get current vault ID synchronously

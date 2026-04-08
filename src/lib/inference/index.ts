@@ -31,9 +31,12 @@ export {
 	whisperModelLabel,
 	textModelId,
 	textModelLabel,
+	embedModelId,
+	embedModelLabel,
 	type LocalInferenceSettings,
 	type WhisperModelSize,
-	type TextModelChoice
+	type TextModelChoice,
+	type EmbedModelChoice
 } from './settings';
 export {
 	localModelStatus,

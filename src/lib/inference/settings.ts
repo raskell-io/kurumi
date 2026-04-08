@@ -13,6 +13,7 @@ const STORAGE_KEY = 'kurumi-local-inference';
 
 export type WhisperModelSize = 'tiny' | 'base' | 'small';
 export type TextModelChoice = 'smollm2-360m' | 'qwen2-0_5b';
+export type EmbedModelChoice = 'mini-lm-l6';
 
 export interface LocalInferenceSettings {
 	enabled: boolean;
@@ -22,6 +23,10 @@ export interface LocalInferenceSettings {
 	// (~360 MB minimum) and inference quality at this size is uneven.
 	textModelEnabled: boolean;
 	textModel: TextModelChoice;
+	// Semantic-search embeddings. Default on because the model is small
+	// (~80 MB) and dramatically improves Ask Kurumi recall.
+	embedModelEnabled: boolean;
+	embedModel: EmbedModelChoice;
 }
 
 const DEFAULTS: LocalInferenceSettings = {
@@ -31,7 +36,9 @@ const DEFAULTS: LocalInferenceSettings = {
 	// which makes base/small unreasonably large as a default download.
 	whisperModel: 'tiny',
 	textModelEnabled: false,
-	textModel: 'smollm2-360m'
+	textModel: 'smollm2-360m',
+	embedModelEnabled: true,
+	embedModel: 'mini-lm-l6'
 };
 
 function loadFromStorage(): LocalInferenceSettings {
@@ -121,5 +128,19 @@ export function textModelLabel(choice: TextModelChoice): string {
 			return 'SmolLM2 360M (~360 MB) — small, fast';
 		case 'qwen2-0_5b':
 			return 'Qwen2.5 0.5B (~500 MB) — slightly bigger, better';
+	}
+}
+
+export function embedModelId(choice: EmbedModelChoice): string {
+	switch (choice) {
+		case 'mini-lm-l6':
+			return 'Xenova/all-MiniLM-L6-v2';
+	}
+}
+
+export function embedModelLabel(choice: EmbedModelChoice): string {
+	switch (choice) {
+		case 'mini-lm-l6':
+			return 'all-MiniLM-L6-v2 (~25 MB) — fast, English-focused';
 	}
 }

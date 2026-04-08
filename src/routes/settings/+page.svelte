@@ -43,11 +43,14 @@
 		whisperModelLabel,
 		textModelId,
 		textModelLabel,
+		embedModelId,
+		embedModelLabel,
 		localModelStatus,
 		preloadPipeline,
 		clearLocalModelCache,
 		type WhisperModelSize,
-		type TextModelChoice
+		type TextModelChoice,
+		type EmbedModelChoice
 	} from '$lib/inference';
 	import { onMount } from 'svelte';
 	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2, RefreshCw, CheckCircle, XCircle, Wifi, Sparkles, ChevronDown, Database, Cloud, Lock, Shield, BookOpen, Palette, HardDrive, Info, Type, GitBranch, Cpu } from 'lucide-svelte';
@@ -63,6 +66,10 @@
 	let currentTextModelId = $derived(textModelId($localInferenceSettings.textModel));
 	let textStatus = $derived(
 		$localModelStatus[`text-generation:${currentTextModelId}`] ?? { state: 'idle' as const }
+	);
+	let currentEmbedModelId = $derived(embedModelId($localInferenceSettings.embedModel));
+	let embedStatus = $derived(
+		$localModelStatus[`embed:${currentEmbedModelId}`] ?? { state: 'idle' as const }
 	);
 
 	// Import state
@@ -1037,6 +1044,73 @@
 										<button
 											type="button"
 											onclick={() => preloadPipeline('text-generation', currentTextModelId)}
+											class="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-border)]"
+										>
+											Download now
+										</button>
+									{/if}
+								</div>
+							</div>
+						{/if}
+					</div>
+
+					<!-- Semantic embeddings (default on, small model) -->
+					<div class="mt-4 border-t border-[var(--color-border)] pt-4">
+						<label class="flex items-center justify-between gap-3">
+							<div>
+								<div class="text-sm font-medium text-[var(--color-text)]">
+									Semantic search embeddings
+								</div>
+								<div class="text-xs text-[var(--color-text-muted)]">
+									Generate vectors for your memories so Ask Kurumi can find them by meaning, not
+									just exact keywords. Small download (~25 MB), runs on-device.
+								</div>
+							</div>
+							<input
+								type="checkbox"
+								checked={$localInferenceSettings.embedModelEnabled}
+								onchange={(e) =>
+									updateLocalInferenceSettings({
+										embedModelEnabled: (e.target as HTMLInputElement).checked
+									})}
+								class="h-5 w-5 accent-[var(--color-accent)]"
+							/>
+						</label>
+
+						{#if $localInferenceSettings.embedModelEnabled}
+							<div class="mt-3 text-xs text-[var(--color-text-muted)]">
+								{embedModelLabel($localInferenceSettings.embedModel)}
+							</div>
+
+							<div class="mt-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3">
+								<div class="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+									Status
+								</div>
+								<div class="flex items-center justify-between gap-3">
+									<div class="text-sm text-[var(--color-text)]">
+										{#if embedStatus.state === 'ready'}
+											<span class="inline-flex items-center gap-2">
+												<span class="h-2 w-2 rounded-full bg-green-500"></span>
+												Ready
+											</span>
+										{:else if embedStatus.state === 'loading'}
+											<span class="inline-flex items-center gap-2">
+												<div class="h-3 w-3 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent"></div>
+												Downloading… {Math.round(embedStatus.progress)}% ({embedStatus.phase})
+											</span>
+										{:else if embedStatus.state === 'error'}
+											<span class="inline-flex items-center gap-2 text-red-500">
+												<AlertTriangle class="h-3 w-3" />
+												{embedStatus.error}
+											</span>
+										{:else}
+											<span class="text-[var(--color-text-muted)]">Not downloaded</span>
+										{/if}
+									</div>
+									{#if embedStatus.state !== 'loading' && embedStatus.state !== 'ready'}
+										<button
+											type="button"
+											onclick={() => preloadPipeline('embed', currentEmbedModelId)}
 											class="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-border)]"
 										>
 											Download now
