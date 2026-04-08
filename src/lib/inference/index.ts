@@ -12,11 +12,13 @@
 
 import { inferenceRouter } from './router';
 import { WhisperLocalProvider } from './providers/whisper-local';
+import { TextLocalProvider } from './providers/text-local';
 import { OpenAIProvider } from './providers/openai';
 
 // Order matters: SimpleInferenceRouter.findProvider walks providers in
 // insertion order and returns the first match. Local first → local wins.
 inferenceRouter.register(new WhisperLocalProvider());
+inferenceRouter.register(new TextLocalProvider());
 inferenceRouter.register(new OpenAIProvider());
 
 export * from './types';
@@ -27,8 +29,11 @@ export {
 	updateLocalInferenceSettings,
 	whisperModelId,
 	whisperModelLabel,
+	textModelId,
+	textModelLabel,
 	type LocalInferenceSettings,
-	type WhisperModelSize
+	type WhisperModelSize,
+	type TextModelChoice
 } from './settings';
 export {
 	localModelStatus,

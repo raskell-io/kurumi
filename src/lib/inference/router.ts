@@ -62,6 +62,15 @@ export class SimpleInferenceRouter implements InferenceRouter {
 		}
 		return null;
 	}
+
+	/**
+	 * Iterate registered providers in insertion order. Useful for callers
+	 * that want to try providers in priority order until one succeeds
+	 * (e.g. text generation: try local first, fall back to remote).
+	 */
+	allProviders(): InferenceProvider[] {
+		return [...this.providers.values()];
+	}
 }
 
 function pickTarget(ctx: RoutingContext): ExecutionTarget {

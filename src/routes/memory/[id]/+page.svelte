@@ -22,6 +22,10 @@
 	let showDeleteConfirm = $state(false);
 	let showExportMenu = $state(false);
 	let initializedForId = $state('');
+	// Last memory.title we synced into the local `title` state. Used to
+	// detect external title changes (e.g. LLM auto-rename) so we can pick
+	// them up without clobbering live user typing.
+	let syncedMemoryTitle = $state('');
 
 	// Audio playback for voice memos
 	let audioUrl = $state<string | null>(null);
@@ -44,6 +48,23 @@
 				content = memory!.bodyMarkdown;
 				backlinks = findBacklinks(id);
 				initializedForId = id;
+				syncedMemoryTitle = memory!.title;
+			});
+		}
+	});
+
+	// React to external title changes (e.g. LLM auto-rename after summarization).
+	// Only adopt the new title if the user hasn't typed since the last sync —
+	// detected by `title` still matching the previously synced value.
+	$effect(() => {
+		if (!memory) return;
+		const externalTitle = memory.title;
+		if (externalTitle !== syncedMemoryTitle) {
+			untrack(() => {
+				if (title === syncedMemoryTitle) {
+					title = externalTitle;
+				}
+				syncedMemoryTitle = externalTitle;
 			});
 		}
 	});
@@ -229,18 +250,36 @@
 						{/if}
 					</div>
 
-					<!-- Transcript / processing state -->
+					<!-- Processing state -->
 					{#if memory.processingState === 'transcribing'}
 						<div class="mb-4 flex items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 text-sm text-[var(--color-text-muted)] md:mb-6">
 							<div class="h-4 w-4 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent"></div>
 							Transcribing…
 						</div>
+					{:else if memory.processingState === 'summarizing'}
+						<div class="mb-4 flex items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 text-sm text-[var(--color-text-muted)] md:mb-6">
+							<div class="h-4 w-4 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent"></div>
+							Summarizing…
+						</div>
 					{:else if memory.processingState === 'failed'}
 						<div class="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-500 md:mb-6">
-							Transcription failed{memory.summaryShort ? `: ${memory.summaryShort}` : ''}
+							Processing failed{memory.processingError ? `: ${memory.processingError}` : ''}
 						</div>
-					{:else if memory.transcript}
-						<details class="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] md:mb-6" open>
+					{/if}
+
+					<!-- Summary (renders separately so it shows alongside any in-flight state) -->
+					{#if memory.summaryShort}
+						<div class="mb-4 rounded-lg border border-[var(--color-accent)]/30 bg-[var(--color-accent)]/5 p-3 text-sm text-[var(--color-text)] md:mb-6">
+							<div class="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-accent)]">
+								Summary
+							</div>
+							<div class="whitespace-pre-wrap">{memory.summaryShort}</div>
+						</div>
+					{/if}
+
+					<!-- Transcript -->
+					{#if memory.transcript}
+						<details class="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] md:mb-6">
 							<summary class="cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
 								Transcript
 							</summary>

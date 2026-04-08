@@ -14,7 +14,12 @@
 	import { initHashRouter, updateHashFromPath } from '$lib/hash-router';
 	import { initSearch, rebuildIndex } from '$lib/search';
 	import { setupVisibilitySync, teardownVisibilitySync, syncState, isSyncConfigured, sync } from '$lib/sync';
-	import { getLocalInferenceSettings, preloadPipeline, whisperModelId } from '$lib/inference';
+	import {
+		getLocalInferenceSettings,
+		preloadPipeline,
+		whisperModelId,
+		textModelId
+	} from '$lib/inference';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
@@ -269,6 +274,9 @@
 			// Slight delay so we don't compete with the initial app render.
 			setTimeout(() => {
 				preloadPipeline('transcribe', whisperModelId(localSettings.whisperModel));
+				if (localSettings.textModelEnabled) {
+					preloadPipeline('text-generation', textModelId(localSettings.textModel));
+				}
 			}, 1500);
 		}
 

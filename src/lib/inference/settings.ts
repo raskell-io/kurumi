@@ -12,17 +12,24 @@ import { writable, get, type Writable } from 'svelte/store';
 const STORAGE_KEY = 'kurumi-local-inference';
 
 export type WhisperModelSize = 'tiny' | 'base' | 'small';
+export type TextModelChoice = 'smollm2-360m' | 'qwen2-0_5b';
 
 export interface LocalInferenceSettings {
 	enabled: boolean;
 	preloadOnStartup: boolean;
 	whisperModel: WhisperModelSize;
+	// Text generation is opt-in because the model download is significant
+	// (~360 MB minimum) and inference quality at this size is uneven.
+	textModelEnabled: boolean;
+	textModel: TextModelChoice;
 }
 
 const DEFAULTS: LocalInferenceSettings = {
 	enabled: true,
 	preloadOnStartup: true,
-	whisperModel: 'base'
+	whisperModel: 'base',
+	textModelEnabled: false,
+	textModel: 'smollm2-360m'
 };
 
 function loadFromStorage(): LocalInferenceSettings {
@@ -83,5 +90,27 @@ export function whisperModelLabel(size: WhisperModelSize): string {
 			return 'Whisper Base (~150 MB) — balanced (default)';
 		case 'small':
 			return 'Whisper Small (~470 MB) — slower, best accuracy';
+	}
+}
+
+/**
+ * Map a text model choice to a transformers.js model id. These are
+ * onnx-quantized variants suitable for in-browser inference via WebGPU/WASM.
+ */
+export function textModelId(choice: TextModelChoice): string {
+	switch (choice) {
+		case 'smollm2-360m':
+			return 'HuggingFaceTB/SmolLM2-360M-Instruct';
+		case 'qwen2-0_5b':
+			return 'onnx-community/Qwen2.5-0.5B-Instruct';
+	}
+}
+
+export function textModelLabel(choice: TextModelChoice): string {
+	switch (choice) {
+		case 'smollm2-360m':
+			return 'SmolLM2 360M (~360 MB) — small, fast';
+		case 'qwen2-0_5b':
+			return 'Qwen2.5 0.5B (~500 MB) — slightly bigger, better';
 	}
 }

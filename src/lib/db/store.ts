@@ -396,6 +396,7 @@ export async function initDB(): Promise<void> {
 								relatedMemoryIds: [],
 								visibilityScope: 'personal',
 								processingState: 'ready',
+								processingError: null,
 								confidenceScores: {},
 								embeddingRef: null,
 								vaultId: note.vaultId ?? DEFAULT_VAULT_ID,
@@ -405,6 +406,20 @@ export async function initDB(): Promise<void> {
 						delete dl.notes;
 					}
 					d.version = 6;
+				});
+				await saveDoc();
+			}
+
+			// Migrate: add processingError field to existing memory objects
+			// (version 6 -> version 7). Defaults to null.
+			if ((doc.version ?? 0) < 7) {
+				doc = Automerge.change(doc, (d) => {
+					for (const memory of Object.values(d.memoryObjects)) {
+						if ((memory as { processingError?: unknown }).processingError === undefined) {
+							(memory as { processingError: string | null }).processingError = null;
+						}
+					}
+					d.version = 7;
 				});
 				await saveDoc();
 			}
@@ -692,43 +707,51 @@ export function addVoiceMemo(options: {
 }
 
 /**
- * Run transcription on a voice memo's audio. Updates processingState as the
- * job progresses and stores the result on memory.transcript on success.
+ * Run the post-capture pipeline on a voice memo's audio:
+ *   1. Transcribe via the first registered provider that supports it.
+ *   2. If transcription succeeds, run summarize() and generateTitle() in
+ *      parallel through the inference router. The local text provider runs
+ *      first when enabled, with the remote provider as a fallback.
  *
- * If no provider is registered or none supports transcription, the memory is
- * silently marked 'ready' so the user isn't left in a permanent "transcribing"
- * limbo. Errors are stored on memory.summaryShort for visibility (until we
- * add a dedicated error field to the schema).
+ * processingState reflects the current phase: pending → transcribing →
+ * summarizing → ready (or failed with processingError set).
+ *
+ * Each step degrades gracefully: if no transcribe provider is configured,
+ * the memory is marked ready and no summary runs. If transcription succeeds
+ * but no text provider can summarize, the transcript still lands and the
+ * summary is just skipped.
  */
 export async function transcribeMemoryAudio(
 	memoryId: string,
 	audio: Blob,
 	mimeType: string
 ): Promise<void> {
-	const provider = inferenceRouter.findProvider((cap) => cap.supportsTranscribe);
-	if (!provider) {
-		updateMemoryObject(memoryId, { processingState: 'ready' });
+	const transcribeProvider = inferenceRouter.findProvider((cap) => cap.supportsTranscribe);
+	if (!transcribeProvider) {
+		updateMemoryObject(memoryId, { processingState: 'ready', processingError: null });
 		return;
 	}
 
-	updateMemoryObject(memoryId, { processingState: 'transcribing' });
+	updateMemoryObject(memoryId, { processingState: 'transcribing', processingError: null });
 
+	let transcriptText = '';
 	try {
-		const result = await provider.transcribe({ audio, mimeType });
+		const result = await transcribeProvider.transcribe({ audio, mimeType });
 		if (!result.ok || !result.value) {
 			updateMemoryObject(memoryId, {
 				processingState: 'failed',
-				summaryShort: result.error ?? 'Transcription failed'
+				processingError: result.error ?? 'Transcription failed'
 			});
 			return;
 		}
 
+		transcriptText = result.value.text;
 		updateDoc((d) => {
 			const memory = d.memoryObjects[memoryId];
 			if (!memory) return;
 			memory.transcript = result.value!.text;
-			memory.processingState = 'ready';
-			// Replace transcript segments
+			memory.processingState = 'summarizing';
+			memory.processingError = null;
 			memory.transcriptSegments.splice(0, memory.transcriptSegments.length);
 			for (const seg of result.value!.segments) {
 				memory.transcriptSegments.push(seg);
@@ -741,9 +764,67 @@ export async function transcribeMemoryAudio(
 	} catch (err) {
 		updateMemoryObject(memoryId, {
 			processingState: 'failed',
-			summaryShort: err instanceof Error ? err.message : 'Transcription error'
+			processingError: err instanceof Error ? err.message : 'Transcription error'
 		});
+		return;
 	}
+
+	// --- Summarization + title pass --------------------------------------
+	if (transcriptText.length === 0) {
+		updateMemoryObject(memoryId, { processingState: 'ready' });
+		return;
+	}
+
+	const [summary, title] = await Promise.all([
+		runFirstSuccessful((p) => p.summarize({ text: transcriptText, style: 'short' })),
+		runFirstSuccessful((p) => p.generateTitle({ text: transcriptText }))
+	]);
+
+	updateDoc((d) => {
+		const memory = d.memoryObjects[memoryId];
+		if (!memory) return;
+		if (summary && summary.length > 0) {
+			memory.summaryShort = summary;
+		}
+		if (title && title.length > 0) {
+			// Only auto-rename if the title still looks auto-generated.
+			// This is a deliberately loose check — if the user has typed a
+			// real title, we don't want to clobber it.
+			const looksAutoTitled =
+				memory.title.startsWith('Voice memo —') || memory.title === 'Untitled';
+			if (looksAutoTitled) {
+				memory.title = title;
+			}
+		}
+		memory.processingState = 'ready';
+		memory.processingError = null;
+		memory.updatedAt = Date.now();
+	});
+}
+
+/**
+ * Walk every registered provider in priority order and return the first
+ * successful string result. Returns null if no provider produces a value
+ * (e.g. no provider supports the task or every one errors).
+ */
+async function runFirstSuccessful(
+	call: (provider: import('$lib/inference').InferenceProvider) => Promise<{
+		ok: boolean;
+		value?: string;
+		error?: string;
+	}>
+): Promise<string | null> {
+	for (const provider of inferenceRouter.allProviders()) {
+		try {
+			const result = await call(provider);
+			if (result.ok && result.value) {
+				return result.value;
+			}
+		} catch {
+			// Try next provider
+		}
+	}
+	return null;
 }
 
 export function getMemoryObject(id: string): MemoryObject | undefined {
@@ -767,6 +848,7 @@ export function updateMemoryObject(
 		}
 		if (updates.folderId !== undefined) memory.folderId = updates.folderId;
 		if (updates.processingState !== undefined) memory.processingState = updates.processingState;
+		if (updates.processingError !== undefined) memory.processingError = updates.processingError;
 		if (updates.summaryShort !== undefined) memory.summaryShort = updates.summaryShort;
 		if (updates.summaryLong !== undefined) memory.summaryLong = updates.summaryLong;
 		if (updates.transcript !== undefined) memory.transcript = updates.transcript;
@@ -1621,7 +1703,7 @@ export interface KurumiExport {
 export function exportFullJSON(): string {
 	if (!doc)
 		return JSON.stringify({
-			version: 6,
+			version: 7,
 			exportedAt: new Date().toISOString(),
 			vaults: [],
 			folders: [],
@@ -1630,7 +1712,7 @@ export function exportFullJSON(): string {
 			events: []
 		});
 	const exportData: KurumiExport = {
-		version: doc.version || 6,
+		version: doc.version || 7,
 		exportedAt: new Date().toISOString(),
 		vaults: Object.values(doc.vaults || {}),
 		folders: Object.values(doc.folders || {}),
@@ -1702,6 +1784,7 @@ function legacyNoteToMemoryObject(note: LegacyNoteImport, defaultVaultId: string
 		relatedMemoryIds: [],
 		visibilityScope: 'personal',
 		processingState: 'ready',
+		processingError: null,
 		confidenceScores: {},
 		embeddingRef: null,
 		vaultId: note.vaultId ?? defaultVaultId,

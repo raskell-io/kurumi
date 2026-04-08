@@ -355,6 +355,7 @@ export function parseNotesFromFiles(
 			relatedMemoryIds: [],
 			visibilityScope: 'personal',
 			processingState: 'ready',
+			processingError: null,
 			confidenceScores: {},
 			embeddingRef: null,
 			vaultId,

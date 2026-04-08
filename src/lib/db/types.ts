@@ -168,6 +168,7 @@ export interface MemoryObject {
 	relatedMemoryIds: string[];
 	visibilityScope: MemorySpace;
 	processingState: ProcessingState;
+	processingError: string | null;
 	confidenceScores: Record<string, number>;
 	embeddingRef: string | null;
 	vaultId: string;
@@ -264,7 +265,7 @@ export function createEmptyDocument(): KurumiDocument {
 		events: {},
 		templates: {},
 		currentVaultId: DEFAULT_VAULT_ID,
-		version: 6
+		version: 7
 	};
 }
 
@@ -313,6 +314,7 @@ export function createMemoryObject(
 		relatedMemoryIds: [],
 		visibilityScope: space,
 		processingState: 'ready',
+		processingError: null,
 		confidenceScores: {},
 		embeddingRef: null,
 		vaultId: options.vaultId ?? DEFAULT_VAULT_ID,

@@ -36,6 +36,7 @@ import type { ControlledLabel, TranscriptSegment } from '../../db/types';
 
 const OPENAI_KEY_STORAGE = 'kurumi-openai-key';
 const TRANSCRIBE_MODEL = 'whisper-1';
+const CHAT_MODEL = 'gpt-4o-mini';
 
 function getApiKey(): string | null {
 	if (typeof localStorage === 'undefined') return null;
@@ -62,6 +63,65 @@ interface WhisperVerboseResponse {
 		end: number;
 		text: string;
 	}>;
+}
+
+interface ChatCompletionResponse {
+	choices?: Array<{
+		message?: {
+			content?: string;
+		};
+	}>;
+}
+
+/**
+ * Shared helper for chat-completion calls. Returns the assistant text or
+ * an error message; latency is computed by the caller.
+ */
+async function callChat(
+	apiKey: string,
+	system: string,
+	user: string,
+	options?: TaskOptions
+): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+	try {
+		const response = await fetch('https://api.openai.com/v1/chat/completions', {
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${apiKey}`,
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify({
+				model: CHAT_MODEL,
+				messages: [
+					{ role: 'system', content: system },
+					{ role: 'user', content: user }
+				],
+				max_tokens: options?.maxTokens ?? 512,
+				temperature: options?.temperature ?? 0.3
+			}),
+			signal: options?.signal
+		});
+
+		if (!response.ok) {
+			const errText = await response.text().catch(() => '');
+			return {
+				ok: false,
+				error:
+					response.status === 401
+						? 'Invalid OpenAI API key'
+						: `OpenAI request failed (${response.status}): ${errText.slice(0, 200)}`
+			};
+		}
+
+		const data = (await response.json()) as ChatCompletionResponse;
+		const text = data.choices?.[0]?.message?.content?.trim();
+		if (!text) {
+			return { ok: false, error: 'OpenAI returned an empty response' };
+		}
+		return { ok: true, text };
+	} catch (err) {
+		return { ok: false, error: err instanceof Error ? err.message : 'Network error' };
+	}
 }
 
 export class OpenAIProvider implements InferenceProvider {
@@ -158,14 +218,61 @@ export class OpenAIProvider implements InferenceProvider {
 		}
 	}
 
-	// --- stubs for tasks not yet implemented on this provider ---------------
+	// --- chat-completion-backed tasks ---------------------------------------
 
 	async summarize(
-		_input: SummarizeInput,
-		_options?: TaskOptions
+		input: SummarizeInput,
+		options?: TaskOptions
 	): Promise<InferenceResult<string>> {
-		return notImplemented('summarize', 'remote');
+		const apiKey = getApiKey();
+		const startedAt = Date.now();
+		if (!apiKey) {
+			return {
+				ok: false,
+				error: 'OpenAI API key not configured',
+				target: 'remote',
+				providerId: 'openai',
+				model: CHAT_MODEL,
+				latencyMs: 0
+			};
+		}
+
+		const styleInstruction =
+			input.style === 'long'
+				? 'Write a thorough summary in a few paragraphs.'
+				: input.style === 'bullets'
+					? 'Write a bullet-point summary, one bullet per key point.'
+					: 'Write a concise summary in 1-3 sentences.';
+
+		const result = await callChat(
+			apiKey,
+			`You summarize text accurately and concisely. ${styleInstruction} Return only the summary, no preamble.`,
+			input.text,
+			options
+		);
+
+		if (!result.ok) {
+			return {
+				ok: false,
+				error: result.error,
+				target: 'remote',
+				providerId: 'openai',
+				model: CHAT_MODEL,
+				latencyMs: Date.now() - startedAt
+			};
+		}
+
+		return {
+			ok: true,
+			value: result.text,
+			target: 'remote',
+			providerId: 'openai',
+			model: CHAT_MODEL,
+			latencyMs: Date.now() - startedAt
+		};
 	}
+
+	// --- stubs for tasks not yet implemented on this provider ---------------
 
 	async summarizeMeeting(
 		_input: MeetingSummaryInput,
@@ -210,10 +317,51 @@ export class OpenAIProvider implements InferenceProvider {
 	}
 
 	async generateTitle(
-		_input: { text: string },
-		_options?: TaskOptions
+		input: { text: string },
+		options?: TaskOptions
 	): Promise<InferenceResult<string>> {
-		return notImplemented('generateTitle', 'remote');
+		const apiKey = getApiKey();
+		const startedAt = Date.now();
+		if (!apiKey) {
+			return {
+				ok: false,
+				error: 'OpenAI API key not configured',
+				target: 'remote',
+				providerId: 'openai',
+				model: CHAT_MODEL,
+				latencyMs: 0
+			};
+		}
+
+		const result = await callChat(
+			apiKey,
+			'Generate a short, descriptive title (3-8 words) for the following text. Return only the title, no quotes, no preamble, no trailing punctuation.',
+			input.text,
+			{ ...options, maxTokens: 32, temperature: 0.4 }
+		);
+
+		if (!result.ok) {
+			return {
+				ok: false,
+				error: result.error,
+				target: 'remote',
+				providerId: 'openai',
+				model: CHAT_MODEL,
+				latencyMs: Date.now() - startedAt
+			};
+		}
+
+		// Strip trailing punctuation and any wrapping quotes the model might add.
+		const cleaned = result.text.replace(/^["'`]+|["'`]+$/g, '').replace(/[.!?]+$/, '').trim();
+
+		return {
+			ok: true,
+			value: cleaned,
+			target: 'remote',
+			providerId: 'openai',
+			model: CHAT_MODEL,
+			latencyMs: Date.now() - startedAt
+		};
 	}
 
 	async proposeCanonicalLabels(

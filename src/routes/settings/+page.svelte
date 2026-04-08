@@ -41,9 +41,12 @@
 		updateLocalInferenceSettings,
 		whisperModelId,
 		whisperModelLabel,
+		textModelId,
+		textModelLabel,
 		localModelStatus,
 		preloadPipeline,
-		type WhisperModelSize
+		type WhisperModelSize,
+		type TextModelChoice
 	} from '$lib/inference';
 	import { onMount } from 'svelte';
 	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2, RefreshCw, CheckCircle, XCircle, Wifi, Sparkles, ChevronDown, Database, Cloud, Lock, Shield, BookOpen, Palette, HardDrive, Info, Type, GitBranch, Cpu } from 'lucide-svelte';
@@ -54,6 +57,12 @@
 	let theme = $state<'system' | 'light' | 'dark'>('system');
 	let editorFont = $state<'quattro' | 'geist'>('quattro');
 	let editorFontSize = $state<'small' | 'medium' | 'large'>('medium');
+
+	// Derived for the local-AI status panel
+	let currentTextModelId = $derived(textModelId($localInferenceSettings.textModel));
+	let textStatus = $derived(
+		$localModelStatus[`text-generation:${currentTextModelId}`] ?? { state: 'idle' as const }
+	);
 
 	// Import state
 	let showImportModal = $state(false);
@@ -949,6 +958,76 @@
 								</button>
 							{/if}
 						</div>
+					</div>
+
+					<!-- Text generation (opt-in) -->
+					<div class="mt-4 border-t border-[var(--color-border)] pt-4">
+						<label class="flex items-center justify-between gap-3">
+							<div>
+								<div class="text-sm font-medium text-[var(--color-text)]">Local text generation</div>
+								<div class="text-xs text-[var(--color-text-muted)]">Run summarization and title generation on-device. Larger download (~360 MB+).</div>
+							</div>
+							<input
+								type="checkbox"
+								checked={$localInferenceSettings.textModelEnabled}
+								onchange={(e) => updateLocalInferenceSettings({ textModelEnabled: (e.target as HTMLInputElement).checked })}
+								class="h-5 w-5 accent-[var(--color-accent)]"
+							/>
+						</label>
+
+						{#if $localInferenceSettings.textModelEnabled}
+							<div class="mt-3">
+								<label for="text-model" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+									Text model
+								</label>
+								<select
+									id="text-model"
+									value={$localInferenceSettings.textModel}
+									onchange={(e) => updateLocalInferenceSettings({ textModel: (e.target as HTMLSelectElement).value as TextModelChoice })}
+									class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-sm text-[var(--color-text)]"
+								>
+									<option value="smollm2-360m">{textModelLabel('smollm2-360m')}</option>
+									<option value="qwen2-0_5b">{textModelLabel('qwen2-0_5b')}</option>
+								</select>
+							</div>
+
+							<div class="mt-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3">
+								<div class="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+									Status
+								</div>
+								<div class="flex items-center justify-between gap-3">
+									<div class="text-sm text-[var(--color-text)]">
+										{#if textStatus.state === 'ready'}
+											<span class="inline-flex items-center gap-2">
+												<span class="h-2 w-2 rounded-full bg-green-500"></span>
+												Ready
+											</span>
+										{:else if textStatus.state === 'loading'}
+											<span class="inline-flex items-center gap-2">
+												<div class="h-3 w-3 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent"></div>
+												Downloading… {Math.round(textStatus.progress)}% ({textStatus.phase})
+											</span>
+										{:else if textStatus.state === 'error'}
+											<span class="inline-flex items-center gap-2 text-red-500">
+												<AlertTriangle class="h-3 w-3" />
+												{textStatus.error}
+											</span>
+										{:else}
+											<span class="text-[var(--color-text-muted)]">Not downloaded</span>
+										{/if}
+									</div>
+									{#if textStatus.state !== 'loading' && textStatus.state !== 'ready'}
+										<button
+											type="button"
+											onclick={() => preloadPipeline('text-generation', currentTextModelId)}
+											class="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-border)]"
+										>
+											Download now
+										</button>
+									{/if}
+								</div>
+							</div>
+						{/if}
 					</div>
 				</div>
 			{/if}
