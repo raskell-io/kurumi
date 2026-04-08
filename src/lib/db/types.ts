@@ -221,8 +221,10 @@ export interface ActionItem {
 	dueDate: string | null; // ISO date
 	status: ActionItemStatus;
 	confidence: number; // 0..1
+	vaultId: string;
 	createdAt: number;
 	updatedAt: number;
+	[key: string]: unknown; // Automerge compatibility
 }
 
 export interface Entity {
@@ -255,6 +257,7 @@ export interface KurumiDocument {
 	people: Record<string, Person>;
 	events: Record<string, Event>;
 	templates: Record<string, Template>;
+	actionItems: Record<string, ActionItem>;
 	currentVaultId: string;
 	version: number;
 	[key: string]: unknown; // Required for Automerge compatibility
@@ -290,8 +293,9 @@ export function createEmptyDocument(): KurumiDocument {
 		people: {},
 		events: {},
 		templates: {},
+		actionItems: {},
 		currentVaultId: DEFAULT_VAULT_ID,
-		version: 8
+		version: 9
 	};
 }
 

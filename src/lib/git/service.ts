@@ -27,7 +27,7 @@ import {
 	setGitProgress,
 	type GitSyncConfig
 } from './status';
-import type { MemoryObject, Folder, Vault, Person, Event } from '../db/types';
+import type { MemoryObject, Folder, Vault, Person, Event, ActionItem } from '../db/types';
 
 const REPO_DIR = '/repo';
 const METADATA_PATH = '.kurumi/metadata.json';
@@ -202,7 +202,8 @@ export async function writeNotesToRepo(
 	folders: Folder[],
 	vault: Vault,
 	people: Person[],
-	events: Event[]
+	events: Event[],
+	actionItems: ActionItem[] = []
 ): Promise<void> {
 	const pfs = getFsPromises();
 
@@ -210,7 +211,7 @@ export async function writeNotesToRepo(
 	const markdownFiles = notesToMarkdownFiles(memories, folders);
 
 	// Generate metadata
-	const metadata = createMetadata(vault, folders, memories, people, events);
+	const metadata = createMetadata(vault, folders, memories, people, events, actionItems);
 	const metadataJson = serializeMetadata(metadata);
 
 	// Write metadata file
@@ -408,11 +409,13 @@ export async function syncGit(
 	vault: Vault,
 	people: Person[],
 	events: Event[],
+	localActionItems: ActionItem[],
 	onImport: (
 		memories: MemoryObject[],
 		folders: Folder[],
 		people: Person[],
-		events: Event[]
+		events: Event[],
+		actionItems: ActionItem[]
 	) => Promise<void>
 ): Promise<void> {
 	const config = getGitSyncConfig();
@@ -440,21 +443,38 @@ export async function syncGit(
 			vault.id
 		);
 
-		// Get people and events from metadata
+		// Get people, events, and action items from metadata
 		const remotePeople = metadata ? Object.values(metadata.people) : [];
 		const remoteEvents = metadata ? Object.values(metadata.events) : [];
+		const remoteActionItems = metadata?.actionItems
+			? Object.values(metadata.actionItems)
+			: [];
 
 		// Merge: for now, prefer remote (last-write-wins based on updatedAt)
 		// This could be made smarter with proper conflict resolution
 		const mergedMemories = mergeMemoryLists(localMemories, remoteMemories);
 		const mergedFolders = mergeFolderLists(localFolders, remoteFolders);
+		const mergedActionItems = mergeActionItemLists(localActionItems, remoteActionItems);
 
 		// Import merged data
-		await onImport(mergedMemories, mergedFolders, remotePeople, remoteEvents);
+		await onImport(
+			mergedMemories,
+			mergedFolders,
+			remotePeople,
+			remoteEvents,
+			mergedActionItems
+		);
 	}
 
 	// Write local changes to repo
-	await writeNotesToRepo(localMemories, localFolders, vault, people, events);
+	await writeNotesToRepo(
+		localMemories,
+		localFolders,
+		vault,
+		people,
+		events,
+		localActionItems
+	);
 
 	// Check for changes
 	if (await hasLocalChanges()) {
@@ -504,6 +524,26 @@ function mergeFolderLists(local: Folder[], remote: Folder[]): Folder[] {
 		const existing = merged.get(folder.id);
 		if (!existing || folder.modified > existing.modified) {
 			merged.set(folder.id, folder);
+		}
+	}
+
+	return Array.from(merged.values());
+}
+
+/**
+ * Merge two lists of action items, preferring newer versions
+ */
+function mergeActionItemLists(local: ActionItem[], remote: ActionItem[]): ActionItem[] {
+	const merged = new Map<string, ActionItem>();
+
+	for (const item of local) {
+		merged.set(item.id, item);
+	}
+
+	for (const item of remote) {
+		const existing = merged.get(item.id);
+		if (!existing || item.updatedAt > existing.updatedAt) {
+			merged.set(item.id, item);
 		}
 	}
 

@@ -378,9 +378,14 @@
 
 						{#if extras.actionItems.length > 0}
 							<div class="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 md:mb-6">
-								<div class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-									<CheckSquare class="h-3 w-3" />
-									Action items
+								<div class="mb-2 flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+									<span class="flex items-center gap-2">
+										<CheckSquare class="h-3 w-3" />
+										Action items
+									</span>
+									<a href="/actions" class="text-[var(--color-accent)] hover:underline normal-case tracking-normal">
+										View dashboard →
+									</a>
 								</div>
 								<ul class="space-y-1 text-sm text-[var(--color-text)]">
 									{#each extras.actionItems as item}

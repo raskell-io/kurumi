@@ -11,7 +11,8 @@
 		transcribeMemoryAudio,
 		getAllTags,
 		folders,
-		trashCount
+		trashCount,
+		actionItems
 	} from '$lib/db';
 	import { storeBlob } from '$lib/db/blob-store';
 	import { initHashRouter, updateHashFromPath } from '$lib/hash-router';
@@ -32,7 +33,7 @@
 	import TemplatePicker from '$lib/components/TemplatePicker.svelte';
 	import VoiceCaptureModal from '$lib/components/VoiceCaptureModal.svelte';
 	import Snackbar from '$lib/components/Snackbar.svelte';
-	import { X, Plus, Search, ChevronDown, GitFork, BookOpen, Settings, ListTree, Cloud, RefreshCw, CheckCircle, AlertCircle, Pencil, Tag, Trash2, Mic, Users, CalendarDays } from 'lucide-svelte';
+	import { X, Plus, Search, ChevronDown, GitFork, BookOpen, Settings, ListTree, Cloud, RefreshCw, CheckCircle, AlertCircle, Pencil, Tag, Trash2, Mic, Users, CalendarDays, CheckSquare } from 'lucide-svelte';
 	import {
 		showNewNoteSnackbar,
 		triggerSearch,
@@ -237,6 +238,12 @@
 			if (e.shiftKey && e.key === 'r') {
 				e.preventDefault();
 				goto('/read');
+				if (isMobile) sidebarOpen = false;
+				return;
+			}
+			if (e.shiftKey && e.key === 'a') {
+				e.preventDefault();
+				goto('/actions');
 				if (isMobile) sidebarOpen = false;
 				return;
 			}
@@ -626,7 +633,7 @@
 				</div>
 			</div>
 
-			<!-- Search + Today -->
+			<!-- Search + Today + Actions -->
 			<div class="space-y-2 p-3 pt-0 md:pt-3">
 				<button
 					onclick={openSearch}
@@ -642,14 +649,29 @@
 						{navigator?.platform?.includes('Mac') ? '⌘' : 'Ctrl'}K
 					</kbd>
 				</button>
-				<a
-					href="/daily"
-					onclick={handleNoteClick}
-					class="flex w-full items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
-				>
-					<CalendarDays class="h-4 w-4" />
-					<span class="text-sm">Today's note</span>
-				</a>
+				<div class="grid grid-cols-2 gap-2">
+					<a
+						href="/daily"
+						onclick={handleNoteClick}
+						class="flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
+					>
+						<CalendarDays class="h-4 w-4 shrink-0" />
+						<span class="text-sm truncate">Today</span>
+					</a>
+					<a
+						href="/actions"
+						onclick={handleNoteClick}
+						class="relative flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
+					>
+						<CheckSquare class="h-4 w-4 shrink-0" />
+						<span class="text-sm truncate">Actions</span>
+						{#if $actionItems.filter((i) => i.status === 'open').length > 0}
+							<span class="ml-auto rounded-full bg-[var(--color-accent)] px-1.5 text-[10px] font-medium text-white">
+								{$actionItems.filter((i) => i.status === 'open').length}
+							</span>
+						{/if}
+					</a>
+				</div>
 			</div>
 
 			<!-- Tags Filter -->

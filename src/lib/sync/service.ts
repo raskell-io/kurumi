@@ -6,7 +6,8 @@ import {
 	vaults,
 	currentVaultId,
 	people,
-	events
+	events,
+	actionItems
 } from '$lib/db';
 import { setSyncing, setSyncSuccess, setSyncError, syncState } from './status';
 import { get } from 'svelte/store';
@@ -16,7 +17,7 @@ import {
 	syncGit,
 	testGitConnection as testGitConnectionService
 } from '$lib/git';
-import type { MemoryObject, Folder, Person, Event } from '$lib/db/types';
+import type { MemoryObject, Folder, Person, Event, ActionItem } from '$lib/db/types';
 
 const SYNC_URL_KEY = 'kurumi-sync-url';
 const SYNC_TOKEN_KEY = 'kurumi-sync-token';
@@ -220,13 +221,17 @@ async function syncGitMethod(): Promise<{ success: boolean; error?: string }> {
 		const localFolders = get(folders).filter((f) => f.vaultId === currentVault.id);
 		const localPeople = get(people).filter((p) => p.vaultId === currentVault.id);
 		const localEvents = get(events).filter((e) => e.vaultId === currentVault.id);
+		const localActionItems = get(actionItems).filter(
+			(a) => a.vaultId === currentVault.id
+		);
 
 		// Import callback - will be called when remote changes need to be imported
 		const onImport = async (
 			importedMemories: MemoryObject[],
 			importedFolders: Folder[],
 			importedPeople: Person[],
-			importedEvents: Event[]
+			importedEvents: Event[],
+			importedActionItems: ActionItem[]
 		) => {
 			// TODO: Implement proper import into Automerge store
 			// For now, this is a placeholder - the actual merge happens in syncGit
@@ -234,11 +239,20 @@ async function syncGitMethod(): Promise<{ success: boolean; error?: string }> {
 				memories: importedMemories.length,
 				folders: importedFolders.length,
 				people: importedPeople.length,
-				events: importedEvents.length
+				events: importedEvents.length,
+				actionItems: importedActionItems.length
 			});
 		};
 
-		await syncGit(localMemories, localFolders, currentVault, localPeople, localEvents, onImport);
+		await syncGit(
+			localMemories,
+			localFolders,
+			currentVault,
+			localPeople,
+			localEvents,
+			localActionItems,
+			onImport
+		);
 		return { success: true };
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Git sync failed';

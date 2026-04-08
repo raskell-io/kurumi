@@ -7,7 +7,7 @@
  * MemoryObject's `createdAt` / `updatedAt` / `bodyMarkdown` internally.
  */
 
-import type { MemoryObject, Folder, Vault, Person, Event } from '../db/types';
+import type { MemoryObject, Folder, Vault, Person, Event, ActionItem } from '../db/types';
 import { generateSlug } from '../utils/markdown-export';
 
 // Re-export generateSlug for use elsewhere
@@ -24,6 +24,7 @@ export interface GitMetadata {
 	noteIds: Record<string, string>; // path -> memoryId mapping
 	people: Record<string, Person>;
 	events: Record<string, Event>;
+	actionItems?: Record<string, ActionItem>;
 }
 
 export interface MarkdownFile {
@@ -166,7 +167,8 @@ export function createMetadata(
 	folders: Folder[],
 	memories: MemoryObject[],
 	people: Person[],
-	events: Event[]
+	events: Event[],
+	actionItems: ActionItem[] = []
 ): GitMetadata {
 	const foldersMap: Record<string, { name: string; parentId: string | null }> = {};
 	for (const folder of folders) {
@@ -189,8 +191,13 @@ export function createMetadata(
 		eventsMap[event.id] = event;
 	}
 
+	const actionItemsMap: Record<string, ActionItem> = {};
+	for (const item of actionItems) {
+		actionItemsMap[item.id] = item;
+	}
+
 	return {
-		version: 1,
+		version: 2,
 		vault: {
 			id: vault.id,
 			name: vault.name,
@@ -199,7 +206,8 @@ export function createMetadata(
 		folders: foldersMap,
 		noteIds,
 		people: peopleMap,
-		events: eventsMap
+		events: eventsMap,
+		actionItems: actionItemsMap
 	};
 }
 

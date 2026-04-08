@@ -21,7 +21,10 @@ import {
 	type Vault,
 	type Person,
 	type Event,
-	type Template
+	type Template,
+	type ActionItem,
+	type ActionItemStatus,
+	type MeetingActionItemDraft
 } from './types';
 
 const STORAGE_KEY = 'kurumi-doc';
@@ -116,6 +119,33 @@ export const templates: Readable<Template[]> = derived(
 		return Object.values($doc.templates)
 			.filter((template) => template.vaultId === $vaultId)
 			.sort((a, b) => a.name.localeCompare(b.name));
+	}
+);
+
+// Derived store for action items in the current vault. Sorted so that
+// non-terminal statuses come first (open > in_progress > done/cancelled),
+// then by due date ascending (nulls last), then by createdAt descending.
+export const actionItems: Readable<ActionItem[]> = derived(
+	[docStore, currentVaultId],
+	([$doc, $vaultId]) => {
+		if (!$doc || !$doc.actionItems) return [];
+		const statusOrder: Record<ActionItemStatus, number> = {
+			open: 0,
+			in_progress: 1,
+			done: 2,
+			cancelled: 3
+		};
+		return Object.values($doc.actionItems)
+			.filter((item) => item.vaultId === $vaultId)
+			.sort((a, b) => {
+				const s = statusOrder[a.status] - statusOrder[b.status];
+				if (s !== 0) return s;
+				// Due date asc, nulls last
+				if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+				if (a.dueDate) return -1;
+				if (b.dueDate) return 1;
+				return b.createdAt - a.createdAt;
+			});
 	}
 );
 
@@ -436,6 +466,17 @@ export async function initDB(): Promise<void> {
 						}
 					}
 					d.version = 8;
+				});
+				await saveDoc();
+			}
+
+			// Migrate: add top-level actionItems collection (v8 -> v9) so
+			// extracted drafts can be promoted to persistent entities with
+			// status tracking.
+			if ((doc.version ?? 0) < 9) {
+				doc = Automerge.change(doc, (d) => {
+					if (!d.actionItems) d.actionItems = {};
+					d.version = 9;
 				});
 				await saveDoc();
 			}
@@ -924,6 +965,10 @@ export async function transcribeMemoryAudio(
 			memory.processingError = null;
 			memory.updatedAt = Date.now();
 		});
+		// Promote meeting action item drafts into persistent ActionItem
+		// entities so they surface on the /actions dashboard. Safe to call
+		// repeatedly (dedupes by text).
+		promoteDraftActionItems(memoryId);
 		// Refresh the embedding so semantic search picks up the new transcript
 		// + summary immediately rather than waiting for the next ask.
 		void embedMemory(memoryId);
@@ -1646,6 +1691,106 @@ export function deleteTemplate(id: string): void {
 	});
 }
 
+// ============ ActionItem CRUD ============
+
+export function addActionItem(options: {
+	memoryObjectId: string;
+	text: string;
+	assignee?: string | null;
+	dueDate?: string | null;
+	status?: ActionItemStatus;
+	confidence?: number;
+}): ActionItem {
+	const now = Date.now();
+	const item: ActionItem = {
+		id: generateId(),
+		memoryObjectId: options.memoryObjectId,
+		text: options.text,
+		assignee: options.assignee ?? null,
+		dueDate: options.dueDate ?? null,
+		status: options.status ?? 'open',
+		confidence: options.confidence ?? 1,
+		vaultId: getCurrentVaultId(),
+		createdAt: now,
+		updatedAt: now
+	};
+	updateDoc((d) => {
+		if (!d.actionItems) d.actionItems = {};
+		d.actionItems[item.id] = item;
+		// Also record the id on the source memory for fast lookup.
+		const memory = d.memoryObjects[options.memoryObjectId];
+		if (memory && !memory.actionItems.includes(item.id)) {
+			memory.actionItems.push(item.id);
+		}
+	});
+	return item;
+}
+
+export function updateActionItemStatus(id: string, status: ActionItemStatus): void {
+	updateDoc((d) => {
+		const item = d.actionItems?.[id];
+		if (item) {
+			item.status = status;
+			item.updatedAt = Date.now();
+		}
+	});
+}
+
+export function updateActionItem(
+	id: string,
+	updates: { text?: string; assignee?: string | null; dueDate?: string | null }
+): void {
+	updateDoc((d) => {
+		const item = d.actionItems?.[id];
+		if (!item) return;
+		if (updates.text !== undefined) item.text = updates.text;
+		if (updates.assignee !== undefined) item.assignee = updates.assignee;
+		if (updates.dueDate !== undefined) item.dueDate = updates.dueDate;
+		item.updatedAt = Date.now();
+	});
+}
+
+export function deleteActionItem(id: string): void {
+	updateDoc((d) => {
+		const item = d.actionItems?.[id];
+		if (!item) return;
+		const memory = d.memoryObjects[item.memoryObjectId];
+		if (memory) {
+			memory.actionItems = memory.actionItems.filter((x) => x !== id);
+		}
+		delete d.actionItems![id];
+	});
+}
+
+/**
+ * Promote the draft action items sitting on a meeting's meetingExtras
+ * into top-level ActionItem entities. Called after meeting summarization
+ * completes. Safe to call repeatedly — drafts already promoted (matched
+ * by text) are skipped.
+ */
+export function promoteDraftActionItems(memoryId: string): void {
+	if (!doc) return;
+	const memory = doc.memoryObjects[memoryId];
+	if (!memory || !memory.meetingExtras) return;
+	const existingIds = new Set(memory.actionItems);
+	const existingTexts = new Set(
+		memory.actionItems
+			.map((id) => doc!.actionItems?.[id]?.text)
+			.filter((t): t is string => typeof t === 'string')
+	);
+	const drafts = memory.meetingExtras.actionItems as MeetingActionItemDraft[];
+	for (const draft of drafts) {
+		if (existingTexts.has(draft.text)) continue;
+		const item = addActionItem({
+			memoryObjectId: memoryId,
+			text: draft.text,
+			assignee: draft.assignee,
+			dueDate: draft.dueDate
+		});
+		existingIds.add(item.id);
+	}
+}
+
 // Get current vault name (for template variables)
 export function getCurrentVaultName(): string {
 	if (!doc?.vaults) return 'Default';
@@ -1807,14 +1952,16 @@ function manualMerge(
 		folders: localDoc.folders || {},
 		memoryObjects: localDoc.memoryObjects || {},
 		people: localDoc.people || {},
-		events: localDoc.events || {}
+		events: localDoc.events || {},
+		actionItems: localDoc.actionItems || {}
 	});
 	const remoteData = deepCopy({
 		vaults: remoteDoc.vaults || {},
 		folders: remoteDoc.folders || {},
 		memoryObjects: remoteDoc.memoryObjects || {},
 		people: remoteDoc.people || {},
-		events: remoteDoc.events || {}
+		events: remoteDoc.events || {},
+		actionItems: remoteDoc.actionItems || {}
 	});
 
 	return Automerge.change(baseDoc, (d) => {
@@ -1879,6 +2026,23 @@ function manualMerge(
 			const newest = pickNewestBy(localData.events[id], remoteData.events[id], byModified);
 			if (newest && !d.events[id]) {
 				d.events[id] = newest;
+			}
+		}
+
+		// Merge action items
+		if (!d.actionItems) d.actionItems = {};
+		const allActionIds = new Set([
+			...Object.keys(localData.actionItems),
+			...Object.keys(remoteData.actionItems)
+		]);
+		for (const id of allActionIds) {
+			const newest = pickNewestBy(
+				localData.actionItems[id],
+				remoteData.actionItems[id],
+				byUpdatedAt
+			);
+			if (newest) {
+				d.actionItems[id] = newest;
 			}
 		}
 	});
@@ -1984,7 +2148,7 @@ export interface KurumiExport {
 export function exportFullJSON(): string {
 	if (!doc)
 		return JSON.stringify({
-			version: 8,
+			version: 9,
 			exportedAt: new Date().toISOString(),
 			vaults: [],
 			folders: [],
