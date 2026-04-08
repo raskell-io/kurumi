@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { notes, folders, type Note, type Folder } from '$lib/db';
+	import { memoryObjects, folders, type MemoryObject } from '$lib/db';
 	import { Search, NotebookText } from 'lucide-svelte';
 
 	interface Props {
@@ -56,13 +56,13 @@
 		return folder?.name ?? '';
 	}
 
-	// Filter and sort notes
+	// Filter and sort memories
 	let filteredNotes = $derived.by(() => {
 		const q = query.toLowerCase().trim();
 
-		let filtered = $notes.filter((note) => {
+		let filtered = $memoryObjects.filter((memory) => {
 			if (!q) return true;
-			return (note.title || 'Untitled').toLowerCase().includes(q);
+			return (memory.title || 'Untitled').toLowerCase().includes(q);
 		});
 
 		// Sort by folder proximity, then by title
@@ -112,8 +112,8 @@
 		}
 	}
 
-	function handleSelect(note: Note) {
-		onSelect(note.title || 'Untitled');
+	function handleSelect(memory: MemoryObject) {
+		onSelect(memory.title || 'Untitled');
 	}
 </script>
 

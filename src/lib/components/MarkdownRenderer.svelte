@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { marked } from 'marked';
-	import { findNoteByTitle } from '$lib/db';
+	import { findMemoryObjectByTitle } from '$lib/db';
 
 	interface Props {
 		content: string;
@@ -13,9 +13,9 @@
 	function postProcessHtml(html: string): string {
 		// Process wikilinks [[Title]]
 		html = html.replace(/\[\[([^\]]+)\]\]/g, (_, title) => {
-			const note = findNoteByTitle(title);
-			if (note) {
-				return `<a href="/read/${note.id}" class="wikilink">${title}</a>`;
+			const memory = findMemoryObjectByTitle(title);
+			if (memory) {
+				return `<a href="/read/${memory.id}" class="wikilink">${title}</a>`;
 			}
 			return `<a href="/?search=${encodeURIComponent(title)}" class="wikilink wikilink-broken">${title}</a>`;
 		});

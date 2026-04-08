@@ -3,18 +3,18 @@
 	import { goto } from '$app/navigation';
 	import {
 		folders,
-		notes,
+		memoryObjects,
 		addFolder,
-		addNote,
+		addMemoryObject,
 		deleteFolder,
-		deleteNote,
+		deleteMemoryObject,
 		updateFolder,
-		updateNote,
-		moveNoteToFolder,
+		updateMemoryObject,
+		moveMemoryObjectToFolder,
 		moveFolderToFolder,
 		vaults,
 		currentVaultId,
-		moveNoteToVault,
+		moveMemoryObjectToVault,
 		moveFolderToVault
 	} from '$lib/db';
 	import {
@@ -100,20 +100,21 @@
 	type SortOrder = 'name-asc' | 'name-desc' | 'modified-desc' | 'modified-asc';
 	let sortOrder = $state<SortOrder>('name-asc');
 
-	// Sort function
-	function sortItems<T extends { name?: string; title?: string; modified: number }>(items: T[]): T[] {
+	// Sort function — works for both Folder ({name, modified}) and MemoryObject ({title, updatedAt})
+	type Sortable = { name?: string; title?: string; modified?: number; updatedAt?: number };
+	function sortItems<T extends Sortable>(items: T[]): T[] {
+		const getName = (item: T): string => item.name ?? item.title ?? '';
+		const getTime = (item: T): number => item.updatedAt ?? item.modified ?? 0;
 		return [...items].sort((a, b) => {
-			const nameA = ('name' in a ? a.name : a.title) || '';
-			const nameB = ('name' in b ? b.name : b.title) || '';
 			switch (sortOrder) {
 				case 'name-asc':
-					return nameA.localeCompare(nameB);
+					return getName(a).localeCompare(getName(b));
 				case 'name-desc':
-					return nameB.localeCompare(nameA);
+					return getName(b).localeCompare(getName(a));
 				case 'modified-desc':
-					return b.modified - a.modified;
+					return getTime(b) - getTime(a);
 				case 'modified-asc':
-					return a.modified - b.modified;
+					return getTime(a) - getTime(b);
 				default:
 					return 0;
 			}
@@ -126,9 +127,9 @@
 		sortOrder = orders[(currentIndex + 1) % orders.length];
 	}
 
-	// Get root folders and notes (must depend on reactive stores)
+	// Get root folders and memories (must depend on reactive stores)
 	let rootFolders = $derived(sortItems($folders.filter((f) => f.parentId === null)));
-	let rootNotes = $derived(sortItems($notes.filter((n) => n.folderId === null)));
+	let rootMemories = $derived(sortItems($memoryObjects.filter((m) => m.folderId === null)));
 
 	function toggleFolder(folderId: string) {
 		const newSet = new Set(expandedFolders);
@@ -186,9 +187,9 @@
 
 	async function handleCreateNote(folderId: string | null) {
 		closeContextMenu();
-		const note = addNote(undefined, undefined, folderId);
+		const memory = addMemoryObject(undefined, undefined, folderId);
 		onNoteClick?.();
-		await goto(`/note/${note.id}`);
+		await goto(`/note/${memory.id}`);
 		onNoteCreate?.();
 	}
 
@@ -232,16 +233,16 @@
 
 	function handleRenameNote(noteId: string) {
 		closeContextMenu();
-		const note = $notes.find((n) => n.id === noteId);
-		if (note) {
+		const memory = $memoryObjects.find((m) => m.id === noteId);
+		if (memory) {
 			renamingNote = noteId;
-			renameValue = note.title || '';
+			renameValue = memory.title || '';
 		}
 	}
 
 	function submitNoteRename() {
 		if (renamingNote) {
-			updateNote(renamingNote, { title: renameValue.trim() || 'Untitled' });
+			updateMemoryObject(renamingNote, { title: renameValue.trim() || 'Untitled' });
 		}
 		renamingNote = null;
 		renameValue = '';
@@ -265,7 +266,7 @@
 
 	function handleMoveNoteToRoot() {
 		if (contextMenuNote) {
-			moveNoteToFolder(contextMenuNote, null);
+			moveMemoryObjectToFolder(contextMenuNote, null);
 		}
 		closeContextMenu();
 	}
@@ -336,7 +337,7 @@
 		}
 
 		if (draggedItem.type === 'note') {
-			moveNoteToFolder(draggedItem.id, targetFolderId);
+			moveMemoryObjectToFolder(draggedItem.id, targetFolderId);
 		} else if (draggedItem.type === 'folder') {
 			moveFolderToFolder(draggedItem.id, targetFolderId);
 		}
@@ -440,7 +441,7 @@
 
 			// Perform the move
 			if (draggedItem.type === 'note') {
-				moveNoteToFolder(draggedItem.id, targetFolderId);
+				moveMemoryObjectToFolder(draggedItem.id, targetFolderId);
 			} else if (draggedItem.type === 'folder') {
 				moveFolderToFolder(draggedItem.id, targetFolderId);
 			}
@@ -533,8 +534,8 @@
 
 	function getItemLabel(item: DragItem): string {
 		if (item.type === 'note') {
-			const note = $notes.find((n) => n.id === item.id);
-			return note?.title || 'Untitled';
+			const memory = $memoryObjects.find((m) => m.id === item.id);
+			return memory?.title || 'Untitled';
 		} else {
 			const folder = $folders.find((f) => f.id === item.id);
 			return folder?.name || 'Folder';
@@ -660,10 +661,10 @@
 		// Get the name for notification/confirmation
 		let name = '';
 		if (type === 'note') {
-			const note = $notes.find(n => n.id === id);
-			name = note?.title || 'Untitled';
+			const memory = $memoryObjects.find((m) => m.id === id);
+			name = memory?.title || 'Untitled';
 		} else {
-			const folder = $folders.find(f => f.id === id);
+			const folder = $folders.find((f) => f.id === id);
 			name = folder?.name || 'Folder';
 		}
 
@@ -689,7 +690,7 @@
 				if (isNoteActive(id)) {
 					goto('/');
 				}
-				deleteNote(id);
+				deleteMemoryObject(id);
 				onNoteDelete?.(name);
 			} else {
 				deleteFolder(id, false);
@@ -744,9 +745,9 @@
 		if (type === 'folder') {
 			selectFolder(id);
 		} else {
-			// When clicking a note, select its parent folder (or deselect if at root)
-			const note = $notes.find(n => n.id === id);
-			selectedFolderId = note?.folderId ?? null;
+			// When clicking a memory, select its parent folder (or deselect if at root)
+			const memory = $memoryObjects.find((m) => m.id === id);
+			selectedFolderId = memory?.folderId ?? null;
 		}
 	}
 
@@ -759,14 +760,14 @@
 		const match = $page.url.pathname.match(/^\/note\/(.+)$/);
 		if (!match) return;
 
-		const noteId = match[1];
-		const note = $notes.find((n) => n.id === noteId);
-		if (!note) return;
+		const memoryId = match[1];
+		const memory = $memoryObjects.find((m) => m.id === memoryId);
+		if (!memory) return;
 
-		// If note is in a folder, expand all parent folders
-		if (note.folderId) {
+		// If memory is in a folder, expand all parent folders
+		if (memory.folderId) {
 			const foldersToExpand = new Set<string>();
-			let currentFolderId: string | null = note.folderId;
+			let currentFolderId: string | null = memory.folderId;
 
 			while (currentFolderId) {
 				foldersToExpand.add(currentFolderId);
@@ -777,9 +778,9 @@
 			expandedFolders = new Set([...expandedFolders, ...foldersToExpand]);
 		}
 
-		// Scroll to the note element
+		// Scroll to the memory element
 		setTimeout(() => {
-			const noteElement = document.querySelector(`a[href="/note/${noteId}"]`);
+			const noteElement = document.querySelector(`a[href="/note/${memoryId}"]`);
 			noteElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 		}, 100);
 	}
@@ -909,9 +910,9 @@
 	<!-- Recursive folder snippet for unlimited nesting -->
 	{#snippet renderFolder(folder: typeof $folders[0])}
 		{@const subfolders = sortItems($folders.filter((f) => f.parentId === folder.id))}
-		{@const folderNotes = sortItems($notes.filter((n) => n.folderId === folder.id))}
+		{@const folderMemories = sortItems($memoryObjects.filter((m) => m.folderId === folder.id))}
 		{@const isExpanded = expandedFolders.has(folder.id)}
-		{@const hasContents = subfolders.length > 0 || folderNotes.length > 0}
+		{@const hasContents = subfolders.length > 0 || folderMemories.length > 0}
 		{@const folderSwipeOffset = getSwipeOffset('folder', folder.id)}
 		{@const isSelected = selectedFolderId === folder.id}
 
@@ -975,7 +976,7 @@
 						<ChevronRight class="h-4 w-4 transition-transform {isExpanded ? 'rotate-90' : ''}" />
 					</button>
 					<span class="ml-auto text-xs text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100">
-						{folderNotes.length}
+						{folderMemories.length}
 					</span>
 				</div>
 			</div>
@@ -1007,21 +1008,21 @@
 						{@render renderFolder(subfolder)}
 					{/each}
 
-					<!-- Notes in this folder (after subfolders) -->
-					{#each folderNotes as note (note.id)}
-						{@render renderNote(note)}
+					<!-- Memories in this folder (after subfolders) -->
+					{#each folderMemories as memory (memory.id)}
+						{@render renderNote(memory)}
 					{/each}
 				</div>
 			{/if}
 		</div>
 	{/snippet}
 
-	<!-- Note snippet for reuse -->
-	{#snippet renderNote(note: typeof $notes[0])}
-		{@const swipeOffset = getSwipeOffset('note', note.id)}
-		<div class="swipe-container relative mb-0.5 overflow-hidden rounded-lg" class:deleting={isDeleting('note', note.id)}>
+	<!-- Memory snippet for reuse -->
+	{#snippet renderNote(memory: typeof $memoryObjects[0])}
+		{@const swipeOffset = getSwipeOffset('note', memory.id)}
+		<div class="swipe-container relative mb-0.5 overflow-hidden rounded-lg" class:deleting={isDeleting('note', memory.id)}>
 			<button
-				onclick={() => requestDelete('note', note.id)}
+				onclick={() => requestDelete('note', memory.id)}
 				class="delete-action absolute right-0 top-0 flex h-full items-center justify-center bg-red-500 text-white transition-opacity"
 				style="width: {DELETE_BUTTON_WIDTH}px; opacity: {swipeOffset > 0 ? 1 : 0};"
 				tabindex={swipeOffset > 0 ? 0 : -1}
@@ -1029,23 +1030,23 @@
 				<Trash2 class="h-5 w-5" />
 			</button>
 			<a
-				href="/note/{note.id}"
-				onclick={(e) => { handleRowClick(e, 'note', note.id); if (!(swipeOpenItem?.type === 'note' && swipeOpenItem.id === note.id)) handleNoteClick(); }}
-				oncontextmenu={(e) => handleNoteContextMenu(e, note.id)}
-				ontouchstart={(e) => handleSwipeStart(e, { type: 'note', id: note.id })}
+				href="/note/{memory.id}"
+				onclick={(e) => { handleRowClick(e, 'note', memory.id); if (!(swipeOpenItem?.type === 'note' && swipeOpenItem.id === memory.id)) handleNoteClick(); }}
+				oncontextmenu={(e) => handleNoteContextMenu(e, memory.id)}
+				ontouchstart={(e) => handleSwipeStart(e, { type: 'note', id: memory.id })}
 				ontouchmove={handleSwipeMove}
 				ontouchend={handleSwipeEnd}
 				class="note-row relative flex items-center rounded-lg bg-[var(--color-bg-secondary)] px-2 py-2 transition-transform hover:bg-[var(--color-border)]"
-				class:bg-[var(--color-accent)]={isNoteActive(note.id)}
-				class:text-white={isNoteActive(note.id)}
-				class:dragging={draggedItem?.type === 'note' && draggedItem.id === note.id}
+				class:bg-[var(--color-accent)]={isNoteActive(memory.id)}
+				class:text-white={isNoteActive(memory.id)}
+				class:dragging={draggedItem?.type === 'note' && draggedItem.id === memory.id}
 				style="transform: translateX(-{swipeOffset}px);"
 				draggable="true"
-				ondragstart={(e) => handleDragStart(e, { type: 'note', id: note.id })}
+				ondragstart={(e) => handleDragStart(e, { type: 'note', id: memory.id })}
 				ondragend={handleDragEnd}
 			>
-				<NotebookText class="mr-2 h-5 w-5 shrink-0 {!isNoteActive(note.id) ? 'text-[var(--color-text-muted)]' : ''}" />
-				{#if renamingNote === note.id}
+				<NotebookText class="mr-2 h-5 w-5 shrink-0 {!isNoteActive(memory.id) ? 'text-[var(--color-text-muted)]' : ''}" />
+				{#if renamingNote === memory.id}
 					<input
 						type="text"
 						bind:value={renameValue}
@@ -1061,21 +1062,21 @@
 				{:else}
 					<span
 						class="truncate text-base"
-						ondblclick={(e) => handleDoubleClick(e, 'note', note.id)}
-					>{note.title || 'Untitled'}</span>
+						ondblclick={(e) => handleDoubleClick(e, 'note', memory.id)}
+					>{memory.title || 'Untitled'}</span>
 				{/if}
 			</a>
 		</div>
 	{/snippet}
 
-	<!-- Root level: folders first, then notes -->
+	<!-- Root level: folders first, then memories -->
 	{#each rootFolders as folder (folder.id)}
 		{@render renderFolder(folder)}
 	{/each}
 
-	<!-- Root notes (not in any folder) - shown at root level after folders -->
-	{#each rootNotes as note (note.id)}
-		{@render renderNote(note)}
+	<!-- Root memories (not in any folder) - shown at root level after folders -->
+	{#each rootMemories as memory (memory.id)}
+		{@render renderNote(memory)}
 	{/each}
 </div>
 
@@ -1154,9 +1155,9 @@
 	</div>
 {/if}
 
-<!-- Context Menu for Notes -->
+<!-- Context Menu for Memories -->
 {#if contextMenuNote}
-	{@const note = $notes.find((n) => n.id === contextMenuNote)}
+	{@const memory = $memoryObjects.find((m) => m.id === contextMenuNote)}
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
@@ -1165,7 +1166,7 @@
 		onclick={(e) => e.stopPropagation()}
 		role="menu"
 	>
-		{#if note?.folderId}
+		{#if memory?.folderId}
 			<button
 				onclick={handleMoveNoteToRoot}
 				class="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-border)]"
@@ -1175,7 +1176,7 @@
 			</button>
 		{/if}
 		{#if $vaults.length > 1}
-			{#if note?.folderId}
+			{#if memory?.folderId}
 				<div class="my-1 border-t border-[var(--color-border)]"></div>
 			{/if}
 			<div class="relative">
@@ -1194,7 +1195,7 @@
 						{#each $vaults.filter((v) => v.id !== $currentVaultId) as vault (vault.id)}
 							<button
 								onclick={() => {
-									moveNoteToVault(contextMenuNote!, vault.id);
+									moveMemoryObjectToVault(contextMenuNote!, vault.id);
 									closeContextMenu();
 								}}
 								class="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-border)]"

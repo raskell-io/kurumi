@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { get } from 'svelte/store';
-	import { notes, folders, extractWikilinks, type Note, type Folder } from '$lib/db';
+	import { memoryObjects, folders, extractWikilinks, type MemoryObject, type Folder } from '$lib/db';
 	import { goto } from '$app/navigation';
 	import ForceGraph from 'force-graph';
 	import { Search, X, XCircle, ArrowRight } from 'lucide-svelte';
@@ -16,20 +15,20 @@
 	let graph: ReturnType<typeof ForceGraph> | null = null;
 
 	// Store subscriptions for Svelte 5 runes mode
-	let notesData = $state<Note[]>([]);
+	let memoriesData = $state<MemoryObject[]>([]);
 	let foldersData = $state<Folder[]>([]);
 	let mounted = $state(false);
 
 	// Subscribe to stores and update state
 	$effect(() => {
-		const unsubNotes = notes.subscribe((n) => {
-			notesData = n;
+		const unsubMemories = memoryObjects.subscribe((m) => {
+			memoriesData = m;
 		});
 		const unsubFolders = folders.subscribe((f) => {
 			foldersData = f;
 		});
 		return () => {
-			unsubNotes();
+			unsubMemories();
 			unsubFolders();
 		};
 	});
@@ -115,50 +114,50 @@
 	}
 
 	function buildGraphData(): { nodes: GraphNode[]; links: GraphLink[] } {
-		const allNotes = notesData;
-		// Map note titles (trimmed and lowercased) to their IDs for link matching
-		const noteMap = new Map(allNotes.map((n) => [n.title.trim().toLowerCase(), n.id]));
+		const all = memoriesData;
+		// Map memory titles (trimmed and lowercased) to their IDs for link matching
+		const memoryMap = new Map(all.map((m) => [m.title.trim().toLowerCase(), m.id]));
 		const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
-		// Calculate backlinks for each note
+		// Calculate backlinks for each memory
 		const backlinkCounts = new Map<string, number>();
-		for (const note of allNotes) {
-			const wikilinks = extractWikilinks(note.content);
+		for (const memory of all) {
+			const wikilinks = extractWikilinks(memory.bodyMarkdown);
 			for (const link of wikilinks) {
-				const targetId = noteMap.get(link.trim().toLowerCase());
+				const targetId = memoryMap.get(link.trim().toLowerCase());
 				if (targetId) {
 					backlinkCounts.set(targetId, (backlinkCounts.get(targetId) || 0) + 1);
 				}
 			}
 		}
 
-		const nodes: GraphNode[] = allNotes.map((note) => {
-			const linkCount = extractWikilinks(note.content).length;
-			const backlinkCount = backlinkCounts.get(note.id) || 0;
-			// Color by folder, with special highlight for the current note
-			const folderColor = getFolderColor(note.folderId, isDark);
+		const nodes: GraphNode[] = all.map((memory) => {
+			const linkCount = extractWikilinks(memory.bodyMarkdown).length;
+			const backlinkCount = backlinkCounts.get(memory.id) || 0;
+			// Color by folder, with special highlight for the current memory
+			const folderColor = getFolderColor(memory.folderId, isDark);
 			return {
-				id: note.id,
-				name: note.title || 'Untitled',
+				id: memory.id,
+				name: memory.title || 'Untitled',
 				val: Math.max(2, linkCount + backlinkCount + 1),
-				color: note.id === highlightNoteId ? '#818cf8' : folderColor,
-				content: note.content,
-				folderId: note.folderId,
-				created: note.created,
-				modified: note.modified,
+				color: memory.id === highlightNoteId ? '#818cf8' : folderColor,
+				content: memory.bodyMarkdown,
+				folderId: memory.folderId,
+				created: memory.createdAt,
+				modified: memory.updatedAt,
 				linkCount,
 				backlinkCount
 			};
 		});
 
 		const links: GraphLink[] = [];
-		for (const note of allNotes) {
-			const wikilinks = extractWikilinks(note.content);
+		for (const memory of all) {
+			const wikilinks = extractWikilinks(memory.bodyMarkdown);
 			for (const link of wikilinks) {
-				// Trim and lowercase to match against noteMap
-				const targetId = noteMap.get(link.trim().toLowerCase());
-				if (targetId && targetId !== note.id) {
-					links.push({ source: note.id, target: targetId });
+				// Trim and lowercase to match against memoryMap
+				const targetId = memoryMap.get(link.trim().toLowerCase());
+				if (targetId && targetId !== memory.id) {
+					links.push({ source: memory.id, target: targetId });
 				}
 			}
 		}
@@ -340,18 +339,18 @@
 
 	// Initialize or update graph when data changes
 	$effect(() => {
-		// Explicitly read notesData to establish dependency
-		const currentNotes = notesData;
+		// Explicitly read memoriesData to establish dependency
+		const current = memoriesData;
 
 		// Only proceed after mount and when we have a container
 		if (!mounted || !containerRef) return;
 
 		// Initialize graph if not yet created and we have data
-		if (!graph && currentNotes.length > 0) {
+		if (!graph && current.length > 0) {
 			initGraph();
 		}
 		// Update existing graph when data changes
-		else if (graph && currentNotes.length > 0) {
+		else if (graph && current.length > 0) {
 			const { nodes, links } = buildGraphData();
 			graph.graphData({ nodes, links });
 		}
@@ -361,7 +360,7 @@
 		mounted = true;
 		// Small delay to ensure container is ready
 		requestAnimationFrame(() => {
-			if (notesData.length > 0 && containerRef && !graph) {
+			if (memoriesData.length > 0 && containerRef && !graph) {
 				initGraph();
 			}
 		});
@@ -493,9 +492,9 @@
 	// Count matching nodes
 	let matchCount = $derived.by(() => {
 		if (!searchQuery.trim()) return 0;
-		return notesData.filter(n => {
+		return memoriesData.filter((m) => {
 			const q = searchQuery.toLowerCase();
-			return n.title.toLowerCase().includes(q) || n.content.toLowerCase().includes(q);
+			return m.title.toLowerCase().includes(q) || m.bodyMarkdown.toLowerCase().includes(q);
 		}).length;
 	});
 

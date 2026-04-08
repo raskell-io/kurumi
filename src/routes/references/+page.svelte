@@ -4,11 +4,11 @@
 		getAllLinks,
 		getAllPeopleWithMetadata,
 		getAllDatesWithEvents,
-		getNotesByTag,
-		getNotesByLink,
+		getMemoryObjectsByTag,
+		getMemoryObjectsByLink,
 		people as peopleStore,
 		events as eventsStore,
-		type Note
+		type MemoryObject
 	} from '$lib/db';
 	import { get } from 'svelte/store';
 	import { goto } from '$app/navigation';
@@ -82,14 +82,14 @@
 		expandedDomains = newSet;
 	}
 
-	// Get notes for expanded item (tags and links only)
-	let expandedNotes = $derived.by(() => {
+	// Get memories for expanded item (tags and links only)
+	let expandedMemories = $derived.by(() => {
 		if (!expandedItem) return [];
 		switch (activeTab) {
 			case 'tags':
-				return getNotesByTag(expandedItem);
+				return getMemoryObjectsByTag(expandedItem);
 			case 'links':
-				return getNotesByLink(expandedItem);
+				return getMemoryObjectsByLink(expandedItem);
 			default:
 				return [];
 		}
@@ -99,12 +99,12 @@
 		expandedItem = expandedItem === item ? null : item;
 	}
 
-	function openNote(noteId: string) {
-		goto(`/note/${noteId}`);
+	function openMemory(memoryId: string) {
+		goto(`/note/${memoryId}`);
 	}
 
-	function getPreview(note: Note): string {
-		const content = note.content
+	function getPreview(memory: MemoryObject): string {
+		const content = memory.bodyMarkdown
 			.replace(/^---[\s\S]*?---\n?/, '') // Remove frontmatter
 			.replace(/[#@\/\[\]]/g, '')
 			.trim();
@@ -211,11 +211,11 @@
 							</button>
 							{#if expandedItem === tag.tag}
 								<ul class="notes-list">
-									{#each expandedNotes as note (note.id)}
+									{#each expandedMemories as memory (memory.id)}
 										<li>
-											<button class="note-item" onclick={() => openNote(note.id)}>
-												<span class="note-title">{note.title || 'Untitled'}</span>
-												<span class="note-preview">{getPreview(note)}</span>
+											<button class="note-item" onclick={() => openMemory(memory.id)}>
+												<span class="note-title">{memory.title || 'Untitled'}</span>
+												<span class="note-preview">{getPreview(memory)}</span>
 											</button>
 										</li>
 									{/each}
@@ -290,11 +290,11 @@
 											</button>
 											{#if expandedItem === link.url}
 												<ul class="notes-list">
-													{#each expandedNotes as note (note.id)}
+													{#each expandedMemories as memory (memory.id)}
 														<li>
-															<button class="note-item" onclick={() => openNote(note.id)}>
-																<span class="note-title">{note.title || 'Untitled'}</span>
-																<span class="note-preview">{getPreview(note)}</span>
+															<button class="note-item" onclick={() => openMemory(memory.id)}>
+																<span class="note-title">{memory.title || 'Untitled'}</span>
+																<span class="note-preview">{getPreview(memory)}</span>
 															</button>
 														</li>
 													{/each}

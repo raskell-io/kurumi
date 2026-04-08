@@ -3,7 +3,14 @@
 	import { pwaInfo } from 'virtual:pwa-info';
 	import { onMount } from 'svelte';
 	import { afterNavigate } from '$app/navigation';
-	import { initDB, notes, addNote, getAllTags, folders, trashCount } from '$lib/db';
+	import {
+		initDB,
+		memoryObjects,
+		addMemoryObject,
+		getAllTags,
+		folders,
+		trashCount
+	} from '$lib/db';
 	import { initHashRouter, updateHashFromPath } from '$lib/hash-router';
 	import { initSearch, rebuildIndex } from '$lib/search';
 	import { setupVisibilitySync, teardownVisibilitySync, syncState, isSyncConfigured, sync } from '$lib/sync';
@@ -76,17 +83,17 @@
 		return match ? match[1] : null;
 	});
 
-	// Breadcrumb for current note location
+	// Breadcrumb for current memory location
 	let breadcrumb = $derived.by(() => {
 		if (!editNoteId) return null;
-		const note = $notes.find(n => n.id === editNoteId);
-		if (!note) return null;
+		const memory = $memoryObjects.find((m) => m.id === editNoteId);
+		if (!memory) return null;
 
 		// Build folder path
 		const path: string[] = [];
-		let currentFolderId = note.folderId;
+		let currentFolderId = memory.folderId;
 		while (currentFolderId) {
-			const folder = $folders.find(f => f.id === currentFolderId);
+			const folder = $folders.find((f) => f.id === currentFolderId);
 			if (folder) {
 				path.unshift(folder.name);
 				currentFolderId = folder.parentId;
@@ -95,8 +102,8 @@
 			}
 		}
 
-		// Add note title
-		path.push(note.title || 'Untitled');
+		// Add memory title
+		path.push(memory.title || 'Untitled');
 		return path;
 	});
 
@@ -260,19 +267,19 @@
 		};
 	});
 
-	// Rebuild search index when notes change
+	// Rebuild search index when memories change
 	$effect(() => {
-		// Track notes length to trigger rebuild
-		const noteCount = $notes.length;
-		if (initialized && noteCount >= 0) {
+		// Track length to trigger rebuild
+		const count = $memoryObjects.length;
+		if (initialized && count >= 0) {
 			rebuildIndex();
 		}
 	});
 
 	async function handleNewNote() {
-		const note = addNote();
+		const memory = addMemoryObject();
 		if (isMobile) sidebarOpen = false;
-		await goto(`/note/${note.id}`);
+		await goto(`/note/${memory.id}`);
 		// Show snackbar after navigation completes
 		showNewNoteAnimation = true;
 	}

@@ -1,24 +1,24 @@
 <script lang="ts">
 	import {
-		trashedNotes,
+		trashedMemoryObjects,
 		trashedFolders,
-		restoreNote,
+		restoreMemoryObject,
 		restoreFolder,
-		permanentlyDeleteNote,
+		permanentlyDeleteMemoryObject,
 		permanentlyDeleteFolder,
 		emptyTrash,
-		type Note,
+		type MemoryObject,
 		type Folder
 	} from '$lib/db';
 	import { Trash2, FolderOpen, FileText, RotateCcw, X, AlertTriangle } from 'lucide-svelte';
 
 	// Store subscriptions
-	let notesData = $state<Note[]>([]);
+	let memoriesData = $state<MemoryObject[]>([]);
 	let foldersData = $state<Folder[]>([]);
 
 	$effect(() => {
-		const unsub1 = trashedNotes.subscribe((n) => {
-			notesData = n;
+		const unsub1 = trashedMemoryObjects.subscribe((m) => {
+			memoriesData = m;
 		});
 		const unsub2 = trashedFolders.subscribe((f) => {
 			foldersData = f;
@@ -31,7 +31,7 @@
 
 	// Confirmation modal state
 	let showDeleteConfirm = $state(false);
-	let itemToDelete = $state<{ type: 'note' | 'folder'; item: Note | Folder } | null>(null);
+	let itemToDelete = $state<{ type: 'note' | 'folder'; item: MemoryObject | Folder } | null>(null);
 
 	let showEmptyConfirm = $state(false);
 
@@ -66,13 +66,13 @@
 
 	function handleRestore(type: 'note' | 'folder', id: string) {
 		if (type === 'note') {
-			restoreNote(id);
+			restoreMemoryObject(id);
 		} else {
 			restoreFolder(id);
 		}
 	}
 
-	function confirmDelete(type: 'note' | 'folder', item: Note | Folder) {
+	function confirmDelete(type: 'note' | 'folder', item: MemoryObject | Folder) {
 		itemToDelete = { type, item };
 		showDeleteConfirm = true;
 	}
@@ -81,7 +81,7 @@
 		if (!itemToDelete) return;
 
 		if (itemToDelete.type === 'note') {
-			permanentlyDeleteNote(itemToDelete.item.id);
+			permanentlyDeleteMemoryObject(itemToDelete.item.id);
 		} else {
 			permanentlyDeleteFolder(itemToDelete.item.id);
 		}
@@ -106,7 +106,7 @@
 		}
 	}
 
-	let totalItems = $derived(notesData.length + foldersData.length);
+	let totalItems = $derived(memoriesData.length + foldersData.length);
 </script>
 
 <svelte:window on:keydown={handleKeydown} />
@@ -200,33 +200,33 @@
 				{/if}
 
 				<!-- Notes section -->
-				{#if notesData.length > 0}
+				{#if memoriesData.length > 0}
 					<div>
 						<h2 class="mb-2 text-sm font-medium text-[var(--color-text-muted)]">Notes</h2>
 						<div class="space-y-2">
-							{#each notesData as note (note.id)}
+							{#each memoriesData as memory (memory.id)}
 								<div
 									class="group flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 transition-colors hover:border-[var(--color-accent)]/50"
 								>
 									<div class="flex items-center gap-3">
 										<FileText class="h-5 w-5 text-[var(--color-accent)]" />
 										<div>
-											<div class="font-medium text-[var(--color-text)]">{note.title}</div>
+											<div class="font-medium text-[var(--color-text)]">{memory.title}</div>
 											<div class="text-xs text-[var(--color-text-muted)]">
-												Deleted {formatDeletedDate(note.deletedAt)} · {getDaysUntilPermanentDelete(note.deletedAt)} days left
+												Deleted {formatDeletedDate(memory.deletedAt)} · {getDaysUntilPermanentDelete(memory.deletedAt)} days left
 											</div>
 										</div>
 									</div>
 									<div class="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
 										<button
-											onclick={() => handleRestore('note', note.id)}
+											onclick={() => handleRestore('note', memory.id)}
 											class="rounded p-2 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-accent)]/10 hover:text-[var(--color-accent)]"
 											title="Restore note"
 										>
 											<RotateCcw class="h-4 w-4" />
 										</button>
 										<button
-											onclick={() => confirmDelete('note', note)}
+											onclick={() => confirmDelete('note', memory)}
 											class="rounded p-2 text-[var(--color-text-muted)] transition-colors hover:bg-red-500/10 hover:text-red-500"
 											title="Delete permanently"
 										>
@@ -268,7 +268,7 @@
 			</div>
 			<p class="mb-4 text-sm text-[var(--color-text-muted)]">
 				Are you sure you want to permanently delete "{itemToDelete.type === 'note'
-					? (itemToDelete.item as Note).title
+					? (itemToDelete.item as MemoryObject).title
 					: (itemToDelete.item as Folder).name}"? This action cannot be undone.
 			</p>
 			<div class="flex justify-end gap-3">

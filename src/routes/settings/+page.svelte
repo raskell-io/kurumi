@@ -1,5 +1,16 @@
 <script lang="ts">
-	import { exportNotesJSON, exportFullJSON, analyzeImport, importJSON, notes, folders, vaults, currentVaultId, type ImportAnalysis, type ConflictResolution } from '$lib/db';
+	import {
+		exportMemoryObjectsJSON,
+		exportFullJSON,
+		analyzeImport,
+		importJSON,
+		memoryObjects,
+		folders,
+		vaults,
+		currentVaultId,
+		type ImportAnalysis,
+		type ConflictResolution
+	} from '$lib/db';
 	import { exportVaultAsMarkdown, type MarkdownExportFormat } from '$lib/utils/markdown-export';
 	import { importObsidianVault, type ObsidianImportResult } from '$lib/utils/obsidian-import';
 	import { syncState, initSyncState, sync, testConnection, isSyncConfigured, getSyncMethod, setSyncMethod, isR2SyncConfigured, type SyncMethod } from '$lib/sync';
@@ -41,7 +52,9 @@
 	let importAnalysis = $state<ImportAnalysis | null>(null);
 	let importError = $state<string | null>(null);
 	let isImporting = $state(false);
-	let importSuccess = $state<{ vaults: number; folders: number; notes: number } | null>(null);
+	let importSuccess = $state<{ vaults: number; folders: number; memoryObjects: number } | null>(
+		null
+	);
 	let fileInputRef: HTMLInputElement;
 
 	// Clear data state
@@ -278,10 +291,10 @@
 			const vault = $vaults.find((v) => v.id === $currentVaultId);
 			if (!vault) return;
 
-			const vaultNotes = $notes.filter((n) => n.vaultId === vault.id);
+			const vaultMemories = $memoryObjects.filter((m) => m.vaultId === vault.id);
 			const vaultFolders = $folders.filter((f) => f.vaultId === vault.id);
 
-			await exportVaultAsMarkdown(vaultNotes, vaultFolders, vault, { format });
+			await exportVaultAsMarkdown(vaultMemories, vaultFolders, vault, { format });
 		} finally {
 			isExportingMarkdown = false;
 			markdownExportFormat = null;
@@ -1003,7 +1016,7 @@
 					</div>
 
 					<div class="mt-3 text-sm text-[var(--color-text-muted)]">
-						{$vaults.length} {$vaults.length === 1 ? 'vault' : 'vaults'} · {$folders.length} {$folders.length === 1 ? 'folder' : 'folders'} · {$notes.length} {$notes.length === 1 ? 'note' : 'notes'}
+						{$vaults.length} {$vaults.length === 1 ? 'vault' : 'vaults'} · {$folders.length} {$folders.length === 1 ? 'folder' : 'folders'} · {$memoryObjects.length} {$memoryObjects.length === 1 ? 'note' : 'notes'}
 					</div>
 
 					<!-- Obsidian Import -->
@@ -1102,7 +1115,7 @@
 					{#if importSuccess}
 						<div class="mt-3 flex items-center gap-2 rounded-lg bg-green-500/10 px-3 py-2 text-sm text-green-600 dark:text-green-400">
 							<Check class="h-4 w-4 shrink-0" />
-							Imported {importSuccess.vaults} {importSuccess.vaults === 1 ? 'vault' : 'vaults'}, {importSuccess.folders} {importSuccess.folders === 1 ? 'folder' : 'folders'}, {importSuccess.notes} {importSuccess.notes === 1 ? 'note' : 'notes'}
+							Imported {importSuccess.vaults} {importSuccess.vaults === 1 ? 'vault' : 'vaults'}, {importSuccess.folders} {importSuccess.folders === 1 ? 'folder' : 'folders'}, {importSuccess.memoryObjects} {importSuccess.memoryObjects === 1 ? 'note' : 'notes'}
 						</div>
 					{/if}
 				</div>
@@ -1343,7 +1356,7 @@ mise run setup</code></pre>
 				<div class="text-sm text-[var(--color-text-muted)]">
 					<p><strong class="text-[var(--color-text)]">{importAnalysis.newVaults.length + importAnalysis.vaultConflicts.length}</strong> vaults</p>
 					<p><strong class="text-[var(--color-text)]">{importAnalysis.totalFolders}</strong> folders</p>
-					<p><strong class="text-[var(--color-text)]">{importAnalysis.totalNotes}</strong> notes</p>
+					<p><strong class="text-[var(--color-text)]">{importAnalysis.totalMemoryObjects}</strong> notes</p>
 				</div>
 			</div>
 
@@ -1470,7 +1483,7 @@ mise run setup</code></pre>
 				</li>
 				<li class="flex items-center gap-2 text-[var(--color-text)]">
 					<Trash2 class="h-4 w-4 text-red-500" />
-					All notes ({$notes.length})
+					All notes ({$memoryObjects.length})
 				</li>
 			</ul>
 

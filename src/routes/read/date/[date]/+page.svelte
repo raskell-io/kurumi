@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { getNotesByDate } from '$lib/db';
+	import { getMemoryObjectsByDate } from '$lib/db';
 	import ReadNav from '$lib/components/ReadNav.svelte';
 	import NoteCard from '$lib/components/NoteCard.svelte';
 	import { Calendar } from 'lucide-svelte';
 
 	let dateStr = $derived($page.params.date);
-	let notes = $derived(getNotesByDate(dateStr));
+	let memories = $derived(getMemoryObjectsByDate(dateStr));
 
 	let breadcrumbs = $derived([{ label: formatDate(dateStr), href: `/read/date/${dateStr}` }]);
 
@@ -54,13 +54,13 @@
 		{#if getRelativeDate(dateStr)}
 			<p class="relative-date">{getRelativeDate(dateStr)}</p>
 		{/if}
-		<p class="count">{notes.length} note{notes.length === 1 ? '' : 's'} referencing this date</p>
+		<p class="count">{memories.length} note{memories.length === 1 ? '' : 's'} referencing this date</p>
 	</header>
 
-	{#if notes.length > 0}
+	{#if memories.length > 0}
 		<div class="notes-grid">
-			{#each notes as note (note.id)}
-				<NoteCard {note} />
+			{#each memories as memory (memory.id)}
+				<NoteCard memory={memory} />
 			{/each}
 		</div>
 	{:else}

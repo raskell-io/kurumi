@@ -1,14 +1,22 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { getNote, updateNote, deleteNote, findBacklinks, notes, addNote, folders } from '$lib/db';
+	import {
+		getMemoryObject,
+		updateMemoryObject,
+		deleteMemoryObject,
+		findBacklinks,
+		memoryObjects,
+		addMemoryObject,
+		folders
+	} from '$lib/db';
 	import { get } from 'svelte/store';
 	import Editor from '$lib/components/Editor.svelte';
 	import { untrack } from 'svelte';
-	import { downloadSingleNote, type MarkdownExportFormat } from '$lib/utils/markdown-export';
+	import { downloadSingleMemory, type MarkdownExportFormat } from '$lib/utils/markdown-export';
 	import { Trash2, Download, ChevronDown } from 'lucide-svelte';
 
-	let note = $state<ReturnType<typeof getNote>>(undefined);
+	let memory = $state<ReturnType<typeof getMemoryObject>>(undefined);
 	let title = $state('');
 	let content = $state('');
 	let backlinks = $state<ReturnType<typeof findBacklinks>>([]);
@@ -19,16 +27,16 @@
 	// Debounce timer for auto-save
 	let saveTimeout: ReturnType<typeof setTimeout>;
 
-	// Load note when page ID changes
+	// Load memory when page ID changes
 	$effect(() => {
 		const id = $page.params.id;
 		if (id && id !== currentId) {
 			untrack(() => {
 				currentId = id;
-				note = getNote(id);
-				if (note) {
-					title = note.title;
-					content = note.content;
+				memory = getMemoryObject(id);
+				if (memory) {
+					title = memory.title;
+					content = memory.bodyMarkdown;
 					backlinks = findBacklinks(id);
 				}
 			});
@@ -49,31 +57,31 @@
 	function debouncedSave() {
 		clearTimeout(saveTimeout);
 		saveTimeout = setTimeout(() => {
-			if (note) {
-				updateNote(note.id, { title, content });
+			if (memory) {
+				updateMemoryObject(memory.id, { title, bodyMarkdown: content });
 			}
 		}, 300);
 	}
 
 	function handleDelete() {
-		if (note) {
-			deleteNote(note.id);
+		if (memory) {
+			deleteMemoryObject(memory.id);
 			goto('/');
 		}
 	}
 
 	function handleWikilinkClick(linkTitle: string) {
-		// Find note by title (case-insensitive)
-		const allNotes = get(notes);
-		const targetNote = allNotes.find((n) => n.title.toLowerCase() === linkTitle.toLowerCase());
+		// Find memory by title (case-insensitive)
+		const all = get(memoryObjects);
+		const target = all.find((m) => m.title.toLowerCase() === linkTitle.toLowerCase());
 
-		if (targetNote) {
-			// Navigate to existing note
-			goto(`/note/${targetNote.id}`);
+		if (target) {
+			// Navigate to existing memory
+			goto(`/note/${target.id}`);
 		} else {
-			// Create new note with this title
-			const newNote = addNote(linkTitle, '');
-			goto(`/note/${newNote.id}`);
+			// Create new memory with this title
+			const created = addMemoryObject(linkTitle, '');
+			goto(`/note/${created.id}`);
 		}
 	}
 
@@ -99,15 +107,15 @@
 	}
 
 	function handleExport(format: MarkdownExportFormat) {
-		if (!note) return;
-		const allNotes = get(notes);
+		if (!memory) return;
+		const all = get(memoryObjects);
 		const allFolders = get(folders);
-		downloadSingleNote(note, allNotes, allFolders, { format });
+		downloadSingleMemory(memory, all, allFolders, { format });
 		showExportMenu = false;
 	}
 </script>
 
-{#if note}
+{#if memory}
 	<div class="group/note relative flex h-full flex-col">
 		<!-- Action buttons (appear on hover) -->
 		<div class="absolute bottom-4 right-4 z-10 flex items-center gap-2 opacity-0 transition-all group-hover/note:opacity-100 md:bottom-6 md:right-6">
@@ -173,13 +181,13 @@
 				/>
 
 				<!-- Milkdown Editor -->
-				{#key note.id}
+				{#key memory.id}
 					<Editor
 						content={content}
 						onchange={handleContentChange}
 						onWikilinkClick={handleWikilinkClick}
 						placeholder="Start writing... Use [[Note Title]] to link to other notes."
-						currentFolderId={note.folderId}
+						currentFolderId={memory.folderId}
 					/>
 				{/key}
 
@@ -199,7 +207,7 @@
 										{backlink.title || 'Untitled'}
 									</div>
 									<div class="mt-1 truncate text-sm text-[var(--color-text-muted)]">
-										{backlink.content.slice(0, 80)}...
+										{backlink.bodyMarkdown.slice(0, 80)}...
 									</div>
 								</a>
 							{/each}
@@ -212,7 +220,7 @@
 
 				<!-- Last modified -->
 				<div class="mt-8 text-xs text-[var(--color-text-muted)] opacity-40">
-					Last modified: {formatDate(note.modified)}
+					Last modified: {formatDate(memory.updatedAt)}
 				</div>
 
 				<!-- Bottom safe area spacer -->

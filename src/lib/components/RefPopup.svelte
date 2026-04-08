@@ -1,6 +1,11 @@
 <script lang="ts">
-	import { getPersonByName, getEventsByDate, getNotesByPerson, getNotesByDate, getNotesByTag } from '$lib/db';
-	import type { Person, Event, Note } from '$lib/db';
+	import {
+		getPersonByName,
+		getEventsByDate,
+		getMemoryObjectsByPerson,
+		getMemoryObjectsByDate,
+		getMemoryObjectsByTag
+	} from '$lib/db';
 	import { X, User, Calendar, Hash, Mail, Phone, Building, Briefcase, MapPin, Clock, Users, NotebookText } from 'lucide-svelte';
 
 	interface Props {
@@ -17,9 +22,9 @@
 	let person = $derived(type === 'person' ? getPersonByName(value) : null);
 	let events = $derived(type === 'date' ? getEventsByDate(value) : []);
 	let relatedNotes = $derived.by(() => {
-		if (type === 'person') return getNotesByPerson(value);
-		if (type === 'date') return getNotesByDate(value);
-		if (type === 'tag') return getNotesByTag(value);
+		if (type === 'person') return getMemoryObjectsByPerson(value);
+		if (type === 'date') return getMemoryObjectsByDate(value);
+		if (type === 'tag') return getMemoryObjectsByTag(value);
 		return [];
 	});
 

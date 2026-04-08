@@ -1,9 +1,9 @@
 /**
- * Markdown export utilities for exporting notes in various SSG-compatible formats
+ * Markdown export utilities for exporting memories in various SSG-compatible formats
  * Supports: Vanilla Markdown, Hugo, Zola
  */
 
-import type { Note, Folder, Vault } from '../db/types';
+import type { MemoryObject, Folder, Vault } from '../db/types';
 import JSZip from 'jszip';
 
 export type MarkdownExportFormat = 'vanilla' | 'hugo' | 'zola';
@@ -45,14 +45,11 @@ function formatDateTime(timestamp: number): string {
 }
 
 /**
- * Build the folder path for a note
+ * Build the folder path for a memory
  */
-export function buildFolderPath(
-	note: Note,
-	folders: Folder[]
-): string[] {
+export function buildFolderPath(memory: MemoryObject, folders: Folder[]): string[] {
 	const path: string[] = [];
-	let currentFolderId = note.folderId;
+	let currentFolderId = memory.folderId;
 
 	while (currentFolderId) {
 		const folder = folders.find((f) => f.id === currentFolderId);
@@ -65,16 +62,16 @@ export function buildFolderPath(
 }
 
 /**
- * Calculate the relative path from one note to another
+ * Calculate the relative path from one memory to another
  */
 export function calculateRelativePath(
-	fromNote: Note,
-	toNote: Note,
+	from: MemoryObject,
+	to: MemoryObject,
 	folders: Folder[]
 ): string {
-	const fromPath = buildFolderPath(fromNote, folders);
-	const toPath = buildFolderPath(toNote, folders);
-	const toSlug = generateSlug(toNote.title || 'untitled');
+	const fromPath = buildFolderPath(from, folders);
+	const toPath = buildFolderPath(to, folders);
+	const toSlug = generateSlug(to.title || 'untitled');
 
 	// Find common prefix length
 	let commonLength = 0;
@@ -106,19 +103,17 @@ export function calculateRelativePath(
  */
 export function convertWikilinks(
 	content: string,
-	notes: Note[],
-	currentNote: Note,
+	memories: MemoryObject[],
+	current: MemoryObject,
 	folders: Folder[]
 ): string {
 	return content.replace(/\[\[([^\]]+)\]\]/g, (match, title) => {
-		const targetNote = notes.find(
-			(n) => n.title.toLowerCase() === title.toLowerCase()
-		);
-		if (!targetNote) {
+		const target = memories.find((m) => m.title.toLowerCase() === title.toLowerCase());
+		if (!target) {
 			// Keep original if target not found
 			return match;
 		}
-		const relativePath = calculateRelativePath(currentNote, targetNote, folders);
+		const relativePath = calculateRelativePath(current, target, folders);
 		return `[${title}](${relativePath})`;
 	});
 }
@@ -126,15 +121,15 @@ export function convertWikilinks(
 /**
  * Generate YAML front matter for vanilla markdown
  */
-function generateVanillaFrontMatter(note: Note, includeMetadata: boolean): string {
+function generateVanillaFrontMatter(memory: MemoryObject, includeMetadata: boolean): string {
 	if (!includeMetadata) return '';
 
 	const lines = ['---'];
-	lines.push(`title: "${note.title.replace(/"/g, '\\"')}"`);
-	lines.push(`date: ${formatDate(note.created)}`);
-	lines.push(`modified: ${formatDate(note.modified)}`);
-	if (note.tags.length > 0) {
-		lines.push(`tags: [${note.tags.map((t) => `"${t}"`).join(', ')}]`);
+	lines.push(`title: "${memory.title.replace(/"/g, '\\"')}"`);
+	lines.push(`date: ${formatDate(memory.createdAt)}`);
+	lines.push(`modified: ${formatDate(memory.updatedAt)}`);
+	if (memory.tags.length > 0) {
+		lines.push(`tags: [${memory.tags.map((t) => `"${t}"`).join(', ')}]`);
 	}
 	lines.push('---');
 	lines.push('');
@@ -145,13 +140,13 @@ function generateVanillaFrontMatter(note: Note, includeMetadata: boolean): strin
 /**
  * Generate YAML front matter for Hugo
  */
-function generateHugoFrontMatter(note: Note): string {
+function generateHugoFrontMatter(memory: MemoryObject): string {
 	const lines = ['---'];
-	lines.push(`title: "${note.title.replace(/"/g, '\\"')}"`);
-	lines.push(`date: ${formatDateTime(note.created)}`);
-	lines.push(`lastmod: ${formatDateTime(note.modified)}`);
-	if (note.tags.length > 0) {
-		lines.push(`tags: [${note.tags.map((t) => `"${t}"`).join(', ')}]`);
+	lines.push(`title: "${memory.title.replace(/"/g, '\\"')}"`);
+	lines.push(`date: ${formatDateTime(memory.createdAt)}`);
+	lines.push(`lastmod: ${formatDateTime(memory.updatedAt)}`);
+	if (memory.tags.length > 0) {
+		lines.push(`tags: [${memory.tags.map((t) => `"${t}"`).join(', ')}]`);
 	}
 	lines.push('draft: false');
 	lines.push('---');
@@ -163,17 +158,17 @@ function generateHugoFrontMatter(note: Note): string {
 /**
  * Generate TOML front matter for Zola
  */
-function generateZolaFrontMatter(note: Note): string {
+function generateZolaFrontMatter(memory: MemoryObject): string {
 	const lines = ['+++'];
-	lines.push(`title = "${note.title.replace(/"/g, '\\"')}"`);
-	lines.push(`date = ${formatDate(note.created)}`);
-	if (note.modified !== note.created) {
-		lines.push(`updated = ${formatDate(note.modified)}`);
+	lines.push(`title = "${memory.title.replace(/"/g, '\\"')}"`);
+	lines.push(`date = ${formatDate(memory.createdAt)}`);
+	if (memory.updatedAt !== memory.createdAt) {
+		lines.push(`updated = ${formatDate(memory.updatedAt)}`);
 	}
-	if (note.tags.length > 0) {
+	if (memory.tags.length > 0) {
 		lines.push('');
 		lines.push('[taxonomies]');
-		lines.push(`tags = [${note.tags.map((t) => `"${t}"`).join(', ')}]`);
+		lines.push(`tags = [${memory.tags.map((t) => `"${t}"`).join(', ')}]`);
 	}
 	lines.push('+++');
 	lines.push('');
@@ -182,11 +177,11 @@ function generateZolaFrontMatter(note: Note): string {
 }
 
 /**
- * Export a single note to markdown with the specified format
+ * Export a single memory to markdown with the specified format
  */
-export function exportNoteToMarkdown(
-	note: Note,
-	notes: Note[],
+export function exportMemoryToMarkdown(
+	memory: MemoryObject,
+	memories: MemoryObject[],
 	folders: Folder[],
 	options: ExportOptions
 ): string {
@@ -194,26 +189,26 @@ export function exportNoteToMarkdown(
 
 	switch (options.format) {
 		case 'vanilla':
-			frontMatter = generateVanillaFrontMatter(note, options.includeMetadata ?? true);
+			frontMatter = generateVanillaFrontMatter(memory, options.includeMetadata ?? true);
 			break;
 		case 'hugo':
-			frontMatter = generateHugoFrontMatter(note);
+			frontMatter = generateHugoFrontMatter(memory);
 			break;
 		case 'zola':
-			frontMatter = generateZolaFrontMatter(note);
+			frontMatter = generateZolaFrontMatter(memory);
 			break;
 	}
 
-	const content = convertWikilinks(note.content, notes, note, folders);
+	const content = convertWikilinks(memory.bodyMarkdown, memories, memory, folders);
 
 	return frontMatter + content;
 }
 
 /**
- * Export all notes to files with folder structure
+ * Export all memories to files with folder structure
  */
-export function exportNotesToFiles(
-	notes: Note[],
+export function exportMemoriesToFiles(
+	memories: MemoryObject[],
 	folders: Folder[],
 	vault: Vault,
 	options: ExportOptions
@@ -221,15 +216,15 @@ export function exportNotesToFiles(
 	const files: ExportFile[] = [];
 	const vaultSlug = generateSlug(vault.name);
 
-	for (const note of notes) {
-		const folderPath = buildFolderPath(note, folders);
-		const noteSlug = generateSlug(note.title || 'untitled');
-		const filename = `${noteSlug}.md`;
+	for (const memory of memories) {
+		const folderPath = buildFolderPath(memory, folders);
+		const slug = generateSlug(memory.title || 'untitled');
+		const filename = `${slug}.md`;
 
 		const pathParts = [vaultSlug, ...folderPath, filename];
 		const path = pathParts.join('/');
 
-		const content = exportNoteToMarkdown(note, notes, folders, options);
+		const content = exportMemoryToMarkdown(memory, memories, folders, options);
 		files.push({ path, content });
 	}
 
@@ -264,29 +259,29 @@ export async function downloadAsZip(
 }
 
 /**
- * Export vault notes as a ZIP file
+ * Export vault memories as a ZIP file
  */
 export async function exportVaultAsMarkdown(
-	notes: Note[],
+	memories: MemoryObject[],
 	folders: Folder[],
 	vault: Vault,
 	options: ExportOptions
 ): Promise<void> {
-	const files = exportNotesToFiles(notes, folders, vault, options);
+	const files = exportMemoriesToFiles(memories, folders, vault, options);
 	await downloadAsZip(files, options.format);
 }
 
 /**
- * Export a single note as a markdown file (no ZIP)
+ * Export a single memory as a markdown file (no ZIP)
  */
-export function downloadSingleNote(
-	note: Note,
-	notes: Note[],
+export function downloadSingleMemory(
+	memory: MemoryObject,
+	memories: MemoryObject[],
 	folders: Folder[],
 	options: ExportOptions
 ): void {
-	const content = exportNoteToMarkdown(note, notes, folders, options);
-	const slug = generateSlug(note.title || 'untitled');
+	const content = exportMemoryToMarkdown(memory, memories, folders, options);
+	const slug = generateSlug(memory.title || 'untitled');
 	const filename = `${slug}.md`;
 
 	const blob = new Blob([content], { type: 'text/markdown' });

@@ -1,4 +1,4 @@
-import { addNote, addFolder, getFolder, type Note, type Folder } from '$lib/db';
+import { addMemoryObject, addFolder } from '$lib/db';
 
 export interface ObsidianImportResult {
 	success: boolean;
@@ -66,7 +66,7 @@ export async function importObsidianVault(): Promise<ObsidianImportResult> {
 			foldersCreated++;
 		}
 
-		// Create notes
+		// Create memories
 		let notesCreated = 0;
 		for (const file of files) {
 			const parentPath = getParentPath(file.path);
@@ -75,7 +75,7 @@ export async function importObsidianVault(): Promise<ObsidianImportResult> {
 			// Remove .md extension for title
 			const title = file.name.replace(/\.md$/i, '');
 
-			addNote(title, file.content, folderId);
+			addMemoryObject(title, file.content, folderId);
 			notesCreated++;
 		}
 

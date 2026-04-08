@@ -3,7 +3,7 @@ import { get, set } from 'idb-keyval';
 import { writable, derived, type Readable } from 'svelte/store';
 import {
 	createEmptyDocument,
-	createNote,
+	createMemoryObject,
 	createFolder,
 	createVault,
 	createDefaultVault,
@@ -13,7 +13,7 @@ import {
 	generateId,
 	DEFAULT_VAULT_ID,
 	type KurumiDocument,
-	type Note,
+	type MemoryObject,
 	type Folder,
 	type Vault,
 	type Person,
@@ -55,19 +55,22 @@ export const currentVault: Readable<Vault | undefined> = derived(
 	}
 );
 
-// Derived store for notes array (sorted by modified date) - filtered by current vault, excludes deleted
-export const notes: Readable<Note[]> = derived(
+// Derived store for memory objects (sorted by updatedAt desc) - filtered by current vault, excludes deleted
+export const memoryObjects: Readable<MemoryObject[]> = derived(
 	[docStore, currentVaultId],
 	([$doc, $vaultId]) => {
 		if (!$doc) return [];
-		return Object.values($doc.notes)
-			.filter((note) => note.vaultId === $vaultId && !note.deletedAt)
-			.sort((a, b) => b.modified - a.modified);
+		return Object.values($doc.memoryObjects)
+			.filter((m) => m.vaultId === $vaultId && !m.deletedAt)
+			.sort((a, b) => b.updatedAt - a.updatedAt);
 	}
 );
 
-// Derived store for notes count
-export const notesCount: Readable<number> = derived(notes, ($notes) => $notes.length);
+// Derived store for memory objects count
+export const memoryObjectsCount: Readable<number> = derived(
+	memoryObjects,
+	($memoryObjects) => $memoryObjects.length
+);
 
 // Derived store for folders (sorted by name) - filtered by current vault, excludes deleted
 export const folders: Readable<Folder[]> = derived(
@@ -113,21 +116,21 @@ export const templates: Readable<Template[]> = derived(
 	}
 );
 
-// All notes across all vaults (for cross-vault operations), excludes deleted
-export const allNotes: Readable<Note[]> = derived(docStore, ($doc) => {
+// All memory objects across all vaults (for cross-vault operations), excludes deleted
+export const allMemoryObjects: Readable<MemoryObject[]> = derived(docStore, ($doc) => {
 	if (!$doc) return [];
-	return Object.values($doc.notes)
-		.filter((note) => !note.deletedAt)
-		.sort((a, b) => b.modified - a.modified);
+	return Object.values($doc.memoryObjects)
+		.filter((m) => !m.deletedAt)
+		.sort((a, b) => b.updatedAt - a.updatedAt);
 });
 
-// Trash: deleted notes in current vault (sorted by deletedAt, newest first)
-export const trashedNotes: Readable<Note[]> = derived(
+// Trash: deleted memory objects in current vault (sorted by deletedAt, newest first)
+export const trashedMemoryObjects: Readable<MemoryObject[]> = derived(
 	[docStore, currentVaultId],
 	([$doc, $vaultId]) => {
 		if (!$doc) return [];
-		return Object.values($doc.notes)
-			.filter((note) => note.vaultId === $vaultId && note.deletedAt !== null)
+		return Object.values($doc.memoryObjects)
+			.filter((m) => m.vaultId === $vaultId && m.deletedAt !== null)
 			.sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
 	}
 );
@@ -145,8 +148,8 @@ export const trashedFolders: Readable<Folder[]> = derived(
 
 // Count of items in trash
 export const trashCount: Readable<number> = derived(
-	[trashedNotes, trashedFolders],
-	([$notes, $folders]) => $notes.length + $folders.length
+	[trashedMemoryObjects, trashedFolders],
+	([$memories, $folders]) => $memories.length + $folders.length
 );
 
 // Initialize the database
@@ -157,6 +160,23 @@ export async function initDB(): Promise<void> {
 		if (savedData) {
 			doc = Automerge.load<KurumiDocument>(savedData);
 
+			// Legacy docs (v1-v5) stored memories under `notes`. Treat the field as
+			// untyped during these older migrations; v5→v6 below relocates it.
+			type LegacyDoc = KurumiDocument & {
+				notes?: Record<string, LegacyNote>;
+			};
+			type LegacyNote = {
+				id: string;
+				title: string;
+				content: string;
+				tags: string[];
+				folderId?: string | null;
+				vaultId?: string;
+				created: number;
+				modified: number;
+				deletedAt?: number | null;
+			};
+
 			// Migrate: add folders object if missing
 			if (!doc.folders) {
 				doc = Automerge.change(doc, (d) => {
@@ -165,17 +185,22 @@ export async function initDB(): Promise<void> {
 			}
 
 			// Migrate: add folderId to existing notes if missing
-			const needsFolderIdMigration = Object.values(doc.notes).some(
-				(note) => note.folderId === undefined
-			);
-			if (needsFolderIdMigration) {
-				doc = Automerge.change(doc, (d) => {
-					for (const note of Object.values(d.notes)) {
-						if (note.folderId === undefined) {
-							note.folderId = null;
+			const legacy0 = doc as LegacyDoc;
+			if (legacy0.notes) {
+				const needsFolderIdMigration = Object.values(legacy0.notes).some(
+					(note) => note.folderId === undefined
+				);
+				if (needsFolderIdMigration) {
+					doc = Automerge.change(doc, (d) => {
+						const dl = d as LegacyDoc;
+						if (!dl.notes) return;
+						for (const note of Object.values(dl.notes)) {
+							if (note.folderId === undefined) {
+								note.folderId = null;
+							}
 						}
-					}
-				});
+					});
+				}
 			}
 
 			// Migrate: add vaults if missing (version 1 -> version 2)
@@ -189,10 +214,12 @@ export async function initDB(): Promise<void> {
 					// Set current vault
 					d.currentVaultId = DEFAULT_VAULT_ID;
 
-					// Migrate all existing notes to default vault
-					for (const note of Object.values(d.notes)) {
-						if (note.vaultId === undefined) {
-							(note as Note).vaultId = DEFAULT_VAULT_ID;
+					const dl = d as LegacyDoc;
+					if (dl.notes) {
+						for (const note of Object.values(dl.notes)) {
+							if (note.vaultId === undefined) {
+								note.vaultId = DEFAULT_VAULT_ID;
+							}
 						}
 					}
 
@@ -298,15 +325,20 @@ export async function initDB(): Promise<void> {
 			}
 
 			// Migrate: add deletedAt field to notes and folders (version 4 -> version 5)
+			const legacy5 = doc as LegacyDoc;
 			const needsDeletedAtMigration =
-				Object.values(doc.notes).some((note) => note.deletedAt === undefined) ||
+				(legacy5.notes &&
+					Object.values(legacy5.notes).some((note) => note.deletedAt === undefined)) ||
 				Object.values(doc.folders).some((folder) => folder.deletedAt === undefined);
 
 			if (needsDeletedAtMigration) {
 				doc = Automerge.change(doc, (d) => {
-					for (const note of Object.values(d.notes)) {
-						if (note.deletedAt === undefined) {
-							(note as Note).deletedAt = null;
+					const dl = d as LegacyDoc;
+					if (dl.notes) {
+						for (const note of Object.values(dl.notes)) {
+							if (note.deletedAt === undefined) {
+								note.deletedAt = null;
+							}
 						}
 					}
 					for (const folder of Object.values(d.folders)) {
@@ -315,6 +347,62 @@ export async function initDB(): Promise<void> {
 						}
 					}
 					d.version = 5;
+				});
+				await saveDoc();
+			}
+
+			// Migrate: relocate `notes` -> `memoryObjects` and expand each Note into
+			// a full MemoryObject (version 5 -> version 6).
+			const legacy6 = doc as LegacyDoc;
+			if (!doc.memoryObjects || legacy6.notes) {
+				doc = Automerge.change(doc, (d) => {
+					const dl = d as LegacyDoc;
+					if (!d.memoryObjects) d.memoryObjects = {};
+					if (dl.notes) {
+						for (const note of Object.values(dl.notes)) {
+							if (d.memoryObjects[note.id]) continue;
+							d.memoryObjects[note.id] = {
+								id: note.id,
+								type: 'note',
+								space: 'personal',
+								parentBucket: null,
+								folderId: note.folderId ?? null,
+								title: note.title,
+								rawText: '',
+								bodyMarkdown: note.content ?? '',
+								rawAudioRef: null,
+								rawMediaRef: null,
+								transcript: null,
+								transcriptSegments: [],
+								summaryShort: null,
+								summaryLong: null,
+								createdAt: note.created,
+								updatedAt: note.modified,
+								capturedAt: note.created,
+								sourceDevice: null,
+								sourceContext: null,
+								language: null,
+								tags: Array.isArray(note.tags) ? [...note.tags] : [],
+								controlledLabels: [],
+								participants: [],
+								entities: [],
+								projects: [],
+								topics: [],
+								dates: [],
+								actionItems: [],
+								decisions: [],
+								relatedMemoryIds: [],
+								visibilityScope: 'personal',
+								processingState: 'ready',
+								confidenceScores: {},
+								embeddingRef: null,
+								vaultId: note.vaultId ?? DEFAULT_VAULT_ID,
+								deletedAt: note.deletedAt ?? null
+							};
+						}
+						delete dl.notes;
+					}
+					d.version = 6;
 				});
 				await saveDoc();
 			}
@@ -349,13 +437,13 @@ function cleanupOldTrashInternal(): number {
 	const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
 	let deletedCount = 0;
 
-	const notesToDelete: string[] = [];
+	const memoryIdsToDelete: string[] = [];
 	const foldersToDelete: string[] = [];
 
 	// Collect items to delete
-	for (const note of Object.values(doc.notes)) {
-		if (note.deletedAt && note.deletedAt < thirtyDaysAgo) {
-			notesToDelete.push(note.id);
+	for (const m of Object.values(doc.memoryObjects)) {
+		if (m.deletedAt && m.deletedAt < thirtyDaysAgo) {
+			memoryIdsToDelete.push(m.id);
 		}
 	}
 	for (const folder of Object.values(doc.folders)) {
@@ -364,10 +452,10 @@ function cleanupOldTrashInternal(): number {
 		}
 	}
 
-	if (notesToDelete.length > 0 || foldersToDelete.length > 0) {
+	if (memoryIdsToDelete.length > 0 || foldersToDelete.length > 0) {
 		doc = Automerge.change(doc, (d) => {
-			for (const id of notesToDelete) {
-				delete d.notes[id];
+			for (const id of memoryIdsToDelete) {
+				delete d.memoryObjects[id];
 				deletedCount++;
 			}
 			for (const id of foldersToDelete) {
@@ -451,11 +539,14 @@ export function deleteVault(id: string): { success: boolean; error?: string } {
 		return { success: false, error: 'Cannot delete the last vault' };
 	}
 
-	const notesInVault = Object.values(doc.notes).filter((n) => n.vaultId === id);
+	const memoriesInVault = Object.values(doc.memoryObjects).filter((m) => m.vaultId === id);
 	const foldersInVault = Object.values(doc.folders).filter((f) => f.vaultId === id);
 
-	if (notesInVault.length > 0 || foldersInVault.length > 0) {
-		return { success: false, error: 'Vault contains notes or folders. Move or delete them first.' };
+	if (memoriesInVault.length > 0 || foldersInVault.length > 0) {
+		return {
+			success: false,
+			error: 'Vault contains memories or folders. Move or delete them first.'
+		};
 	}
 
 	const wasCurrentVault = doc.currentVaultId === id;
@@ -475,18 +566,18 @@ export function deleteVault(id: string): { success: boolean; error?: string } {
 	return { success: true };
 }
 
-// Move note to a different vault
-export function moveNoteToVault(noteId: string, targetVaultId: string): void {
+// Move memory object to a different vault
+export function moveMemoryObjectToVault(memoryId: string, targetVaultId: string): void {
 	if (!doc?.vaults?.[targetVaultId]) {
 		console.error('Target vault not found:', targetVaultId);
 		return;
 	}
 	updateDoc((d) => {
-		const note = d.notes[noteId];
-		if (note) {
-			note.vaultId = targetVaultId;
-			note.folderId = null; // Reset folder since folders don't cross vaults
-			note.modified = Date.now();
+		const memory = d.memoryObjects[memoryId];
+		if (memory) {
+			memory.vaultId = targetVaultId;
+			memory.folderId = null; // Reset folder since folders don't cross vaults
+			memory.updatedAt = Date.now();
 		}
 	});
 }
@@ -526,57 +617,74 @@ export function moveFolderToVault(folderId: string, targetVaultId: string): void
 		// Move root folder to root level in new vault
 		folder.parentId = null;
 
-		// Move all notes in these folders
-		for (const note of Object.values(d.notes)) {
-			if (note.folderId && folderIds.has(note.folderId)) {
-				note.vaultId = targetVaultId;
-				note.modified = Date.now();
+		// Move all memory objects in these folders
+		for (const memory of Object.values(d.memoryObjects)) {
+			if (memory.folderId && folderIds.has(memory.folderId)) {
+				memory.vaultId = targetVaultId;
+				memory.updatedAt = Date.now();
 			}
 		}
 	});
 }
 
-// ============ Note CRUD Operations ============
+// ============ MemoryObject CRUD Operations ============
 
-export function addNote(title?: string, content?: string, folderId?: string | null): Note {
+export function addMemoryObject(
+	title?: string,
+	bodyMarkdown?: string,
+	folderId?: string | null
+): MemoryObject {
 	if (!doc) {
-		console.error('Cannot add note: database not initialized');
+		console.error('Cannot add memory: database not initialized');
 		doc = Automerge.from<KurumiDocument>(createEmptyDocument());
 		docStore.set(doc);
 	}
 	const vaultId = getCurrentVaultId();
-	const note = createNote(title, content, folderId ?? null, vaultId);
-	updateDoc((d) => {
-		d.notes[note.id] = note;
+	const memory = createMemoryObject({
+		title,
+		bodyMarkdown,
+		folderId: folderId ?? null,
+		vaultId
 	});
-	return note;
-}
-
-export function getNote(id: string): Note | undefined {
-	return doc?.notes[id];
-}
-
-export function updateNote(id: string, updates: Partial<Omit<Note, 'id' | 'created'>>): void {
 	updateDoc((d) => {
-		const note = d.notes[id];
-		if (note) {
-			if (updates.title !== undefined) note.title = updates.title;
-			if (updates.content !== undefined) note.content = updates.content;
-			if (updates.tags !== undefined) {
-				// Clear and repopulate tags array for Automerge
-				while (note.tags.length > 0) note.tags.pop();
-				updates.tags.forEach((tag) => note.tags.push(tag));
-			}
-			note.modified = Date.now();
+		d.memoryObjects[memory.id] = memory;
+	});
+	return memory;
+}
+
+export function getMemoryObject(id: string): MemoryObject | undefined {
+	return doc?.memoryObjects[id];
+}
+
+export function updateMemoryObject(
+	id: string,
+	updates: Partial<Omit<MemoryObject, 'id' | 'createdAt'>>
+): void {
+	updateDoc((d) => {
+		const memory = d.memoryObjects[id];
+		if (!memory) return;
+		if (updates.title !== undefined) memory.title = updates.title;
+		if (updates.bodyMarkdown !== undefined) memory.bodyMarkdown = updates.bodyMarkdown;
+		if (updates.rawText !== undefined) memory.rawText = updates.rawText;
+		if (updates.tags !== undefined) {
+			// Clear and repopulate tags array for Automerge
+			while (memory.tags.length > 0) memory.tags.pop();
+			updates.tags.forEach((tag) => memory.tags.push(tag));
 		}
+		if (updates.folderId !== undefined) memory.folderId = updates.folderId;
+		if (updates.processingState !== undefined) memory.processingState = updates.processingState;
+		if (updates.summaryShort !== undefined) memory.summaryShort = updates.summaryShort;
+		if (updates.summaryLong !== undefined) memory.summaryLong = updates.summaryLong;
+		if (updates.transcript !== undefined) memory.transcript = updates.transcript;
+		memory.updatedAt = Date.now();
 	});
 }
 
-export function deleteNote(id: string): void {
+export function deleteMemoryObject(id: string): void {
 	updateDoc((d) => {
-		const note = d.notes[id];
-		if (note) {
-			note.deletedAt = Date.now();
+		const memory = d.memoryObjects[id];
+		if (memory) {
+			memory.deletedAt = Date.now();
 		}
 	});
 }
@@ -619,13 +727,13 @@ export function deleteFolder(id: string, deleteContents: boolean = false): void 
 		if (!folder) return;
 
 		if (deleteContents) {
-			// Soft delete all notes in this folder
-			for (const note of Object.values(d.notes)) {
-				if (note.folderId === id && !note.deletedAt) {
-					note.deletedAt = now;
+			// Soft delete all memories in this folder
+			for (const memory of Object.values(d.memoryObjects)) {
+				if (memory.folderId === id && !memory.deletedAt) {
+					memory.deletedAt = now;
 				}
 			}
-			// Recursively soft delete subfolders and their notes
+			// Recursively soft delete subfolders and their memories
 			const collectSubfolderIds = (parentId: string): string[] => {
 				const ids: string[] = [];
 				for (const f of Object.values(d.folders)) {
@@ -639,10 +747,10 @@ export function deleteFolder(id: string, deleteContents: boolean = false): void 
 
 			const subfolderIds = collectSubfolderIds(id);
 			for (const subfolderId of subfolderIds) {
-				// Soft delete notes in subfolder
-				for (const note of Object.values(d.notes)) {
-					if (note.folderId === subfolderId && !note.deletedAt) {
-						note.deletedAt = now;
+				// Soft delete memories in subfolder
+				for (const memory of Object.values(d.memoryObjects)) {
+					if (memory.folderId === subfolderId && !memory.deletedAt) {
+						memory.deletedAt = now;
 					}
 				}
 				// Soft delete subfolder
@@ -652,10 +760,10 @@ export function deleteFolder(id: string, deleteContents: boolean = false): void 
 				}
 			}
 		} else {
-			// Move notes to root level
-			for (const note of Object.values(d.notes)) {
-				if (note.folderId === id && !note.deletedAt) {
-					note.folderId = null;
+			// Move memories to root level
+			for (const memory of Object.values(d.memoryObjects)) {
+				if (memory.folderId === id && !memory.deletedAt) {
+					memory.folderId = null;
 				}
 			}
 			// Move subfolders to root level
@@ -672,15 +780,15 @@ export function deleteFolder(id: string, deleteContents: boolean = false): void 
 
 // ============ Trash Operations ============
 
-// Restore a note from trash
-export function restoreNote(id: string): void {
+// Restore a memory object from trash
+export function restoreMemoryObject(id: string): void {
 	updateDoc((d) => {
-		const note = d.notes[id];
-		if (note && note.deletedAt) {
-			note.deletedAt = null;
-			// If the note was in a deleted folder, move to root
-			if (note.folderId && d.folders[note.folderId]?.deletedAt) {
-				note.folderId = null;
+		const memory = d.memoryObjects[id];
+		if (memory && memory.deletedAt) {
+			memory.deletedAt = null;
+			// If the memory was in a deleted folder, move to root
+			if (memory.folderId && d.folders[memory.folderId]?.deletedAt) {
+				memory.folderId = null;
 			}
 		}
 	});
@@ -701,10 +809,10 @@ export function restoreFolder(id: string, restoreContents: boolean = true): void
 		}
 
 		if (restoreContents) {
-			// Restore all notes that were in this folder
-			for (const note of Object.values(d.notes)) {
-				if (note.folderId === id && note.deletedAt) {
-					note.deletedAt = null;
+			// Restore all memories that were in this folder
+			for (const memory of Object.values(d.memoryObjects)) {
+				if (memory.folderId === id && memory.deletedAt) {
+					memory.deletedAt = null;
 				}
 			}
 
@@ -713,10 +821,10 @@ export function restoreFolder(id: string, restoreContents: boolean = true): void
 				for (const f of Object.values(d.folders)) {
 					if (f.parentId === parentId && f.deletedAt) {
 						f.deletedAt = null;
-						// Restore notes in this subfolder
-						for (const note of Object.values(d.notes)) {
-							if (note.folderId === f.id && note.deletedAt) {
-								note.deletedAt = null;
+						// Restore memories in this subfolder
+						for (const memory of Object.values(d.memoryObjects)) {
+							if (memory.folderId === f.id && memory.deletedAt) {
+								memory.deletedAt = null;
 							}
 						}
 						restoreSubfolders(f.id);
@@ -728,20 +836,20 @@ export function restoreFolder(id: string, restoreContents: boolean = true): void
 	});
 }
 
-// Permanently delete a note (cannot be undone)
-export function permanentlyDeleteNote(id: string): void {
+// Permanently delete a memory object (cannot be undone)
+export function permanentlyDeleteMemoryObject(id: string): void {
 	updateDoc((d) => {
-		delete d.notes[id];
+		delete d.memoryObjects[id];
 	});
 }
 
 // Permanently delete a folder (cannot be undone)
 export function permanentlyDeleteFolder(id: string): void {
 	updateDoc((d) => {
-		// Also permanently delete all notes that were in this folder
-		for (const note of Object.values(d.notes)) {
-			if (note.folderId === id) {
-				delete d.notes[note.id];
+		// Also permanently delete all memories that were in this folder
+		for (const memory of Object.values(d.memoryObjects)) {
+			if (memory.folderId === id) {
+				delete d.memoryObjects[memory.id];
 			}
 		}
 
@@ -749,10 +857,10 @@ export function permanentlyDeleteFolder(id: string): void {
 		const deleteSubfolders = (parentId: string) => {
 			for (const f of Object.values(d.folders)) {
 				if (f.parentId === parentId) {
-					// Delete notes in subfolder
-					for (const note of Object.values(d.notes)) {
-						if (note.folderId === f.id) {
-							delete d.notes[note.id];
+					// Delete memories in subfolder
+					for (const memory of Object.values(d.memoryObjects)) {
+						if (memory.folderId === f.id) {
+							delete d.memoryObjects[memory.id];
 						}
 					}
 					deleteSubfolders(f.id);
@@ -770,10 +878,10 @@ export function permanentlyDeleteFolder(id: string): void {
 export function emptyTrash(): void {
 	const vaultId = getCurrentVaultId();
 	updateDoc((d) => {
-		// Delete all trashed notes in current vault
-		for (const note of Object.values(d.notes)) {
-			if (note.vaultId === vaultId && note.deletedAt) {
-				delete d.notes[note.id];
+		// Delete all trashed memories in current vault
+		for (const memory of Object.values(d.memoryObjects)) {
+			if (memory.vaultId === vaultId && memory.deletedAt) {
+				delete d.memoryObjects[memory.id];
 			}
 		}
 
@@ -792,10 +900,10 @@ export function cleanupOldTrash(): number {
 	let deletedCount = 0;
 
 	updateDoc((d) => {
-		// Delete old trashed notes
-		for (const note of Object.values(d.notes)) {
-			if (note.deletedAt && note.deletedAt < thirtyDaysAgo) {
-				delete d.notes[note.id];
+		// Delete old trashed memories
+		for (const memory of Object.values(d.memoryObjects)) {
+			if (memory.deletedAt && memory.deletedAt < thirtyDaysAgo) {
+				delete d.memoryObjects[memory.id];
 				deletedCount++;
 			}
 		}
@@ -812,12 +920,12 @@ export function cleanupOldTrash(): number {
 	return deletedCount;
 }
 
-export function moveNoteToFolder(noteId: string, folderId: string | null): void {
+export function moveMemoryObjectToFolder(memoryId: string, folderId: string | null): void {
 	updateDoc((d) => {
-		const note = d.notes[noteId];
-		if (note) {
-			note.folderId = folderId;
-			note.modified = Date.now();
+		const memory = d.memoryObjects[memoryId];
+		if (memory) {
+			memory.folderId = folderId;
+			memory.updatedAt = Date.now();
 		}
 	});
 }
@@ -846,12 +954,12 @@ function isDescendantFolder(ancestorId: string, descendantId: string): boolean {
 	return false;
 }
 
-export function getNotesInFolder(folderId: string | null): Note[] {
+export function getMemoryObjectsInFolder(folderId: string | null): MemoryObject[] {
 	if (!doc) return [];
 	const vaultId = getCurrentVaultId();
-	return Object.values(doc.notes)
-		.filter((note) => note.folderId === folderId && note.vaultId === vaultId)
-		.sort((a, b) => b.modified - a.modified);
+	return Object.values(doc.memoryObjects)
+		.filter((m) => m.folderId === folderId && m.vaultId === vaultId)
+		.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export function getSubfolders(parentId: string | null): Folder[] {
@@ -1166,9 +1274,9 @@ export function getDocBinary(): Uint8Array {
 
 // Check if local document is essentially empty (no user content)
 function isDocEmpty(d: Automerge.Doc<KurumiDocument>): boolean {
-	const noteCount = Object.keys(d.notes || {}).length;
+	const memoryCount = Object.keys(d.memoryObjects || {}).length;
 	const folderCount = Object.keys(d.folders || {}).length;
-	return noteCount === 0 && folderCount === 0;
+	return memoryCount === 0 && folderCount === 0;
 }
 
 // Deep copy an object to break Automerge references
@@ -1176,12 +1284,20 @@ function deepCopy<T>(obj: T): T {
 	return JSON.parse(JSON.stringify(obj));
 }
 
-// Helper to pick the most recent version of an item
-function pickNewest<T extends { modified: number }>(local: T | undefined, remote: T | undefined): T | undefined {
+// Helper to pick the most recent version of an item.
+// Folders/Vaults/People/Events still use `modified`; MemoryObjects use `updatedAt`.
+function pickNewestBy<T>(
+	local: T | undefined,
+	remote: T | undefined,
+	getTime: (item: T) => number
+): T | undefined {
 	if (!local) return remote;
 	if (!remote) return local;
-	return local.modified >= remote.modified ? local : remote;
+	return getTime(local) >= getTime(remote) ? local : remote;
 }
+
+const byModified = <T extends { modified: number }>(item: T) => item.modified;
+const byUpdatedAt = <T extends { updatedAt: number }>(item: T) => item.updatedAt;
 
 // Manually merge all data from both documents, preferring newest versions
 function manualMerge(
@@ -1193,14 +1309,14 @@ function manualMerge(
 	const localData = deepCopy({
 		vaults: localDoc.vaults || {},
 		folders: localDoc.folders || {},
-		notes: localDoc.notes || {},
+		memoryObjects: localDoc.memoryObjects || {},
 		people: localDoc.people || {},
 		events: localDoc.events || {}
 	});
 	const remoteData = deepCopy({
 		vaults: remoteDoc.vaults || {},
 		folders: remoteDoc.folders || {},
-		notes: remoteDoc.notes || {},
+		memoryObjects: remoteDoc.memoryObjects || {},
 		people: remoteDoc.people || {},
 		events: remoteDoc.events || {}
 	});
@@ -1212,7 +1328,7 @@ function manualMerge(
 			...Object.keys(remoteData.vaults)
 		]);
 		for (const id of allVaultIds) {
-			const newest = pickNewest(localData.vaults[id], remoteData.vaults[id]);
+			const newest = pickNewestBy(localData.vaults[id], remoteData.vaults[id], byModified);
 			if (newest && !d.vaults[id]) {
 				d.vaults[id] = newest;
 			}
@@ -1224,21 +1340,25 @@ function manualMerge(
 			...Object.keys(remoteData.folders)
 		]);
 		for (const id of allFolderIds) {
-			const newest = pickNewest(localData.folders[id], remoteData.folders[id]);
+			const newest = pickNewestBy(localData.folders[id], remoteData.folders[id], byModified);
 			if (newest) {
 				d.folders[id] = newest;
 			}
 		}
 
-		// Merge notes - always keep all, use newest content for conflicts
-		const allNoteIds = new Set([
-			...Object.keys(localData.notes),
-			...Object.keys(remoteData.notes)
+		// Merge memory objects - always keep all, use newest version for conflicts
+		const allMemoryIds = new Set([
+			...Object.keys(localData.memoryObjects),
+			...Object.keys(remoteData.memoryObjects)
 		]);
-		for (const id of allNoteIds) {
-			const newest = pickNewest(localData.notes[id], remoteData.notes[id]);
+		for (const id of allMemoryIds) {
+			const newest = pickNewestBy(
+				localData.memoryObjects[id],
+				remoteData.memoryObjects[id],
+				byUpdatedAt
+			);
 			if (newest) {
-				d.notes[id] = newest;
+				d.memoryObjects[id] = newest;
 			}
 		}
 
@@ -1248,7 +1368,7 @@ function manualMerge(
 			...Object.keys(remoteData.people)
 		]);
 		for (const id of allPeopleIds) {
-			const newest = pickNewest(localData.people[id], remoteData.people[id]);
+			const newest = pickNewestBy(localData.people[id], remoteData.people[id], byModified);
 			if (newest && !d.people[id]) {
 				d.people[id] = newest;
 			}
@@ -1260,7 +1380,7 @@ function manualMerge(
 			...Object.keys(remoteData.events)
 		]);
 		for (const id of allEventIds) {
-			const newest = pickNewest(localData.events[id], remoteData.events[id]);
+			const newest = pickNewestBy(localData.events[id], remoteData.events[id], byModified);
 			if (newest && !d.events[id]) {
 				d.events[id] = newest;
 			}
@@ -1323,14 +1443,14 @@ export async function mergeDoc(remoteBinary: Uint8Array): Promise<void> {
 
 	// If CRDT merge worked, check for data loss and recover if needed
 	if (mergedDoc) {
-		const localNoteCount = Object.keys(doc.notes || {}).length;
-		const remoteNoteCount = Object.keys(remoteDoc.notes || {}).length;
-		const mergedNoteCount = Object.keys(mergedDoc.notes || {}).length;
-		const expectedMinNotes = Math.max(localNoteCount, remoteNoteCount);
+		const localCount = Object.keys(doc.memoryObjects || {}).length;
+		const remoteCount = Object.keys(remoteDoc.memoryObjects || {}).length;
+		const mergedCount = Object.keys(mergedDoc.memoryObjects || {}).length;
+		const expectedMin = Math.max(localCount, remoteCount);
 
-		// If merge lost notes, do manual recovery
-		if (mergedNoteCount < expectedMinNotes) {
-			console.log(`CRDT merge lost data (${mergedNoteCount} < ${expectedMinNotes}), recovering...`);
+		// If merge lost memories, do manual recovery
+		if (mergedCount < expectedMin) {
+			console.log(`CRDT merge lost data (${mergedCount} < ${expectedMin}), recovering...`);
 			doc = manualMerge(mergedDoc, doc, remoteDoc);
 		} else {
 			doc = mergedDoc;
@@ -1348,31 +1468,40 @@ export async function mergeDoc(remoteBinary: Uint8Array): Promise<void> {
 	await saveDoc();
 }
 
-// Export all notes as JSON (for backup) - legacy format
-export function exportNotesJSON(): string {
+// Export all memory objects as JSON (for backup) - legacy format
+export function exportMemoryObjectsJSON(): string {
 	if (!doc) return '[]';
-	return JSON.stringify(Object.values(doc.notes), null, 2);
+	return JSON.stringify(Object.values(doc.memoryObjects), null, 2);
 }
 
-// Full export including vaults, folders, notes, people, and events
+// Full export including vaults, folders, memory objects, people, and events
 export interface KurumiExport {
 	version: number;
 	exportedAt: string;
 	vaults: Vault[];
 	folders: Folder[];
-	notes: Note[];
+	memoryObjects: MemoryObject[];
 	people: Person[];
 	events: Event[];
 }
 
 export function exportFullJSON(): string {
-	if (!doc) return JSON.stringify({ version: 3, exportedAt: new Date().toISOString(), vaults: [], folders: [], notes: [], people: [], events: [] });
+	if (!doc)
+		return JSON.stringify({
+			version: 6,
+			exportedAt: new Date().toISOString(),
+			vaults: [],
+			folders: [],
+			memoryObjects: [],
+			people: [],
+			events: []
+		});
 	const exportData: KurumiExport = {
-		version: doc.version || 3,
+		version: doc.version || 6,
 		exportedAt: new Date().toISOString(),
 		vaults: Object.values(doc.vaults || {}),
 		folders: Object.values(doc.folders || {}),
-		notes: Object.values(doc.notes || {}),
+		memoryObjects: Object.values(doc.memoryObjects || {}),
 		people: Object.values(doc.people || {}),
 		events: Object.values(doc.events || {})
 	};
@@ -1390,7 +1519,99 @@ export interface ImportAnalysis {
 	vaultConflicts: VaultConflict[];
 	newVaults: Vault[];
 	totalFolders: number;
-	totalNotes: number;
+	totalMemoryObjects: number;
+}
+
+// Legacy note shape used by old exports/imports (pre-v6).
+type LegacyNoteImport = {
+	id: string;
+	title: string;
+	content: string;
+	tags?: string[];
+	folderId?: string | null;
+	vaultId?: string;
+	created: number;
+	modified: number;
+	deletedAt?: number | null;
+};
+
+function legacyNoteToMemoryObject(note: LegacyNoteImport, defaultVaultId: string): MemoryObject {
+	return {
+		id: note.id,
+		type: 'note',
+		space: 'personal',
+		parentBucket: null,
+		folderId: note.folderId ?? null,
+		title: note.title,
+		rawText: '',
+		bodyMarkdown: note.content ?? '',
+		rawAudioRef: null,
+		rawMediaRef: null,
+		transcript: null,
+		transcriptSegments: [],
+		summaryShort: null,
+		summaryLong: null,
+		createdAt: note.created,
+		updatedAt: note.modified,
+		capturedAt: note.created,
+		sourceDevice: null,
+		sourceContext: null,
+		language: null,
+		tags: Array.isArray(note.tags) ? [...note.tags] : [],
+		controlledLabels: [],
+		participants: [],
+		entities: [],
+		projects: [],
+		topics: [],
+		dates: [],
+		actionItems: [],
+		decisions: [],
+		relatedMemoryIds: [],
+		visibilityScope: 'personal',
+		processingState: 'ready',
+		confidenceScores: {},
+		embeddingRef: null,
+		vaultId: note.vaultId ?? defaultVaultId,
+		deletedAt: note.deletedAt ?? null
+	};
+}
+
+// Parse an import JSON blob into vaults/folders/memoryObjects regardless of
+// whether it's a legacy (notes) or current (memoryObjects) export shape.
+function parseImportPayload(
+	data: unknown,
+	defaultVaultId: string
+): { vaults: Vault[]; folders: Folder[]; memoryObjects: MemoryObject[] } | null {
+	let vaults: Vault[] = [];
+	let folders: Folder[] = [];
+	let memories: MemoryObject[] = [];
+
+	if (Array.isArray(data)) {
+		// Legacy: bare array of notes
+		memories = (data as LegacyNoteImport[]).map((n) => legacyNoteToMemoryObject(n, defaultVaultId));
+	} else if (data && typeof data === 'object') {
+		const payload = data as {
+			vaults?: Vault[];
+			folders?: Folder[];
+			memoryObjects?: MemoryObject[];
+			notes?: LegacyNoteImport[];
+		};
+		if (payload.memoryObjects) {
+			vaults = payload.vaults ?? [];
+			folders = payload.folders ?? [];
+			memories = payload.memoryObjects;
+		} else if (payload.notes) {
+			vaults = payload.vaults ?? [];
+			folders = payload.folders ?? [];
+			memories = payload.notes.map((n) => legacyNoteToMemoryObject(n, defaultVaultId));
+		} else {
+			return null;
+		}
+	} else {
+		return null;
+	}
+
+	return { vaults, folders, memoryObjects: memories };
 }
 
 export function analyzeImport(jsonString: string): ImportAnalysis | { error: string } {
@@ -1398,29 +1619,14 @@ export function analyzeImport(jsonString: string): ImportAnalysis | { error: str
 
 	try {
 		const data = JSON.parse(jsonString);
-
-		// Handle both old format (array of notes) and new format (full export)
-		let vaults: Vault[] = [];
-		let folders: Folder[] = [];
-		let notes: Note[] = [];
-
-		if (Array.isArray(data)) {
-			// Old format: array of notes, put them in current vault
-			notes = data;
-		} else if (data.vaults && data.notes) {
-			// New format
-			vaults = data.vaults || [];
-			folders = data.folders || [];
-			notes = data.notes || [];
-		} else {
-			return { error: 'Invalid import format' };
-		}
+		const parsed = parseImportPayload(data, doc.currentVaultId || DEFAULT_VAULT_ID);
+		if (!parsed) return { error: 'Invalid import format' };
 
 		// Check for vault conflicts
 		const vaultConflicts: VaultConflict[] = [];
 		const newVaults: Vault[] = [];
 
-		for (const importedVault of vaults) {
+		for (const importedVault of parsed.vaults) {
 			const existingVault = doc.vaults?.[importedVault.id];
 			if (existingVault) {
 				vaultConflicts.push({ importedVault, existingVault });
@@ -1433,8 +1639,8 @@ export function analyzeImport(jsonString: string): ImportAnalysis | { error: str
 			hasConflicts: vaultConflicts.length > 0,
 			vaultConflicts,
 			newVaults,
-			totalFolders: folders.length,
-			totalNotes: notes.length
+			totalFolders: parsed.folders.length,
+			totalMemoryObjects: parsed.memoryObjects.length
 		};
 	} catch {
 		return { error: 'Invalid JSON format' };
@@ -1447,34 +1653,28 @@ export interface ImportOptions {
 	conflictResolution: ConflictResolution;
 }
 
-export async function importJSON(jsonString: string, options: ImportOptions): Promise<{ success: boolean; error?: string; imported?: { vaults: number; folders: number; notes: number } }> {
+export async function importJSON(
+	jsonString: string,
+	options: ImportOptions
+): Promise<{
+	success: boolean;
+	error?: string;
+	imported?: { vaults: number; folders: number; memoryObjects: number };
+}> {
 	if (!doc) return { success: false, error: 'Database not initialized' };
 
 	try {
 		const data = JSON.parse(jsonString);
+		const parsed = parseImportPayload(data, doc.currentVaultId || DEFAULT_VAULT_ID);
+		if (!parsed) return { success: false, error: 'Invalid import format' };
 
-		// Handle both old format (array of notes) and new format (full export)
-		let vaults: Vault[] = [];
-		let folders: Folder[] = [];
-		let notes: Note[] = [];
-
-		if (Array.isArray(data)) {
-			// Old format: array of notes, put them in current vault
-			notes = data.map(n => ({ ...n, vaultId: n.vaultId || doc!.currentVaultId }));
-		} else if (data.vaults && data.notes) {
-			// New format
-			vaults = data.vaults || [];
-			folders = data.folders || [];
-			notes = data.notes || [];
-		} else {
-			return { success: false, error: 'Invalid import format' };
-		}
+		const { vaults, folders, memoryObjects: memories } = parsed;
 
 		// Track ID mappings for duplicated vaults
 		const vaultIdMap = new Map<string, string>();
 		let importedVaults = 0;
 		let importedFolders = 0;
-		let importedNotes = 0;
+		let importedMemories = 0;
 
 		doc = Automerge.change(doc, (d) => {
 			// Import vaults
@@ -1518,23 +1718,24 @@ export async function importJSON(jsonString: string, options: ImportOptions): Pr
 				}
 			}
 
-			// Import notes (with remapped vault IDs if duplicated)
-			for (const note of notes) {
-				const targetVaultId = vaultIdMap.get(note.vaultId) || note.vaultId || d.currentVaultId;
+			// Import memory objects (with remapped vault IDs if duplicated)
+			for (const memory of memories) {
+				const targetVaultId =
+					vaultIdMap.get(memory.vaultId) || memory.vaultId || d.currentVaultId;
 
-				// Check if note already exists
-				if (d.notes[note.id]) {
+				// Check if memory already exists
+				if (d.memoryObjects[memory.id]) {
 					if (options.conflictResolution === 'overwrite') {
-						d.notes[note.id] = { ...note, vaultId: targetVaultId };
-						importedNotes++;
+						d.memoryObjects[memory.id] = { ...memory, vaultId: targetVaultId };
+						importedMemories++;
 					} else if (options.conflictResolution === 'duplicate') {
 						const newId = generateId();
-						d.notes[newId] = { ...note, id: newId, vaultId: targetVaultId };
-						importedNotes++;
+						d.memoryObjects[newId] = { ...memory, id: newId, vaultId: targetVaultId };
+						importedMemories++;
 					}
 				} else {
-					d.notes[note.id] = { ...note, vaultId: targetVaultId };
-					importedNotes++;
+					d.memoryObjects[memory.id] = { ...memory, vaultId: targetVaultId };
+					importedMemories++;
 				}
 			}
 		});
@@ -1547,11 +1748,14 @@ export async function importJSON(jsonString: string, options: ImportOptions): Pr
 			imported: {
 				vaults: importedVaults,
 				folders: importedFolders,
-				notes: importedNotes
+				memoryObjects: importedMemories
 			}
 		};
 	} catch (e) {
-		return { success: false, error: `Import failed: ${e instanceof Error ? e.message : 'Unknown error'}` };
+		return {
+			success: false,
+			error: `Import failed: ${e instanceof Error ? e.message : 'Unknown error'}`
+		};
 	}
 }
 
@@ -1590,15 +1794,15 @@ export function extractTags(content: string): string[] {
 	return Array.from(tags);
 }
 
-// Get all unique tags across notes in current vault
+// Get all unique tags across memories in current vault
 export function getAllTags(): { tag: string; count: number }[] {
 	if (!doc) return [];
 	const vaultId = getCurrentVaultId();
 	const tagCounts = new Map<string, number>();
 
-	for (const note of Object.values(doc.notes)) {
-		if (note.vaultId !== vaultId) continue;
-		const tags = extractTags(note.content);
+	for (const memory of Object.values(doc.memoryObjects)) {
+		if (memory.vaultId !== vaultId) continue;
+		const tags = extractTags(memory.bodyMarkdown);
 		for (const tag of tags) {
 			tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
 		}
@@ -1609,15 +1813,15 @@ export function getAllTags(): { tag: string; count: number }[] {
 		.sort((a, b) => b.count - a.count);
 }
 
-// Get notes with a specific tag in current vault
-export function getNotesByTag(tag: string): Note[] {
+// Get memories with a specific tag in current vault
+export function getMemoryObjectsByTag(tag: string): MemoryObject[] {
 	if (!doc) return [];
 	const vaultId = getCurrentVaultId();
 	const lowerTag = tag.toLowerCase();
 
-	return Object.values(doc.notes).filter((note) => {
-		if (note.vaultId !== vaultId) return false;
-		const tags = extractTags(note.content);
+	return Object.values(doc.memoryObjects).filter((memory) => {
+		if (memory.vaultId !== vaultId) return false;
+		const tags = extractTags(memory.bodyMarkdown);
 		return tags.includes(lowerTag);
 	});
 }
@@ -1633,15 +1837,15 @@ export function extractPeople(content: string): string[] {
 	return Array.from(people);
 }
 
-// Get all unique people across notes in current vault
+// Get all unique people across memories in current vault
 export function getAllPeople(): { name: string; count: number }[] {
 	if (!doc) return [];
 	const vaultId = getCurrentVaultId();
 	const peopleCounts = new Map<string, number>();
 
-	for (const note of Object.values(doc.notes)) {
-		if (note.vaultId !== vaultId) continue;
-		const people = extractPeople(note.content);
+	for (const memory of Object.values(doc.memoryObjects)) {
+		if (memory.vaultId !== vaultId) continue;
+		const people = extractPeople(memory.bodyMarkdown);
 		for (const person of people) {
 			peopleCounts.set(person, (peopleCounts.get(person) || 0) + 1);
 		}
@@ -1652,14 +1856,14 @@ export function getAllPeople(): { name: string; count: number }[] {
 		.sort((a, b) => b.count - a.count);
 }
 
-// Get notes mentioning a specific person in current vault
-export function getNotesByPerson(name: string): Note[] {
+// Get memories mentioning a specific person in current vault
+export function getMemoryObjectsByPerson(name: string): MemoryObject[] {
 	if (!doc) return [];
 	const vaultId = getCurrentVaultId();
 
-	return Object.values(doc.notes).filter((note) => {
-		if (note.vaultId !== vaultId) return false;
-		const people = extractPeople(note.content);
+	return Object.values(doc.memoryObjects).filter((memory) => {
+		if (memory.vaultId !== vaultId) return false;
+		const people = extractPeople(memory.bodyMarkdown);
 		return people.some((p) => p.toLowerCase() === name.toLowerCase());
 	});
 }
@@ -1675,15 +1879,15 @@ export function extractDates(content: string): string[] {
 	return Array.from(dates);
 }
 
-// Get all unique dates across notes in current vault
+// Get all unique dates across memories in current vault
 export function getAllDates(): { date: string; count: number }[] {
 	if (!doc) return [];
 	const vaultId = getCurrentVaultId();
 	const dateCounts = new Map<string, number>();
 
-	for (const note of Object.values(doc.notes)) {
-		if (note.vaultId !== vaultId) continue;
-		const dates = extractDates(note.content);
+	for (const memory of Object.values(doc.memoryObjects)) {
+		if (memory.vaultId !== vaultId) continue;
+		const dates = extractDates(memory.bodyMarkdown);
 		for (const date of dates) {
 			dateCounts.set(date, (dateCounts.get(date) || 0) + 1);
 		}
@@ -1694,14 +1898,14 @@ export function getAllDates(): { date: string; count: number }[] {
 		.sort((a, b) => b.date.localeCompare(a.date)); // Sort by date descending
 }
 
-// Get notes with a specific date in current vault
-export function getNotesByDate(date: string): Note[] {
+// Get memories with a specific date in current vault
+export function getMemoryObjectsByDate(date: string): MemoryObject[] {
 	if (!doc) return [];
 	const vaultId = getCurrentVaultId();
 
-	return Object.values(doc.notes).filter((note) => {
-		if (note.vaultId !== vaultId) return false;
-		const dates = extractDates(note.content);
+	return Object.values(doc.memoryObjects).filter((memory) => {
+		if (memory.vaultId !== vaultId) return false;
+		const dates = extractDates(memory.bodyMarkdown);
 		return dates.includes(date);
 	});
 }
@@ -1730,15 +1934,15 @@ export function getUrlDomain(url: string): string {
 	}
 }
 
-// Get all unique URLs across notes in current vault
+// Get all unique URLs across memories in current vault
 export function getAllLinks(): { url: string; domain: string; count: number }[] {
 	if (!doc) return [];
 	const vaultId = getCurrentVaultId();
 	const urlCounts = new Map<string, number>();
 
-	for (const note of Object.values(doc.notes)) {
-		if (note.vaultId !== vaultId) continue;
-		const urls = extractUrls(note.content);
+	for (const memory of Object.values(doc.memoryObjects)) {
+		if (memory.vaultId !== vaultId) continue;
+		const urls = extractUrls(memory.bodyMarkdown);
 		for (const url of urls) {
 			urlCounts.set(url, (urlCounts.get(url) || 0) + 1);
 		}
@@ -1749,42 +1953,42 @@ export function getAllLinks(): { url: string; domain: string; count: number }[] 
 		.sort((a, b) => b.count - a.count);
 }
 
-// Get notes containing a specific URL in current vault
-export function getNotesByLink(url: string): Note[] {
+// Get memories containing a specific URL in current vault
+export function getMemoryObjectsByLink(url: string): MemoryObject[] {
 	if (!doc) return [];
 	const vaultId = getCurrentVaultId();
 
-	return Object.values(doc.notes).filter((note) => {
-		if (note.vaultId !== vaultId) return false;
-		const urls = extractUrls(note.content);
+	return Object.values(doc.memoryObjects).filter((memory) => {
+		if (memory.vaultId !== vaultId) return false;
+		const urls = extractUrls(memory.bodyMarkdown);
 		return urls.includes(url);
 	});
 }
 
-// Find notes that link to a given note (in current vault)
-export function findBacklinks(noteId: string): Note[] {
+// Find memories that link to a given memory (in current vault)
+export function findBacklinks(memoryId: string): MemoryObject[] {
 	if (!doc) return [];
-	const targetNote = doc.notes[noteId];
-	if (!targetNote) return [];
+	const target = doc.memoryObjects[memoryId];
+	if (!target) return [];
 
-	const vaultId = targetNote.vaultId;
-	const targetTitle = targetNote.title.toLowerCase();
+	const vaultId = target.vaultId;
+	const targetTitle = target.title.toLowerCase();
 
-	return Object.values(doc.notes).filter((note) => {
-		if (note.id === noteId) return false;
-		if (note.vaultId !== vaultId) return false;
-		const links = extractWikilinks(note.content);
+	return Object.values(doc.memoryObjects).filter((memory) => {
+		if (memory.id === memoryId) return false;
+		if (memory.vaultId !== vaultId) return false;
+		const links = extractWikilinks(memory.bodyMarkdown);
 		return links.some((link) => link.toLowerCase() === targetTitle);
 	});
 }
 
-// Find a note by its title in current vault (case-insensitive)
-export function findNoteByTitle(title: string): Note | undefined {
+// Find a memory by its title in current vault (case-insensitive)
+export function findMemoryObjectByTitle(title: string): MemoryObject | undefined {
 	if (!doc) return undefined;
 	const vaultId = getCurrentVaultId();
 	const lowerTitle = title.toLowerCase();
-	return Object.values(doc.notes).find(
-		(note) => note.vaultId === vaultId && note.title.toLowerCase() === lowerTitle
+	return Object.values(doc.memoryObjects).find(
+		(memory) => memory.vaultId === vaultId && memory.title.toLowerCase() === lowerTitle
 	);
 }
 
@@ -1794,13 +1998,13 @@ export interface PersonWithMetadata {
 	name: string;
 	count: number;
 	person: Person | null; // The Person object if exists
-	mentioningNotes: Note[];
+	mentioningMemories: MemoryObject[];
 }
 
 export interface DateWithEvents {
 	date: string;
 	events: Event[]; // Event objects for this date
-	mentioningNotes: Note[];
+	mentioningMemories: MemoryObject[];
 }
 
 /**
@@ -1811,10 +2015,10 @@ export function getAllPeopleWithMetadata(): PersonWithMetadata[] {
 	const vaultId = getCurrentVaultId();
 	const peopleMap = new Map<string, PersonWithMetadata>();
 
-	// First pass: collect all mentions from notes
-	for (const note of Object.values(doc.notes)) {
-		if (note.vaultId !== vaultId) continue;
-		const peopleNames = extractPeople(note.content);
+	// First pass: collect all mentions from memories
+	for (const memory of Object.values(doc.memoryObjects)) {
+		if (memory.vaultId !== vaultId) continue;
+		const peopleNames = extractPeople(memory.bodyMarkdown);
 
 		for (const name of peopleNames) {
 			if (!peopleMap.has(name)) {
@@ -1822,12 +2026,12 @@ export function getAllPeopleWithMetadata(): PersonWithMetadata[] {
 					name,
 					count: 0,
 					person: null,
-					mentioningNotes: []
+					mentioningMemories: []
 				});
 			}
 			const personData = peopleMap.get(name)!;
 			personData.count++;
-			personData.mentioningNotes.push(note);
+			personData.mentioningMemories.push(memory);
 		}
 	}
 
@@ -1844,7 +2048,7 @@ export function getAllPeopleWithMetadata(): PersonWithMetadata[] {
 					name: personObj.name,
 					count: 0,
 					person: personObj,
-					mentioningNotes: []
+					mentioningMemories: []
 				});
 			}
 		}
@@ -1861,21 +2065,21 @@ export function getAllDatesWithEvents(): DateWithEvents[] {
 	const vaultId = getCurrentVaultId();
 	const datesMap = new Map<string, DateWithEvents>();
 
-	// First pass: collect all date mentions from notes
-	for (const note of Object.values(doc.notes)) {
-		if (note.vaultId !== vaultId) continue;
-		const dates = extractDates(note.content);
+	// First pass: collect all date mentions from memories
+	for (const memory of Object.values(doc.memoryObjects)) {
+		if (memory.vaultId !== vaultId) continue;
+		const dates = extractDates(memory.bodyMarkdown);
 
 		for (const date of dates) {
 			if (!datesMap.has(date)) {
 				datesMap.set(date, {
 					date,
 					events: [],
-					mentioningNotes: []
+					mentioningMemories: []
 				});
 			}
 			const dateInfo = datesMap.get(date)!;
-			dateInfo.mentioningNotes.push(note);
+			dateInfo.mentioningMemories.push(memory);
 		}
 	}
 
@@ -1891,7 +2095,7 @@ export function getAllDatesWithEvents(): DateWithEvents[] {
 				datesMap.set(event.date, {
 					date: event.date,
 					events: [event],
-					mentioningNotes: []
+					mentioningMemories: []
 				});
 			}
 		}

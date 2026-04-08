@@ -21,18 +21,6 @@ export interface Vault {
 	modified: number;
 }
 
-export interface Note {
-	id: string;
-	title: string;
-	content: string;
-	tags: string[];
-	folderId: string | null; // null = root level
-	vaultId: string;
-	created: number;
-	modified: number;
-	deletedAt: number | null; // null = not deleted, timestamp = when moved to trash
-}
-
 export interface Folder {
 	id: string;
 	name: string;
@@ -84,8 +72,8 @@ export interface Template {
 
 // ---------------------------------------------------------------------------
 // Memory model (roadmap §7) — durable knowledge objects beyond simple notes.
-// These types are the frozen contract for storage, sync, processing, and the
-// inference router. They are additive: existing Note/Folder remain untouched.
+// MemoryObject is the unified storage shape: text notes, voice memos, meetings,
+// tasks, references, and uploaded files all live here, distinguished by `type`.
 // ---------------------------------------------------------------------------
 
 export type MemoryType =
@@ -151,10 +139,11 @@ export interface MemoryObject {
 	id: string;
 	type: MemoryType;
 	space: MemorySpace;
-	parentBucket: string | null; // e.g. "Inbox", "Projects", "Meetings"
+	parentBucket: string | null; // e.g. "Inbox", "Projects", "Meetings" (spec §6.2 navigation buckets)
+	folderId: string | null; // existing nested-folder navigation; deviation from spec to keep folder UX
 	title: string;
-	rawText: string | null;
-	bodyMarkdown: string | null;
+	rawText: string; // raw captured input; '' for empty
+	bodyMarkdown: string; // primary editable markdown body; '' for empty
 	rawAudioRef: string | null;
 	rawMediaRef: string | null;
 	transcript: string | null;
@@ -233,7 +222,7 @@ export interface Relation {
 }
 
 export interface KurumiDocument {
-	notes: Record<string, Note>;
+	memoryObjects: Record<string, MemoryObject>;
 	folders: Record<string, Folder>;
 	vaults: Record<string, Vault>;
 	people: Record<string, Person>;
@@ -268,33 +257,65 @@ export function createVault(name: string, icon?: string): Vault {
 export function createEmptyDocument(): KurumiDocument {
 	const defaultVault = createDefaultVault();
 	return {
-		notes: {},
+		memoryObjects: {},
 		folders: {},
 		vaults: { [DEFAULT_VAULT_ID]: defaultVault },
 		people: {},
 		events: {},
 		templates: {},
 		currentVaultId: DEFAULT_VAULT_ID,
-		version: 5
+		version: 6
 	};
 }
 
-export function createNote(
-	title: string = 'Untitled',
-	content: string = '',
-	folderId: string | null = null,
-	vaultId: string = DEFAULT_VAULT_ID
-): Note {
+export function createMemoryObject(
+	options: {
+		type?: MemoryType;
+		title?: string;
+		bodyMarkdown?: string;
+		folderId?: string | null;
+		vaultId?: string;
+		space?: MemorySpace;
+	} = {}
+): MemoryObject {
 	const now = Date.now();
+	const space = options.space ?? 'personal';
 	return {
 		id: generateId(),
-		title,
-		content,
+		type: options.type ?? 'note',
+		space,
+		parentBucket: null,
+		folderId: options.folderId ?? null,
+		title: options.title ?? 'Untitled',
+		rawText: '',
+		bodyMarkdown: options.bodyMarkdown ?? '',
+		rawAudioRef: null,
+		rawMediaRef: null,
+		transcript: null,
+		transcriptSegments: [],
+		summaryShort: null,
+		summaryLong: null,
+		createdAt: now,
+		updatedAt: now,
+		capturedAt: now,
+		sourceDevice: null,
+		sourceContext: null,
+		language: null,
 		tags: [],
-		folderId,
-		vaultId,
-		created: now,
-		modified: now,
+		controlledLabels: [],
+		participants: [],
+		entities: [],
+		projects: [],
+		topics: [],
+		dates: [],
+		actionItems: [],
+		decisions: [],
+		relatedMemoryIds: [],
+		visibilityScope: space,
+		processingState: 'ready',
+		confidenceScores: {},
+		embeddingRef: null,
+		vaultId: options.vaultId ?? DEFAULT_VAULT_ID,
 		deletedAt: null
 	};
 }

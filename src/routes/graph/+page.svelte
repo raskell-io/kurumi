@@ -1,27 +1,26 @@
 <script lang="ts">
 	import Graph from '$lib/components/Graph.svelte';
-	import { notes, extractWikilinks, type Note } from '$lib/db';
-	import { get } from 'svelte/store';
+	import { memoryObjects, extractWikilinks, type MemoryObject } from '$lib/db';
 	import { Link2 } from 'lucide-svelte';
 
 	// Store subscription for Svelte 5 runes mode
-	let notesData = $state<Note[]>([]);
+	let memoriesData = $state<MemoryObject[]>([]);
 
 	$effect(() => {
-		const unsub = notes.subscribe((n) => {
-			notesData = n;
+		const unsub = memoryObjects.subscribe((m) => {
+			memoriesData = m;
 		});
 		return unsub;
 	});
 
-	// Count total links across all notes
+	// Count total links across all memories
 	let linkCount = $derived.by(() => {
-		const noteMap = new Map(notesData.map(n => [n.title.toLowerCase(), n.id]));
+		const memoryMap = new Map(memoriesData.map((m) => [m.title.toLowerCase(), m.id]));
 		let count = 0;
-		for (const note of notesData) {
-			const wikilinks = extractWikilinks(note.content);
+		for (const memory of memoriesData) {
+			const wikilinks = extractWikilinks(memory.bodyMarkdown);
 			for (const link of wikilinks) {
-				if (noteMap.has(link.toLowerCase())) {
+				if (memoryMap.has(link.toLowerCase())) {
 					count++;
 				}
 			}
@@ -37,13 +36,13 @@
 	>
 		<h1 class="text-lg font-semibold text-[var(--color-text)]">Knowledge Graph</h1>
 		<span class="text-sm text-[var(--color-text-muted)]">
-			{notesData.length} {notesData.length === 1 ? 'note' : 'notes'} · {linkCount} {linkCount === 1 ? 'link' : 'links'}
+			{memoriesData.length} {memoriesData.length === 1 ? 'note' : 'notes'} · {linkCount} {linkCount === 1 ? 'link' : 'links'}
 		</span>
 	</header>
 
 	<!-- Graph -->
 	<div class="relative flex-1 bg-[var(--color-bg)]">
-		{#if notesData.length === 0}
+		{#if memoriesData.length === 0}
 			<div class="flex h-full items-center justify-center">
 				<div class="text-center">
 					<Link2 class="mx-auto mb-4 h-16 w-16 text-[var(--color-text-muted)]" />

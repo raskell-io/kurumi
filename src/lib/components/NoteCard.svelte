@@ -1,24 +1,24 @@
 <script lang="ts">
 	import { getFolder, extractTags } from '$lib/db';
-	import type { Note } from '$lib/db';
+	import type { MemoryObject } from '$lib/db';
 	import { Folder } from 'lucide-svelte';
 
 	interface Props {
-		note: Note;
+		memory: MemoryObject;
 		showFolder?: boolean;
 	}
 
-	let { note, showFolder = true }: Props = $props();
+	let { memory, showFolder = true }: Props = $props();
 
-	// Get folder name if note is in a folder
+	// Get folder name if memory is in a folder
 	let folderName = $derived.by(() => {
-		if (!note.folderId) return null;
-		const folder = getFolder(note.folderId);
+		if (!memory.folderId) return null;
+		const folder = getFolder(memory.folderId);
 		return folder?.name || null;
 	});
 
 	// Extract tags from content
-	let tags = $derived(extractTags(note.content));
+	let tags = $derived(extractTags(memory.bodyMarkdown));
 
 	// Get preview text (strip markdown syntax)
 	function getPreview(content: string, maxLength: number = 200): string {
@@ -65,17 +65,17 @@
 	}
 </script>
 
-<a href="/read/{note.id}" class="note-card">
+<a href="/read/{memory.id}" class="note-card">
 	<div class="card-content">
-		<h3 class="note-title">{note.title || 'Untitled'}</h3>
+		<h3 class="note-title">{memory.title || 'Untitled'}</h3>
 
-		<p class="note-preview">{getPreview(note.content)}</p>
+		<p class="note-preview">{getPreview(memory.bodyMarkdown)}</p>
 
 		<div class="note-meta">
-			<span class="note-date">{formatDate(note.modified)}</span>
+			<span class="note-date">{formatDate(memory.updatedAt)}</span>
 
 			{#if showFolder && folderName}
-				<a href="/read/folder/{note.folderId}" class="note-folder" onclick={(e) => e.stopPropagation()}>
+				<a href="/read/folder/{memory.folderId}" class="note-folder" onclick={(e) => e.stopPropagation()}>
 					<Folder class="h-3 w-3" />
 					{folderName}
 				</a>

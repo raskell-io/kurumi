@@ -1,4 +1,13 @@
-import { getDocBinary, mergeDoc, notes, folders, vaults, currentVaultId, people, events } from '$lib/db';
+import {
+	getDocBinary,
+	mergeDoc,
+	memoryObjects,
+	folders,
+	vaults,
+	currentVaultId,
+	people,
+	events
+} from '$lib/db';
 import { setSyncing, setSyncSuccess, setSyncError, syncState } from './status';
 import { get } from 'svelte/store';
 import {
@@ -7,7 +16,7 @@ import {
 	syncGit,
 	testGitConnection as testGitConnectionService
 } from '$lib/git';
-import type { Note, Folder, Person, Event } from '$lib/db/types';
+import type { MemoryObject, Folder, Person, Event } from '$lib/db/types';
 
 const SYNC_URL_KEY = 'kurumi-sync-url';
 const SYNC_TOKEN_KEY = 'kurumi-sync-token';
@@ -207,14 +216,14 @@ async function syncGitMethod(): Promise<{ success: boolean; error?: string }> {
 			return { success: false, error: 'No vault selected' };
 		}
 
-		const localNotes = get(notes).filter((n) => n.vaultId === currentVault.id);
+		const localMemories = get(memoryObjects).filter((m) => m.vaultId === currentVault.id);
 		const localFolders = get(folders).filter((f) => f.vaultId === currentVault.id);
 		const localPeople = get(people).filter((p) => p.vaultId === currentVault.id);
 		const localEvents = get(events).filter((e) => e.vaultId === currentVault.id);
 
 		// Import callback - will be called when remote changes need to be imported
 		const onImport = async (
-			importedNotes: Note[],
+			importedMemories: MemoryObject[],
 			importedFolders: Folder[],
 			importedPeople: Person[],
 			importedEvents: Event[]
@@ -222,14 +231,14 @@ async function syncGitMethod(): Promise<{ success: boolean; error?: string }> {
 			// TODO: Implement proper import into Automerge store
 			// For now, this is a placeholder - the actual merge happens in syncGit
 			console.log('Importing from git:', {
-				notes: importedNotes.length,
+				memories: importedMemories.length,
 				folders: importedFolders.length,
 				people: importedPeople.length,
 				events: importedEvents.length
 			});
 		};
 
-		await syncGit(localNotes, localFolders, currentVault, localPeople, localEvents, onImport);
+		await syncGit(localMemories, localFolders, currentVault, localPeople, localEvents, onImport);
 		return { success: true };
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Git sync failed';

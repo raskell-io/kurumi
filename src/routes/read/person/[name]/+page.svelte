@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { getNotesByPerson } from '$lib/db';
+	import { getMemoryObjectsByPerson } from '$lib/db';
 	import ReadNav from '$lib/components/ReadNav.svelte';
 	import NoteCard from '$lib/components/NoteCard.svelte';
 	import { User } from 'lucide-svelte';
 
 	let name = $derived(decodeURIComponent($page.params.name));
-	let notes = $derived(getNotesByPerson(name));
+	let memories = $derived(getMemoryObjectsByPerson(name));
 
 	let breadcrumbs = $derived([{ label: `@${name}`, href: `/read/person/${encodeURIComponent(name)}` }]);
 </script>
@@ -23,13 +23,13 @@
 			<User />
 		</div>
 		<h1>@{name}</h1>
-		<p class="count">{notes.length} note{notes.length === 1 ? '' : 's'} mentioning this person</p>
+		<p class="count">{memories.length} note{memories.length === 1 ? '' : 's'} mentioning this person</p>
 	</header>
 
-	{#if notes.length > 0}
+	{#if memories.length > 0}
 		<div class="notes-grid">
-			{#each notes as note (note.id)}
-				<NoteCard {note} />
+			{#each memories as memory (memory.id)}
+				<NoteCard memory={memory} />
 			{/each}
 		</div>
 	{:else}

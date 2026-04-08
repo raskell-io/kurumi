@@ -96,9 +96,9 @@ export function eventsToICal(dates: DateWithEvents[]): string {
 		}
 
 		// If no events but date is mentioned, create a basic all-day event
-		if (dateInfo.events.length === 0 && dateInfo.mentioningNotes.length > 0) {
-			const note = dateInfo.mentioningNotes[0];
-			lines.push(createAllDayVEvent(dateInfo.date, note.id, note.title || 'Event'));
+		if (dateInfo.events.length === 0 && dateInfo.mentioningMemories.length > 0) {
+			const memory = dateInfo.mentioningMemories[0];
+			lines.push(createAllDayVEvent(dateInfo.date, memory.id, memory.title || 'Event'));
 		}
 	}
 
@@ -252,7 +252,7 @@ export function eventsToCSV(dates: DateWithEvents[]): string {
 					duration: event.duration || '',
 					location: event.location || '',
 					attendees: event.attendees?.join(', ') || '',
-					notes: dateInfo.mentioningNotes.length
+					notes: dateInfo.mentioningMemories.length
 				});
 			}
 		} else {
@@ -263,7 +263,7 @@ export function eventsToCSV(dates: DateWithEvents[]): string {
 				duration: '',
 				location: '',
 				attendees: '',
-				notes: dateInfo.mentioningNotes.length
+				notes: dateInfo.mentioningMemories.length
 			});
 		}
 	}

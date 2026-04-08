@@ -27,7 +27,7 @@ import {
 	setGitProgress,
 	type GitSyncConfig
 } from './status';
-import type { Note, Folder, Vault, Person, Event } from '../db/types';
+import type { MemoryObject, Folder, Vault, Person, Event } from '../db/types';
 
 const REPO_DIR = '/repo';
 const METADATA_PATH = '.kurumi/metadata.json';
@@ -192,10 +192,10 @@ export async function readRepoMetadata(): Promise<GitMetadata | null> {
 }
 
 /**
- * Write notes to the repo filesystem
+ * Write memories to the repo filesystem
  */
 export async function writeNotesToRepo(
-	notes: Note[],
+	memories: MemoryObject[],
 	folders: Folder[],
 	vault: Vault,
 	people: Person[],
@@ -204,10 +204,10 @@ export async function writeNotesToRepo(
 	const pfs = getFsPromises();
 
 	// Generate markdown files
-	const markdownFiles = notesToMarkdownFiles(notes, folders);
+	const markdownFiles = notesToMarkdownFiles(memories, folders);
 
 	// Generate metadata
-	const metadata = createMetadata(vault, folders, notes, people, events);
+	const metadata = createMetadata(vault, folders, memories, people, events);
 	const metadataJson = serializeMetadata(metadata);
 
 	// Write metadata file
@@ -287,13 +287,13 @@ export async function hasLocalChanges(): Promise<boolean> {
 }
 
 /**
- * Parse notes from repo files
+ * Parse memories from repo files
  */
 export function parseNotesFromFiles(
 	files: Map<string, string>,
 	metadata: GitMetadata | null,
 	vaultId: string
-): { notes: Note[]; folders: Folder[] } {
+): { memories: MemoryObject[]; folders: Folder[] } {
 	const markdownPaths = Array.from(files.keys()).filter(
 		(p) => p.endsWith('.md') && !p.startsWith('.kurumi/')
 	);
@@ -306,8 +306,8 @@ export function parseNotesFromFiles(
 		folder.vaultId = vaultId;
 	}
 
-	// Parse notes
-	const notes: Note[] = [];
+	// Parse memories
+	const memories: MemoryObject[] = [];
 
 	for (const path of markdownPaths) {
 		const content = files.get(path)!;
@@ -317,24 +317,52 @@ export function parseNotesFromFiles(
 		const pathParts = path.split('/');
 		pathParts.pop(); // Remove filename
 		const folderPath = pathParts.join('/');
-		const folderId = folderPath ? (pathToFolderId[folderPath] || null) : null;
+		const folderId = folderPath ? pathToFolderId[folderPath] || null : null;
 
 		// Use ID from metadata if available
-		const noteId = metadata?.noteIds[path] || parsed.id;
+		const memoryId = metadata?.noteIds[path] || parsed.id;
 
-		notes.push({
-			id: noteId,
-			title: parsed.title,
-			content: parsed.content,
-			tags: parsed.tags,
+		memories.push({
+			id: memoryId,
+			type: 'note',
+			space: 'personal',
+			parentBucket: null,
 			folderId,
+			title: parsed.title,
+			rawText: '',
+			bodyMarkdown: parsed.content,
+			rawAudioRef: null,
+			rawMediaRef: null,
+			transcript: null,
+			transcriptSegments: [],
+			summaryShort: null,
+			summaryLong: null,
+			createdAt: parsed.created,
+			updatedAt: parsed.modified,
+			capturedAt: parsed.created,
+			sourceDevice: null,
+			sourceContext: null,
+			language: null,
+			tags: parsed.tags,
+			controlledLabels: [],
+			participants: [],
+			entities: [],
+			projects: [],
+			topics: [],
+			dates: [],
+			actionItems: [],
+			decisions: [],
+			relatedMemoryIds: [],
+			visibilityScope: 'personal',
+			processingState: 'ready',
+			confidenceScores: {},
+			embeddingRef: null,
 			vaultId,
-			created: parsed.created,
-			modified: parsed.modified
+			deletedAt: null
 		});
 	}
 
-	return { notes, folders };
+	return { memories, folders };
 }
 
 /**
@@ -370,12 +398,17 @@ export async function testGitConnection(
  * Full sync cycle: pull, merge, push
  */
 export async function syncGit(
-	localNotes: Note[],
+	localMemories: MemoryObject[],
 	localFolders: Folder[],
 	vault: Vault,
 	people: Person[],
 	events: Event[],
-	onImport: (notes: Note[], folders: Folder[], people: Person[], events: Event[]) => Promise<void>
+	onImport: (
+		memories: MemoryObject[],
+		folders: Folder[],
+		people: Person[],
+		events: Event[]
+	) => Promise<void>
 ): Promise<void> {
 	const config = getGitSyncConfig();
 	if (!config) {
@@ -395,8 +428,8 @@ export async function syncGit(
 		const files = await readRepoFiles();
 		const metadata = await readRepoMetadata();
 
-		// Parse notes from repo
-		const { notes: remoteNotes, folders: remoteFolders } = parseNotesFromFiles(
+		// Parse memories from repo
+		const { memories: remoteMemories, folders: remoteFolders } = parseNotesFromFiles(
 			files,
 			metadata,
 			vault.id
@@ -406,17 +439,17 @@ export async function syncGit(
 		const remotePeople = metadata ? Object.values(metadata.people) : [];
 		const remoteEvents = metadata ? Object.values(metadata.events) : [];
 
-		// Merge: for now, prefer remote (last-write-wins based on modified time)
+		// Merge: for now, prefer remote (last-write-wins based on updatedAt)
 		// This could be made smarter with proper conflict resolution
-		const mergedNotes = mergeNoteLists(localNotes, remoteNotes);
+		const mergedMemories = mergeMemoryLists(localMemories, remoteMemories);
 		const mergedFolders = mergeFolderLists(localFolders, remoteFolders);
 
 		// Import merged data
-		await onImport(mergedNotes, mergedFolders, remotePeople, remoteEvents);
+		await onImport(mergedMemories, mergedFolders, remotePeople, remoteEvents);
 	}
 
 	// Write local changes to repo
-	await writeNotesToRepo(localNotes, localFolders, vault, people, events);
+	await writeNotesToRepo(localMemories, localFolders, vault, people, events);
 
 	// Check for changes
 	if (await hasLocalChanges()) {
@@ -429,21 +462,21 @@ export async function syncGit(
 }
 
 /**
- * Merge two lists of notes, preferring newer versions
+ * Merge two lists of memories, preferring newer versions
  */
-function mergeNoteLists(local: Note[], remote: Note[]): Note[] {
-	const merged = new Map<string, Note>();
+function mergeMemoryLists(local: MemoryObject[], remote: MemoryObject[]): MemoryObject[] {
+	const merged = new Map<string, MemoryObject>();
 
-	// Add all local notes
-	for (const note of local) {
-		merged.set(note.id, note);
+	// Add all local memories
+	for (const memory of local) {
+		merged.set(memory.id, memory);
 	}
 
-	// Merge remote notes
-	for (const note of remote) {
-		const existing = merged.get(note.id);
-		if (!existing || note.modified > existing.modified) {
-			merged.set(note.id, note);
+	// Merge remote memories
+	for (const memory of remote) {
+		const existing = merged.get(memory.id);
+		if (!existing || memory.updatedAt > existing.updatedAt) {
+			merged.set(memory.id, memory);
 		}
 	}
 

@@ -1,7 +1,15 @@
 <script lang="ts">
-	import { search, type SearchResult } from '$lib/search';
+	import { search } from '$lib/search';
 	import { goto } from '$app/navigation';
-	import { addNote, folders, notes, vaults, currentVaultId, setCurrentVault, addVault } from '$lib/db';
+	import {
+		addMemoryObject,
+		folders,
+		memoryObjects,
+		vaults,
+		currentVaultId,
+		setCurrentVault,
+		addVault
+	} from '$lib/db';
 	import { getIconById } from '$lib/icons/vault-icons';
 	import { syncState } from '$lib/sync/status';
 	import { resourceColors } from '$lib/types/resources';
@@ -22,10 +30,10 @@
 		const vault = $vaults.find((v) => v.id === $currentVaultId);
 		if (!vault) return;
 
-		const vaultNotes = $notes.filter((n) => n.vaultId === vault.id);
+		const vaultMemories = $memoryObjects.filter((m) => m.vaultId === vault.id);
 		const vaultFolders = $folders.filter((f) => f.vaultId === vault.id);
 
-		await exportVaultAsMarkdown(vaultNotes, vaultFolders, vault, { format });
+		await exportVaultAsMarkdown(vaultMemories, vaultFolders, vault, { format });
 		onClose();
 	}
 
@@ -47,8 +55,8 @@
 			description: 'Create a new note',
 			icon: 'plus',
 			action: () => {
-				const note = addNote();
-				goto(`/note/${note.id}`);
+				const memory = addMemoryObject();
+				goto(`/note/${memory.id}`);
 				onClose();
 			}
 		},
@@ -181,7 +189,7 @@
 		const q = query.toLowerCase().trim();
 
 		if (!q) {
-			// Show recent folders and notes sorted by modified date (actions only with > prefix)
+			// Show recent folders and memories sorted by modified date (actions only with > prefix)
 			const recentFolders: Command[] = $folders
 				.sort((a, b) => b.modified - a.modified)
 				.slice(0, 5)
@@ -195,31 +203,34 @@
 					}
 				}));
 
-			const recentNotes: Command[] = $notes
-				.sort((a, b) => b.modified - a.modified)
+			const recentMemories: Command[] = $memoryObjects
+				.slice()
+				.sort((a, b) => b.updatedAt - a.updatedAt)
 				.slice(0, 10)
-				.map((n) => ({
-					id: n.id,
+				.map((m) => ({
+					id: m.id,
 					type: 'note' as const,
-					title: n.title || 'Untitled',
+					title: m.title || 'Untitled',
 					icon: 'note',
-					description: stripHtml(n.content).slice(0, 60),
+					description: stripHtml(m.bodyMarkdown).slice(0, 60),
 					action: () => {
-						goto(`/note/${n.id}`);
+						goto(`/note/${m.id}`);
 						onClose();
 					}
 				}));
 
-			// Combine folders and notes, sort by modified date
-			const recentItems = [...recentFolders, ...recentNotes]
+			// Combine folders and memories, sort by modified time
+			const recentItems = [...recentFolders, ...recentMemories]
 				.sort((a, b) => {
-					const aItem = a.type === 'folder'
-						? $folders.find(f => f.id === a.id)
-						: $notes.find(n => n.id === a.id);
-					const bItem = b.type === 'folder'
-						? $folders.find(f => f.id === b.id)
-						: $notes.find(n => n.id === b.id);
-					return (bItem?.modified ?? 0) - (aItem?.modified ?? 0);
+					const aTime =
+						a.type === 'folder'
+							? ($folders.find((f) => f.id === a.id)?.modified ?? 0)
+							: ($memoryObjects.find((m) => m.id === a.id)?.updatedAt ?? 0);
+					const bTime =
+						b.type === 'folder'
+							? ($folders.find((f) => f.id === b.id)?.modified ?? 0)
+							: ($memoryObjects.find((m) => m.id === b.id)?.updatedAt ?? 0);
+					return bTime - aTime;
 				})
 				.slice(0, 10);
 

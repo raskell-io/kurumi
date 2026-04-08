@@ -1,9 +1,13 @@
 /**
- * Conversion utilities between Kurumi notes and markdown files
- * Handles YAML front matter parsing and generation
+ * Conversion utilities between Kurumi memory objects and markdown files
+ * Handles YAML front matter parsing and generation.
+ *
+ * The on-disk format keeps the legacy `created` / `modified` / `content`
+ * front-matter keys so existing git repos remain readable; we map to/from
+ * MemoryObject's `createdAt` / `updatedAt` / `bodyMarkdown` internally.
  */
 
-import type { Note, Folder, Vault, Person, Event } from '../db/types';
+import type { MemoryObject, Folder, Vault, Person, Event } from '../db/types';
 import { generateSlug } from '../utils/markdown-export';
 
 // Re-export generateSlug for use elsewhere
@@ -17,7 +21,7 @@ export interface GitMetadata {
 		icon?: string;
 	};
 	folders: Record<string, { name: string; parentId: string | null }>;
-	noteIds: Record<string, string>; // path -> noteId mapping
+	noteIds: Record<string, string>; // path -> memoryId mapping
 	people: Record<string, Person>;
 	events: Record<string, Event>;
 }
@@ -37,11 +41,11 @@ export interface ParsedNote {
 }
 
 /**
- * Build folder path for a note
+ * Build folder path for a memory
  */
-export function buildFolderPath(note: Note, folders: Folder[]): string[] {
+export function buildFolderPath(memory: MemoryObject, folders: Folder[]): string[] {
 	const path: string[] = [];
-	let currentFolderId = note.folderId;
+	let currentFolderId = memory.folderId;
 
 	while (currentFolderId) {
 		const folder = folders.find((f) => f.id === currentFolderId);
@@ -54,15 +58,15 @@ export function buildFolderPath(note: Note, folders: Folder[]): string[] {
 }
 
 /**
- * Generate YAML front matter for a note
+ * Generate YAML front matter for a memory
  */
-function generateFrontMatter(note: Note): string {
+function generateFrontMatter(memory: MemoryObject): string {
 	const lines = ['---'];
-	lines.push(`id: ${note.id}`);
-	lines.push(`created: ${new Date(note.created).toISOString()}`);
-	lines.push(`modified: ${new Date(note.modified).toISOString()}`);
-	if (note.tags.length > 0) {
-		lines.push(`tags: [${note.tags.map((t) => `"${t}"`).join(', ')}]`);
+	lines.push(`id: ${memory.id}`);
+	lines.push(`created: ${new Date(memory.createdAt).toISOString()}`);
+	lines.push(`modified: ${new Date(memory.updatedAt).toISOString()}`);
+	if (memory.tags.length > 0) {
+		lines.push(`tags: [${memory.tags.map((t) => `"${t}"`).join(', ')}]`);
 	}
 	lines.push('---');
 	lines.push('');
@@ -108,27 +112,27 @@ export function parseFrontMatter(content: string): { frontMatter: Record<string,
 }
 
 /**
- * Convert a note to a markdown file
+ * Convert a memory to a markdown file
  */
-export function noteToMarkdownFile(note: Note, folders: Folder[]): MarkdownFile {
-	const folderPath = buildFolderPath(note, folders);
-	const slug = generateSlug(note.title || 'untitled');
+export function noteToMarkdownFile(memory: MemoryObject, folders: Folder[]): MarkdownFile {
+	const folderPath = buildFolderPath(memory, folders);
+	const slug = generateSlug(memory.title || 'untitled');
 	const filename = `${slug}.md`;
 
 	const pathParts = [...folderPath, filename];
 	const path = pathParts.join('/');
 
-	const frontMatter = generateFrontMatter(note);
-	const content = frontMatter + note.content;
+	const frontMatter = generateFrontMatter(memory);
+	const content = frontMatter + memory.bodyMarkdown;
 
 	return { path, content };
 }
 
 /**
- * Convert all notes to markdown files
+ * Convert all memories to markdown files
  */
-export function notesToMarkdownFiles(notes: Note[], folders: Folder[]): MarkdownFile[] {
-	return notes.map((note) => noteToMarkdownFile(note, folders));
+export function notesToMarkdownFiles(memories: MemoryObject[], folders: Folder[]): MarkdownFile[] {
+	return memories.map((memory) => noteToMarkdownFile(memory, folders));
 }
 
 /**
@@ -160,7 +164,7 @@ export function parseMarkdownFile(path: string, content: string): ParsedNote {
 export function createMetadata(
 	vault: Vault,
 	folders: Folder[],
-	notes: Note[],
+	memories: MemoryObject[],
 	people: Person[],
 	events: Event[]
 ): GitMetadata {
@@ -170,9 +174,9 @@ export function createMetadata(
 	}
 
 	const noteIds: Record<string, string> = {};
-	for (const note of notes) {
-		const file = noteToMarkdownFile(note, folders);
-		noteIds[file.path] = note.id;
+	for (const memory of memories) {
+		const file = noteToMarkdownFile(memory, folders);
+		noteIds[file.path] = memory.id;
 	}
 
 	const peopleMap: Record<string, Person> = {};

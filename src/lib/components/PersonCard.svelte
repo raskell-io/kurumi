@@ -235,17 +235,17 @@
 			{/if}
 
 			<!-- Mentioning Notes -->
-			{#if person.mentioningNotes.length > 0}
+			{#if person.mentioningMemories.length > 0}
 				<div class="notes-section">
 					<h4>Mentioned in</h4>
 					<ul class="notes-list">
-						{#each person.mentioningNotes as note (note.id)}
+						{#each person.mentioningMemories as memory (memory.id)}
 							<li>
-								<button class="note-item" onclick={() => openNote(note.id)}>
+								<button class="note-item" onclick={() => openNote(memory.id)}>
 									<NotebookText class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
 									<div class="note-info">
-										<span class="note-title">{note.title || 'Untitled'}</span>
-										<span class="note-preview">{getPreview(note.content)}</span>
+										<span class="note-title">{memory.title || 'Untitled'}</span>
+										<span class="note-preview">{getPreview(memory.bodyMarkdown)}</span>
 									</div>
 								</button>
 							</li>

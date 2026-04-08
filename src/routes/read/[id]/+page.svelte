@@ -1,11 +1,17 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { getNote, getFolder, getFolderPath, findBacklinks, extractTags, notes } from '$lib/db';
+	import {
+		getMemoryObject,
+		getFolder,
+		getFolderPath,
+		findBacklinks,
+		extractTags,
+		memoryObjects
+	} from '$lib/db';
 	import ReadNav from '$lib/components/ReadNav.svelte';
 	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
 	import RefPopup from '$lib/components/RefPopup.svelte';
-	import type { Note } from '$lib/db';
 	import { Folder, Link2, ArrowLeft, ArrowUp, Newspaper } from 'lucide-svelte';
 
 	// Scroll state for "back to top" button
@@ -44,18 +50,18 @@
 		goto(href);
 	}
 
-	// Get current note
-	let note = $derived(getNote($page.params.id));
+	// Get current memory
+	let memory = $derived(getMemoryObject($page.params.id));
 
 	// Get folder info
-	let folder = $derived(note?.folderId ? getFolder(note.folderId) : null);
-	let folderPath = $derived(note?.folderId ? getFolderPath(note.folderId) : []);
+	let folder = $derived(memory?.folderId ? getFolder(memory.folderId) : null);
+	let folderPath = $derived(memory?.folderId ? getFolderPath(memory.folderId) : []);
 
 	// Get backlinks
-	let backlinks = $derived(note ? findBacklinks(note.id) : []);
+	let backlinks = $derived(memory ? findBacklinks(memory.id) : []);
 
 	// Get tags
-	let tags = $derived(note ? extractTags(note.content) : []);
+	let tags = $derived(memory ? extractTags(memory.bodyMarkdown) : []);
 
 	// Build breadcrumbs
 	let breadcrumbs = $derived.by(() => {
@@ -66,14 +72,14 @@
 		return crumbs;
 	});
 
-	// Get previous and next notes
+	// Get previous and next memories
 	let prevNext = $derived.by(() => {
-		if (!note) return { prev: null, next: null };
-		const sortedNotes = [...$notes].sort((a, b) => b.modified - a.modified);
-		const currentIndex = sortedNotes.findIndex((n) => n.id === note.id);
+		if (!memory) return { prev: null, next: null };
+		const sorted = [...$memoryObjects].sort((a, b) => b.updatedAt - a.updatedAt);
+		const currentIndex = sorted.findIndex((m) => m.id === memory.id);
 		return {
-			prev: currentIndex > 0 ? sortedNotes[currentIndex - 1] : null,
-			next: currentIndex < sortedNotes.length - 1 ? sortedNotes[currentIndex + 1] : null
+			prev: currentIndex > 0 ? sorted[currentIndex - 1] : null,
+			next: currentIndex < sorted.length - 1 ? sorted[currentIndex + 1] : null
 		};
 	});
 
@@ -82,12 +88,12 @@
 <svelte:window onscroll={handleScroll} />
 
 <svelte:head>
-	<title>{note?.title || 'Note'} - Kurumi</title>
+	<title>{memory?.title || 'Note'} - Kurumi</title>
 </svelte:head>
 
-<ReadNav noteId={note?.id} {breadcrumbs} showSearch={false} />
+<ReadNav noteId={memory?.id} {breadcrumbs} showSearch={false} />
 
-{#if note}
+{#if memory}
 	<article class="note-reader">
 		<!-- Go Back -->
 		<button class="go-back-btn" onclick={goBack}>
@@ -97,7 +103,7 @@
 
 		<!-- Header -->
 		<header class="note-header">
-			<h1 class="note-title">{note.title || 'Untitled'}</h1>
+			<h1 class="note-title">{memory.title || 'Untitled'}</h1>
 
 			<div class="note-meta">
 				{#if folder}
@@ -119,7 +125,7 @@
 
 		<!-- Content -->
 		<div class="note-content">
-			<MarkdownRenderer content={note.content} onRefClick={handleRefClick} />
+			<MarkdownRenderer content={memory.bodyMarkdown} onRefClick={handleRefClick} />
 		</div>
 
 		<!-- Backlinks -->
@@ -135,7 +141,7 @@
 							<a href="/read/{backlink.id}" class="backlink-item">
 								<span class="backlink-title">{backlink.title || 'Untitled'}</span>
 								<span class="backlink-preview">
-									{backlink.content.slice(0, 100)}...
+									{backlink.bodyMarkdown.slice(0, 100)}...
 								</span>
 							</a>
 						</li>

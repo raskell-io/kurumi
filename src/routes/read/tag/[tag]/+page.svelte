@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { getNotesByTag } from '$lib/db';
+	import { getMemoryObjectsByTag } from '$lib/db';
 	import ReadNav from '$lib/components/ReadNav.svelte';
 	import NoteCard from '$lib/components/NoteCard.svelte';
 	import { Tag } from 'lucide-svelte';
 
 	let tag = $derived($page.params.tag);
-	let notes = $derived(getNotesByTag(tag));
+	let memories = $derived(getMemoryObjectsByTag(tag));
 
 	let breadcrumbs = $derived([{ label: `#${tag}`, href: `/read/tag/${tag}` }]);
 </script>
@@ -23,13 +23,13 @@
 			<Tag />
 		</div>
 		<h1>#{tag}</h1>
-		<p class="count">{notes.length} note{notes.length === 1 ? '' : 's'}</p>
+		<p class="count">{memories.length} note{memories.length === 1 ? '' : 's'}</p>
 	</header>
 
-	{#if notes.length > 0}
+	{#if memories.length > 0}
 		<div class="notes-grid">
-			{#each notes as note (note.id)}
-				<NoteCard {note} />
+			{#each memories as memory (memory.id)}
+				<NoteCard memory={memory} />
 			{/each}
 		</div>
 	{:else}

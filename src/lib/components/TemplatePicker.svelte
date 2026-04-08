@@ -1,7 +1,7 @@
 <script lang="ts">
 	import {
 		templates,
-		addNote,
+		addMemoryObject,
 		applyTemplateVariables,
 		templateHasVariable,
 		type Template
@@ -95,9 +95,9 @@
 		const content = applyTemplateVariables(template.content, overrides);
 		const noteTitle = title || template.name;
 
-		const note = addNote(noteTitle, content);
+		const memory = addMemoryObject(noteTitle, content);
 		onClose();
-		goto(`/note/${note.id}`);
+		goto(`/note/${memory.id}`);
 	}
 
 	function handleTitleSubmit() {

@@ -1,5 +1,12 @@
 <script lang="ts">
-	import { notes, folders, getSubfolders, getNotesInFolder, getAllTags, currentVault } from '$lib/db';
+	import {
+		memoryObjects,
+		folders,
+		getSubfolders,
+		getMemoryObjectsInFolder,
+		getAllTags,
+		currentVault
+	} from '$lib/db';
 	import ReadNav from '$lib/components/ReadNav.svelte';
 	import NoteCard from '$lib/components/NoteCard.svelte';
 	import { NotebookText, Folder, ChevronRight, Search, X, ArrowDownWideNarrow } from 'lucide-svelte';
@@ -35,45 +42,47 @@
 	// Get root folders
 	let rootFolders = $derived(getSubfolders(null));
 
-	// Get root notes (notes not in any folder)
-	let rootNotes = $derived(getNotesInFolder(null));
+	// Get root memories (memories not in any folder)
+	let rootMemories = $derived(getMemoryObjectsInFolder(null));
 
 	// Get all tags
 	let allTags = $derived(getAllTags());
 
-	// Filter and sort notes based on search and selected option
-	let sortedNotes = $derived.by(() => {
-		let notesList = [...$notes];
+	// Filter and sort memories based on search and selected option
+	let sortedMemories = $derived.by(() => {
+		let list = [...$memoryObjects];
 
 		// Filter by search query
 		if (searchQuery.trim()) {
 			const query = searchQuery.toLowerCase();
-			notesList = notesList.filter(note =>
-				(note.title || '').toLowerCase().includes(query) ||
-				note.content.toLowerCase().includes(query)
+			list = list.filter(
+				(m) =>
+					(m.title || '').toLowerCase().includes(query) ||
+					m.bodyMarkdown.toLowerCase().includes(query)
 			);
 		}
 
 		// Sort
 		switch (sortBy) {
 			case 'recent':
-				return notesList.sort((a, b) => b.modified - a.modified);
+				return list.sort((a, b) => b.updatedAt - a.updatedAt);
 			case 'oldest':
-				return notesList.sort((a, b) => a.modified - b.modified);
+				return list.sort((a, b) => a.updatedAt - b.updatedAt);
 			case 'alphabetical':
-				return notesList.sort((a, b) => (a.title || 'Untitled').localeCompare(b.title || 'Untitled'));
+				return list.sort((a, b) => (a.title || 'Untitled').localeCompare(b.title || 'Untitled'));
 			default:
-				return notesList;
+				return list;
 		}
 	});
 
-	// Filtered root notes for folder view
-	let filteredRootNotes = $derived.by(() => {
-		if (!searchQuery.trim()) return rootNotes;
+	// Filtered root memories for folder view
+	let filteredRootMemories = $derived.by(() => {
+		if (!searchQuery.trim()) return rootMemories;
 		const query = searchQuery.toLowerCase();
-		return rootNotes.filter(note =>
-			(note.title || '').toLowerCase().includes(query) ||
-			note.content.toLowerCase().includes(query)
+		return rootMemories.filter(
+			(m) =>
+				(m.title || '').toLowerCase().includes(query) ||
+				m.bodyMarkdown.toLowerCase().includes(query)
 		);
 	});
 
@@ -91,13 +100,14 @@
 		expandedFolders = newSet;
 	}
 
-	function getFolderNotes(folderId: string) {
-		const notes = getNotesInFolder(folderId);
-		if (!searchQuery.trim()) return notes;
+	function getFolderMemories(folderId: string) {
+		const list = getMemoryObjectsInFolder(folderId);
+		if (!searchQuery.trim()) return list;
 		const query = searchQuery.toLowerCase();
-		return notes.filter(note =>
-			(note.title || '').toLowerCase().includes(query) ||
-			note.content.toLowerCase().includes(query)
+		return list.filter(
+			(m) =>
+				(m.title || '').toLowerCase().includes(query) ||
+				m.bodyMarkdown.toLowerCase().includes(query)
 		);
 	}
 
@@ -123,7 +133,7 @@
 	<header class="hero">
 		<h1>{$currentVault?.name || 'Notes'}</h1>
 		<div class="stats">
-			<span>{$notes.length} notes</span>
+			<span>{$memoryObjects.length} notes</span>
 			<span class="dot"></span>
 			<span>{$folders.length} folders</span>
 			<span class="dot"></span>
@@ -215,15 +225,15 @@
 		<!-- All Notes -->
 		<section class="notes-section">
 			<h2 class="section-title">All Notes</h2>
-			{#if sortedNotes.length === 0}
+			{#if sortedMemories.length === 0}
 				<div class="empty-state">
 					<p>No notes yet. Start writing in edit mode!</p>
 					<a href="/" class="empty-cta">Go to Editor</a>
 				</div>
 			{:else}
 				<div class="notes-grid">
-					{#each sortedNotes as note (note.id)}
-						<NoteCard {note} />
+					{#each sortedMemories as memory (memory.id)}
+						<NoteCard memory={memory} />
 					{/each}
 				</div>
 			{/if}
@@ -233,7 +243,7 @@
 		<section class="folders-section">
 			<!-- Folders -->
 			{#each rootFolders as folder (folder.id)}
-				{@const folderNotes = getFolderNotes(folder.id)}
+				{@const folderMemories = getFolderMemories(folder.id)}
 				{@const subfolders = getFolderSubfolders(folder.id)}
 				{@const isExpanded = expandedFolders.has(folder.id)}
 
@@ -242,17 +252,17 @@
 						<ChevronRight class="chevron {isExpanded ? 'expanded' : ''}" />
 						<Folder class="folder-icon" />
 						<span class="folder-name">{folder.name}</span>
-						<span class="folder-count">{folderNotes.length} notes</span>
+						<span class="folder-count">{folderMemories.length} notes</span>
 					</button>
 
 					{#if isExpanded}
 						<div class="folder-content">
-							{#if folderNotes.length === 0 && subfolders.length === 0}
+							{#if folderMemories.length === 0 && subfolders.length === 0}
 								<p class="empty-folder">Empty folder</p>
 							{:else}
 								<div class="notes-grid">
-									{#each folderNotes as note (note.id)}
-										<NoteCard {note} showFolder={false} />
+									{#each folderMemories as memory (memory.id)}
+										<NoteCard memory={memory} showFolder={false} />
 									{/each}
 								</div>
 							{/if}
@@ -262,22 +272,22 @@
 			{/each}
 
 			<!-- Unfiled Notes -->
-			{#if filteredRootNotes.length > 0}
+			{#if filteredRootMemories.length > 0}
 				<div class="folder-group">
 					<h2 class="folder-title">
 						<NotebookText class="folder-icon" />
 						Unfiled Notes
-						<span class="folder-count">{filteredRootNotes.length}</span>
+						<span class="folder-count">{filteredRootMemories.length}</span>
 					</h2>
 					<div class="notes-grid">
-						{#each filteredRootNotes as note (note.id)}
-							<NoteCard {note} showFolder={false} />
+						{#each filteredRootMemories as memory (memory.id)}
+							<NoteCard memory={memory} showFolder={false} />
 						{/each}
 					</div>
 				</div>
 			{/if}
 
-			{#if rootFolders.length === 0 && rootNotes.length === 0}
+			{#if rootFolders.length === 0 && rootMemories.length === 0}
 				<div class="empty-state">
 					<p>No notes yet. Start writing in edit mode!</p>
 					<a href="/" class="empty-cta">Go to Editor</a>

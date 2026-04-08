@@ -1,20 +1,18 @@
 <script lang="ts">
-	import { notes, addNote } from '$lib/db';
+	import { memoryObjects, addMemoryObject } from '$lib/db';
 	import { goto } from '$app/navigation';
 	import { Plus, FileText, Clock } from 'lucide-svelte';
 	import { showNewNoteSnackbar } from '$lib/stores/snackbar';
 
 	function handleNewNote() {
-		const note = addNote();
-		goto(`/note/${note.id}`);
+		const memory = addMemoryObject();
+		goto(`/note/${memory.id}`);
 		showNewNoteSnackbar.set(true);
 	}
 
-	// Get 3 most recently edited notes
-	let recentNotes = $derived(
-		[...$notes]
-			.sort((a, b) => b.modified - a.modified)
-			.slice(0, 3)
+	// Get 3 most recently edited memories
+	let recentMemories = $derived(
+		[...$memoryObjects].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 3)
 	);
 
 	function formatRelativeTime(timestamp: number): string {
@@ -50,7 +48,7 @@
 		</h1>
 		<p class="mb-8 text-lg text-[var(--color-text-muted)] md:mb-10 md:text-xl">Your local-first second brain</p>
 
-		{#if $notes.length === 0}
+		{#if $memoryObjects.length === 0}
 			<button
 				type="button"
 				onclick={handleNewNote}
@@ -79,31 +77,31 @@
 		{:else}
 			<div class="space-y-5">
 				<p class="text-lg text-[var(--color-text-muted)]">
-					You have <span class="font-semibold text-[var(--color-text)]">{$notes.length}</span>
-					{$notes.length === 1 ? 'note' : 'notes'}
+					You have <span class="font-semibold text-[var(--color-text)]">{$memoryObjects.length}</span>
+					{$memoryObjects.length === 1 ? 'note' : 'notes'}
 				</p>
 
-				<!-- Recent Notes -->
-				{#if recentNotes.length > 0}
+				<!-- Recent Memories -->
+				{#if recentMemories.length > 0}
 					<div class="mx-auto mt-6 w-full max-w-md">
 						<p class="mb-3 text-sm font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
 							Jump back in
 						</p>
 						<div class="space-y-2">
-							{#each recentNotes as note}
+							{#each recentMemories as memory}
 								<a
-									href="/note/{note.id}"
+									href="/note/{memory.id}"
 									class="flex items-center gap-3 rounded-xl bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-all hover:bg-[var(--color-border)] hover:scale-[1.02] active:scale-[0.98]"
 								>
 									<FileText class="h-5 w-5 shrink-0 text-[var(--color-accent)]" />
 									<div class="min-w-0 flex-1">
 										<p class="truncate font-medium text-[var(--color-text)]">
-											{note.title || 'Untitled'}
+											{memory.title || 'Untitled'}
 										</p>
 									</div>
 									<div class="flex shrink-0 items-center gap-1 text-xs text-[var(--color-text-muted)]">
 										<Clock class="h-3 w-3" />
-										{formatRelativeTime(note.modified)}
+										{formatRelativeTime(memory.updatedAt)}
 									</div>
 								</a>
 							{/each}

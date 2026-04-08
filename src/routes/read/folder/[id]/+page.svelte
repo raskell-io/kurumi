@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { getFolder, getFolderPath, getNotesInFolder, getSubfolders } from '$lib/db';
+	import { getFolder, getFolderPath, getMemoryObjectsInFolder, getSubfolders } from '$lib/db';
 	import ReadNav from '$lib/components/ReadNav.svelte';
 	import NoteCard from '$lib/components/NoteCard.svelte';
 	import { Folder } from 'lucide-svelte';
 
 	let folder = $derived(getFolder($page.params.id));
 	let folderPath = $derived(getFolderPath($page.params.id));
-	let notes = $derived(getNotesInFolder($page.params.id));
+	let memories = $derived(getMemoryObjectsInFolder($page.params.id));
 	let subfolders = $derived(getSubfolders($page.params.id));
 
 	let breadcrumbs = $derived(
@@ -28,7 +28,7 @@
 				<Folder />
 			</div>
 			<h1>{folder.name}</h1>
-			<p class="count">{notes.length} note{notes.length === 1 ? '' : 's'}</p>
+			<p class="count">{memories.length} note{memories.length === 1 ? '' : 's'}</p>
 		</header>
 
 		{#if subfolders.length > 0}
@@ -45,12 +45,12 @@
 			</section>
 		{/if}
 
-		{#if notes.length > 0}
+		{#if memories.length > 0}
 			<section class="notes-section">
 				<h2 class="section-title">Notes</h2>
 				<div class="notes-grid">
-					{#each notes as note (note.id)}
-						<NoteCard {note} showFolder={false} />
+					{#each memories as memory (memory.id)}
+						<NoteCard memory={memory} showFolder={false} />
 					{/each}
 				</div>
 			</section>

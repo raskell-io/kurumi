@@ -127,8 +127,8 @@
 			<span class="relative-date">{getRelativeDate(dateInfo.date)}</span>
 		{/if}
 		<span class="note-count"
-			>{dateInfo.mentioningNotes.length}
-			{dateInfo.mentioningNotes.length === 1 ? 'note' : 'notes'}</span
+			>{dateInfo.mentioningMemories.length}
+			{dateInfo.mentioningMemories.length === 1 ? 'note' : 'notes'}</span
 		>
 		<ChevronRight class="chevron {expanded ? 'rotated' : ''}" />
 	</button>
@@ -219,17 +219,17 @@
 			{/if}
 
 			<!-- Notes Section -->
-			{#if dateInfo.mentioningNotes.length > 0}
+			{#if dateInfo.mentioningMemories.length > 0}
 				<div class="notes-section">
 					<h4>Related Notes</h4>
 					<ul class="notes-list">
-						{#each dateInfo.mentioningNotes as note (note.id)}
+						{#each dateInfo.mentioningMemories as memory (memory.id)}
 							<li>
-								<button class="note-item" onclick={() => openNote(note.id)}>
+								<button class="note-item" onclick={() => openNote(memory.id)}>
 									<NotebookText class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
 									<div class="note-info">
-										<span class="note-title">{note.title || 'Untitled'}</span>
-										<span class="note-preview">{getPreview(note.content)}</span>
+										<span class="note-title">{memory.title || 'Untitled'}</span>
+										<span class="note-preview">{getPreview(memory.bodyMarkdown)}</span>
 									</div>
 								</button>
 							</li>

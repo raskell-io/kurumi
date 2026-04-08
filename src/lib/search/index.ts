@@ -1,7 +1,7 @@
 import MiniSearch from 'minisearch';
-import { notes } from '$lib/db';
+import { memoryObjects } from '$lib/db';
 import { get } from 'svelte/store';
-import type { Note } from '$lib/db/types';
+import type { MemoryObject } from '$lib/db/types';
 
 export interface SearchResult {
 	id: string;
@@ -11,12 +11,12 @@ export interface SearchResult {
 	match: Record<string, string[]>;
 }
 
-let searchIndex: MiniSearch<Note>;
+let searchIndex: MiniSearch<MemoryObject>;
 
-function createIndex(): MiniSearch<Note> {
-	return new MiniSearch<Note>({
-		fields: ['title', 'content'],
-		storeFields: ['title', 'content'],
+function createIndex(): MiniSearch<MemoryObject> {
+	return new MiniSearch<MemoryObject>({
+		fields: ['title', 'bodyMarkdown'],
+		storeFields: ['title', 'bodyMarkdown'],
 		searchOptions: {
 			boost: { title: 2 },
 			fuzzy: 0.2,
@@ -31,9 +31,9 @@ export function initSearch(): void {
 }
 
 export function rebuildIndex(): void {
-	const allNotes = get(notes);
+	const all = get(memoryObjects);
 	searchIndex = createIndex();
-	searchIndex.addAll(allNotes);
+	searchIndex.addAll(all);
 }
 
 export function search(query: string): SearchResult[] {
@@ -48,26 +48,26 @@ export function search(query: string): SearchResult[] {
 	return results.map((result) => ({
 		id: result.id,
 		title: result.title || 'Untitled',
-		content: result.content || '',
+		content: result.bodyMarkdown || '',
 		score: result.score,
 		match: result.match
 	}));
 }
 
-export function addToIndex(note: Note): void {
+export function addToIndex(memory: MemoryObject): void {
 	// Remove existing entry if present
 	try {
-		searchIndex.discard(note.id);
+		searchIndex.discard(memory.id);
 	} catch {
-		// Note wasn't in index
+		// Wasn't in index
 	}
-	searchIndex.add(note);
+	searchIndex.add(memory);
 }
 
-export function removeFromIndex(noteId: string): void {
+export function removeFromIndex(memoryId: string): void {
 	try {
-		searchIndex.discard(noteId);
+		searchIndex.discard(memoryId);
 	} catch {
-		// Note wasn't in index
+		// Wasn't in index
 	}
 }
