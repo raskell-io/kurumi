@@ -1,0 +1,23 @@
+#!/bin/sh
+# Pre-commit hook: ensures svelte-check passes before allowing a commit.
+# Install with: git config core.hooksPath .githooks
+
+echo "Running svelte-check..."
+npx svelte-check --tsconfig ./tsconfig.json --threshold error 2>&1
+
+if [ $? -ne 0 ]; then
+    echo ""
+    echo "❌ svelte-check failed. Fix errors before committing."
+    exit 1
+fi
+
+echo "Running tests..."
+npx vitest run 2>&1
+
+if [ $? -ne 0 ]; then
+    echo ""
+    echo "❌ Tests failed. Fix before committing."
+    exit 1
+fi
+
+echo "✅ All checks passed."

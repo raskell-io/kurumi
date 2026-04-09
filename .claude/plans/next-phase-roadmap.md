@@ -354,11 +354,11 @@ community interest materializes.
 
 Moved from earlier "what's next" lists. These are thankless but real.
 
-### [ ] Vitest smoke tests
+### [x] Vitest smoke tests
 Critical paths only: undo stack push/pop, people/tag/topic merge +
 restore, extraction pipeline, migration chain (v1 → v13).
 
-### [ ] CI + pre-commit hook
+### [x] CI + pre-commit hook
 GitHub Actions running `svelte-check` + `build` on PR.  `.husky`
 pre-commit running the same locally. Locks in the `0 errors / 0
 warnings` invariant.

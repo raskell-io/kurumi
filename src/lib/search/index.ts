@@ -84,7 +84,9 @@ export function parseSearchQuery(raw: string): ParsedQuery {
 	const textParts: string[] = [];
 
 	// Regex splits on whitespace but keeps quoted strings intact.
-	const tokenRegex = /("[^"]*"|\S+)/g;
+	// The first alternative handles key:"quoted value" as one token
+	// so `person:"Alice Smith"` doesn't split at the space.
+	const tokenRegex = /(\w+:"[^"]*"|"[^"]*"|\S+)/g;
 	const matches = raw.match(tokenRegex) ?? [];
 
 	for (const rawToken of matches) {
