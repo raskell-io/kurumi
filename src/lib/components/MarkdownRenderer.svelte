@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { marked } from 'marked';
 	import { findMemoryObjectByTitle } from '$lib/db';
+	import DataviewBlock from './DataviewBlock.svelte';
 
 	interface Props {
 		content: string;
@@ -8,6 +9,27 @@
 	}
 
 	let { content, onRefClick }: Props = $props();
+
+	// Extract ```kurumi code blocks before marked processes them so
+	// they render as live query widgets instead of <pre><code>.
+	interface DataviewEntry {
+		id: string;
+		source: string;
+	}
+
+	function extractDataviewBlocks(md: string): { cleaned: string; blocks: DataviewEntry[] } {
+		const blocks: DataviewEntry[] = [];
+		let idx = 0;
+		const cleaned = md.replace(/```kurumi\n([\s\S]*?)```/g, (_, body) => {
+			const id = `dv-${idx++}`;
+			blocks.push({ id, source: body });
+			return `<div data-dataview-id="${id}"></div>`;
+		});
+		return { cleaned, blocks };
+	}
+
+	let extracted = $derived(extractDataviewBlocks(content));
+	let dataviewBlocks = $derived(extracted.blocks);
 
 	// Process custom syntax AFTER marked has rendered
 	function postProcessHtml(html: string): string {
@@ -48,8 +70,9 @@
 	function renderMarkdown(markdown: string): string {
 		if (!markdown) return '';
 
-		// First parse with marked
-		let html = marked.parse(markdown, { gfm: true, breaks: true }) as string;
+		// First parse with marked (using the cleaned version that has
+		// dataview blocks replaced with placeholder divs)
+		let html = marked.parse(extracted.cleaned, { gfm: true, breaks: true }) as string;
 
 		// Then process our custom syntax
 		html = postProcessHtml(html);
@@ -57,7 +80,7 @@
 		return html;
 	}
 
-	let html = $derived(renderMarkdown(content));
+	let html = $derived(renderMarkdown(extracted.cleaned));
 
 	function handleClick(e: MouseEvent) {
 		const target = e.target as HTMLElement;
@@ -76,6 +99,9 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="markdown-content" onclick={handleClick}>
 	{@html html}
+	{#each dataviewBlocks as block (block.id)}
+		<DataviewBlock source={block.source} />
+	{/each}
 </div>
 
 <style>
