@@ -140,7 +140,8 @@
 
 	/**
 	 * Insert text at the current cursor position in the editor.
-	 * Used by the image paste/drop handlers and slash commands.
+	 * Detects ![alt](src) image patterns and inserts actual image
+	 * nodes (not text) so Milkdown renders them inline.
 	 */
 	function insertTextAtCursor(text: string) {
 		if (!editor) return;
@@ -148,11 +149,112 @@
 			const view = editor.ctx.get(editorViewCtx);
 			const { state } = view;
 			const { from } = state.selection;
+
+			// Check if the text is an image markdown pattern
+			const imageMatch = text.trim().match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+			if (imageMatch && state.schema.nodes.image) {
+				const [, alt, src] = imageMatch;
+				// Resolve blob: refs to object URLs for display
+				const displaySrc = src.startsWith('blob:') && !src.startsWith('blob:http')
+					? resolveImageSrc(src)
+					: src;
+
+				const imageNode = state.schema.nodes.image.create({
+					src: displaySrc ?? src,
+					alt: alt || 'image',
+					title: alt || ''
+				});
+				const tr = state.tr.insert(from, imageNode);
+				view.dispatch(tr);
+				view.focus();
+
+				// If we used a placeholder, resolve async and update
+				if (displaySrc === null && src.startsWith('blob:')) {
+					void resolveAndUpdateImage(view, src);
+				}
+				return;
+			}
+
+			// Plain text insertion
 			const tr = state.tr.insertText(text, from);
 			view.dispatch(tr);
 			view.focus();
 		} catch (e) {
 			console.error('Failed to insert text:', e);
+		}
+	}
+
+	// Sync resolve: check the cache first (returns null if not cached)
+	function resolveImageSrc(ref: string): string | null {
+		// The urlCache in image.ts is module-scoped; we can't access it
+		// directly. Return null and let the async path handle it.
+		return null;
+	}
+
+	/**
+	 * Insert an image node directly into the editor. Uses the blob ref
+	 * as the src (so markdown serialization preserves it), then the
+	 * MutationObserver swaps in the object URL for display.
+	 */
+	async function insertImageNode(blobRef: string, alt: string) {
+		if (!editor) return;
+		try {
+			const view = editor.ctx.get(editorViewCtx);
+			const { state } = view;
+			const imageType = state.schema.nodes.image;
+			if (!imageType) return;
+
+			// Use the blob ref as src — the MutationObserver will replace
+			// it with an object URL for display. This way markdown
+			// serialization always stores the blob ref, not a temporary
+			// object URL.
+			const imageNode = imageType.create({
+				src: blobRef,
+				alt: alt || 'image',
+				title: alt || ''
+			});
+			const { from } = state.selection;
+			const tr = state.tr.insert(from, imageNode);
+			view.dispatch(tr);
+			view.focus();
+
+			// Trigger the blob resolver immediately (don't wait for the
+			// next MutationObserver tick).
+			requestAnimationFrame(async () => {
+				const { resolveBlobUrl } = await import('$lib/utils/image');
+				const url = await resolveBlobUrl(blobRef);
+				if (!url) return;
+				const imgs = editorContainer.querySelectorAll<HTMLImageElement>('img');
+				for (const img of imgs) {
+					if (img.getAttribute('src') === blobRef) {
+						img.src = url;
+					}
+				}
+			});
+		} catch (e) {
+			console.error('Failed to insert image node:', e);
+		}
+	}
+
+	// Async resolve: update the image src after the blob loads
+	async function resolveAndUpdateImage(view: import('@milkdown/kit/prose/view').EditorView, blobRef: string) {
+		try {
+			const { resolveBlobUrl } = await import('$lib/utils/image');
+			const url = await resolveBlobUrl(blobRef);
+			if (!url) return;
+			// Find the image node with this blob ref and update its src
+			view.state.doc.descendants((node, pos) => {
+				if (node.type.name === 'image' && (node.attrs.src === blobRef || node.attrs.src === null)) {
+					const tr = view.state.tr.setNodeMarkup(pos, undefined, {
+						...node.attrs,
+						src: url
+					});
+					view.dispatch(tr);
+					return false; // stop traversal
+				}
+			});
+		} catch {
+			// Blob resolution failed — image stays with blob: src
 		}
 	}
 
@@ -342,7 +444,15 @@
 		// memory page fire this to insert into the editor at cursor).
 		handleInsertText = (e: Event) => {
 			const text = (e as CustomEvent<string>).detail;
-			if (text) insertTextAtCursor(text);
+			if (!text) return;
+			// Detect image markdown and use the image node path
+			const imgMatch = text.trim().match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+			if (imgMatch) {
+				const [, alt, src] = imgMatch;
+				void insertImageNode(src, alt || 'image');
+			} else {
+				insertTextAtCursor(text);
+			}
 		};
 		window.addEventListener('kurumi-insert-text', handleInsertText);
 
@@ -364,7 +474,8 @@
 		blobResolver.observe(editorContainer, { childList: true, subtree: true });
 
 		// Image paste handler: intercept clipboard paste events that
-		// contain images, convert to AVIF, store, and insert markdown.
+		// contain images, convert to AVIF, store, and insert as an
+		// image node (not markdown text — Milkdown doesn't re-parse).
 		editorContainer.addEventListener('paste', async (e: ClipboardEvent) => {
 			const items = e.clipboardData?.items;
 			if (!items) return;
@@ -375,7 +486,7 @@
 					if (!file) continue;
 					try {
 						const result = await processAndStoreImage(file);
-						insertTextAtCursor(result.markdown);
+						await insertImageNode(result.ref, 'pasted image');
 					} catch (err) {
 						console.error('Image paste failed:', err);
 					}
@@ -393,7 +504,7 @@
 					e.preventDefault();
 					try {
 						const result = await processAndStoreImage(file, file.name.replace(/\.[^.]+$/, ''));
-						insertTextAtCursor(result.markdown);
+						await insertImageNode(result.ref, file.name.replace(/\.[^.]+$/, ''));
 					} catch (err) {
 						console.error('Image drop failed:', err);
 					}
