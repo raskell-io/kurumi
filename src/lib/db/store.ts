@@ -3906,8 +3906,14 @@ export function mergeProjects(
 }
 
 // Extract dates from content (//YYYY-MM-DD)
+//
+// The negative lookbehind `(?<!:)` excludes URL schemes: "https://"
+// has a colon right before the //, so `https://2026-04-09/...` does
+// not produce a phantom date reference. The editor autocomplete uses
+// a stricter rule (must be at the start of a word) for the popup
+// trigger; here we only need to block the URL-scheme case.
 export function extractDates(content: string): string[] {
-	const regex = /\/\/(\d{4}-\d{2}-\d{2})/g;
+	const regex = /(?<!:)\/\/(\d{4}-\d{2}-\d{2})/g;
 	const dates = new Set<string>();
 	let match;
 	while ((match = regex.exec(content)) !== null) {

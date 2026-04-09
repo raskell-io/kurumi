@@ -137,10 +137,21 @@ function getAutocompleteState(view: EditorView): AutocompleteState | null {
 	const textBefore = $pos.parent.textBetween(0, $pos.parentOffset, undefined, '\ufffc');
 
 	// Check for date trigger: //
-	const dateMatch = textBefore.match(/\/\/([^\s]*)$/);
+	//
+	// Require the // to sit at the start of a word (beginning of the
+	// block or preceded by whitespace). This is what tells a date
+	// reference apart from a URL scheme: "https://example.com" has a
+	// colon right before //, so the look-behind fails and the picker
+	// doesn't open. Users who want to reference a date still type
+	// `//` at the start of a word, which is the documented syntax.
+	const dateMatch = textBefore.match(/(?:^|\s)\/\/([^\s]*)$/);
 	if (dateMatch) {
 		const blockStart = pos - $pos.parentOffset;
-		const from = blockStart + dateMatch.index!;
+		// If the match was anchored on whitespace, the first char of the
+		// captured substring is that whitespace — skip it so `from` points
+		// at the leading slash.
+		const matchStart = dateMatch.index! + (dateMatch[0].startsWith('/') ? 0 : 1);
+		const from = blockStart + matchStart;
 		const query = dateMatch[1] || '';
 
 		// Don't trigger if it looks like a complete date already

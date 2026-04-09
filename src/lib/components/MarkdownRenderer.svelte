@@ -20,8 +20,10 @@
 			return `<a href="/?search=${encodeURIComponent(title)}" class="wikilink wikilink-broken">${title}</a>`;
 		});
 
-		// Process dates //YYYY-MM-DD - use data attributes for popup
-		html = html.replace(/\/\/(\d{4}-\d{2}-\d{2})/g, (_, date) => {
+		// Process dates //YYYY-MM-DD — use data attributes for popup.
+		// Negative lookbehind `(?<!:)` excludes URL schemes so
+		// https://... doesn't get its `//` turned into a date button.
+		html = html.replace(/(?<!:)\/\/(\d{4}-\d{2}-\d{2})/g, (_, date) => {
 			return `<button type="button" class="date-reference" data-ref-type="date" data-ref-value="${date}">${date}</button>`;
 		});
 
