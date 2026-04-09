@@ -30,7 +30,11 @@ import {
 	type ReminderStatus,
 	type DraftProposal,
 	type DraftStatus,
-	type DraftKind
+	type DraftKind,
+	type DatabaseView,
+	type DatabaseViewType,
+	type PropertyDefinition,
+	type DatabaseColumn
 } from './types';
 
 const STORAGE_KEY = 'kurumi-doc';
@@ -177,6 +181,17 @@ export const reminderProposals: Readable<ReminderProposal[]> = derived(
 					return a.suggestedDate.localeCompare(b.suggestedDate);
 				return b.createdAt - a.createdAt;
 			});
+	}
+);
+
+// Derived store for database views in the current vault.
+export const databaseViews: Readable<DatabaseView[]> = derived(
+	[docStore, currentVaultId],
+	([$doc, $vaultId]) => {
+		if (!$doc || !$doc.databaseViews) return [];
+		return Object.values($doc.databaseViews)
+			.filter((v) => v.vaultId === $vaultId)
+			.sort((a, b) => a.name.localeCompare(b.name));
 	}
 );
 
@@ -482,6 +497,7 @@ export async function initDB(): Promise<void> {
 								confidenceScores: {},
 								embeddingRef: null,
 								meetingExtras: null,
+								customProps: {},
 								vaultId: note.vaultId ?? DEFAULT_VAULT_ID,
 								deletedAt: note.deletedAt ?? null
 							};
@@ -579,6 +595,21 @@ export async function initDB(): Promise<void> {
 						}
 					}
 					d.version = 13;
+				});
+				await saveDoc();
+			}
+
+			// Migrate: add databaseViews collection + customProps on
+			// existing memories (v13 -> v14).
+			if ((doc.version ?? 0) < 14) {
+				doc = Automerge.change(doc, (d) => {
+					if (!d.databaseViews) d.databaseViews = {};
+					for (const memory of Object.values(d.memoryObjects)) {
+						if ((memory as { customProps?: unknown }).customProps === undefined) {
+							(memory as { customProps: Record<string, unknown> }).customProps = {};
+						}
+					}
+					d.version = 14;
 				});
 				await saveDoc();
 			}
@@ -2423,6 +2454,106 @@ export function restoreActionItem(item: ActionItem): void {
 	});
 }
 
+// ============ DatabaseView CRUD ============
+
+export function addDatabaseView(options: {
+	name: string;
+	folderId: string;
+	viewType?: DatabaseViewType;
+	columns?: DatabaseColumn[];
+	properties?: PropertyDefinition[];
+}): DatabaseView {
+	const now = Date.now();
+	const view: DatabaseView = {
+		id: generateId(),
+		name: options.name,
+		folderId: options.folderId,
+		viewType: options.viewType ?? 'table',
+		columns: options.columns ?? [
+			{ field: 'title', visible: true },
+			{ field: 'type', visible: true },
+			{ field: 'updatedAt', visible: true },
+			{ field: 'tags', visible: true }
+		],
+		properties: options.properties ?? [],
+		sortField: 'updatedAt',
+		sortDirection: 'desc',
+		groupField: null,
+		filterQuery: '',
+		vaultId: getCurrentVaultId(),
+		createdAt: now,
+		updatedAt: now
+	};
+	updateDoc((d) => {
+		if (!d.databaseViews) d.databaseViews = {};
+		d.databaseViews[view.id] = view;
+	});
+	return view;
+}
+
+export function getDatabaseView(id: string): DatabaseView | undefined {
+	return doc?.databaseViews?.[id];
+}
+
+export function getDatabaseViewsForFolder(folderId: string): DatabaseView[] {
+	if (!doc?.databaseViews) return [];
+	return Object.values(doc.databaseViews).filter(
+		(v) => v.folderId === folderId && v.vaultId === getCurrentVaultId()
+	);
+}
+
+export function updateDatabaseView(
+	id: string,
+	updates: Partial<Pick<
+		DatabaseView,
+		'name' | 'viewType' | 'columns' | 'properties' | 'sortField' |
+		'sortDirection' | 'groupField' | 'filterQuery'
+	>>
+): void {
+	updateDoc((d) => {
+		const view = d.databaseViews?.[id];
+		if (!view) return;
+		if (updates.name !== undefined) view.name = updates.name;
+		if (updates.viewType !== undefined) view.viewType = updates.viewType;
+		if (updates.columns !== undefined) {
+			// Automerge requires in-place mutation of arrays
+			while (view.columns.length > 0) view.columns.pop();
+			for (const col of updates.columns) view.columns.push(col);
+		}
+		if (updates.properties !== undefined) {
+			while (view.properties.length > 0) view.properties.pop();
+			for (const prop of updates.properties) view.properties.push(prop);
+		}
+		if (updates.sortField !== undefined) view.sortField = updates.sortField;
+		if (updates.sortDirection !== undefined) view.sortDirection = updates.sortDirection;
+		if (updates.groupField !== undefined) view.groupField = updates.groupField;
+		if (updates.filterQuery !== undefined) view.filterQuery = updates.filterQuery;
+		view.updatedAt = Date.now();
+	});
+}
+
+export function deleteDatabaseView(id: string): void {
+	updateDoc((d) => {
+		if (d.databaseViews) delete d.databaseViews[id];
+	});
+}
+
+// ---- Custom property helpers -----------------------------------------------
+
+export function setMemoryCustomProp(memoryId: string, key: string, value: unknown): void {
+	updateDoc((d) => {
+		const memory = d.memoryObjects[memoryId];
+		if (!memory) return;
+		if (!memory.customProps) memory.customProps = {};
+		memory.customProps[key] = value;
+		memory.updatedAt = Date.now();
+	});
+}
+
+export function getMemoryCustomProp(memoryId: string, key: string): unknown {
+	return doc?.memoryObjects[memoryId]?.customProps?.[key] ?? null;
+}
+
 // ============ ReminderProposal CRUD ============
 
 export function addReminderProposal(options: {
@@ -3116,7 +3247,7 @@ export interface KurumiExport {
 export function exportFullJSON(): string {
 	if (!doc)
 		return JSON.stringify({
-			version: 13,
+			version: 14,
 			exportedAt: new Date().toISOString(),
 			vaults: [],
 			folders: [],
@@ -3201,6 +3332,7 @@ function legacyNoteToMemoryObject(note: LegacyNoteImport, defaultVaultId: string
 		confidenceScores: {},
 		embeddingRef: null,
 		meetingExtras: null,
+		customProps: {},
 		vaultId: note.vaultId ?? defaultVaultId,
 		deletedAt: note.deletedAt ?? null
 	};

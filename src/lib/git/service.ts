@@ -365,6 +365,7 @@ export function parseNotesFromFiles(
 			confidenceScores: {},
 			embeddingRef: null,
 			meetingExtras: null,
+			customProps: {},
 			vaultId,
 			deletedAt: null
 		});

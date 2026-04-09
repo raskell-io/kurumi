@@ -197,6 +197,10 @@ export interface MemoryObject {
 	confidenceScores: Record<string, number>;
 	embeddingRef: string | null;
 	meetingExtras: MeetingExtras | null;
+	// User-defined properties for database views. Keys match
+	// PropertyDefinition.key values from the parent folder's
+	// DatabaseView. Values are typed per the definition.
+	customProps: Record<string, unknown>;
 	vaultId: string;
 	deletedAt: number | null;
 }
@@ -278,6 +282,50 @@ export interface DraftProposal {
  */
 export type ReminderStatus = 'pending' | 'approved' | 'rejected' | 'snoozed';
 
+// ---------------------------------------------------------------------------
+// Database views — Notion-style structured views over a folder's memories.
+// A DatabaseView defines how a folder is rendered as a table/board/calendar.
+// Each column maps to either a built-in MemoryObject field or a custom
+// property key. Custom properties live in `MemoryObject.customProps`.
+// ---------------------------------------------------------------------------
+
+export type PropertyType = 'text' | 'number' | 'date' | 'select' | 'multiSelect' | 'checkbox' | 'url' | 'person';
+
+export interface PropertyDefinition {
+	key: string; // unique within the view, used as the key in customProps
+	label: string;
+	type: PropertyType;
+	options?: string[]; // for select / multiSelect: allowed values
+}
+
+export type DatabaseViewType = 'table' | 'board' | 'calendar' | 'gallery';
+
+export interface DatabaseColumn {
+	// Either a built-in field name (title, type, createdAt, updatedAt,
+	// tags, participants, topics, projects, processingState) OR a
+	// custom property key prefixed with 'prop:' (e.g. 'prop:priority').
+	field: string;
+	width?: number; // pixels, optional
+	visible: boolean;
+}
+
+export interface DatabaseView {
+	id: string;
+	name: string;
+	folderId: string; // the folder whose memories this view renders
+	viewType: DatabaseViewType;
+	columns: DatabaseColumn[];
+	properties: PropertyDefinition[]; // custom property schema
+	sortField: string | null;
+	sortDirection: 'asc' | 'desc';
+	groupField: string | null; // for board view
+	filterQuery: string; // search filter operators string, optional
+	vaultId: string;
+	createdAt: number;
+	updatedAt: number;
+	[key: string]: unknown; // Automerge compatibility
+}
+
 export interface ReminderProposal {
 	id: string;
 	memoryObjectId: string; // source memory that triggered the proposal
@@ -332,6 +380,7 @@ export interface KurumiDocument {
 	actionItems: Record<string, ActionItem>;
 	reminderProposals: Record<string, ReminderProposal>;
 	draftProposals: Record<string, DraftProposal>;
+	databaseViews: Record<string, DatabaseView>;
 	currentVaultId: string;
 	version: number;
 	[key: string]: unknown; // Required for Automerge compatibility
@@ -370,8 +419,9 @@ export function createEmptyDocument(): KurumiDocument {
 		actionItems: {},
 		reminderProposals: {},
 		draftProposals: {},
+		databaseViews: {},
 		currentVaultId: DEFAULT_VAULT_ID,
-		version: 13
+		version: 14
 	};
 }
 
@@ -424,6 +474,7 @@ export function createMemoryObject(
 		confidenceScores: {},
 		embeddingRef: null,
 		meetingExtras: null,
+		customProps: {},
 		vaultId: options.vaultId ?? DEFAULT_VAULT_ID,
 		deletedAt: null
 	};
