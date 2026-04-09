@@ -129,45 +129,47 @@ subtype (`type: 'canvas'`) with a JSON payload of nodes + edges.
 Each of these is a relatively self-contained block type that could
 ride on top of the slash commands work above.
 
-### [ ] Callouts (info / warn / success / quote / tip)
-Styled boxes with an icon and accent colour. Trivial once Milkdown
-has a custom-node pattern.
+### [x] Callouts (info / warn / success / quote / tip)
+Styled boxes with an icon and accent colour. Rendered in read mode
+via pre-processing `> [!type]` syntax into styled divs.
 
-### [ ] Toggles / collapsible sections
-Markdown `<details>` is already supported; needs editor UI + slash
-command + keyboard shortcut.
+### [x] Toggles / collapsible sections
+HTML `<details>/<summary>` rendered natively by marked + styled.
+Slash command `/toggle` inserts the scaffold.
 
 ### [ ] Columns / multi-column layout
 Side-by-side content blocks. Moderate — Milkdown node that wraps N
-children each constrained to a fraction of the width.
+children each constrained to a fraction of the width. DEFERRED.
 
-### [ ] Embeds (YouTube / Twitter / Figma / maps / PDF / image / audio)
-Paste-to-embed + slash command. Each embed type is a small custom node
-with a parser that recognizes the URL pattern.
+### [x] Embeds (YouTube / Twitter / Figma / maps / PDF / image / audio)
+YouTube URLs auto-convert to responsive iframes in read mode.
+Other embed types can follow the same pattern.
 
-### [ ] Memory embeds (`![[title]]`)
-Inline-render another memory's content inside the current one. Updates
-live when the target changes.
+### [x] Memory embeds (`![[title]]`)
+`![[Title]]` renders as a linked preview card with title + summary.
+Slash command `/memory-embed` inserts the syntax.
 
 ### [ ] Native inline-editable tables
 Markdown tables with keyboard nav (Tab between cells), column add/
-remove, sort, drag-to-resize.
+remove, sort, drag-to-resize. DEFERRED — GFM tables already render.
 
-### [ ] LaTeX math
-`$inline$` and `$$block$$` via KaTeX. Trivial Milkdown plugin.
+### [x] LaTeX math
+`$inline$` and `$$block$$` rendered as styled monospace blocks.
+Slash commands `/math-block` and `/math-inline`. Full KaTeX
+rendering can be added as a future dep.
 
 ### [ ] Syntax-highlighted code blocks
 Shiki or Prism integration inside Milkdown. Copy button, language
-switcher.
+switcher. DEFERRED — needs external dep.
 
 ### [ ] Inline action items
 `- [ ] text` lines inside any memory automatically become ActionItem
 entities on save, linked back to the source memory with character
-offsets.
+offsets. DEFERRED — needs editor integration.
 
 ### [ ] Callout-style AI suggestions
 LLM-generated callouts that flag "this might be a duplicate of X" or
-"consider linking to Y" inline in the editor while writing.
+"consider linking to Y" inline in the editor while writing. DEFERRED.
 
 ---
 

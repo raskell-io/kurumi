@@ -332,5 +332,45 @@ export const builtInSlashCommands: SlashCommand[] = [
 		category: 'Insert',
 		execute: (view, from, to) =>
 			replaceWithText(view, from, to, '```kurumi\ntype:note\nview: list\nlimit: 20\n```\n')
+	},
+
+	// --- Tier 2 rich blocks -----------------------------------------------
+	{
+		id: 'toggle',
+		label: 'Toggle / collapsible',
+		description: 'Expandable section',
+		icon: 'list',
+		category: 'Insert',
+		execute: (view, from, to) =>
+			replaceWithText(
+				view,
+				from,
+				to,
+				'<details>\n<summary>Toggle title</summary>\n\nContent here...\n\n</details>\n'
+			)
+	},
+	{
+		id: 'memory-embed',
+		label: 'Embed memory',
+		description: 'Inline preview of another note',
+		icon: 'link',
+		category: 'Insert',
+		execute: (view, from, to) => replaceWithText(view, from, to, '![[')
+	},
+	{
+		id: 'math-block',
+		label: 'Math block',
+		description: 'LaTeX math equation',
+		icon: 'code',
+		category: 'Insert',
+		execute: (view, from, to) => replaceWithText(view, from, to, '$$\nx^2 + y^2 = z^2\n$$\n')
+	},
+	{
+		id: 'math-inline',
+		label: 'Inline math',
+		description: 'Inline LaTeX expression',
+		icon: 'code',
+		category: 'Insert',
+		execute: (view, from, to) => replaceWithText(view, from, to, '$E = mc^2$')
 	}
 ];

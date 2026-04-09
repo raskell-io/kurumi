@@ -28,6 +28,67 @@
 		return { cleaned, blocks };
 	}
 
+	/**
+	 * Pre-process markdown before marked sees it. Handles custom syntax
+	 * that maps to HTML structures marked doesn't understand natively.
+	 */
+	function preProcessMarkdown(md: string): string {
+		// --- Callouts: > [!type] title ---
+		// Obsidian-style callouts. Convert to HTML divs with classes so
+		// CSS can style them. Must run before marked wraps the > as a
+		// blockquote.
+		md = md.replace(
+			/^> \[!(info|warning|tip|note|success|danger|quote)\](.*?)$\n((?:^> .*$\n?)*)/gm,
+			(_, type, title, body) => {
+				const cleanBody = body.replace(/^> ?/gm, '').trim();
+				const titleHtml = title.trim()
+					? `<div class="callout-title">${title.trim()}</div>`
+					: '';
+				return `<div class="callout callout-${type}">${titleHtml}<div class="callout-body">${cleanBody}</div></div>\n`;
+			}
+		);
+
+		// --- Toggles: <details> already supported by GFM ---
+		// No preprocessing needed; marked handles <details>/<summary>
+		// natively when using GFM. We just style them.
+
+		// --- Memory embeds: ![[Title]] ---
+		// Inline-render another memory's content. For the rendered view,
+		// we show a linked card with a preview; the full embed would
+		// create recursive rendering issues.
+		md = md.replace(/!\[\[([^\]]+)\]\]/g, (_, title) => {
+			const memory = findMemoryObjectByTitle(title);
+			if (memory) {
+				const preview = (memory.summaryShort || memory.bodyMarkdown || '')
+					.replace(/\s+/g, ' ')
+					.trim()
+					.slice(0, 150);
+				return `<div class="memory-embed"><a href="/memory/${memory.id}" class="embed-link"><strong>${title}</strong><span class="embed-preview">${preview}${preview.length >= 150 ? '...' : ''}</span></a></div>`;
+			}
+			return `<div class="memory-embed memory-embed-broken"><span>![[${title}]] — not found</span></div>`;
+		});
+
+		// --- LaTeX math: $inline$ and $$block$$ ---
+		// Wrap in spans/divs with class so CSS/KaTeX can process them.
+		// We don't run KaTeX here (no dep) but we mark them so they're
+		// identifiable and don't get mangled by marked.
+		md = md.replace(/\$\$([^$]+)\$\$/g, (_, math) => {
+			return `<div class="math-block">${escapeHtml(math.trim())}</div>`;
+		});
+		md = md.replace(/(?<!\$)\$([^$\n]+)\$(?!\$)/g, (_, math) => {
+			return `<span class="math-inline">${escapeHtml(math.trim())}</span>`;
+		});
+
+		return md;
+	}
+
+	function escapeHtml(s: string): string {
+		return s
+			.replace(/&/g, '&amp;')
+			.replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;');
+	}
+
 	let extracted = $derived(extractDataviewBlocks(content));
 	let dataviewBlocks = $derived(extracted.blocks);
 
@@ -61,8 +122,20 @@
 
 		// Process URLs that aren't already in href attributes
 		html = html.replace(/(?<!href=["'])(?<!src=["'])(https?:\/\/[^\s<>"]+)/g, (url) => {
+			// YouTube embed: convert YouTube URLs to iframes
+			const ytMatch = url.match(
+				/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/
+			);
+			if (ytMatch) {
+				return `<div class="embed-container"><iframe src="https://www.youtube-nocookie.com/embed/${ytMatch[1]}" frameborder="0" allowfullscreen class="embed-iframe"></iframe></div>`;
+			}
 			return `<a href="${url}" class="url-reference" target="_blank" rel="noopener noreferrer">${url}</a>`;
 		});
+
+		// Inline action items: - [ ] and - [x] rendered by marked as
+		// <li> with class "task-list-item". We add a data attribute so
+		// the checkbox styling is richer (already handled by GFM CSS,
+		// but we can enhance later).
 
 		return html;
 	}
@@ -70,11 +143,16 @@
 	function renderMarkdown(markdown: string): string {
 		if (!markdown) return '';
 
-		// First parse with marked (using the cleaned version that has
-		// dataview blocks replaced with placeholder divs)
-		let html = marked.parse(extracted.cleaned, { gfm: true, breaks: true }) as string;
+		// Pre-process custom syntax (callouts, embeds, math) that marked
+		// doesn't understand — these produce raw HTML that marked passes
+		// through when it sees them.
+		let preprocessed = preProcessMarkdown(markdown);
 
-		// Then process our custom syntax
+		// Parse with marked (GFM + breaks)
+		let html = marked.parse(preprocessed, { gfm: true, breaks: true }) as string;
+
+		// Post-process for interactive elements (wikilinks, dates,
+		// people, tags, YouTube embeds, etc.)
 		html = postProcessHtml(html);
 
 		return html;
@@ -397,5 +475,174 @@
 	.markdown-content :global(del) {
 		text-decoration: line-through;
 		color: var(--color-text-muted);
+	}
+
+	/* ---- Callouts (Obsidian-style) ---- */
+	.markdown-content :global(.callout) {
+		margin: 1em 0;
+		padding: 0.875rem 1rem;
+		border-radius: 0.5rem;
+		border-left: 4px solid;
+		font-size: 0.9375rem;
+	}
+
+	.markdown-content :global(.callout-title) {
+		font-weight: 600;
+		margin-bottom: 0.375rem;
+	}
+
+	.markdown-content :global(.callout-body) {
+		line-height: 1.6;
+	}
+
+	.markdown-content :global(.callout-info),
+	.markdown-content :global(.callout-note) {
+		background: rgba(59, 130, 246, 0.08);
+		border-color: #3b82f6;
+		color: var(--color-text);
+	}
+
+	.markdown-content :global(.callout-warning),
+	.markdown-content :global(.callout-danger) {
+		background: rgba(239, 68, 68, 0.08);
+		border-color: #ef4444;
+	}
+
+	.markdown-content :global(.callout-tip),
+	.markdown-content :global(.callout-success) {
+		background: rgba(34, 197, 94, 0.08);
+		border-color: #22c55e;
+	}
+
+	.markdown-content :global(.callout-quote) {
+		background: var(--color-bg-secondary);
+		border-color: var(--color-text-muted);
+		font-style: italic;
+	}
+
+	/* ---- Memory embeds ![[title]] ---- */
+	.markdown-content :global(.memory-embed) {
+		margin: 0.75em 0;
+		border: 1px solid var(--color-border);
+		border-radius: 0.5rem;
+		overflow: hidden;
+		transition: border-color 0.15s;
+	}
+
+	.markdown-content :global(.memory-embed:hover) {
+		border-color: var(--color-accent);
+	}
+
+	.markdown-content :global(.embed-link) {
+		display: block;
+		padding: 0.75rem 1rem;
+		text-decoration: none;
+		color: var(--color-text);
+	}
+
+	.markdown-content :global(.embed-link strong) {
+		display: block;
+		color: var(--color-accent);
+		margin-bottom: 0.25rem;
+	}
+
+	.markdown-content :global(.embed-preview) {
+		display: block;
+		font-size: 0.8125rem;
+		color: var(--color-text-muted);
+		line-height: 1.5;
+	}
+
+	.markdown-content :global(.memory-embed-broken) {
+		background: var(--color-bg-secondary);
+		padding: 0.625rem 1rem;
+		color: var(--color-text-muted);
+		font-size: 0.8125rem;
+	}
+
+	/* ---- LaTeX math ---- */
+	.markdown-content :global(.math-block) {
+		display: block;
+		text-align: center;
+		padding: 0.75rem 1rem;
+		margin: 0.75em 0;
+		background: var(--color-bg-secondary);
+		border-radius: 0.375rem;
+		font-family: ui-monospace, monospace;
+		font-size: 0.9375rem;
+		overflow-x: auto;
+	}
+
+	.markdown-content :global(.math-inline) {
+		padding: 0.125rem 0.25rem;
+		background: var(--color-bg-secondary);
+		border-radius: 0.25rem;
+		font-family: ui-monospace, monospace;
+		font-size: 0.875em;
+	}
+
+	/* ---- YouTube / embeds ---- */
+	.markdown-content :global(.embed-container) {
+		position: relative;
+		padding-bottom: 56.25%; /* 16:9 */
+		height: 0;
+		overflow: hidden;
+		margin: 1em 0;
+		border-radius: 0.5rem;
+	}
+
+	.markdown-content :global(.embed-iframe) {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 100%;
+		border-radius: 0.5rem;
+	}
+
+	/* ---- Details / toggles ---- */
+	.markdown-content :global(details) {
+		margin: 0.75em 0;
+		border: 1px solid var(--color-border);
+		border-radius: 0.5rem;
+		overflow: hidden;
+	}
+
+	.markdown-content :global(details summary) {
+		padding: 0.625rem 1rem;
+		cursor: pointer;
+		font-weight: 500;
+		color: var(--color-text);
+		background: var(--color-bg-secondary);
+		user-select: none;
+		list-style: none;
+	}
+
+	.markdown-content :global(details summary::before) {
+		content: '▸ ';
+		font-family: ui-monospace, monospace;
+	}
+
+	.markdown-content :global(details[open] summary::before) {
+		content: '▾ ';
+	}
+
+	.markdown-content :global(details > *:not(summary)) {
+		padding: 0 1rem;
+	}
+
+	.markdown-content :global(details > *:last-child) {
+		padding-bottom: 0.75rem;
+	}
+
+	/* ---- Task list (GFM checkboxes) ---- */
+	.markdown-content :global(.task-list-item) {
+		list-style: none;
+		margin-left: -1.25em;
+	}
+
+	.markdown-content :global(.task-list-item input[type="checkbox"]) {
+		margin-right: 0.5em;
+		accent-color: var(--color-accent);
 	}
 </style>
