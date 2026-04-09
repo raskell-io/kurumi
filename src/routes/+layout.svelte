@@ -23,6 +23,7 @@
 	import { gitSyncState } from '$lib/git';
 	import GitConflictModal from '$lib/components/GitConflictModal.svelte';
 	import UndoToast from '$lib/components/UndoToast.svelte';
+	import AgentPane from '$lib/components/AgentPane.svelte';
 	import { undoLast } from '$lib/stores/undo';
 	import {
 		bootNotifications,
@@ -99,6 +100,7 @@
 	let deleteNoteSnackbar = $state<string | null>(null);
 	let deleteFolderSnackbar = $state<string | null>(null);
 	let showConflictModal = $state(false);
+	let showAgentPane = $state(false);
 	// Auto-open when a sync attempt surfaces conflicts.
 	$effect(() => {
 		if ($gitSyncState.status === 'conflict' && $gitSyncState.conflicts.length > 0) {
@@ -257,6 +259,13 @@
 			if (!e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
 				e.preventDefault();
 				undoLast();
+				return;
+			}
+
+			// Cmd+` (backtick): toggle the agentic chat pane
+			if (e.key === '`') {
+				e.preventDefault();
+				showAgentPane = !showAgentPane;
 				return;
 			}
 
@@ -966,6 +975,10 @@
 				{@render children()}
 			</div>
 		</main>
+
+		{#if showAgentPane}
+			<AgentPane onClose={() => (showAgentPane = false)} />
+		{/if}
 	</div>
 
 	<!-- Command Palette -->
