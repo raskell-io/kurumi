@@ -145,12 +145,16 @@
 		const icon = recordingType === 'meeting' ? '👥' : '🎙';
 		const label = recordingType === 'meeting' ? 'Meeting recording' : 'Voice memo';
 
-		// Build the embed markdown
+		// Build the embed markdown.
+		// Use image syntax ![audio:label](blobRef) so Milkdown parses it
+		// as a native image node. The Editor's MutationObserver swaps
+		// <img> elements whose alt starts with "audio:" into real <audio>
+		// players after render.
 		const embed = [
 			'',
 			`#### ${icon} ${label} — ${timeStr}`,
 			'',
-			`<audio controls src="${audioRef}"></audio>`,
+			`![audio:${label}](${audioRef})`,
 			'',
 			'> **Transcript:** *Processing...*',
 			''

@@ -216,13 +216,24 @@
 
 	async function resolveBlobImages() {
 		if (!contentDiv) return;
-		// Resolve blob: refs on images
+		// Resolve blob: refs on images. Images whose alt starts with
+		// "audio:" are swapped into real <audio> players.
 		const imgs = contentDiv.querySelectorAll<HTMLImageElement>('img');
 		for (const img of imgs) {
 			const src = img.getAttribute('src') || '';
+			const alt = img.getAttribute('alt') || '';
 			if (isBlobRef(src) && !src.startsWith('blob:http')) {
 				const url = await resolveBlobUrl(src);
-				if (url) img.src = url;
+				if (!url) continue;
+
+				if (alt.startsWith('audio:')) {
+					const audio = document.createElement('audio');
+					audio.controls = true;
+					audio.src = url;
+					img.replaceWith(audio);
+				} else {
+					img.src = url;
+				}
 			}
 		}
 		// Resolve blob: refs on audio elements

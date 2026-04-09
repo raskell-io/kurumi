@@ -459,18 +459,37 @@
 		// Periodically resolve blob: image srcs in the editor's rendered
 		// output. Milkdown renders <img src="blob:..."> which the browser
 		// can't fetch; we swap in object URLs from the blob store.
+		// Images whose alt starts with "audio:" are swapped into real
+		// <audio> players so the user gets a playable audio widget.
 		const resolveBlobImages = async () => {
 			const { resolveBlobUrl } = await import('$lib/utils/image');
-			// Resolve blob: refs on images
+			// Resolve blob: refs on images (and swap audio embeds)
 			const imgs = editorContainer.querySelectorAll<HTMLImageElement>('img');
 			for (const img of imgs) {
 				const src = img.getAttribute('src') || '';
+				const alt = img.getAttribute('alt') || '';
 				if (src.startsWith('blob:') && !src.startsWith('blob:http')) {
 					const url = await resolveBlobUrl(src);
-					if (url) img.src = url;
+					if (!url) continue;
+
+					if (alt.startsWith('audio:')) {
+						// Replace <img> with a styled <audio> player
+						const audio = document.createElement('audio');
+						audio.controls = true;
+						audio.src = url;
+						audio.style.width = '100%';
+						audio.style.maxWidth = '500px';
+						audio.style.display = 'block';
+						audio.style.margin = '0.5rem 0';
+						// Preserve the blob ref so serialization round-trips
+						audio.dataset.blobRef = src;
+						img.replaceWith(audio);
+					} else {
+						img.src = url;
+					}
 				}
 			}
-			// Resolve blob: refs on audio elements
+			// Resolve blob: refs on any remaining audio elements
 			const audios = editorContainer.querySelectorAll<HTMLAudioElement>('audio');
 			for (const audio of audios) {
 				const src = audio.getAttribute('src') || '';
