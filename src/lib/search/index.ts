@@ -278,6 +278,16 @@ export function rebuildIndex(): void {
 	searchIndex.addAll(all);
 }
 
+function memoryToResult(memory: MemoryObject, score: number): SearchResult {
+	return {
+		id: memory.id,
+		title: memory.title || 'Untitled',
+		content: memory.bodyMarkdown || '',
+		score,
+		match: {}
+	};
+}
+
 /**
  * Run a search query with optional filter operators.
  *
@@ -287,10 +297,14 @@ export function rebuildIndex(): void {
  *      filters, sorted by updatedAt desc. Used for queries like
  *      "tag:work type:meeting" with no free-text.
  *   2. Only text: existing MiniSearch behavior.
- *   3. Text + filters: run MiniSearch on the free text, then filter
- *      the result set. We apply the filter on the result side
- *      (rather than pre-filtering the index) so MiniSearch can still
- *      use its fuzzy/prefix ranking without a custom index.
+ *   3. Text + filters: two-tier result. Tier 1 is text hits that also
+ *      pass the filter (ranked by MiniSearch score). Tier 2 is
+ *      filter-matching memories that had NO text match, ranked by
+ *      updatedAt desc and appended below tier 1. This way filters
+ *      act as a real scope — asking "tag:work budget" returns work
+ *      memories mentioning budget at the top AND the rest of the
+ *      work memories below, rather than the tiny intersection that
+ *      post-filtering alone would produce.
  */
 export function search(query: string): SearchResult[] {
 	const trimmed = query.trim();
@@ -301,61 +315,71 @@ export function search(query: string): SearchResult[] {
 
 	// Filters-only mode: bypass MiniSearch entirely.
 	if (!parsed.text && hasFilters) {
-		const filtered = filterMemories(get(memoryObjects), parsed.filters);
-		// Sort by updatedAt desc so the newest matches rise to the top.
-		return filtered
+		return filterMemories(get(memoryObjects), parsed.filters)
 			.slice()
 			.sort((a, b) => b.updatedAt - a.updatedAt)
-			.map((memory) => ({
-				id: memory.id,
-				title: memory.title || 'Untitled',
-				content: memory.bodyMarkdown || '',
-				score: 1,
-				match: {}
-			}));
+			.map((memory) => memoryToResult(memory, 1));
 	}
 
-	// No filters and no text is already handled by the early return above.
-	const results = parsed.text
-		? searchIndex.search(parsed.text, {
+	// Text-only mode: unchanged MiniSearch pass.
+	if (parsed.text && !hasFilters) {
+		return searchIndex
+			.search(parsed.text, {
 				boost: { title: 2 },
 				fuzzy: 0.2,
 				prefix: true
 			})
-		: [];
-
-	if (results.length === 0) return [];
-
-	// If there are no filters, return the raw MiniSearch results.
-	if (!hasFilters) {
-		return results.map((result) => ({
-			id: result.id,
-			title: result.title || 'Untitled',
-			content: result.bodyMarkdown || '',
-			score: result.score,
-			match: result.match
-		}));
+			.map((result) => ({
+				id: result.id,
+				title: result.title || 'Untitled',
+				content: result.bodyMarkdown || '',
+				score: result.score,
+				match: result.match
+			}));
 	}
 
-	// Filters + text: look up each hit in the store to run it through
-	// the filter predicate. Memories that no longer exist (race with
-	// deletion) are dropped.
-	const allMemories = get(memoryObjects);
-	const byId = new Map(allMemories.map((m) => [m.id, m]));
-	const filtered: SearchResult[] = [];
-	for (const result of results) {
-		const memory = byId.get(result.id as string);
-		if (!memory) continue;
-		if (!memoryMatchesFilters(memory, parsed.filters)) continue;
-		filtered.push({
-			id: result.id,
-			title: result.title || 'Untitled',
-			content: result.bodyMarkdown || '',
-			score: result.score,
-			match: result.match
+	// Text + filters mode: two-tier.
+	if (parsed.text && hasFilters) {
+		const allMemories = get(memoryObjects);
+		const byId = new Map(allMemories.map((m) => [m.id, m]));
+
+		// Tier 1: use MiniSearch's built-in filter callback so ranking
+		// only considers memories that already pass the predicate.
+		// Cleaner than post-filtering because MiniSearch's internal
+		// scoring isn't wasted on documents that would be dropped.
+		const tier1Results = searchIndex.search(parsed.text, {
+			boost: { title: 2 },
+			fuzzy: 0.2,
+			prefix: true,
+			filter: (result) => {
+				const memory = byId.get(result.id as string);
+				return memory ? memoryMatchesFilters(memory, parsed.filters) : false;
+			}
 		});
+		const tier1Ids = new Set(tier1Results.map((r) => r.id as string));
+
+		// Tier 2: filter-matching memories that didn't appear in tier 1,
+		// sorted by updatedAt desc so the most recent ones bubble up.
+		// This gives "everything matching the filter" semantics while
+		// still letting text-match ranking take priority at the top.
+		const tier2 = filterMemories(allMemories, parsed.filters)
+			.filter((m) => !tier1Ids.has(m.id))
+			.sort((a, b) => b.updatedAt - a.updatedAt)
+			.map((memory) => memoryToResult(memory, 0));
+
+		return [
+			...tier1Results.map((result) => ({
+				id: result.id,
+				title: result.title || 'Untitled',
+				content: result.bodyMarkdown || '',
+				score: result.score,
+				match: result.match
+			})),
+			...tier2
+		];
 	}
-	return filtered;
+
+	return [];
 }
 
 export function addToIndex(memory: MemoryObject): void {
