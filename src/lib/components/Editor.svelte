@@ -39,6 +39,7 @@
 		setSlashCallbacks
 	} from '$lib/editor/slashCommands';
 	import { taskListInputPlugin } from '$lib/editor/taskListInput';
+	import { startCheckboxRenderer } from '$lib/editor/checkboxRenderer';
 	import { processAndStoreImage } from '$lib/utils/image';
 	import CameraCapture from './CameraCapture.svelte';
 	import WikilinkAutocomplete from './WikilinkAutocomplete.svelte';
@@ -82,6 +83,9 @@
 
 	// Camera capture state
 	let showCamera = $state(false);
+
+	// Checkbox renderer cleanup — typed as a function for the destroy hook
+	let stopCheckboxRenderer: (() => void) | undefined;
 
 	// Slash command state
 	let showSlashMenu = $state(false);
@@ -322,6 +326,10 @@
 		// Add mouseup listener to check for text selection
 		editorContainer.addEventListener('mouseup', checkSelection);
 
+		// Start the visual checkbox renderer that turns [ ] / [x] text
+		// into styled interactive checkboxes.
+		const stopCheckboxRenderer = startCheckboxRenderer(editorContainer);
+
 		// Listen for the /camera slash command's custom event
 		const handleCameraEvent = () => { showCamera = true; };
 		window.addEventListener('kurumi-open-camera', handleCameraEvent);
@@ -394,6 +402,7 @@
 			editorContainer.removeEventListener('mouseup', checkSelection);
 		}
 		window.removeEventListener('kurumi-open-camera', () => {});
+		stopCheckboxRenderer?.();
 		editor?.destroy();
 		setWikilinkClickHandler(() => {});
 		setTagClickHandler(() => {});
@@ -928,7 +937,7 @@
 		}
 	}
 
-	/* ---- Task list checkboxes ---- */
+	/* ---- Task list checkboxes (GFM native) ---- */
 	:global(.milkdown li.task-list-item),
 	:global(.milkdown .task-list-item) {
 		list-style: none !important;
@@ -973,9 +982,58 @@
 		transform: rotate(45deg);
 	}
 
-	/* Checked items get a muted strikethrough */
 	:global(.milkdown .task-list-item:has(input:checked)) {
 		color: var(--color-text-muted);
 		text-decoration: line-through;
+	}
+
+	/* ---- Visual checkbox overlay (for [ ] / [x] text) ---- */
+	:global(.kurumi-checkbox) {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.25em;
+		height: 1.25em;
+		border: 2px solid var(--color-text-muted);
+		border-radius: 0.3em;
+		vertical-align: middle;
+		cursor: pointer;
+		transition: all 0.15s;
+		font-size: 0;
+		color: transparent;
+		position: relative;
+		margin-right: 0.35em;
+		user-select: none;
+		flex-shrink: 0;
+	}
+
+	:global(.kurumi-checkbox:hover) {
+		border-color: var(--color-accent);
+		transform: scale(1.1);
+	}
+
+	:global(.kurumi-checkbox.unchecked) {
+		background: transparent;
+	}
+
+	:global(.kurumi-checkbox.checked) {
+		background: var(--color-accent);
+		border-color: var(--color-accent);
+	}
+
+	:global(.kurumi-checkbox.checked::after) {
+		content: '';
+		position: absolute;
+		left: 0.25em;
+		top: 0.0625em;
+		width: 0.375em;
+		height: 0.625em;
+		border: solid white;
+		border-width: 0 2.5px 2.5px 0;
+		transform: rotate(45deg);
+	}
+
+	:global(.kurumi-checkbox.unchecked::after) {
+		content: '';
 	}
 </style>
