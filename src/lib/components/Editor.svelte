@@ -38,6 +38,7 @@
 		slashCommandPlugin,
 		setSlashCallbacks
 	} from '$lib/editor/slashCommands';
+	import { taskListInputPlugin } from '$lib/editor/taskListInput';
 	import { processAndStoreImage } from '$lib/utils/image';
 	import CameraCapture from './CameraCapture.svelte';
 	import WikilinkAutocomplete from './WikilinkAutocomplete.svelte';
@@ -314,6 +315,7 @@
 			.use(datePeoplePlugin)
 			.use(datePeopleAutocompletePlugin)
 			.use(slashCommandPlugin)
+			.use(taskListInputPlugin)
 			.use(trailingPlugin)
 			.create();
 
@@ -924,5 +926,56 @@
 		:global(.milkdown pre:first-child code) {
 			font-size: 0.85em;
 		}
+	}
+
+	/* ---- Task list checkboxes ---- */
+	:global(.milkdown li.task-list-item),
+	:global(.milkdown .task-list-item) {
+		list-style: none !important;
+		position: relative;
+		padding-left: 0.25em;
+	}
+
+	:global(.milkdown .task-list-item input[type="checkbox"]) {
+		appearance: none;
+		-webkit-appearance: none;
+		width: 1.125em;
+		height: 1.125em;
+		border: 2px solid var(--color-text-muted);
+		border-radius: 0.25em;
+		margin-right: 0.5em;
+		vertical-align: middle;
+		cursor: pointer;
+		position: relative;
+		top: -0.075em;
+		transition: all 0.15s;
+		background: transparent;
+	}
+
+	:global(.milkdown .task-list-item input[type="checkbox"]:hover) {
+		border-color: var(--color-accent);
+	}
+
+	:global(.milkdown .task-list-item input[type="checkbox"]:checked) {
+		background: var(--color-accent);
+		border-color: var(--color-accent);
+	}
+
+	:global(.milkdown .task-list-item input[type="checkbox"]:checked::after) {
+		content: '';
+		position: absolute;
+		left: 0.25em;
+		top: 0.0625em;
+		width: 0.375em;
+		height: 0.625em;
+		border: solid white;
+		border-width: 0 2px 2px 0;
+		transform: rotate(45deg);
+	}
+
+	/* Checked items get a muted strikethrough */
+	:global(.milkdown .task-list-item:has(input:checked)) {
+		color: var(--color-text-muted);
+		text-decoration: line-through;
 	}
 </style>
