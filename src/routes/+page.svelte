@@ -43,12 +43,10 @@
 		result: AskKurumiResult;
 	};
 
-	import NewNoteChooser from '$lib/components/NewNoteChooser.svelte';
-
-	let showNoteChooser = $state(false);
-
 	function handleNewNote() {
-		showNoteChooser = true;
+		const memory = addMemoryObject();
+		goto(`/memory/${memory.id}`);
+		showNewNoteSnackbar.set(true);
 	}
 
 	// Handle Web Share Target: when the PWA receives shared content
@@ -769,10 +767,6 @@
 		</div>
 	{/if}
 </div>
-
-{#if showNoteChooser}
-	<NewNoteChooser onClose={() => (showNoteChooser = false)} />
-{/if}
 
 {#if showRealtimePanel}
 	<RealtimeSessionPanel onClose={() => (showRealtimePanel = false)} />

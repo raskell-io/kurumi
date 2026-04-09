@@ -25,7 +25,6 @@
 	import GitConflictModal from '$lib/components/GitConflictModal.svelte';
 	import UndoToast from '$lib/components/UndoToast.svelte';
 	import AgentPane from '$lib/components/AgentPane.svelte';
-	import NewNoteChooser from '$lib/components/NewNoteChooser.svelte';
 	import { undoLast } from '$lib/stores/undo';
 	import { focusMode, toggleFocusMode, openTabs, touchTab, closeTab } from '$lib/stores/workspace';
 	import {
@@ -104,8 +103,6 @@
 	let deleteFolderSnackbar = $state<string | null>(null);
 	let showConflictModal = $state(false);
 	let showAgentPane = $state(false);
-	let showNoteChooser = $state(false);
-	let noteChooserFolderId = $state<string | null>(null);
 	// Auto-open when a sync attempt surfaces conflicts.
 	$effect(() => {
 		if ($gitSyncState.status === 'conflict' && $gitSyncState.conflicts.length > 0) {
@@ -478,16 +475,18 @@
 		}
 	});
 
-	function handleNewNote() {
-		noteChooserFolderId = null;
-		showNoteChooser = true;
+	async function handleNewNote() {
+		const memory = addMemoryObject();
 		if (isMobile) sidebarOpen = false;
+		await goto(`/memory/${memory.id}`);
+		showNewNoteAnimation = true;
 	}
 
-	function handleNewNoteInFolder(folderId: string | null) {
-		noteChooserFolderId = folderId ?? null;
-		showNoteChooser = true;
+	async function handleNewNoteInFolder(folderId: string | null) {
+		const memory = addMemoryObject(undefined, undefined, folderId);
 		if (isMobile) sidebarOpen = false;
+		await goto(`/memory/${memory.id}`);
+		showNewNoteAnimation = true;
 	}
 
 	function handleNoteClick() {
@@ -1108,13 +1107,6 @@
 
 	{#if showConflictModal}
 		<GitConflictModal onClose={() => (showConflictModal = false)} />
-	{/if}
-
-	{#if showNoteChooser}
-		<NewNoteChooser
-			folderId={noteChooserFolderId}
-			onClose={() => (showNoteChooser = false)}
-		/>
 	{/if}
 
 	<UndoToast />

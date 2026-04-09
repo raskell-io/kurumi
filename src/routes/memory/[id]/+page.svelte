@@ -13,6 +13,7 @@
 	} from '$lib/db';
 	import { get } from 'svelte/store';
 	import Editor from '$lib/components/Editor.svelte';
+	import InlineTemplateChooser from '$lib/components/InlineTemplateChooser.svelte';
 	import { untrack } from 'svelte';
 	import { downloadSingleMemory, type MarkdownExportFormat } from '$lib/utils/markdown-export';
 	import { publishMemoryAsHtml } from '$lib/utils/publish';
@@ -37,6 +38,47 @@
 	let showDeleteConfirm = $state(false);
 	let showExportMenu = $state(false);
 	let initializedForId = $state('');
+
+	// Inline template chooser: visible when the note body is empty and
+	// the user hasn't dismissed it (by typing). Auto-hides on first
+	// content change so it never blocks the writing flow.
+	let showTemplateChooser = $state(false);
+	let templateChooserDismissed = $state(false);
+
+	// Show the chooser when a fresh empty note is opened.
+	$effect(() => {
+		const id = $page.params.id;
+		if (id && id !== initializedForId) {
+			// Will be set in the init effect below; reset the dismissed flag
+			// so a new navigation to a different empty note shows it again.
+			templateChooserDismissed = false;
+		}
+	});
+
+	// shouldShowChooser is computed below after `memory` is declared.
+
+	function handleTemplateSelect(body: string, templateTitle: string) {
+		// If the user hasn't customized the title (still "Untitled"),
+		// use the template's title. Otherwise keep theirs.
+		const titleIsDefault = !title || title === 'Untitled';
+		if (titleIsDefault) {
+			title = templateTitle;
+			if (memory) {
+				updateMemoryObject(memory.id, { title: templateTitle });
+			}
+		}
+
+		// Fill the body
+		content = body;
+		if (memory) {
+			updateMemoryObject(memory.id, { bodyMarkdown: body });
+		}
+		templateChooserDismissed = true;
+	}
+
+	function handleTemplateDismiss() {
+		templateChooserDismissed = true;
+	}
 	let extractingReminders = $state(false);
 	let extractionResult = $state<string | null>(null);
 
@@ -80,6 +122,13 @@
 	// Reactive memory object — stays in sync with the store so async updates
 	// (transcription, sync) propagate to the UI without a manual refresh.
 	let memory = $derived($memoryObjects.find((m) => m.id === $page.params.id));
+
+	// Derived: show template chooser when body is empty AND not dismissed.
+	let shouldShowChooser = $derived(
+		!templateChooserDismissed &&
+		!content.trim() &&
+		memory?.type === 'note'
+	);
 
 	// Initialize the editor fields once per memory id change. Subsequent store
 	// updates do NOT clobber title/content (otherwise typing would be lost).
@@ -182,6 +231,11 @@
 
 	function handleContentChange(markdown: string) {
 		content = markdown;
+		// Auto-dismiss the template chooser as soon as the user types
+		// anything into the body — writing should never be blocked.
+		if (markdown.trim() && !templateChooserDismissed) {
+			templateChooserDismissed = true;
+		}
 		debouncedSave();
 	}
 
@@ -535,13 +589,23 @@
 					{/if}
 				{/if}
 
+				<!-- Inline template chooser (shows when body is empty, vanishes on typing) -->
+				{#if shouldShowChooser}
+					<InlineTemplateChooser
+						onSelect={handleTemplateSelect}
+						onDismiss={handleTemplateDismiss}
+					/>
+				{/if}
+
 				<!-- Milkdown Editor -->
 				{#key memory.id}
 					<Editor
 						content={content}
 						onchange={handleContentChange}
 						onWikilinkClick={handleWikilinkClick}
-						placeholder="Start writing... Use [[Note Title]] to link to other notes."
+						placeholder={shouldShowChooser
+							? 'Start typing to dismiss templates...'
+							: 'Start writing... Use [[Note Title]] to link to other notes.'}
 						currentFolderId={memory.folderId}
 					/>
 				{/key}
