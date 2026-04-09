@@ -435,6 +435,18 @@
 		window.addEventListener('resize', checkMobile);
 		window.addEventListener('keydown', handleKeydown);
 
+		// Listen for voice/meeting capture requests from note pages
+		const handleVoiceMemoEvent = () => {
+			showVoiceCapture = true;
+			captureMode = 'voice-memo';
+		};
+		const handleMeetingEvent = () => {
+			showVoiceCapture = true;
+			captureMode = 'meeting';
+		};
+		window.addEventListener('kurumi-voice-memo', handleVoiceMemoEvent);
+		window.addEventListener('kurumi-meeting', handleMeetingEvent);
+
 		// Periodic + visibility-triggered recurring rollover so long-lived
 		// tabs don't miss rollover just because they never reloaded.
 		// One hour is well under the shortest recurrence granularity
@@ -457,6 +469,8 @@
 		return () => {
 			window.removeEventListener('resize', checkMobile);
 			window.removeEventListener('keydown', handleKeydown);
+			window.removeEventListener('kurumi-voice-memo', handleVoiceMemoEvent);
+			window.removeEventListener('kurumi-meeting', handleMeetingEvent);
 			document.removeEventListener('visibilitychange', handleVisibility);
 			window.clearInterval(rolloverInterval);
 			teardownVisibilitySync();
@@ -698,32 +712,7 @@
 					<Plus class="h-5 w-5" />
 					New Note
 				</button>
-				<div class="flex gap-2">
-					<button
-						type="button"
-						onclick={() => {
-							showVoiceCapture = true;
-							captureMode = 'voice-memo';
-							if (isMobile) sidebarOpen = false;
-						}}
-						class="flex flex-1 items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-bg)] active:scale-[0.98]"
-					>
-						<Mic class="h-4 w-4" />
-						Voice memo
-					</button>
-					<button
-						type="button"
-						onclick={() => {
-							showVoiceCapture = true;
-							captureMode = 'meeting';
-							if (isMobile) sidebarOpen = false;
-						}}
-						class="flex flex-1 items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-bg)] active:scale-[0.98]"
-					>
-						<Users class="h-4 w-4" />
-						Meeting
-					</button>
-				</div>
+				<!-- Voice/meeting buttons moved to the in-note toolbar -->
 			</div>
 
 			<!-- Search + Today + Actions -->

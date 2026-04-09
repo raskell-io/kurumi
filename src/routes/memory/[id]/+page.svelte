@@ -664,6 +664,22 @@
 						<Camera class="h-3.5 w-3.5" />
 						<span class="hidden sm:inline">Photo</span>
 					</button>
+					<button
+						onclick={() => window.dispatchEvent(new CustomEvent('kurumi-voice-memo'))}
+						class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text)]"
+						title="Record voice memo"
+					>
+						<Mic class="h-3.5 w-3.5" />
+						<span class="hidden sm:inline">Voice</span>
+					</button>
+					<button
+						onclick={() => window.dispatchEvent(new CustomEvent('kurumi-meeting'))}
+						class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text)]"
+						title="Record meeting"
+					>
+						<Users class="h-3.5 w-3.5" />
+						<span class="hidden sm:inline">Meeting</span>
+					</button>
 					<span class="mx-1 text-xs text-[var(--color-text-muted)] opacity-50">|</span>
 					<span class="text-xs text-[var(--color-text-muted)] opacity-50">
 						Type / for more
