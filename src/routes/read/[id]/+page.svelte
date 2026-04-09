@@ -12,7 +12,9 @@
 	import ReadNav from '$lib/components/ReadNav.svelte';
 	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
 	import RefPopup from '$lib/components/RefPopup.svelte';
-	import { Folder, Link2, ArrowLeft, ArrowUp, Newspaper } from 'lucide-svelte';
+	import { findSemanticBacklinks } from '$lib/digest';
+	import { Folder, Link2, ArrowLeft, ArrowUp, Newspaper, Sparkles } from 'lucide-svelte';
+	import type { MemoryObject } from '$lib/db/types';
 
 	// Scroll state for "back to top" button
 	let showBackToTop = $state(false);
@@ -59,6 +61,20 @@
 
 	// Get backlinks
 	let backlinks = $derived(memory ? findBacklinks(memory.id) : []);
+
+	// Semantic backlinks — loaded lazily when the page mounts for a
+	// memory that has embeddings.
+	let semanticLinks = $state<Array<{ memory: MemoryObject; score: number }>>([]);
+	$effect(() => {
+		const id = memory?.id;
+		if (!id) {
+			semanticLinks = [];
+			return;
+		}
+		findSemanticBacklinks(id, 5).then((results) => {
+			semanticLinks = results;
+		});
+	});
 
 	// Get tags
 	let tags = $derived(memory ? extractTags(memory.bodyMarkdown) : []);
@@ -142,6 +158,28 @@
 								<span class="backlink-title">{backlink.title || 'Untitled'}</span>
 								<span class="backlink-preview">
 									{backlink.bodyMarkdown.slice(0, 100)}...
+								</span>
+							</a>
+						</li>
+					{/each}
+				</ul>
+			</aside>
+		{/if}
+
+		<!-- Semantic backlinks (AI-inferred) -->
+		{#if semanticLinks.length > 0}
+			<aside class="backlinks" style="margin-top: 1rem;">
+				<h2 class="backlinks-title">
+					<Sparkles class="backlinks-icon" />
+					Related memories
+				</h2>
+				<ul class="backlinks-list">
+					{#each semanticLinks as { memory: related, score } (related.id)}
+						<li>
+							<a href="/read/{related.id}" class="backlink-item">
+								<span class="backlink-title">{related.title || 'Untitled'}</span>
+								<span class="backlink-preview">
+									{(related.summaryShort || related.bodyMarkdown || '').slice(0, 100)}...
 								</span>
 							</a>
 						</li>

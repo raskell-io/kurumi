@@ -27,6 +27,7 @@ import {
 	todayIso
 } from './db';
 import { retrieveMemoryContext, buildContextBlocks } from './ask';
+import { generateDailyDigest } from './digest';
 
 const OPENAI_KEY_STORAGE = 'kurumi-openai-key';
 const CHAT_MODEL = 'gpt-4o-mini';
@@ -107,6 +108,24 @@ const TOOLS = [
 				required: ['text', 'date']
 			}
 		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'generate_daily_digest',
+			description:
+				"Generate a daily digest note summarizing yesterday's captures, open action items, and pending proposals.",
+			parameters: {
+				type: 'object',
+				properties: {
+					date: {
+						type: 'string',
+						description:
+							'Optional ISO date (YYYY-MM-DD) to generate digest for. Defaults to yesterday.'
+					}
+				}
+			}
+		}
 	}
 ];
 
@@ -180,6 +199,11 @@ async function executeTool(
 				reason: 'Created by Kurumi agent'
 			});
 			return { ok: true, proposalId: proposal.id };
+		}
+		case 'generate_daily_digest': {
+			const date = args.date ? String(args.date) : undefined;
+			const memoryId = await generateDailyDigest(date);
+			return { ok: true, memoryId, message: 'Daily digest generated' };
 		}
 		default:
 			return { ok: false, error: `Unknown tool: ${name}` };

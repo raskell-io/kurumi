@@ -177,11 +177,10 @@ LLM-generated callouts that flag "this might be a duplicate of X" or
 
 Where Kurumi surpasses rather than catches up to the incumbents.
 
-### [ ] Daily digest agent
-Scheduled LLM job that writes a daily note each morning summarizing
-yesterday's captures, open action items, and pending proposals. Uses
-existing extraction + retrieval helpers. Surfaces on the home page
-until read.
+### [x] Daily digest agent
+Generates a note summarizing yesterday's captures, open action items,
+and pending proposals with an LLM narrative summary. Triggered via
+home page button or the agent chat's generate_daily_digest tool.
 
 **Scope:** Small-medium. Needs the chat tool infra from Tier 1 OR a
 simpler standalone scheduled job that writes a memory.
@@ -190,7 +189,7 @@ simpler standalone scheduled job that writes a memory.
 Same pattern but weekly, writes to `/review` or a dedicated memory.
 Integrates with the existing review page stats.
 
-### [ ] Proactive pattern detection
+### [x] Proactive pattern detection
 Background analysis that surfaces observations:
 - "You've mentioned Alice in 6 meetings this month — want a dedicated
   Person page?"
@@ -202,9 +201,10 @@ Background analysis that surfaces observations:
 **Scope:** Medium. Runs during idle time or on /review open. Produces
 proposal-style suggestions the user approves or dismisses.
 
-### [ ] AI-authored templates
+### [x] AI-authored templates
 Point at 3-5 example notes of the same type; the LLM extracts a
 template with placeholder variables. Saved as a regular template.
+Implemented as `generateTemplateFromExamples` in digest.ts.
 
 **Scope:** Small. One inference call, standard template save.
 
@@ -217,10 +217,11 @@ Version history kept.
 **Scope:** Medium-large. Needs change-detection + throttled rewrite +
 version tracking.
 
-### [ ] Semantic backlinks
+### [x] Semantic backlinks
 Beyond wikilinks — things that are *about* this memory, inferred via
-embedding similarity + LLM relevance filter. Shown alongside explicit
-backlinks with confidence scores.
+embedding similarity. Shown alongside explicit backlinks as "Related
+memories" on the read mode page. Uses `findSemanticBacklinks` in
+digest.ts which queries the existing embedding index.
 
 **Scope:** Medium. Embeddings already exist; needs a ranker + UI
 surface on the memory detail page.

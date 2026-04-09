@@ -10,6 +10,7 @@
 	import { askKurumi, isAskKurumiResult, type AskKurumiResult } from '$lib/ask';
 	import { parseSearchQuery, hasAnyFilter } from '$lib/search';
 	import { isAIConfigured } from '$lib/ai';
+	import { generateDailyDigest, detectPatterns, type DetectedPattern } from '$lib/digest';
 	import { inferenceRouter } from '$lib/inference';
 	import { startPushToTalk, speak, stopSpeaking, type RecorderHandle } from '$lib/voice';
 	import type { MemoryObject } from '$lib/db/types';
@@ -68,6 +69,26 @@
 	let pendingProposalsCount = $derived(
 		$reminderProposals.filter((p) => p.status === 'pending').length
 	);
+
+	// Daily digest + pattern detection
+	let generatingDigest = $state(false);
+	let patterns = $derived.by(() => {
+		void $memoryObjects;
+		return detectPatterns();
+	});
+
+	async function handleGenerateDigest() {
+		if (generatingDigest) return;
+		generatingDigest = true;
+		try {
+			const id = await generateDailyDigest();
+			goto(`/memory/${id}`);
+		} catch (err) {
+			askError = err instanceof Error ? err.message : 'Digest generation failed';
+		} finally {
+			generatingDigest = false;
+		}
+	}
 
 	// Ask Kurumi state
 	let aiAvailable = $state(false);
@@ -403,6 +424,39 @@
 						</span>
 						<span class="text-xs text-[var(--color-text-muted)]">Review →</span>
 					</a>
+				{/if}
+			</div>
+		{/if}
+
+		<!-- Patterns + daily digest -->
+		{#if patterns.length > 0 || aiAvailable}
+			<div class="mb-6 space-y-2">
+				{#if patterns.length > 0}
+					{#each patterns.slice(0, 3) as pattern}
+						<a
+							href={pattern.actionHref}
+							class="flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 text-sm text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)]"
+						>
+							<Sparkles class="h-4 w-4 text-[var(--color-accent)] shrink-0" />
+							<span class="flex-1">{pattern.message}</span>
+							<span class="text-xs text-[var(--color-text-muted)]">{pattern.actionLabel} →</span>
+						</a>
+					{/each}
+				{/if}
+				{#if aiAvailable}
+					<button
+						onclick={handleGenerateDigest}
+						disabled={generatingDigest}
+						class="flex w-full items-center gap-3 rounded-xl border border-dashed border-[var(--color-border)] p-3 text-sm text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text)] disabled:opacity-50"
+					>
+						{#if generatingDigest}
+							<div class="h-4 w-4 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent"></div>
+							Generating daily digest...
+						{:else}
+							<Sparkles class="h-4 w-4" />
+							Generate daily digest
+						{/if}
+					</button>
 				{/if}
 			</div>
 		{/if}
