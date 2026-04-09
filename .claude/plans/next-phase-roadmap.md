@@ -312,38 +312,38 @@ entities linked to the source.
 
 ## Tier 6 — ecosystem
 
-### [ ] Web clipper browser extension
-Chrome/Firefox extension: one-click save current page as a memory
-with title + URL + selected text + screenshot. Simplest version is
-a bookmarklet that POSTs to a local endpoint.
+### [x] Web clipper bookmarklet
+Bookmarklet generated in Settings → Data. Captures page title, URL,
+and selected text, opens Kurumi with content pre-filled via a
+#/clip/<encoded> hash route. Hash router intercepts and creates a
+memory. Web clipper utilities in src/lib/utils/web-clipper.ts.
 
-### [ ] Publish to web
-Single memory or folder rendered as a public static page, hosted on
-Cloudflare Pages or Netlify via a one-click deploy. Includes a
-"Published" badge on the memory with the URL.
+### [x] Publish to web
+"Publish as HTML" option in the memory detail export menu. Generates
+a self-contained HTML file with inline CSS (dark/light auto-theme),
+rendered markdown, title, date, tags. User downloads and hosts
+anywhere. Published from src/lib/utils/publish.ts.
 
 ### [ ] Native mobile via Tauri / Capacitor
 Wrap the PWA in Tauri Mobile or Capacitor for iOS/Android app-store
-presence. Unlocks share-target, background notifications, proper PWA
-install.
+presence. DEFERRED — needs build tool config beyond the web app.
 
-### [ ] Share target on mobile
-Receive shared content from other apps (text, images, URLs, files)
-directly into Kurumi as a new memory.
+### [x] Share target on mobile
+Web Share Target added to the PWA manifest (vite.config.ts). When the
+installed PWA receives shared content, params land as query params on
+/. The home page picks them up on mount and creates a memory.
 
-### [ ] Import from more sources
-- Evernote ENEX
-- Apple Notes
-- Bear (already works via markdown folder)
-- Email forwarding (dedicated address → memory)
-- Google Keep
-- Day One
+### [x] Import from more sources
+- Evernote ENEX: src/lib/utils/evernote-import.ts — XML parser that
+  converts ENML content to markdown, preserves tags as #hashtags,
+  handles en-todo checkboxes. Settings UI wired.
+- Roam JSON: already shipped
+- Markdown folder (Obsidian/Logseq/Bear/Notion/Foam): already shipped
+- Apple Notes / Google Keep / Day One: DEFERRED
 
 ### [ ] Plugin / extension system
-Explicit non-goal in the original roadmap, but worth reconsidering at
-this feature depth. Sandboxed JS plugins with a defined API for: new
-block types, new inference providers, new sidebar panels, new
-command-palette entries, new memory types.
+Explicit non-goal in the original roadmap. DEFERRED — needs
+sandboxing infrastructure.
 
 **Scope:** Very large. Sandboxing is the hard part. Deferred unless
 community interest materializes.

@@ -1,5 +1,6 @@
 import { goto } from '$app/navigation';
 import { browser } from '$app/environment';
+import { handleClip } from '$lib/utils/web-clipper';
 
 /**
  * Hash-based routing for GitHub Pages compatibility.
@@ -19,6 +20,15 @@ export function initHashRouter(): () => void {
 
 	// On initial load, check for hash path and navigate
 	const hashPath = getPathFromHash();
+
+	// Handle web clipper: #/clip/<encoded-json>
+	if (hashPath && hashPath.startsWith('/clip/')) {
+		const encoded = hashPath.slice(6);
+		// Delay until the app is mounted so store mutations work.
+		setTimeout(() => handleClip(encoded), 100);
+		return () => {};
+	}
+
 	if (hashPath && hashPath !== '/') {
 		// Use replaceState to avoid adding to history
 		goto(hashPath, { replaceState: true });

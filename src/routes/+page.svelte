@@ -17,7 +17,8 @@
 	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
 	import RealtimeSessionPanel from '$lib/components/RealtimeSessionPanel.svelte';
 	import { goto } from '$app/navigation';
-	import { onDestroy } from 'svelte';
+	import { page } from '$app/stores';
+	import { onMount, onDestroy } from 'svelte';
 	import {
 		Plus,
 		FileText,
@@ -47,6 +48,32 @@
 		goto(`/memory/${memory.id}`);
 		showNewNoteSnackbar.set(true);
 	}
+
+	// Handle Web Share Target: when the PWA receives shared content
+	// from another app, the share_target manifest sends it as query
+	// params (share_title, share_text, share_url). We pick those up
+	// on mount and create a new memory.
+	onMount(() => {
+		const shareTitle = $page.url.searchParams.get('share_title');
+		const shareText = $page.url.searchParams.get('share_text');
+		const shareUrl = $page.url.searchParams.get('share_url');
+		if (shareTitle || shareText || shareUrl) {
+			const title = shareTitle || 'Shared content';
+			const lines: string[] = [];
+			lines.push(`# ${title}`);
+			lines.push('');
+			if (shareUrl) {
+				lines.push(`Source: [${shareUrl}](${shareUrl})`);
+				lines.push('');
+			}
+			if (shareText) {
+				lines.push(shareText);
+				lines.push('');
+			}
+			const memory = addMemoryObject(title, lines.join('\n'), null);
+			goto(`/memory/${memory.id}`, { replaceState: true });
+		}
+	});
 
 	// Get 5 most recently edited memories
 	let recentMemories = $derived(

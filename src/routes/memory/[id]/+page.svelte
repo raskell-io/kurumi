@@ -15,6 +15,7 @@
 	import Editor from '$lib/components/Editor.svelte';
 	import { untrack } from 'svelte';
 	import { downloadSingleMemory, type MarkdownExportFormat } from '$lib/utils/markdown-export';
+	import { publishMemoryAsHtml } from '$lib/utils/publish';
 	import { getBlob } from '$lib/db/blob-store';
 	import {
 		Trash2,
@@ -281,6 +282,13 @@
 							class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]"
 						>
 							Zola-flavoured
+						</button>
+						<div class="my-1 border-t border-[var(--color-border)]"></div>
+						<button
+							onclick={() => { if (memory) publishMemoryAsHtml(memory); showExportMenu = false; }}
+							class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]"
+						>
+							Publish as HTML
 						</button>
 					</div>
 				{/if}

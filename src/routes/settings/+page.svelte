@@ -14,6 +14,8 @@
 	import { exportVaultAsMarkdown, type MarkdownExportFormat } from '$lib/utils/markdown-export';
 	import { importObsidianVault, type ObsidianImportResult } from '$lib/utils/obsidian-import';
 	import { importRoamJSON, type RoamImportResult } from '$lib/utils/roam-import';
+	import { importEvernoteEnex, type EvernoteImportResult } from '$lib/utils/evernote-import';
+	import { generateBookmarklet } from '$lib/utils/web-clipper';
 	import { syncState, initSyncState, sync, testConnection, isSyncConfigured, getSyncMethod, setSyncMethod, isR2SyncConfigured, type SyncMethod } from '$lib/sync';
 	import {
 		gitSyncState,
@@ -207,6 +209,9 @@
 	let isImportingRoam = $state(false);
 	let roamImportResult = $state<RoamImportResult | null>(null);
 	let roamFileInputRef: HTMLInputElement | undefined = $state();
+	let isImportingEvernote = $state(false);
+	let evernoteImportResult = $state<EvernoteImportResult | null>(null);
+	let evernoteFileInputRef: HTMLInputElement | undefined = $state();
 
 	// Collapsible sections state
 	let sections = $state({
@@ -504,10 +509,34 @@
 			roamImportResult = await importRoamJSON(file);
 		} finally {
 			isImportingRoam = false;
-			// Reset the input so the same file can be picked again
 			if (roamFileInputRef) roamFileInputRef.value = '';
 		}
 	}
+
+	function triggerEvernoteImport() {
+		evernoteFileInputRef?.click();
+	}
+
+	async function handleEvernoteFileSelect(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		isImportingEvernote = true;
+		evernoteImportResult = null;
+		try {
+			evernoteImportResult = await importEvernoteEnex(file);
+		} finally {
+			isImportingEvernote = false;
+			if (evernoteFileInputRef) evernoteFileInputRef.value = '';
+		}
+	}
+
+	let bookmarkletUrl = $state('');
+	$effect(() => {
+		if (typeof window !== 'undefined') {
+			bookmarkletUrl = generateBookmarklet(window.location.origin);
+		}
+	});
 
 	function startClearData() {
 		showClearConfirm1 = true;
@@ -1663,6 +1692,70 @@
 									{roamImportResult.error}
 								</div>
 							{/if}
+						{/if}
+					</div>
+
+					<!-- Evernote ENEX import -->
+					<div class="mt-4 pt-4 border-t border-[var(--color-border)]">
+						<h3 class="mb-2 text-sm font-medium text-[var(--color-text)]">Import from Evernote</h3>
+						<p class="mb-3 text-sm text-[var(--color-text-muted)]">
+							Upload an Evernote <code>.enex</code> export file. Notes are converted to
+							markdown with tags preserved as #hashtags.
+						</p>
+						<input
+							bind:this={evernoteFileInputRef}
+							type="file"
+							accept=".enex,application/xml,text/xml"
+							onchange={handleEvernoteFileSelect}
+							class="hidden"
+						/>
+						<button
+							onclick={triggerEvernoteImport}
+							disabled={isImportingEvernote}
+							class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] active:scale-[0.98] disabled:opacity-50"
+						>
+							{#if isImportingEvernote}
+								<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+								Importing...
+							{:else}
+								<Upload class="h-4 w-4" />
+								Select ENEX file
+							{/if}
+						</button>
+
+						{#if evernoteImportResult}
+							{#if evernoteImportResult.success}
+								<div class="mt-3 flex items-start gap-2 rounded-lg bg-green-500/10 px-3 py-2 text-sm text-green-600 dark:text-green-400">
+									<Check class="h-4 w-4 shrink-0 mt-0.5" />
+									<p>Imported {evernoteImportResult.notesCreated} note{evernoteImportResult.notesCreated === 1 ? '' : 's'}</p>
+								</div>
+							{:else if evernoteImportResult.error}
+								<div class="mt-3 flex items-center gap-2 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-500">
+									<AlertTriangle class="h-4 w-4 shrink-0" />
+									{evernoteImportResult.error}
+								</div>
+							{/if}
+						{/if}
+					</div>
+
+					<!-- Web clipper bookmarklet -->
+					<div class="mt-4 pt-4 border-t border-[var(--color-border)]">
+						<h3 class="mb-2 text-sm font-medium text-[var(--color-text)]">Web Clipper</h3>
+						<p class="mb-3 text-sm text-[var(--color-text-muted)]">
+							Drag this link to your bookmarks bar. Click it on any webpage to
+							save the page title, URL, and selected text as a new Kurumi memory.
+						</p>
+						{#if bookmarkletUrl}
+							<a
+								href={bookmarkletUrl}
+								class="inline-flex items-center gap-2 rounded-lg border border-[var(--color-accent)] bg-[var(--color-accent)]/10 px-4 py-2 text-sm font-medium text-[var(--color-accent)] no-underline"
+								onclick={(e) => { e.preventDefault(); alert('Drag this link to your bookmarks bar — don\'t click it here!'); }}
+							>
+								Clip to Kurumi
+							</a>
+							<p class="mt-2 text-xs text-[var(--color-text-muted)]">
+								Drag ↑ to your bookmarks bar. Don't click — drag.
+							</p>
 						{/if}
 					</div>
 

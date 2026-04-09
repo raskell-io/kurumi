@@ -43,7 +43,19 @@ export default defineConfig({
 						sizes: '512x512',
 						type: 'image/avif'
 					}
-				]
+				],
+				// Web Share Target: allows other apps to share text/URLs
+				// into Kurumi (mobile → "Share to Kurumi" creates a new
+				// memory with the shared content).
+				share_target: {
+					action: '/',
+					method: 'GET',
+					params: {
+						title: 'share_title',
+						text: 'share_text',
+						url: 'share_url'
+					}
+				}
 			},
 			workbox: {
 				globPatterns: ['**/*.{js,css,html,ico,png,svg,avif,woff,woff2,wasm}'],
