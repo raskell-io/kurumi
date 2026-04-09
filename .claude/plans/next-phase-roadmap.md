@@ -43,7 +43,7 @@ Already shipped and working:
 
 Roughly in order of "what would change the feel of the app the most."
 
-### [ ] Slash commands in the editor
+### [x] Slash commands in the editor
 **Why:** The single UX feature that most defines the Notion experience.
 Type `/` to insert any block type or run any command (create memory,
 search, ask Kurumi, insert template, embed another memory). Sets up
@@ -56,7 +56,7 @@ the same surface.
 
 **Dependencies:** None. Pure editor work.
 
-### [ ] Dataview-style inline queries
+### [x] Dataview-style inline queries
 **Why:** Leverages the search filter operators we just shipped. Turns
 Kurumi from "notes with search" into "notes that compute over
 themselves." A code block with `lang=kurumi` runs a query and renders
@@ -79,7 +79,7 @@ limit: 50
 **Dependencies:** Slash commands would make it easier to insert. Not a
 hard dep.
 
-### [ ] Agentic chat pane with tool use
+### [x] Agentic chat pane with tool use
 **Why:** The genuine differentiator versus both Notion and Obsidian.
 Neither has a persistent assistant that can take real actions against
 the vault with approval gates. Kurumi already has all the building
@@ -99,7 +99,7 @@ so wiring them into a tool registry is a straightforward next step.
 **Dependencies:** Realtime API verification should land first so we
 can share session infra. Reuses `retrieveMemoryContext` from ask.ts.
 
-### [ ] Typed databases / custom properties
+### [x] Typed databases / custom properties
 **Why:** Notion's second killer feature. Lets users promote certain
 memory types to tables with user-defined properties. "Projects database"
 with status / owner / due / priority columns, backed by MemoryObject
@@ -111,7 +111,7 @@ formula (stretch). Views: table, board, calendar, gallery, timeline.
 
 **Dependencies:** None, but pairs naturally with inline queries.
 
-### [ ] Canvas / infinite 2D board
+### [x] Canvas / infinite 2D board
 **Why:** Obsidian Canvas is the single most-loved feature they shipped
 in the last few years. Nothing in Kurumi supports spatial thinking.
 
