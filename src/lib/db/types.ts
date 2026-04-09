@@ -82,7 +82,8 @@ export type MemoryType =
 	| 'meeting'
 	| 'task'
 	| 'reference'
-	| 'file';
+	| 'file'
+	| 'canvas';
 
 export type MemorySpace = 'personal' | 'work' | 'shared' | 'archive';
 
