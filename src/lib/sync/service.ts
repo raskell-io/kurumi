@@ -17,6 +17,13 @@ import {
 	syncGit,
 	testGitConnection as testGitConnectionService
 } from '$lib/git';
+import {
+	getS3Config,
+	isS3Configured,
+	s3Pull,
+	s3Push,
+	s3Test
+} from './s3';
 import type { MemoryObject, Folder, Person, Event, ActionItem } from '$lib/db/types';
 
 const SYNC_URL_KEY = 'kurumi-sync-url';
@@ -24,7 +31,7 @@ const SYNC_TOKEN_KEY = 'kurumi-sync-token';
 const SYNC_METHOD_KEY = 'kurumi-sync-method';
 const MIN_SYNC_INTERVAL_MS = 10000; // Don't sync more than once every 10 seconds
 
-export type SyncMethod = 'r2' | 'git' | null;
+export type SyncMethod = 'r2' | 'git' | 's3' | null;
 
 interface SyncConfig {
 	url: string;
@@ -37,11 +44,12 @@ interface SyncConfig {
 export function getSyncMethod(): SyncMethod {
 	if (typeof localStorage === 'undefined') return null;
 	const method = localStorage.getItem(SYNC_METHOD_KEY);
-	if (method === 'r2' || method === 'git') return method;
-	// Default to R2 if R2 is configured, otherwise null
+	if (method === 'r2' || method === 'git' || method === 's3') return method;
+	// Auto-detect from configured providers
 	const r2Config = getSyncConfig();
 	if (r2Config) return 'r2';
 	if (isGitSyncConfigured()) return 'git';
+	if (isS3Configured()) return 's3';
 	return null;
 }
 
@@ -76,7 +84,14 @@ export function isSyncConfigured(): boolean {
 	const method = getSyncMethod();
 	if (method === 'r2') return isR2SyncConfigured();
 	if (method === 'git') return isGitSyncConfigured();
-	return isR2SyncConfigured() || isGitSyncConfigured();
+	if (method === 's3') return isS3Configured();
+	return isR2SyncConfigured() || isGitSyncConfigured() || isS3Configured();
+}
+
+export async function testS3Connection(): Promise<{ success: boolean; error?: string }> {
+	const config = getS3Config();
+	if (!config) return { success: false, error: 'S3 not configured' };
+	return s3Test(config);
 }
 
 export async function testConnection(): Promise<{ success: boolean; error?: string }> {
@@ -204,6 +219,60 @@ async function syncR2(): Promise<{ success: boolean; error?: string }> {
 }
 
 /**
+ * S3 sync implementation — same pull/merge/push pattern as R2 but
+ * uses the S3 client with AWS SigV4 signing.
+ */
+async function syncS3(): Promise<{ success: boolean; error?: string }> {
+	const config = getS3Config();
+	if (!config) {
+		return { success: false, error: 'S3 sync not configured' };
+	}
+
+	const vaultId = get(currentVaultId);
+	setSyncing();
+
+	try {
+		// Pull
+		let remoteBinary: Uint8Array | null;
+		try {
+			remoteBinary = await s3Pull(config, vaultId);
+		} catch (pullErr) {
+			const message = pullErr instanceof Error ? pullErr.message : 'Failed to pull';
+			setSyncError(`S3 pull failed: ${message}`);
+			return { success: false, error: `S3 pull failed: ${message}` };
+		}
+
+		// Merge
+		if (remoteBinary !== null) {
+			try {
+				await mergeDoc(remoteBinary);
+			} catch (mergeErr) {
+				const message = mergeErr instanceof Error ? mergeErr.message : 'Merge failed';
+				setSyncError(`S3 merge failed: ${message}`);
+				return { success: false, error: `S3 merge failed: ${message}` };
+			}
+		}
+
+		// Push
+		try {
+			const localBinary = getDocBinary();
+			await s3Push(config, vaultId, localBinary);
+		} catch (pushErr) {
+			const message = pushErr instanceof Error ? pushErr.message : 'Failed to push';
+			setSyncError(`S3 push failed: ${message}`);
+			return { success: false, error: `S3 push failed: ${message}` };
+		}
+
+		setSyncSuccess();
+		return { success: true };
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'S3 sync failed';
+		setSyncError(message);
+		return { success: false, error: message };
+	}
+}
+
+/**
  * Git sync implementation
  */
 async function syncGitMethod(): Promise<{ success: boolean; error?: string }> {
@@ -278,6 +347,10 @@ export async function sync(): Promise<{ success: boolean; error?: string }> {
 
 	if (method === 'git') {
 		return syncGitMethod();
+	}
+
+	if (method === 's3') {
+		return syncS3();
 	}
 
 	// Default to R2

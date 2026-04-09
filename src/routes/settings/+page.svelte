@@ -16,7 +16,8 @@
 	import { importRoamJSON, type RoamImportResult } from '$lib/utils/roam-import';
 	import { importEvernoteEnex, type EvernoteImportResult } from '$lib/utils/evernote-import';
 	import { generateBookmarklet } from '$lib/utils/web-clipper';
-	import { syncState, initSyncState, sync, testConnection, isSyncConfigured, getSyncMethod, setSyncMethod, isR2SyncConfigured, type SyncMethod } from '$lib/sync';
+	import { syncState, initSyncState, sync, testConnection, testS3Connection, isSyncConfigured, getSyncMethod, setSyncMethod, isR2SyncConfigured, type SyncMethod } from '$lib/sync';
+	import { getS3Config, saveS3Config, isS3Configured, type S3Config } from '$lib/sync/s3';
 	import {
 		gitSyncState,
 		initGitSyncState,
@@ -73,6 +74,46 @@
 
 	let syncToken = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-token') || '' : '');
 	let syncUrl = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-url') || '' : '');
+
+	// S3 sync state
+	let s3Endpoint = $state('');
+	let s3Bucket = $state('');
+	let s3Region = $state('us-east-1');
+	let s3AccessKey = $state('');
+	let s3SecretKey = $state('');
+	let s3TestResult = $state<{ success: boolean; error?: string } | null>(null);
+	let s3Testing = $state(false);
+
+	function loadS3Config() {
+		const config = getS3Config();
+		if (config) {
+			s3Endpoint = config.endpoint;
+			s3Bucket = config.bucket;
+			s3Region = config.region;
+			s3AccessKey = config.accessKeyId;
+			s3SecretKey = config.secretAccessKey;
+		}
+	}
+
+	function saveS3Settings() {
+		saveS3Config({
+			endpoint: s3Endpoint.trim(),
+			bucket: s3Bucket.trim(),
+			region: s3Region.trim(),
+			accessKeyId: s3AccessKey.trim(),
+			secretAccessKey: s3SecretKey.trim()
+		});
+		showSaved = true;
+		setTimeout(() => (showSaved = false), 2000);
+	}
+
+	async function handleS3Test() {
+		s3Testing = true;
+		s3TestResult = null;
+		saveS3Settings();
+		s3TestResult = await testS3Connection();
+		s3Testing = false;
+	}
 	let showSaved = $state(false);
 	let theme = $state<'system' | 'light' | 'dark'>('system');
 	let editorFont = $state<'quattro' | 'geist'>('quattro');
@@ -249,6 +290,7 @@
 
 		initSyncState();
 		initGitSyncState();
+		loadS3Config();
 
 		notifSupported = notificationsSupported();
 		if (notifSupported) {
@@ -703,7 +745,7 @@
 					<div>
 						<h2 class="font-semibold text-[var(--color-text)]">Sync</h2>
 						<p class="text-sm text-[var(--color-text-muted)]">
-							{#if syncMethod === 'git'}Git repository sync{:else}Cloudflare R2 sync{/if}
+							{#if syncMethod === 'git'}Git repository sync{:else if syncMethod === 's3'}S3-compatible sync{:else}Cloudflare R2 sync{/if}
 						</p>
 					</div>
 				</div>
@@ -722,22 +764,120 @@
 						<div class="flex gap-2">
 							<button
 								onclick={() => handleSyncMethodChange('r2')}
-								class="flex flex-1 items-center justify-center gap-2 rounded-lg border px-4 py-3 transition-colors {syncMethod === 'r2' || syncMethod === null ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-border)]'}"
+								class="flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-3 text-sm transition-colors {syncMethod === 'r2' || syncMethod === null ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-border)]'}"
 							>
 								<Cloud class="h-4 w-4" />
-								Cloudflare R2
+								R2
 							</button>
 							<button
 								onclick={() => handleSyncMethodChange('git')}
-								class="flex flex-1 items-center justify-center gap-2 rounded-lg border px-4 py-3 transition-colors {syncMethod === 'git' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-border)]'}"
+								class="flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-3 text-sm transition-colors {syncMethod === 'git' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-border)]'}"
 							>
 								<GitBranch class="h-4 w-4" />
-								Git Repository
+								Git
+							</button>
+							<button
+								onclick={() => handleSyncMethodChange('s3')}
+								class="flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-3 text-sm transition-colors {syncMethod === 's3' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-border)]'}"
+							>
+								<Database class="h-4 w-4" />
+								S3
 							</button>
 						</div>
 					</div>
 
-					{#if syncMethod === 'git'}
+					{#if syncMethod === 's3'}
+						<!-- S3 Sync Configuration -->
+						<div class="space-y-4">
+							<p class="text-sm text-[var(--color-text-muted)]">
+								Sync via any S3-compatible storage: AWS S3, MinIO, Backblaze B2,
+								DigitalOcean Spaces, Wasabi, Cloudflare R2 (S3 API). CORS must be
+								configured on the bucket.
+							</p>
+
+							<div>
+								<span class="mb-1 block text-sm text-[var(--color-text)]">Endpoint URL</span>
+								<input
+									type="text"
+									bind:value={s3Endpoint}
+									placeholder="https://s3.us-east-1.amazonaws.com"
+									class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-accent)] focus:outline-none"
+								/>
+							</div>
+
+							<div class="grid grid-cols-2 gap-3">
+								<div>
+									<span class="mb-1 block text-sm text-[var(--color-text)]">Bucket</span>
+									<input
+										type="text"
+										bind:value={s3Bucket}
+										placeholder="my-kurumi-bucket"
+										class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-accent)] focus:outline-none"
+									/>
+								</div>
+								<div>
+									<span class="mb-1 block text-sm text-[var(--color-text)]">Region</span>
+									<input
+										type="text"
+										bind:value={s3Region}
+										placeholder="us-east-1"
+										class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-accent)] focus:outline-none"
+									/>
+								</div>
+							</div>
+
+							<div>
+								<span class="mb-1 block text-sm text-[var(--color-text)]">Access Key ID</span>
+								<input
+									type="text"
+									bind:value={s3AccessKey}
+									placeholder="AKIAIOSFODNN7EXAMPLE"
+									class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] font-mono focus:border-[var(--color-accent)] focus:outline-none"
+								/>
+							</div>
+
+							<div>
+								<span class="mb-1 block text-sm text-[var(--color-text)]">Secret Access Key</span>
+								<input
+									type="password"
+									bind:value={s3SecretKey}
+									placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+									class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] font-mono focus:border-[var(--color-accent)] focus:outline-none"
+								/>
+							</div>
+
+							<div class="flex gap-2">
+								<button
+									onclick={saveS3Settings}
+									class="flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm text-white transition-colors hover:bg-[var(--color-accent-hover)]"
+								>
+									Save
+								</button>
+								<button
+									onclick={handleS3Test}
+									disabled={s3Testing}
+									class="flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] disabled:opacity-50"
+								>
+									{#if s3Testing}
+										<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+									{/if}
+									Test Connection
+								</button>
+							</div>
+
+							{#if s3TestResult}
+								<div class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm {s3TestResult.success ? 'bg-green-500/10 text-green-600 dark:text-green-400' : 'bg-red-500/10 text-red-500'}">
+									{#if s3TestResult.success}
+										<Check class="h-4 w-4" />
+										Connection successful
+									{:else}
+										<AlertTriangle class="h-4 w-4" />
+										{s3TestResult.error}
+									{/if}
+								</div>
+							{/if}
+						</div>
+					{:else if syncMethod === 'git'}
 						<!-- Git Sync Configuration -->
 						<div class="space-y-4">
 							<p class="text-sm text-[var(--color-text-muted)]">
