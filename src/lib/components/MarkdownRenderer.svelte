@@ -33,6 +33,18 @@
 	 * that maps to HTML structures marked doesn't understand natively.
 	 */
 	function preProcessMarkdown(md: string): string {
+		// --- Bare checkboxes: [ ] and [x] without list prefix ---
+		// Notion and Obsidian both auto-convert these. GFM requires the
+		// `- ` prefix, so we add it when the line starts with [ ] or [x].
+		md = md.replace(/^(\s*)\[ \]/gm, '$1- [ ]');
+		md = md.replace(/^(\s*)\[x\]/gm, '$1- [x]');
+		md = md.replace(/^(\s*)\[X\]/gm, '$1- [x]');
+
+		// --- Highlight: ==text== → <mark>text</mark> ---
+		// Obsidian-style highlight. Must run before marked since marked
+		// doesn't know about == syntax.
+		md = md.replace(/==((?:[^=]|=[^=])+)==/g, '<mark>$1</mark>');
+
 		// --- Callouts: > [!type] title ---
 		// Obsidian-style callouts. Convert to HTML divs with classes so
 		// CSS can style them. Must run before marked wraps the > as a
@@ -644,5 +656,55 @@
 	.markdown-content :global(.task-list-item input[type="checkbox"]) {
 		margin-right: 0.5em;
 		accent-color: var(--color-accent);
+		width: 1em;
+		height: 1em;
+		vertical-align: middle;
+		cursor: default;
+	}
+
+	/* Checked items get a muted style for the text */
+	.markdown-content :global(.task-list-item:has(input:checked)) {
+		color: var(--color-text-muted);
+		text-decoration: line-through;
+	}
+
+	/* ---- Highlight ==text== ---- */
+	.markdown-content :global(mark) {
+		background: rgba(250, 204, 21, 0.3);
+		color: inherit;
+		padding: 0.0625rem 0.25rem;
+		border-radius: 0.1875rem;
+	}
+
+	/* ---- Horizontal rule ---- */
+	.markdown-content :global(hr) {
+		border: none;
+		border-top: 1px solid var(--color-border);
+		margin: 2em 0;
+	}
+
+	/* ---- Images ---- */
+	.markdown-content :global(img) {
+		max-width: 100%;
+		border-radius: 0.5rem;
+		margin: 0.75em 0;
+	}
+
+	/* ---- Keyboard shortcuts ---- */
+	.markdown-content :global(kbd) {
+		display: inline-block;
+		padding: 0.125rem 0.375rem;
+		font-size: 0.8125em;
+		font-family: ui-monospace, monospace;
+		background: var(--color-bg-secondary);
+		border: 1px solid var(--color-border);
+		border-radius: 0.25rem;
+		box-shadow: 0 1px 0 var(--color-border);
+	}
+
+	/* ---- Abbreviation / footnote markers ---- */
+	.markdown-content :global(abbr) {
+		text-decoration: underline dotted;
+		cursor: help;
 	}
 </style>

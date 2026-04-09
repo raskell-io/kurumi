@@ -334,6 +334,15 @@ export const builtInSlashCommands: SlashCommand[] = [
 			replaceWithText(view, from, to, '```kurumi\ntype:note\nview: list\nlimit: 20\n```\n')
 	},
 
+	{
+		id: 'highlight',
+		label: 'Highlight',
+		description: 'Highlight text with ==markers==',
+		icon: 'minus',
+		category: 'Basic',
+		execute: (view, from, to) => replaceWithText(view, from, to, '==highlighted text==')
+	},
+
 	// --- Tier 2 rich blocks -----------------------------------------------
 	{
 		id: 'toggle',
