@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { marked } from 'marked';
 	import { findMemoryObjectByTitle } from '$lib/db';
+	import { resolveBlobUrl, isBlobRef } from '$lib/utils/image';
 	import DataviewBlock from './DataviewBlock.svelte';
+	import { onMount } from 'svelte';
 
 	interface Props {
 		content: string;
@@ -183,11 +185,35 @@
 			onRefClick(refType, refValue, { x: e.clientX, y: e.clientY });
 		}
 	}
+
+	// Resolve blob: image refs after the HTML is rendered. marked
+	// outputs <img src="blob:abc123"> which the browser can't fetch;
+	// we need to replace it with an object URL from the blob store.
+	let contentDiv: HTMLDivElement | undefined = $state();
+
+	async function resolveBlobImages() {
+		if (!contentDiv) return;
+		const imgs = contentDiv.querySelectorAll<HTMLImageElement>('img');
+		for (const img of imgs) {
+			const src = img.getAttribute('src') || '';
+			if (isBlobRef(src) && !src.startsWith('blob:http')) {
+				const url = await resolveBlobUrl(src);
+				if (url) img.src = url;
+			}
+		}
+	}
+
+	// Re-resolve whenever content changes
+	$effect(() => {
+		void html; // subscribe to changes
+		// Delay to let the DOM update first
+		requestAnimationFrame(() => resolveBlobImages());
+	});
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="markdown-content" onclick={handleClick}>
+<div class="markdown-content" bind:this={contentDiv} onclick={handleClick}>
 	{@html html}
 	{#each dataviewBlocks as block (block.id)}
 		<DataviewBlock source={block.source} />

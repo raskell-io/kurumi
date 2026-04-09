@@ -343,6 +343,42 @@ export const builtInSlashCommands: SlashCommand[] = [
 		execute: (view, from, to) => replaceWithText(view, from, to, '==highlighted text==')
 	},
 
+	{
+		id: 'image',
+		label: 'Image',
+		description: 'Upload and embed an image (auto-converts to AVIF)',
+		icon: 'minus',
+		category: 'Insert',
+		execute: (view, from, to) => {
+			// Delete the /image text first
+			const tr = view.state.tr.delete(from, to);
+			view.dispatch(tr);
+			view.focus();
+
+			// Open a file picker for images
+			const input = document.createElement('input');
+			input.type = 'file';
+			input.accept = 'image/*';
+			input.onchange = async () => {
+				const file = input.files?.[0];
+				if (!file) return;
+				try {
+					const { processAndStoreImage } = await import('$lib/utils/image');
+					const result = await processAndStoreImage(file, file.name.replace(/\.[^.]+$/, ''));
+					// Insert markdown at current cursor
+					const pos = view.state.selection.from;
+					const insertTr = view.state.tr.insertText(result.markdown + '\n', pos);
+					view.dispatch(insertTr);
+					view.focus();
+				} catch (err) {
+					console.error('Image upload failed:', err);
+				}
+			};
+			input.click();
+			return true;
+		}
+	},
+
 	// --- Tier 2 rich blocks -----------------------------------------------
 	{
 		id: 'toggle',

@@ -38,6 +38,7 @@
 		slashCommandPlugin,
 		setSlashCallbacks
 	} from '$lib/editor/slashCommands';
+	import { processAndStoreImage } from '$lib/utils/image';
 	import WikilinkAutocomplete from './WikilinkAutocomplete.svelte';
 	import DatePicker from './DatePicker.svelte';
 	import PersonInput from './PersonInput.svelte';
@@ -123,6 +124,24 @@
 
 	function handleTagClose() {
 		showTagAutocomplete = false;
+	}
+
+	/**
+	 * Insert text at the current cursor position in the editor.
+	 * Used by the image paste/drop handlers and slash commands.
+	 */
+	function insertTextAtCursor(text: string) {
+		if (!editor) return;
+		try {
+			const view = editor.ctx.get(editorViewCtx);
+			const { state } = view;
+			const { from } = state.selection;
+			const tr = state.tr.insertText(text, from);
+			view.dispatch(tr);
+			view.focus();
+		} catch (e) {
+			console.error('Failed to insert text:', e);
+		}
 	}
 
 	function handleAIResult(newText: string) {
@@ -296,6 +315,68 @@
 
 		// Add mouseup listener to check for text selection
 		editorContainer.addEventListener('mouseup', checkSelection);
+
+		// Periodically resolve blob: image srcs in the editor's rendered
+		// output. Milkdown renders <img src="blob:..."> which the browser
+		// can't fetch; we swap in object URLs from the blob store.
+		const resolveBlobImages = async () => {
+			const imgs = editorContainer.querySelectorAll<HTMLImageElement>('img');
+			for (const img of imgs) {
+				const src = img.getAttribute('src') || '';
+				if (src.startsWith('blob:') && !src.startsWith('blob:http')) {
+					const { resolveBlobUrl } = await import('$lib/utils/image');
+					const url = await resolveBlobUrl(src);
+					if (url) img.src = url;
+				}
+			}
+		};
+		const blobResolver = new MutationObserver(() => void resolveBlobImages());
+		blobResolver.observe(editorContainer, { childList: true, subtree: true });
+
+		// Image paste handler: intercept clipboard paste events that
+		// contain images, convert to AVIF, store, and insert markdown.
+		editorContainer.addEventListener('paste', async (e: ClipboardEvent) => {
+			const items = e.clipboardData?.items;
+			if (!items) return;
+			for (const item of items) {
+				if (item.type.startsWith('image/')) {
+					e.preventDefault();
+					const file = item.getAsFile();
+					if (!file) continue;
+					try {
+						const result = await processAndStoreImage(file);
+						insertTextAtCursor(result.markdown);
+					} catch (err) {
+						console.error('Image paste failed:', err);
+					}
+					return;
+				}
+			}
+		});
+
+		// Image drop handler: intercept drag-and-drop of image files.
+		editorContainer.addEventListener('drop', async (e: DragEvent) => {
+			const files = e.dataTransfer?.files;
+			if (!files) return;
+			for (const file of files) {
+				if (file.type.startsWith('image/')) {
+					e.preventDefault();
+					try {
+						const result = await processAndStoreImage(file, file.name.replace(/\.[^.]+$/, ''));
+						insertTextAtCursor(result.markdown);
+					} catch (err) {
+						console.error('Image drop failed:', err);
+					}
+					return;
+				}
+			}
+		});
+
+		editorContainer.addEventListener('dragover', (e: DragEvent) => {
+			if (e.dataTransfer?.types.includes('Files')) {
+				e.preventDefault();
+			}
+		});
 	});
 
 	onDestroy(() => {
