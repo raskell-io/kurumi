@@ -146,10 +146,14 @@
 			return `<a href="${url}" class="url-reference" target="_blank" rel="noopener noreferrer">${url}</a>`;
 		});
 
-		// Inline action items: - [ ] and - [x] rendered by marked as
-		// <li> with class "task-list-item". We add a data attribute so
-		// the checkbox styling is richer (already handled by GFM CSS,
-		// but we can enhance later).
+		// Add copy button to transcript blockquotes. Look for
+		// blockquotes containing "Transcript:" and add a copy button.
+		html = html.replace(
+			/<blockquote>([\s\S]*?<strong>Transcript:<\/strong>[\s\S]*?)<\/blockquote>/g,
+			(_, inner) => {
+				return `<blockquote class="transcript-block"><button type="button" class="transcript-copy-btn" data-action="copy-transcript" title="Copy transcript">Copy</button>${inner}</blockquote>`;
+			}
+		);
 
 		return html;
 	}
@@ -176,6 +180,25 @@
 
 	function handleClick(e: MouseEvent) {
 		const target = e.target as HTMLElement;
+
+		// Handle transcript copy button
+		if (target.dataset.action === 'copy-transcript') {
+			e.preventDefault();
+			e.stopPropagation();
+			const block = target.closest('.transcript-block');
+			if (block) {
+				// Get text content excluding the copy button itself
+				const clone = block.cloneNode(true) as HTMLElement;
+				clone.querySelector('.transcript-copy-btn')?.remove();
+				const text = clone.textContent?.replace(/^Transcript:\s*/, '').trim() || '';
+				navigator.clipboard.writeText(text).then(() => {
+					target.textContent = 'Copied!';
+					setTimeout(() => { target.textContent = 'Copy'; }, 2000);
+				});
+			}
+			return;
+		}
+
 		const refType = target.dataset.refType as 'person' | 'date' | 'tag' | undefined;
 		const refValue = target.dataset.refValue;
 
@@ -193,12 +216,22 @@
 
 	async function resolveBlobImages() {
 		if (!contentDiv) return;
+		// Resolve blob: refs on images
 		const imgs = contentDiv.querySelectorAll<HTMLImageElement>('img');
 		for (const img of imgs) {
 			const src = img.getAttribute('src') || '';
 			if (isBlobRef(src) && !src.startsWith('blob:http')) {
 				const url = await resolveBlobUrl(src);
 				if (url) img.src = url;
+			}
+		}
+		// Resolve blob: refs on audio elements
+		const audios = contentDiv.querySelectorAll<HTMLAudioElement>('audio');
+		for (const audio of audios) {
+			const src = audio.getAttribute('src') || '';
+			if (isBlobRef(src) && !src.startsWith('blob:http')) {
+				const url = await resolveBlobUrl(src);
+				if (url) audio.src = url;
 			}
 		}
 	}
@@ -714,6 +747,40 @@
 		max-width: 100%;
 		border-radius: 0.5rem;
 		margin: 0.75em 0;
+	}
+
+	/* ---- Audio embeds ---- */
+	.markdown-content :global(audio) {
+		width: 100%;
+		max-width: 100%;
+		border-radius: 0.5rem;
+		margin: 0.5em 0;
+	}
+
+	/* ---- Transcript block with copy button ---- */
+	.markdown-content :global(.transcript-block) {
+		position: relative;
+		padding-right: 4rem;
+	}
+
+	.markdown-content :global(.transcript-copy-btn) {
+		position: absolute;
+		top: 0.5rem;
+		right: 0.5rem;
+		padding: 0.25rem 0.625rem;
+		background: var(--color-bg);
+		border: 1px solid var(--color-border);
+		border-radius: 0.25rem;
+		color: var(--color-text-muted);
+		font-size: 0.6875rem;
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+
+	.markdown-content :global(.transcript-copy-btn:hover) {
+		background: var(--color-bg-secondary);
+		color: var(--color-accent);
+		border-color: var(--color-accent);
 	}
 
 	/* ---- Keyboard shortcuts ---- */

@@ -88,6 +88,108 @@
 	let showCameraCapture = $state(false);
 	let imageInputRef: HTMLInputElement | undefined = $state();
 
+	// Inline audio recording state
+	let isRecording = $state(false);
+	let recordingType = $state<'voice' | 'meeting'>('voice');
+	let mediaRecorder: MediaRecorder | null = null;
+	let audioChunks: Blob[] = [];
+	let recordingStartTime = $state<number>(0);
+
+	async function startInlineRecording(type: 'voice' | 'meeting') {
+		if (isRecording) return;
+		recordingType = type;
+		try {
+			const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+			const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+				? 'audio/webm;codecs=opus'
+				: 'audio/webm';
+			mediaRecorder = new MediaRecorder(stream, { mimeType });
+			audioChunks = [];
+			mediaRecorder.ondataavailable = (e) => {
+				if (e.data.size > 0) audioChunks.push(e.data);
+			};
+			mediaRecorder.onstop = async () => {
+				for (const track of stream.getTracks()) track.stop();
+				const audioBlob = new Blob(audioChunks, { type: mimeType });
+				await handleRecordingComplete(audioBlob);
+			};
+			mediaRecorder.start();
+			recordingStartTime = Date.now();
+			isRecording = true;
+		} catch (err) {
+			console.error('Recording failed:', err);
+		}
+	}
+
+	function stopInlineRecording() {
+		if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+			mediaRecorder.stop();
+		}
+		isRecording = false;
+	}
+
+	async function handleRecordingComplete(audioBlob: Blob) {
+		const { storeBlob } = await import('$lib/db/blob-store');
+		const audioRef = await storeBlob(audioBlob, audioBlob.type || 'audio/webm');
+
+		// Format timestamp
+		const now = new Date();
+		const timeStr = now.toLocaleString('en-US', {
+			month: 'short', day: 'numeric', year: 'numeric',
+			hour: 'numeric', minute: '2-digit'
+		});
+		const icon = recordingType === 'meeting' ? '👥' : '🎙';
+		const label = recordingType === 'meeting' ? 'Meeting recording' : 'Voice memo';
+
+		// Build the embed markdown with HTML audio tag
+		const embed = [
+			'',
+			`#### ${icon} ${label} — ${timeStr}`,
+			'',
+			`<audio controls src="${audioRef}"></audio>`,
+			'',
+			'> **Transcript:** *Processing...*',
+			''
+		].join('\n');
+
+		// Insert into the editor
+		window.dispatchEvent(new CustomEvent('kurumi-insert-text', { detail: embed }));
+
+		// Kick off transcription in the background
+		void transcribeAndInsert(audioRef, audioBlob);
+	}
+
+	async function transcribeAndInsert(audioRef: string, audioBlob: Blob) {
+		try {
+			const { inferenceRouter } = await import('$lib/inference');
+			const provider = inferenceRouter.findProvider((c) => c.supportsTranscribe);
+			if (!provider) return;
+
+			const result = await provider.transcribe({
+				audio: audioBlob,
+				mimeType: audioBlob.type || 'audio/webm'
+			});
+			if (!result.ok || !result.value?.text) return;
+
+			const transcript = result.value.text.trim();
+
+			// Replace the "Processing..." placeholder with the actual transcript
+			if (memory) {
+				const currentBody = memory.bodyMarkdown || '';
+				const updated = currentBody.replace(
+					'> **Transcript:** *Processing...*',
+					`> **Transcript:**\n> ${transcript.replace(/\n/g, '\n> ')}`
+				);
+				if (updated !== currentBody) {
+					content = updated;
+					updateMemoryObject(memory.id, { bodyMarkdown: updated });
+				}
+			}
+		} catch (err) {
+			console.error('Transcription failed:', err);
+		}
+	}
+
 	function handleImageUpload() {
 		imageInputRef?.click();
 	}
@@ -664,22 +766,33 @@
 						<Camera class="h-3.5 w-3.5" />
 						<span class="hidden sm:inline">Photo</span>
 					</button>
-					<button
-						onclick={() => window.dispatchEvent(new CustomEvent('kurumi-voice-memo'))}
-						class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text)]"
-						title="Record voice memo"
-					>
-						<Mic class="h-3.5 w-3.5" />
-						<span class="hidden sm:inline">Voice</span>
-					</button>
-					<button
-						onclick={() => window.dispatchEvent(new CustomEvent('kurumi-meeting'))}
-						class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text)]"
-						title="Record meeting"
-					>
-						<Users class="h-3.5 w-3.5" />
-						<span class="hidden sm:inline">Meeting</span>
-					</button>
+					{#if isRecording}
+						<button
+							onclick={stopInlineRecording}
+							class="inline-flex items-center gap-1 rounded-md bg-red-500 px-2.5 py-1 text-xs text-white animate-pulse"
+							title="Stop recording"
+						>
+							<span class="h-2 w-2 rounded-full bg-white"></span>
+							<span>Stop {recordingType === 'meeting' ? 'meeting' : 'voice'}</span>
+						</button>
+					{:else}
+						<button
+							onclick={() => startInlineRecording('voice')}
+							class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text)]"
+							title="Record voice memo"
+						>
+							<Mic class="h-3.5 w-3.5" />
+							<span class="hidden sm:inline">Voice</span>
+						</button>
+						<button
+							onclick={() => startInlineRecording('meeting')}
+							class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text)]"
+							title="Record meeting"
+						>
+							<Users class="h-3.5 w-3.5" />
+							<span class="hidden sm:inline">Meeting</span>
+						</button>
+					{/if}
 					<span class="mx-1 text-xs text-[var(--color-text-muted)] opacity-50">|</span>
 					<span class="text-xs text-[var(--color-text-muted)] opacity-50">
 						Type / for more

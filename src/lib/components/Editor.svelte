@@ -460,13 +460,23 @@
 		// output. Milkdown renders <img src="blob:..."> which the browser
 		// can't fetch; we swap in object URLs from the blob store.
 		const resolveBlobImages = async () => {
+			const { resolveBlobUrl } = await import('$lib/utils/image');
+			// Resolve blob: refs on images
 			const imgs = editorContainer.querySelectorAll<HTMLImageElement>('img');
 			for (const img of imgs) {
 				const src = img.getAttribute('src') || '';
 				if (src.startsWith('blob:') && !src.startsWith('blob:http')) {
-					const { resolveBlobUrl } = await import('$lib/utils/image');
 					const url = await resolveBlobUrl(src);
 					if (url) img.src = url;
+				}
+			}
+			// Resolve blob: refs on audio elements
+			const audios = editorContainer.querySelectorAll<HTMLAudioElement>('audio');
+			for (const audio of audios) {
+				const src = audio.getAttribute('src') || '';
+				if (src.startsWith('blob:') && !src.startsWith('blob:http')) {
+					const url = await resolveBlobUrl(src);
+					if (url) audio.src = url;
 				}
 			}
 		};
