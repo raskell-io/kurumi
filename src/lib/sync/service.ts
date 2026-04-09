@@ -24,14 +24,35 @@ import {
 	s3Push,
 	s3Test
 } from './s3';
+import {
+	getWebDAVConfig,
+	isWebDAVConfigured,
+	webdavPull,
+	webdavPush,
+	webdavTest
+} from './webdav';
+import {
+	hasLocalFSHandle,
+	localFSPull,
+	localFSPush,
+	localFSTest
+} from './local-fs';
+import {
+	getAzureBlobConfig,
+	isAzureBlobConfigured,
+	azureBlobPull,
+	azureBlobPush,
+	azureBlobTest
+} from './azure-blob';
 import type { MemoryObject, Folder, Person, Event, ActionItem } from '$lib/db/types';
 
 const SYNC_URL_KEY = 'kurumi-sync-url';
 const SYNC_TOKEN_KEY = 'kurumi-sync-token';
 const SYNC_METHOD_KEY = 'kurumi-sync-method';
-const MIN_SYNC_INTERVAL_MS = 10000; // Don't sync more than once every 10 seconds
+const MIRROR_METHODS_KEY = 'kurumi-sync-mirrors';
+const MIN_SYNC_INTERVAL_MS = 10000;
 
-export type SyncMethod = 'r2' | 'git' | 's3' | null;
+export type SyncMethod = 'r2' | 'git' | 's3' | 'webdav' | 'local-fs' | 'azure-blob' | null;
 
 interface SyncConfig {
 	url: string;
@@ -41,16 +62,43 @@ interface SyncConfig {
 /**
  * Get the current sync method
  */
+const ALL_SYNC_METHODS: SyncMethod[] = ['r2', 'git', 's3', 'webdav', 'local-fs', 'azure-blob'];
+
 export function getSyncMethod(): SyncMethod {
 	if (typeof localStorage === 'undefined') return null;
 	const method = localStorage.getItem(SYNC_METHOD_KEY);
-	if (method === 'r2' || method === 'git' || method === 's3') return method;
+	if (method && ALL_SYNC_METHODS.includes(method as SyncMethod)) return method as SyncMethod;
 	// Auto-detect from configured providers
-	const r2Config = getSyncConfig();
-	if (r2Config) return 'r2';
+	if (getSyncConfig()) return 'r2';
 	if (isGitSyncConfigured()) return 'git';
 	if (isS3Configured()) return 's3';
+	if (isWebDAVConfigured()) return 'webdav';
+	if (isAzureBlobConfigured()) return 'azure-blob';
 	return null;
+}
+
+/**
+ * Mirror methods: other sync targets that receive a copy of the
+ * primary's state after every successful sync. Stored as a JSON
+ * array in localStorage.
+ */
+export function getMirrorMethods(): SyncMethod[] {
+	if (typeof localStorage === 'undefined') return [];
+	try {
+		const raw = localStorage.getItem(MIRROR_METHODS_KEY);
+		if (!raw) return [];
+		const parsed = JSON.parse(raw);
+		return Array.isArray(parsed)
+			? parsed.filter((m: unknown) => ALL_SYNC_METHODS.includes(m as SyncMethod))
+			: [];
+	} catch {
+		return [];
+	}
+}
+
+export function setMirrorMethods(methods: SyncMethod[]): void {
+	if (typeof localStorage === 'undefined') return;
+	localStorage.setItem(MIRROR_METHODS_KEY, JSON.stringify(methods));
 }
 
 /**
@@ -80,18 +128,45 @@ export function isR2SyncConfigured(): boolean {
 	return config !== null && config.url.length > 0 && config.token.length > 0;
 }
 
+export function isMethodConfigured(method: SyncMethod): boolean {
+	switch (method) {
+		case 'r2': return isR2SyncConfigured();
+		case 'git': return isGitSyncConfigured();
+		case 's3': return isS3Configured();
+		case 'webdav': return isWebDAVConfigured();
+		case 'local-fs': return false; // Checked async via hasLocalFSHandle
+		case 'azure-blob': return isAzureBlobConfigured();
+		default: return false;
+	}
+}
+
 export function isSyncConfigured(): boolean {
 	const method = getSyncMethod();
-	if (method === 'r2') return isR2SyncConfigured();
-	if (method === 'git') return isGitSyncConfigured();
-	if (method === 's3') return isS3Configured();
-	return isR2SyncConfigured() || isGitSyncConfigured() || isS3Configured();
+	if (method) return isMethodConfigured(method);
+	return isR2SyncConfigured() || isGitSyncConfigured() || isS3Configured() ||
+		isWebDAVConfigured() || isAzureBlobConfigured();
 }
 
 export async function testS3Connection(): Promise<{ success: boolean; error?: string }> {
 	const config = getS3Config();
 	if (!config) return { success: false, error: 'S3 not configured' };
 	return s3Test(config);
+}
+
+export async function testWebDAVConnection(): Promise<{ success: boolean; error?: string }> {
+	const config = getWebDAVConfig();
+	if (!config) return { success: false, error: 'WebDAV not configured' };
+	return webdavTest(config);
+}
+
+export async function testLocalFSConnection(): Promise<{ success: boolean; error?: string }> {
+	return localFSTest();
+}
+
+export async function testAzureBlobConnection(): Promise<{ success: boolean; error?: string }> {
+	const config = getAzureBlobConfig();
+	if (!config) return { success: false, error: 'Azure Blob not configured' };
+	return azureBlobTest(config);
 }
 
 export async function testConnection(): Promise<{ success: boolean; error?: string }> {
@@ -273,6 +348,130 @@ async function syncS3(): Promise<{ success: boolean; error?: string }> {
 }
 
 /**
+ * WebDAV sync implementation
+ */
+async function syncWebDAV(): Promise<{ success: boolean; error?: string }> {
+	const config = getWebDAVConfig();
+	if (!config) return { success: false, error: 'WebDAV not configured' };
+	const vaultId = get(currentVaultId);
+	setSyncing();
+	try {
+		const remoteBinary = await webdavPull(config, vaultId);
+		if (remoteBinary) await mergeDoc(remoteBinary);
+		const localBinary = getDocBinary();
+		await webdavPush(config, vaultId, localBinary);
+		setSyncSuccess();
+		return { success: true };
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : 'WebDAV sync failed';
+		setSyncError(msg);
+		return { success: false, error: msg };
+	}
+}
+
+/**
+ * Local filesystem sync implementation
+ */
+async function syncLocalFS(): Promise<{ success: boolean; error?: string }> {
+	setSyncing();
+	try {
+		const remoteBinary = await localFSPull();
+		if (remoteBinary) await mergeDoc(remoteBinary);
+		const localBinary = getDocBinary();
+		await localFSPush(localBinary);
+		setSyncSuccess();
+		return { success: true };
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : 'Local FS sync failed';
+		setSyncError(msg);
+		return { success: false, error: msg };
+	}
+}
+
+/**
+ * Azure Blob sync implementation
+ */
+async function syncAzureBlob(): Promise<{ success: boolean; error?: string }> {
+	const config = getAzureBlobConfig();
+	if (!config) return { success: false, error: 'Azure Blob not configured' };
+	const vaultId = get(currentVaultId);
+	setSyncing();
+	try {
+		const remoteBinary = await azureBlobPull(config, vaultId);
+		if (remoteBinary) await mergeDoc(remoteBinary);
+		const localBinary = getDocBinary();
+		await azureBlobPush(config, vaultId, localBinary);
+		setSyncSuccess();
+		return { success: true };
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : 'Azure Blob sync failed';
+		setSyncError(msg);
+		return { success: false, error: msg };
+	}
+}
+
+/**
+ * Push the current doc binary to a specific method. Used by the
+ * mirror system to replicate to non-primary targets.
+ */
+async function pushToMethod(method: SyncMethod, binary: Uint8Array): Promise<void> {
+	const vaultId = get(currentVaultId);
+	switch (method) {
+		case 'r2': {
+			const config = getSyncConfig();
+			if (config) await pushToRemote(config, binary);
+			break;
+		}
+		case 's3': {
+			const config = getS3Config();
+			if (config) await s3Push(config, vaultId, binary);
+			break;
+		}
+		case 'webdav': {
+			const config = getWebDAVConfig();
+			if (config) await webdavPush(config, vaultId, binary);
+			break;
+		}
+		case 'local-fs': {
+			await localFSPush(binary);
+			break;
+		}
+		case 'azure-blob': {
+			const config = getAzureBlobConfig();
+			if (config) await azureBlobPush(config, vaultId, binary);
+			break;
+		}
+		// Git mirrors are not supported — git sync has its own round-trip
+		// format (markdown files) that can't be driven by a binary push.
+		case 'git':
+		default:
+			break;
+	}
+}
+
+/**
+ * After a successful primary sync, push the merged state to all
+ * configured mirrors. Mirrors are best-effort: individual failures
+ * are logged but don't fail the overall sync.
+ */
+async function pushToMirrors(): Promise<void> {
+	const mirrors = getMirrorMethods();
+	if (mirrors.length === 0) return;
+
+	const primary = getSyncMethod();
+	const binary = getDocBinary();
+
+	for (const mirror of mirrors) {
+		if (mirror === primary || !mirror) continue;
+		try {
+			await pushToMethod(mirror, binary);
+		} catch (err) {
+			console.warn(`Mirror push to ${mirror} failed:`, err);
+		}
+	}
+}
+
+/**
  * Git sync implementation
  */
 async function syncGitMethod(): Promise<{ success: boolean; error?: string }> {
@@ -345,16 +544,42 @@ async function syncGitMethod(): Promise<{ success: boolean; error?: string }> {
 export async function sync(): Promise<{ success: boolean; error?: string }> {
 	const method = getSyncMethod();
 
-	if (method === 'git') {
-		return syncGitMethod();
+	let result: { success: boolean; error?: string };
+
+	switch (method) {
+		case 'git':
+			result = await syncGitMethod();
+			break;
+		case 's3':
+			result = await syncS3();
+			break;
+		case 'webdav':
+			result = await syncWebDAV();
+			break;
+		case 'local-fs':
+			result = await syncLocalFS();
+			break;
+		case 'azure-blob':
+			result = await syncAzureBlob();
+			break;
+		case 'r2':
+		default:
+			result = await syncR2();
+			break;
 	}
 
-	if (method === 's3') {
-		return syncS3();
+	// After a successful primary sync, push the merged state to all
+	// configured mirror methods. This is best-effort — mirror failures
+	// don't affect the primary result.
+	if (result.success) {
+		try {
+			await pushToMirrors();
+		} catch (err) {
+			console.warn('Mirror push encountered errors:', err);
+		}
 	}
 
-	// Default to R2
-	return syncR2();
+	return result;
 }
 
 // Visibility change sync

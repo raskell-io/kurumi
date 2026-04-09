@@ -16,8 +16,17 @@
 	import { importRoamJSON, type RoamImportResult } from '$lib/utils/roam-import';
 	import { importEvernoteEnex, type EvernoteImportResult } from '$lib/utils/evernote-import';
 	import { generateBookmarklet } from '$lib/utils/web-clipper';
-	import { syncState, initSyncState, sync, testConnection, testS3Connection, isSyncConfigured, getSyncMethod, setSyncMethod, isR2SyncConfigured, type SyncMethod } from '$lib/sync';
+	import {
+		syncState, initSyncState, sync, testConnection,
+		testS3Connection, testWebDAVConnection, testLocalFSConnection, testAzureBlobConnection,
+		isSyncConfigured, getSyncMethod, setSyncMethod,
+		getMirrorMethods, setMirrorMethods, isMethodConfigured,
+		isR2SyncConfigured, type SyncMethod
+	} from '$lib/sync';
 	import { getS3Config, saveS3Config, isS3Configured, type S3Config } from '$lib/sync/s3';
+	import { getWebDAVConfig, saveWebDAVConfig, isWebDAVConfigured } from '$lib/sync/webdav';
+	import { isLocalFSSupported, hasLocalFSHandle, pickLocalFSDirectory, clearLocalFSHandle } from '$lib/sync/local-fs';
+	import { getAzureBlobConfig, saveAzureBlobConfig, isAzureBlobConfigured } from '$lib/sync/azure-blob';
 	import {
 		gitSyncState,
 		initGitSyncState,
@@ -74,6 +83,98 @@
 
 	let syncToken = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-token') || '' : '');
 	let syncUrl = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-url') || '' : '');
+
+	// Mirror sync methods
+	let mirrorMethods = $state<SyncMethod[]>([]);
+
+	function loadMirrors() {
+		mirrorMethods = getMirrorMethods();
+	}
+
+	function toggleMirror(method: SyncMethod) {
+		if (!method) return;
+		if (mirrorMethods.includes(method)) {
+			mirrorMethods = mirrorMethods.filter((m) => m !== method);
+		} else {
+			mirrorMethods = [...mirrorMethods, method];
+		}
+		setMirrorMethods(mirrorMethods);
+	}
+
+	// WebDAV state
+	let webdavUrl = $state('');
+	let webdavUsername = $state('');
+	let webdavPassword = $state('');
+	let webdavTesting = $state(false);
+	let webdavTestResult = $state<{ success: boolean; error?: string } | null>(null);
+
+	function loadWebDAVConfig() {
+		const config = getWebDAVConfig();
+		if (config) {
+			webdavUrl = config.url;
+			webdavUsername = config.username;
+			webdavPassword = config.password;
+		}
+	}
+
+	function saveWebDAVSettings() {
+		saveWebDAVConfig({ url: webdavUrl.trim(), username: webdavUsername.trim(), password: webdavPassword });
+	}
+
+	async function handleWebDAVTest() {
+		webdavTesting = true;
+		webdavTestResult = null;
+		saveWebDAVSettings();
+		webdavTestResult = await testWebDAVConnection();
+		webdavTesting = false;
+	}
+
+	// Local FS state
+	let localFSAvailable = $state(false);
+	let localFSConfigured = $state(false);
+
+	async function loadLocalFSState() {
+		localFSAvailable = isLocalFSSupported();
+		localFSConfigured = await hasLocalFSHandle();
+	}
+
+	async function handlePickFolder() {
+		const ok = await pickLocalFSDirectory();
+		localFSConfigured = ok;
+	}
+
+	async function handleClearFolder() {
+		await clearLocalFSHandle();
+		localFSConfigured = false;
+	}
+
+	// Azure Blob state
+	let azureAccountUrl = $state('');
+	let azureContainer = $state('');
+	let azureSasToken = $state('');
+	let azureTesting = $state(false);
+	let azureTestResult = $state<{ success: boolean; error?: string } | null>(null);
+
+	function loadAzureBlobConfig() {
+		const config = getAzureBlobConfig();
+		if (config) {
+			azureAccountUrl = config.accountUrl;
+			azureContainer = config.container;
+			azureSasToken = config.sasToken;
+		}
+	}
+
+	function saveAzureBlobSettings() {
+		saveAzureBlobConfig({ accountUrl: azureAccountUrl.trim(), container: azureContainer.trim(), sasToken: azureSasToken.trim() });
+	}
+
+	async function handleAzureTest() {
+		azureTesting = true;
+		azureTestResult = null;
+		saveAzureBlobSettings();
+		azureTestResult = await testAzureBlobConnection();
+		azureTesting = false;
+	}
 
 	// S3 sync state
 	let s3Endpoint = $state('');
@@ -319,6 +420,10 @@
 		initSyncState();
 		initGitSyncState();
 		loadS3Config();
+		loadWebDAVConfig();
+		loadAzureBlobConfig();
+		void loadLocalFSState();
+		loadMirrors();
 		loadExtraProviderKeys();
 
 		notifSupported = notificationsSupported();
@@ -774,7 +879,15 @@
 					<div>
 						<h2 class="font-semibold text-[var(--color-text)]">Sync</h2>
 						<p class="text-sm text-[var(--color-text-muted)]">
-							{#if syncMethod === 'git'}Git repository sync{:else if syncMethod === 's3'}S3-compatible sync{:else}Cloudflare R2 sync{/if}
+							{#if syncMethod === 'git'}Git repository
+							{:else if syncMethod === 's3'}S3-compatible storage
+							{:else if syncMethod === 'webdav'}WebDAV server
+							{:else if syncMethod === 'local-fs'}Local filesystem
+							{:else if syncMethod === 'azure-blob'}Azure Blob Storage
+							{:else}Cloudflare R2{/if}
+							{#if mirrorMethods.length > 0}
+								+ {mirrorMethods.length} mirror{mirrorMethods.length === 1 ? '' : 's'}
+							{/if}
 						</p>
 					</div>
 				</div>
@@ -787,35 +900,153 @@
 			</button>
 			{#if sections.sync}
 				<div class="border-t border-[var(--color-border)] p-4">
-					<!-- Sync Method Toggle -->
+					<!-- Primary Sync Method -->
 					<div class="mb-4">
-						<span class="mb-2 block text-sm font-medium text-[var(--color-text)]">Sync Method</span>
-						<div class="flex gap-2">
-							<button
-								onclick={() => handleSyncMethodChange('r2')}
-								class="flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-3 text-sm transition-colors {syncMethod === 'r2' || syncMethod === null ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-border)]'}"
-							>
-								<Cloud class="h-4 w-4" />
-								R2
-							</button>
-							<button
-								onclick={() => handleSyncMethodChange('git')}
-								class="flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-3 text-sm transition-colors {syncMethod === 'git' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-border)]'}"
-							>
-								<GitBranch class="h-4 w-4" />
-								Git
-							</button>
-							<button
-								onclick={() => handleSyncMethodChange('s3')}
-								class="flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-3 text-sm transition-colors {syncMethod === 's3' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-border)]'}"
-							>
-								<Database class="h-4 w-4" />
-								S3
-							</button>
+						<span class="mb-2 block text-sm font-medium text-[var(--color-text)]">Primary sync method</span>
+						<div class="grid grid-cols-3 gap-1.5">
+							{#each [
+								{ id: 'r2', label: 'R2', icon: 'cloud' },
+								{ id: 'git', label: 'Git', icon: 'git' },
+								{ id: 's3', label: 'S3', icon: 'db' },
+								{ id: 'webdav', label: 'WebDAV', icon: 'cloud' },
+								{ id: 'local-fs', label: 'Local', icon: 'db' },
+								{ id: 'azure-blob', label: 'Azure', icon: 'cloud' }
+							] as item (item.id)}
+								<button
+									onclick={() => handleSyncMethodChange(item.id as SyncMethod)}
+									class="flex items-center justify-center gap-1.5 rounded-lg border px-2 py-2.5 text-xs font-medium transition-colors {syncMethod === item.id ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-border)]'}"
+								>
+									{item.label}
+								</button>
+							{/each}
 						</div>
 					</div>
 
-					{#if syncMethod === 's3'}
+					<!-- Mirror methods -->
+					<div class="mb-4">
+						<span class="mb-1 block text-sm font-medium text-[var(--color-text)]">Mirror targets</span>
+						<p class="mb-2 text-xs text-[var(--color-text-muted)]">
+							After syncing with the primary, push the same state to these mirrors.
+							Mirrors are one-way — the primary is always the source of truth.
+						</p>
+						<div class="flex flex-wrap gap-1.5">
+							{#each ['r2', 's3', 'webdav', 'local-fs', 'azure-blob'] as method (method)}
+								{#if method !== syncMethod}
+									<button
+										onclick={() => toggleMirror(method as SyncMethod)}
+										class="rounded-lg border px-2.5 py-1.5 text-xs transition-colors {mirrorMethods.includes(method as SyncMethod) ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]'}"
+									>
+										{method === 'r2' ? 'R2' : method === 's3' ? 'S3' : method === 'webdav' ? 'WebDAV' : method === 'local-fs' ? 'Local FS' : 'Azure'}
+									</button>
+								{/if}
+							{/each}
+						</div>
+					</div>
+
+					{#if syncMethod === 'webdav'}
+						<!-- WebDAV Configuration -->
+						<div class="space-y-4">
+							<p class="text-sm text-[var(--color-text-muted)]">
+								Sync via WebDAV — works with Nextcloud, ownCloud, Synology, and any
+								WebDAV server. CORS must be configured on the server.
+							</p>
+							<div>
+								<span class="mb-1 block text-sm text-[var(--color-text)]">WebDAV URL</span>
+								<input type="text" bind:value={webdavUrl} placeholder="https://cloud.example.com/remote.php/dav/files/user"
+									class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-accent)] focus:outline-none" />
+							</div>
+							<div class="grid grid-cols-2 gap-3">
+								<div>
+									<span class="mb-1 block text-sm text-[var(--color-text)]">Username</span>
+									<input type="text" bind:value={webdavUsername} placeholder="user"
+										class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-accent)] focus:outline-none" />
+								</div>
+								<div>
+									<span class="mb-1 block text-sm text-[var(--color-text)]">Password</span>
+									<input type="password" bind:value={webdavPassword} placeholder="••••••"
+										class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-accent)] focus:outline-none" />
+								</div>
+							</div>
+							<div class="flex gap-2">
+								<button onclick={saveWebDAVSettings} class="flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm text-white">Save</button>
+								<button onclick={handleWebDAVTest} disabled={webdavTesting}
+									class="flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] disabled:opacity-50">
+									{#if webdavTesting}<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>{/if}
+									Test
+								</button>
+							</div>
+							{#if webdavTestResult}
+								<div class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm {webdavTestResult.success ? 'bg-green-500/10 text-green-600 dark:text-green-400' : 'bg-red-500/10 text-red-500'}">
+									{webdavTestResult.success ? '✓ Connected' : webdavTestResult.error}
+								</div>
+							{/if}
+						</div>
+					{:else if syncMethod === 'local-fs'}
+						<!-- Local Filesystem Configuration -->
+						<div class="space-y-4">
+							<p class="text-sm text-[var(--color-text-muted)]">
+								Sync to a local folder. Put it inside Dropbox, iCloud, OneDrive, or
+								Syncthing — Kurumi writes a file, your cloud sync handles the rest.
+								Chrome/Edge only.
+							</p>
+							{#if !localFSAvailable}
+								<p class="text-sm text-red-500">
+									File System Access API not available in this browser. Use Chrome or Edge.
+								</p>
+							{:else if localFSConfigured}
+								<div class="flex items-center gap-3">
+									<span class="flex h-2 w-2 rounded-full bg-green-500"></span>
+									<span class="text-sm text-[var(--color-text)]">Folder selected</span>
+									<button onclick={handleClearFolder}
+										class="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text-muted)] hover:bg-[var(--color-border)]">
+										Change folder
+									</button>
+								</div>
+							{:else}
+								<button onclick={handlePickFolder}
+									class="flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm text-white">
+									<HardDrive class="h-4 w-4" />
+									Pick folder
+								</button>
+							{/if}
+						</div>
+					{:else if syncMethod === 'azure-blob'}
+						<!-- Azure Blob Configuration -->
+						<div class="space-y-4">
+							<p class="text-sm text-[var(--color-text-muted)]">
+								Sync via Azure Blob Storage with a SAS token. Generate one in
+								the Azure Portal with Read + Write + Create permissions.
+							</p>
+							<div>
+								<span class="mb-1 block text-sm text-[var(--color-text)]">Account URL</span>
+								<input type="text" bind:value={azureAccountUrl} placeholder="https://myaccount.blob.core.windows.net"
+									class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-accent)] focus:outline-none" />
+							</div>
+							<div>
+								<span class="mb-1 block text-sm text-[var(--color-text)]">Container</span>
+								<input type="text" bind:value={azureContainer} placeholder="kurumi"
+									class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-accent)] focus:outline-none" />
+							</div>
+							<div>
+								<span class="mb-1 block text-sm text-[var(--color-text)]">SAS Token</span>
+								<input type="password" bind:value={azureSasToken} placeholder="?sv=2023-11-03&ss=b&srt=sco&..."
+									class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 font-mono text-xs text-[var(--color-text)] focus:border-[var(--color-accent)] focus:outline-none" />
+							</div>
+							<div class="flex gap-2">
+								<button onclick={saveAzureBlobSettings} class="flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm text-white">Save</button>
+								<button onclick={handleAzureTest} disabled={azureTesting}
+									class="flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] disabled:opacity-50">
+									{#if azureTesting}<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>{/if}
+									Test
+								</button>
+							</div>
+							{#if azureTestResult}
+								<div class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm {azureTestResult.success ? 'bg-green-500/10 text-green-600 dark:text-green-400' : 'bg-red-500/10 text-red-500'}">
+									{azureTestResult.success ? '✓ Connected' : azureTestResult.error}
+								</div>
+							{/if}
+						</div>
+					{:else if syncMethod === 's3'}
 						<!-- S3 Sync Configuration -->
 						<div class="space-y-4">
 							<p class="text-sm text-[var(--color-text-muted)]">
