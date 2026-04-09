@@ -39,6 +39,7 @@
 		setSlashCallbacks
 	} from '$lib/editor/slashCommands';
 	import { processAndStoreImage } from '$lib/utils/image';
+	import CameraCapture from './CameraCapture.svelte';
 	import WikilinkAutocomplete from './WikilinkAutocomplete.svelte';
 	import DatePicker from './DatePicker.svelte';
 	import PersonInput from './PersonInput.svelte';
@@ -77,6 +78,9 @@
 	let showTagAutocomplete = $state(false);
 	let datePeoplePosition = $state<{ x: number; y: number }>({ x: 0, y: 0 });
 	let datePeopleQuery = $state('');
+
+	// Camera capture state
+	let showCamera = $state(false);
 
 	// Slash command state
 	let showSlashMenu = $state(false);
@@ -316,6 +320,10 @@
 		// Add mouseup listener to check for text selection
 		editorContainer.addEventListener('mouseup', checkSelection);
 
+		// Listen for the /camera slash command's custom event
+		const handleCameraEvent = () => { showCamera = true; };
+		window.addEventListener('kurumi-open-camera', handleCameraEvent);
+
 		// Periodically resolve blob: image srcs in the editor's rendered
 		// output. Milkdown renders <img src="blob:..."> which the browser
 		// can't fetch; we swap in object URLs from the blob store.
@@ -380,10 +388,10 @@
 	});
 
 	onDestroy(() => {
-		// Remove mouseup listener
 		if (editorContainer) {
 			editorContainer.removeEventListener('mouseup', checkSelection);
 		}
+		window.removeEventListener('kurumi-open-camera', () => {});
 		editor?.destroy();
 		setWikilinkClickHandler(() => {});
 		setTagClickHandler(() => {});
@@ -450,6 +458,16 @@
 		<SlashCommandMenu
 			query={slashQuery}
 			position={slashPosition}
+		/>
+	{/if}
+
+	{#if showCamera}
+		<CameraCapture
+			onCapture={(markdown) => {
+				insertTextAtCursor(markdown + '\n');
+				showCamera = false;
+			}}
+			onClose={() => (showCamera = false)}
 		/>
 	{/if}
 

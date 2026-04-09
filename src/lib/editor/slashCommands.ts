@@ -344,6 +344,22 @@ export const builtInSlashCommands: SlashCommand[] = [
 	},
 
 	{
+		id: 'camera',
+		label: 'Take photo',
+		description: 'Capture a photo with your camera',
+		icon: 'minus',
+		category: 'Insert',
+		execute: (view, from, to) => {
+			// Delete the /camera text and dispatch a custom event the
+			// Editor component listens for to open the camera modal.
+			const tr = view.state.tr.delete(from, to);
+			view.dispatch(tr);
+			view.focus();
+			window.dispatchEvent(new CustomEvent('kurumi-open-camera'));
+			return true;
+		}
+	},
+	{
 		id: 'image',
 		label: 'Image',
 		description: 'Upload and embed an image (auto-converts to AVIF)',
