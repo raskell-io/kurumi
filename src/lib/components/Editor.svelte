@@ -34,10 +34,15 @@
 		insertTag,
 		type AutocompleteType
 	} from '$lib/editor/datePeopleAutocomplete';
+	import {
+		slashCommandPlugin,
+		setSlashCallbacks
+	} from '$lib/editor/slashCommands';
 	import WikilinkAutocomplete from './WikilinkAutocomplete.svelte';
 	import DatePicker from './DatePicker.svelte';
 	import PersonInput from './PersonInput.svelte';
 	import TagAutocomplete from './TagAutocomplete.svelte';
+	import SlashCommandMenu from './SlashCommandMenu.svelte';
 	import AIActionMenu from './AIActionMenu.svelte';
 	import { isAIConfigured } from '$lib/ai';
 	import { editorViewCtx } from '@milkdown/kit/core';
@@ -71,6 +76,11 @@
 	let showTagAutocomplete = $state(false);
 	let datePeoplePosition = $state<{ x: number; y: number }>({ x: 0, y: 0 });
 	let datePeopleQuery = $state('');
+
+	// Slash command state
+	let showSlashMenu = $state(false);
+	let slashPosition = $state<{ x: number; y: number }>({ x: 0, y: 0 });
+	let slashQuery = $state('');
 
 	// AI action menu state
 	let showAIMenu = $state(false);
@@ -234,6 +244,26 @@
 			}
 		});
 
+		// Set up slash command callbacks
+		setSlashCallbacks({
+			onOpen: (state) => {
+				if (state.position) {
+					slashPosition = state.position;
+					slashQuery = state.query;
+					showSlashMenu = true;
+				}
+			},
+			onClose: () => {
+				showSlashMenu = false;
+			},
+			onUpdate: (state) => {
+				if (state.position) {
+					slashPosition = state.position;
+					slashQuery = state.query;
+				}
+			}
+		});
+
 		// Transform frontmatter to code block for display
 		const displayContent = frontmatterToCodeBlock(content || '');
 
@@ -260,6 +290,7 @@
 			.use(wikilinkAutocompletePlugin)
 			.use(datePeoplePlugin)
 			.use(datePeopleAutocompletePlugin)
+			.use(slashCommandPlugin)
 			.use(trailingPlugin)
 			.create();
 
@@ -283,6 +314,11 @@
 			onUpdate: () => {}
 		});
 		setDatePeopleCallbacks({
+			onOpen: () => {},
+			onClose: () => {},
+			onUpdate: () => {}
+		});
+		setSlashCallbacks({
 			onOpen: () => {},
 			onClose: () => {},
 			onUpdate: () => {}
@@ -326,6 +362,13 @@
 			initialQuery={datePeopleQuery}
 			onSelect={handleTagSelect}
 			onClose={handleTagClose}
+		/>
+	{/if}
+
+	{#if showSlashMenu}
+		<SlashCommandMenu
+			query={slashQuery}
+			position={slashPosition}
 		/>
 	{/if}
 
