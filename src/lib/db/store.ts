@@ -34,7 +34,8 @@ import {
 	type DatabaseView,
 	type DatabaseViewType,
 	type PropertyDefinition,
-	type DatabaseColumn
+	type DatabaseColumn,
+	type SavedSearch
 } from './types';
 
 const STORAGE_KEY = 'kurumi-doc';
@@ -181,6 +182,17 @@ export const reminderProposals: Readable<ReminderProposal[]> = derived(
 					return a.suggestedDate.localeCompare(b.suggestedDate);
 				return b.createdAt - a.createdAt;
 			});
+	}
+);
+
+// Derived store for saved searches in the current vault.
+export const savedSearches: Readable<SavedSearch[]> = derived(
+	[docStore, currentVaultId],
+	([$doc, $vaultId]) => {
+		if (!$doc || !$doc.savedSearches) return [];
+		return Object.values($doc.savedSearches)
+			.filter((s) => s.vaultId === $vaultId)
+			.sort((a, b) => a.createdAt - b.createdAt);
 	}
 );
 
@@ -610,6 +622,15 @@ export async function initDB(): Promise<void> {
 						}
 					}
 					d.version = 14;
+				});
+				await saveDoc();
+			}
+
+			// Migrate: add savedSearches collection (v14 -> v15).
+			if ((doc.version ?? 0) < 15) {
+				doc = Automerge.change(doc, (d) => {
+					if (!d.savedSearches) d.savedSearches = {};
+					d.version = 15;
 				});
 				await saveDoc();
 			}
@@ -2454,6 +2475,30 @@ export function restoreActionItem(item: ActionItem): void {
 	});
 }
 
+// ============ SavedSearch CRUD ============
+
+export function addSavedSearch(name: string, query: string, icon?: string): SavedSearch {
+	const saved: SavedSearch = {
+		id: generateId(),
+		name,
+		query,
+		icon,
+		vaultId: getCurrentVaultId(),
+		createdAt: Date.now()
+	};
+	updateDoc((d) => {
+		if (!d.savedSearches) d.savedSearches = {};
+		d.savedSearches[saved.id] = saved;
+	});
+	return saved;
+}
+
+export function deleteSavedSearch(id: string): void {
+	updateDoc((d) => {
+		if (d.savedSearches) delete d.savedSearches[id];
+	});
+}
+
 // ============ DatabaseView CRUD ============
 
 export function addDatabaseView(options: {
@@ -3247,7 +3292,7 @@ export interface KurumiExport {
 export function exportFullJSON(): string {
 	if (!doc)
 		return JSON.stringify({
-			version: 14,
+			version: 15,
 			exportedAt: new Date().toISOString(),
 			vaults: [],
 			folders: [],

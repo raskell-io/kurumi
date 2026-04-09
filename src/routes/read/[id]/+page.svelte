@@ -7,6 +7,8 @@
 		getFolderPath,
 		findBacklinks,
 		extractTags,
+		extractWikilinks,
+		findMemoryObjectByTitle,
 		memoryObjects
 	} from '$lib/db';
 	import ReadNav from '$lib/components/ReadNav.svelte';
@@ -79,6 +81,18 @@
 	// Get tags
 	let tags = $derived(memory ? extractTags(memory.bodyMarkdown) : []);
 
+	// Outgoing links (wikilinks to other memories)
+	let outgoingLinks = $derived.by(() => {
+		if (!memory) return [];
+		const titles = extractWikilinks(memory.bodyMarkdown);
+		return titles
+			.map((title) => {
+				const target = findMemoryObjectByTitle(title);
+				return target ? { title, id: target.id } : null;
+			})
+			.filter((l): l is { title: string; id: string } => l !== null);
+	});
+
 	// Build breadcrumbs
 	let breadcrumbs = $derived.by(() => {
 		const crumbs: { label: string; href: string }[] = [];
@@ -143,6 +157,25 @@
 		<div class="note-content">
 			<MarkdownRenderer content={memory.bodyMarkdown} onRefClick={handleRefClick} />
 		</div>
+
+		<!-- Outgoing links -->
+		{#if outgoingLinks.length > 0}
+			<aside class="backlinks" style="margin-bottom: 1rem;">
+				<h2 class="backlinks-title">
+					<Link2 class="backlinks-icon" />
+					{outgoingLinks.length} Outgoing link{outgoingLinks.length === 1 ? '' : 's'}
+				</h2>
+				<ul class="backlinks-list">
+					{#each outgoingLinks as link (link.id)}
+						<li>
+							<a href="/read/{link.id}" class="backlink-item">
+								<span class="backlink-title">{link.title}</span>
+							</a>
+						</li>
+					{/each}
+				</ul>
+			</aside>
+		{/if}
 
 		<!-- Backlinks -->
 		{#if backlinks.length > 0}

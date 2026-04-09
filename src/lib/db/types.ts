@@ -327,6 +327,20 @@ export interface DatabaseView {
 	[key: string]: unknown; // Automerge compatibility
 }
 
+// ---------------------------------------------------------------------------
+// Saved searches — pinned filter queries shown in the sidebar.
+// ---------------------------------------------------------------------------
+
+export interface SavedSearch {
+	id: string;
+	name: string;
+	query: string; // same syntax as search filter operators
+	icon?: string; // optional emoji or lucide icon name
+	vaultId: string;
+	createdAt: number;
+	[key: string]: unknown; // Automerge compatibility
+}
+
 export interface ReminderProposal {
 	id: string;
 	memoryObjectId: string; // source memory that triggered the proposal
@@ -382,6 +396,7 @@ export interface KurumiDocument {
 	reminderProposals: Record<string, ReminderProposal>;
 	draftProposals: Record<string, DraftProposal>;
 	databaseViews: Record<string, DatabaseView>;
+	savedSearches: Record<string, SavedSearch>;
 	currentVaultId: string;
 	version: number;
 	[key: string]: unknown; // Required for Automerge compatibility
@@ -421,8 +436,9 @@ export function createEmptyDocument(): KurumiDocument {
 		reminderProposals: {},
 		draftProposals: {},
 		databaseViews: {},
+		savedSearches: {},
 		currentVaultId: DEFAULT_VAULT_ID,
-		version: 14
+		version: 15
 	};
 }
 

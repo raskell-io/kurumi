@@ -255,30 +255,37 @@ execution context, observability.
 
 ### [ ] Split-pane editor
 Open multiple memories side-by-side. Obsidian-style draggable splits.
+DEFERRED — needs significant editor state management.
 
-### [ ] Saved searches in the sidebar
-Pin a filter query with a name. "My work meetings", "This week",
-"Overdue", etc. Click to open as a virtual folder.
+### [x] Saved searches in the sidebar
+Pin a filter query with a name. Data model: SavedSearch type in
+KurumiDocument (v14→v15). Rendered in the sidebar above the folder
+tree. CRUD in store.ts.
 
 ### [ ] Sticky notes bar
 Pin memories you're currently working on. Persistent across sessions.
+DEFERRED — tab bar covers the same use case.
 
 ### [ ] Search within a memory
 Cmd+F inside the editor. Native browser search hits the whole page;
-this scopes to the current memory's body.
+this scopes to the current memory's body. DEFERRED.
 
-### [ ] Outgoing links sidebar
-Mirror of the backlinks panel but showing what this memory links to.
-One-line change once backlinks is factored.
+### [x] Outgoing links sidebar
+Extracts [[wikilinks]] from the current memory and renders resolved
+links in a section above backlinks on the read mode page.
 
 ### [ ] Bread-crumb navigation
 Show folder path + recent memory trail at the top of the editor.
+DEFERRED — mobile header already shows breadcrumbs.
 
-### [ ] Tab bar for recently-opened memories
-Browser-style tabs at the top for quick switching.
+### [x] Tab bar for recently-opened memories
+Browser-style tab strip at the top of the main content area. Tracks
+up to 12 recently-opened memories via $lib/stores/workspace.ts.
+Active tab highlighted. Click X to close. Hidden in focus mode.
 
-### [ ] Focus mode
-Hide sidebar + chrome for distraction-free writing. Cmd+Shift+F.
+### [x] Focus mode
+Cmd+Shift+F hides the sidebar for distraction-free writing. Focus
+state stored in $lib/stores/workspace.ts.
 
 ---
 

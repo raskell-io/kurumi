@@ -14,7 +14,8 @@
 		trashCount,
 		actionItems,
 		reminderProposals,
-		rolloverRecurringActionItems
+		rolloverRecurringActionItems,
+		savedSearches
 	} from '$lib/db';
 	import { storeBlob } from '$lib/db/blob-store';
 	import { initHashRouter, updateHashFromPath } from '$lib/hash-router';
@@ -25,6 +26,7 @@
 	import UndoToast from '$lib/components/UndoToast.svelte';
 	import AgentPane from '$lib/components/AgentPane.svelte';
 	import { undoLast } from '$lib/stores/undo';
+	import { focusMode, toggleFocusMode, openTabs, touchTab, closeTab } from '$lib/stores/workspace';
 	import {
 		bootNotifications,
 		stopNotificationLoop,
@@ -282,6 +284,11 @@
 				if (isMobile) sidebarOpen = false;
 				return;
 			}
+			if (e.shiftKey && (e.key === 'F' || e.key === 'f')) {
+				e.preventDefault();
+				toggleFocusMode();
+				return;
+			}
 			if (e.shiftKey && (e.key === 'V' || e.key === 'v')) {
 				// Global push-to-talk toggle: hop to home and flip the
 				// voice assistant signal. The home page's Ask Kurumi view
@@ -341,6 +348,11 @@
 	afterNavigate(({ to }) => {
 		if (to?.url?.pathname) {
 			updateHashFromPath(to.url.pathname);
+			// Track recently-opened memories for the tab bar.
+			const memoryMatch = to.url.pathname.match(/^\/memory\/([a-zA-Z0-9]+)/);
+			if (memoryMatch) {
+				touchTab(memoryMatch[1]);
+			}
 		}
 	});
 
@@ -645,6 +657,7 @@
 		<!-- Sidebar -->
 		<aside
 			class="fixed inset-y-0 left-0 z-50 flex w-full flex-col border-r-0 border-[var(--color-border)] bg-[var(--color-bg-secondary)] md:relative md:z-auto md:border-r {sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}"
+			class:hidden={$focusMode && !isMobile}
 			style="transition: transform 250ms cubic-bezier(0.4, 0, 0.2, 1); --sidebar-width: {sidebarWidth}px; width: {isMobile ? undefined : `${sidebarWidth}px`};"
 			role="navigation"
 			aria-label="Main navigation"
@@ -806,6 +819,29 @@
 				</div>
 			{/if}
 
+			<!-- Saved searches -->
+			{#if $savedSearches.length > 0}
+				<div class="border-b border-[var(--color-border)] px-3 py-2">
+					<div class="mb-1 text-xs font-medium uppercase text-[var(--color-text-muted)]">
+						Saved searches
+					</div>
+					{#each $savedSearches as saved (saved.id)}
+						<a
+							href="/?q={encodeURIComponent(saved.query)}"
+							onclick={handleNoteClick}
+							class="flex items-center gap-2 rounded-md px-2 py-1 text-sm text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text)]"
+						>
+							{#if saved.icon}
+								<span>{saved.icon}</span>
+							{:else}
+								<Search class="h-3 w-3" />
+							{/if}
+							<span class="truncate">{saved.name}</span>
+						</a>
+					{/each}
+				</div>
+			{/if}
+
 			<!-- Notes List -->
 			<nav class="flex-1 overflow-y-auto overscroll-contain p-2" aria-label="Notes list">
 				<FolderTree
@@ -933,6 +969,29 @@
 
 		<!-- Main Content -->
 		<main class="relative flex flex-1 flex-col" class:overflow-hidden={!isReadMode} aria-label="Main content">
+			<!-- Tab bar (recently-opened memories) -->
+			{#if $openTabs.length > 0 && !$focusMode}
+				<div class="flex items-center gap-0.5 overflow-x-auto border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2 py-0.5 text-xs">
+					{#each $openTabs as tab (tab.id)}
+						<a
+							href="/memory/{tab.id}"
+							class="inline-flex max-w-[160px] items-center gap-1 rounded px-2 py-1 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
+							class:bg-[var(--color-bg)]={$page.url.pathname === `/memory/${tab.id}`}
+							class:text-[var(--color-text)]={$page.url.pathname === `/memory/${tab.id}`}
+						>
+							<span class="truncate">{tab.title}</span>
+							<button
+								class="ml-0.5 rounded p-0.5 hover:bg-[var(--color-border)]"
+								onclick={(e) => { e.preventDefault(); e.stopPropagation(); closeTab(tab.id); }}
+								aria-label="Close tab"
+							>
+								<X class="h-3 w-3" />
+							</button>
+						</a>
+					{/each}
+				</div>
+			{/if}
+
 			<!-- Mobile header (hidden in read mode and on desktop) -->
 			{#if !isReadMode}
 			<header
