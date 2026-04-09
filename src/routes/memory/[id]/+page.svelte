@@ -92,17 +92,24 @@
 		imageInputRef?.click();
 	}
 
+	/**
+	 * Insert text into the Milkdown editor via a custom event.
+	 * The Editor component listens for 'kurumi-insert-text' and
+	 * inserts at the cursor position.
+	 */
+	function insertIntoEditor(text: string) {
+		window.dispatchEvent(
+			new CustomEvent('kurumi-insert-text', { detail: text })
+		);
+	}
+
 	async function handleImageFileSelect(e: Event) {
 		const input = e.target as HTMLInputElement;
 		const file = input.files?.[0];
 		if (!file) return;
 		try {
 			const result = await processAndStoreImage(file, file.name.replace(/\.[^.]+$/, ''));
-			// Append the image markdown to the note's body
-			content = content ? content + '\n\n' + result.markdown + '\n' : result.markdown + '\n';
-			if (memory) {
-				updateMemoryObject(memory.id, { bodyMarkdown: content });
-			}
+			insertIntoEditor('\n' + result.markdown + '\n');
 		} catch (err) {
 			console.error('Image upload failed:', err);
 		}
@@ -110,10 +117,7 @@
 	}
 
 	function handleCameraCapture(markdown: string) {
-		content = content ? content + '\n\n' + markdown + '\n' : markdown + '\n';
-		if (memory) {
-			updateMemoryObject(memory.id, { bodyMarkdown: content });
-		}
+		insertIntoEditor('\n' + markdown + '\n');
 		showCameraCapture = false;
 	}
 

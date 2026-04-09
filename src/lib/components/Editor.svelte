@@ -39,6 +39,7 @@
 		setSlashCallbacks
 	} from '$lib/editor/slashCommands';
 	import { taskListInputPlugin } from '$lib/editor/taskListInput';
+	import { codeBlockExitPlugin } from '$lib/editor/codeBlockExit';
 	import { startCheckboxRenderer } from '$lib/editor/checkboxRenderer';
 	import { processAndStoreImage } from '$lib/utils/image';
 	import CameraCapture from './CameraCapture.svelte';
@@ -84,8 +85,10 @@
 	// Camera capture state
 	let showCamera = $state(false);
 
-	// Checkbox renderer cleanup — typed as a function for the destroy hook
+	// Cleanup references for onDestroy
 	let stopCheckboxRenderer: (() => void) | undefined;
+	let handleCameraEvent: () => void;
+	let handleInsertText: (e: Event) => void;
 
 	// Slash command state
 	let showSlashMenu = $state(false);
@@ -320,6 +323,7 @@
 			.use(datePeopleAutocompletePlugin)
 			.use(slashCommandPlugin)
 			.use(taskListInputPlugin)
+			.use(codeBlockExitPlugin)
 			.use(trailingPlugin)
 			.create();
 
@@ -331,8 +335,16 @@
 		const stopCheckboxRenderer = startCheckboxRenderer(editorContainer);
 
 		// Listen for the /camera slash command's custom event
-		const handleCameraEvent = () => { showCamera = true; };
+		handleCameraEvent = () => { showCamera = true; };
 		window.addEventListener('kurumi-open-camera', handleCameraEvent);
+
+		// Listen for external text insertion (image/camera buttons in the
+		// memory page fire this to insert into the editor at cursor).
+		handleInsertText = (e: Event) => {
+			const text = (e as CustomEvent<string>).detail;
+			if (text) insertTextAtCursor(text);
+		};
+		window.addEventListener('kurumi-insert-text', handleInsertText);
 
 		// Periodically resolve blob: image srcs in the editor's rendered
 		// output. Milkdown renders <img src="blob:..."> which the browser
@@ -401,7 +413,8 @@
 		if (editorContainer) {
 			editorContainer.removeEventListener('mouseup', checkSelection);
 		}
-		window.removeEventListener('kurumi-open-camera', () => {});
+		window.removeEventListener('kurumi-open-camera', handleCameraEvent);
+		window.removeEventListener('kurumi-insert-text', handleInsertText);
 		stopCheckboxRenderer?.();
 		editor?.destroy();
 		setWikilinkClickHandler(() => {});
