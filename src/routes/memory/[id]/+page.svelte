@@ -42,6 +42,10 @@
 	let showDeleteConfirm = $state(false);
 	let showExportMenu = $state(false);
 	let initializedForId = $state('');
+	// Bump to force Milkdown editor re-mount when content is appended
+	// programmatically (audio embeds, etc). Milkdown doesn't re-parse
+	// markdown from external content changes, so we destroy + re-create.
+	let editorRevision = $state(0);
 
 	// Inline template chooser: visible when the note body is empty and
 	// the user hasn't dismissed it (by typing). Auto-hides on first
@@ -141,7 +145,7 @@
 		const icon = recordingType === 'meeting' ? '👥' : '🎙';
 		const label = recordingType === 'meeting' ? 'Meeting recording' : 'Voice memo';
 
-		// Build the embed markdown with HTML audio tag
+		// Build the embed markdown
 		const embed = [
 			'',
 			`#### ${icon} ${label} — ${timeStr}`,
@@ -152,8 +156,14 @@
 			''
 		].join('\n');
 
-		// Insert into the editor
-		window.dispatchEvent(new CustomEvent('kurumi-insert-text', { detail: embed }));
+		// Append to the note body, save, and re-render the editor
+		content = (content || '') + embed;
+		if (memory) {
+			updateMemoryObject(memory.id, { bodyMarkdown: content });
+		}
+		// Bump revision to force Milkdown re-mount so the new markdown
+		// is parsed properly (headings, HTML audio, blockquotes etc.)
+		editorRevision++;
 
 		// Kick off transcription in the background
 		void transcribeAndInsert(audioRef, audioBlob);
@@ -183,6 +193,7 @@
 				if (updated !== currentBody) {
 					content = updated;
 					updateMemoryObject(memory.id, { bodyMarkdown: updated });
+					editorRevision++;
 				}
 			}
 		} catch (err) {
@@ -808,7 +819,7 @@
 				{/if}
 
 				<!-- Milkdown Editor -->
-				{#key memory.id}
+				{#key `${memory.id}-${editorRevision}`}
 					<Editor
 						content={content}
 						onchange={handleContentChange}
