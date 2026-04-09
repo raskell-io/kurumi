@@ -15,6 +15,7 @@ import { WhisperLocalProvider } from './providers/whisper-local';
 import { TextLocalProvider } from './providers/text-local';
 import { TtsLocalProvider } from './providers/tts-local';
 import { OpenAIProvider } from './providers/openai';
+import { openAICompatProviders, PROVIDER_CONFIGS } from './providers/openai-compat';
 
 // Order matters: SimpleInferenceRouter.findProvider walks providers in
 // insertion order and returns the first match. Local first → local wins
@@ -24,9 +25,15 @@ import { OpenAIProvider } from './providers/openai';
 // speak() iterates providers in order and tries each until one returns
 // ok, so TtsLocalProvider acts as a graceful fallback when the OpenAI
 // API key is missing or the request fails.
+// Order matters: local providers first (preferred), then OpenAI (has
+// the widest capability set including transcribe + TTS), then other
+// remote providers as fallbacks, then local TTS as final fallback.
 inferenceRouter.register(new WhisperLocalProvider());
 inferenceRouter.register(new TextLocalProvider());
 inferenceRouter.register(new OpenAIProvider());
+for (const provider of openAICompatProviders) {
+	inferenceRouter.register(provider);
+}
 inferenceRouter.register(new TtsLocalProvider());
 
 export * from './types';
@@ -56,3 +63,4 @@ export {
 	type ModelStatus,
 	type LocalTask
 } from './local-models';
+export { PROVIDER_CONFIGS, type OpenAICompatConfig } from './providers/openai-compat';

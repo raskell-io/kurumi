@@ -236,6 +236,34 @@
 	let isTestingAI = $state(false);
 	let aiTestResult = $state<{ success: boolean; error?: string } | null>(null);
 
+	// Additional provider API keys (keyed by PROVIDER_CONFIGS[].apiKeyStorageKey)
+	import { PROVIDER_CONFIGS } from '$lib/inference';
+	let extraProviderKeys = $state<Record<string, string>>({});
+
+	function loadExtraProviderKeys() {
+		if (typeof localStorage === 'undefined') return;
+		const keys: Record<string, string> = {};
+		for (const config of PROVIDER_CONFIGS) {
+			keys[config.apiKeyStorageKey] = localStorage.getItem(config.apiKeyStorageKey) || '';
+		}
+		extraProviderKeys = keys;
+	}
+
+	function saveExtraProviderKey(storageKey: string, value: string) {
+		if (typeof localStorage === 'undefined') return;
+		if (value.trim()) {
+			localStorage.setItem(storageKey, value.trim());
+		} else {
+			localStorage.removeItem(storageKey);
+		}
+	}
+
+	function saveAllExtraProviderKeys() {
+		for (const config of PROVIDER_CONFIGS) {
+			saveExtraProviderKey(config.apiKeyStorageKey, extraProviderKeys[config.apiKeyStorageKey] || '');
+		}
+	}
+
 	// Documentation sections state
 	let showSyncDocs = $state(false);
 	let showArchDocs = $state(false);
@@ -291,6 +319,7 @@
 		initSyncState();
 		initGitSyncState();
 		loadS3Config();
+		loadExtraProviderKeys();
 
 		notifSupported = notificationsSupported();
 		if (notifSupported) {
@@ -1683,6 +1712,40 @@
 								{/if}
 							</div>
 						{/if}
+
+						<!-- Additional AI providers -->
+						<div class="mt-6 pt-4 border-t border-[var(--color-border)]">
+							<h3 class="mb-1 text-sm font-medium text-[var(--color-text)]">Additional providers</h3>
+							<p class="mb-3 text-sm text-[var(--color-text-muted)]">
+								Configure API keys for other providers. They act as fallbacks when the
+								primary provider fails or isn't configured. All use OpenAI-compatible APIs.
+							</p>
+							<div class="space-y-3">
+								{#each PROVIDER_CONFIGS as config (config.id)}
+									<div class="flex items-center gap-2">
+										<span class="w-24 shrink-0 text-xs font-medium text-[var(--color-text)]">{config.name}</span>
+										<input
+											type="password"
+											value={extraProviderKeys[config.apiKeyStorageKey] || ''}
+											oninput={(e) => {
+												extraProviderKeys[config.apiKeyStorageKey] = (e.target as HTMLInputElement).value;
+											}}
+											onblur={() => saveExtraProviderKey(config.apiKeyStorageKey, extraProviderKeys[config.apiKeyStorageKey] || '')}
+											placeholder={config.id === 'azure-openai' ? 'API key (set endpoint below)' : 'API key'}
+											class="flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-1.5 font-mono text-xs text-[var(--color-text)] focus:border-[var(--color-accent)] focus:outline-none"
+										/>
+										{#if extraProviderKeys[config.apiKeyStorageKey]}
+											<span class="flex h-2 w-2 shrink-0 rounded-full bg-green-500" title="Key set"></span>
+										{/if}
+									</div>
+								{/each}
+							</div>
+							<p class="mt-2 text-xs text-[var(--color-text-muted)]">
+								Keys are saved to localStorage on blur. Providers with a key
+								configured are tried as fallbacks in order: Mistral, Perplexity,
+								Grok, Qwen, Azure OpenAI, Groq.
+							</p>
+						</div>
 					</div>
 				</div>
 			{/if}
