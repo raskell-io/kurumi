@@ -40,12 +40,13 @@
 	type Props = {
 		onNoteClick?: () => void;
 		onNoteCreate?: () => void;
+		onNewNoteInFolder?: (folderId: string | null) => void;
 		onFolderCreate?: () => void;
 		onNoteDelete?: (name: string) => void;
 		onFolderDelete?: (name: string) => void;
 	};
 
-	let { onNoteClick, onNoteCreate, onFolderCreate, onNoteDelete, onFolderDelete }: Props = $props();
+	let { onNoteClick, onNoteCreate, onNewNoteInFolder, onFolderCreate, onNoteDelete, onFolderDelete }: Props = $props();
 
 	// Track which folders are expanded
 	let expandedFolders = $state<Set<string>>(new Set());
@@ -188,12 +189,18 @@
 		}
 	}
 
-	async function handleCreateNote(folderId: string | null) {
+	function handleCreateNote(folderId: string | null) {
 		closeContextMenu();
-		const memory = addMemoryObject(undefined, undefined, folderId);
-		onNoteClick?.();
-		await goto(`/memory/${memory.id}`);
-		onNoteCreate?.();
+		// Delegate to the layout's template chooser if available;
+		// otherwise fall back to creating a blank note directly.
+		if (onNewNoteInFolder) {
+			onNewNoteInFolder(folderId);
+		} else {
+			const memory = addMemoryObject(undefined, undefined, folderId);
+			onNoteClick?.();
+			goto(`/memory/${memory.id}`);
+			onNoteCreate?.();
+		}
 	}
 
 	function submitNewFolder() {

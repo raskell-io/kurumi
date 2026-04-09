@@ -25,6 +25,7 @@
 	import GitConflictModal from '$lib/components/GitConflictModal.svelte';
 	import UndoToast from '$lib/components/UndoToast.svelte';
 	import AgentPane from '$lib/components/AgentPane.svelte';
+	import NewNoteChooser from '$lib/components/NewNoteChooser.svelte';
 	import { undoLast } from '$lib/stores/undo';
 	import { focusMode, toggleFocusMode, openTabs, touchTab, closeTab } from '$lib/stores/workspace';
 	import {
@@ -103,6 +104,8 @@
 	let deleteFolderSnackbar = $state<string | null>(null);
 	let showConflictModal = $state(false);
 	let showAgentPane = $state(false);
+	let showNoteChooser = $state(false);
+	let noteChooserFolderId = $state<string | null>(null);
 	// Auto-open when a sync attempt surfaces conflicts.
 	$effect(() => {
 		if ($gitSyncState.status === 'conflict' && $gitSyncState.conflicts.length > 0) {
@@ -475,12 +478,16 @@
 		}
 	});
 
-	async function handleNewNote() {
-		const memory = addMemoryObject();
+	function handleNewNote() {
+		noteChooserFolderId = null;
+		showNoteChooser = true;
 		if (isMobile) sidebarOpen = false;
-		await goto(`/memory/${memory.id}`);
-		// Show snackbar after navigation completes
-		showNewNoteAnimation = true;
+	}
+
+	function handleNewNoteInFolder(folderId: string | null) {
+		noteChooserFolderId = folderId ?? null;
+		showNoteChooser = true;
+		if (isMobile) sidebarOpen = false;
 	}
 
 	function handleNoteClick() {
@@ -847,6 +854,7 @@
 				<FolderTree
 							onNoteClick={handleNoteClick}
 							onNoteCreate={() => showNewNoteAnimation = true}
+							onNewNoteInFolder={handleNewNoteInFolder}
 							onFolderCreate={() => showNewFolderAnimation = true}
 							onNoteDelete={(name) => deleteNoteSnackbar = name}
 							onFolderDelete={(name) => deleteFolderSnackbar = name}
@@ -1100,6 +1108,13 @@
 
 	{#if showConflictModal}
 		<GitConflictModal onClose={() => (showConflictModal = false)} />
+	{/if}
+
+	{#if showNoteChooser}
+		<NewNoteChooser
+			folderId={noteChooserFolderId}
+			onClose={() => (showNoteChooser = false)}
+		/>
 	{/if}
 
 	<UndoToast />
