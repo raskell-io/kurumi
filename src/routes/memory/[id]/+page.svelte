@@ -29,8 +29,12 @@
 		Lightbulb,
 		HelpCircle,
 		ArrowRight,
-		Bell
+		Bell,
+		ImagePlus,
+		Camera
 	} from 'lucide-svelte';
+	import CameraCapture from '$lib/components/CameraCapture.svelte';
+	import { processAndStoreImage } from '$lib/utils/image';
 
 	let title = $state('');
 	let content = $state('');
@@ -81,6 +85,37 @@
 	}
 	let extractingReminders = $state(false);
 	let extractionResult = $state<string | null>(null);
+	let showCameraCapture = $state(false);
+	let imageInputRef: HTMLInputElement | undefined = $state();
+
+	function handleImageUpload() {
+		imageInputRef?.click();
+	}
+
+	async function handleImageFileSelect(e: Event) {
+		const input = e.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		try {
+			const result = await processAndStoreImage(file, file.name.replace(/\.[^.]+$/, ''));
+			// Append the image markdown to the note's body
+			content = content ? content + '\n\n' + result.markdown + '\n' : result.markdown + '\n';
+			if (memory) {
+				updateMemoryObject(memory.id, { bodyMarkdown: content });
+			}
+		} catch (err) {
+			console.error('Image upload failed:', err);
+		}
+		if (imageInputRef) imageInputRef.value = '';
+	}
+
+	function handleCameraCapture(markdown: string) {
+		content = content ? content + '\n\n' + markdown + '\n' : markdown + '\n';
+		if (memory) {
+			updateMemoryObject(memory.id, { bodyMarkdown: content });
+		}
+		showCameraCapture = false;
+	}
 
 	async function handleExtractReminders() {
 		if (!memory || extractingReminders) return;
@@ -348,6 +383,24 @@
 				{/if}
 			</div>
 
+			<!-- Image upload button -->
+			<button
+				onclick={handleImageUpload}
+				class="rounded-lg p-2 text-[var(--color-text-muted)] transition-all hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-accent)] active:scale-95"
+				title="Upload an image"
+			>
+				<ImagePlus class="h-5 w-5" />
+			</button>
+
+			<!-- Camera button -->
+			<button
+				onclick={() => (showCameraCapture = true)}
+				class="rounded-lg p-2 text-[var(--color-text-muted)] transition-all hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-accent)] active:scale-95"
+				title="Take a photo"
+			>
+				<Camera class="h-5 w-5" />
+			</button>
+
 			<!-- Extract reminders button -->
 			<button
 				onclick={handleExtractReminders}
@@ -589,6 +642,30 @@
 					{/if}
 				{/if}
 
+				<!-- Quick insert toolbar (always visible) -->
+				<div class="mb-2 flex items-center gap-1">
+					<button
+						onclick={handleImageUpload}
+						class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text)]"
+						title="Upload image"
+					>
+						<ImagePlus class="h-3.5 w-3.5" />
+						<span class="hidden sm:inline">Image</span>
+					</button>
+					<button
+						onclick={() => (showCameraCapture = true)}
+						class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text)]"
+						title="Take photo"
+					>
+						<Camera class="h-3.5 w-3.5" />
+						<span class="hidden sm:inline">Photo</span>
+					</button>
+					<span class="mx-1 text-xs text-[var(--color-text-muted)] opacity-50">|</span>
+					<span class="text-xs text-[var(--color-text-muted)] opacity-50">
+						Type / for more
+					</span>
+				</div>
+
 				<!-- Inline template chooser (shows when body is empty, vanishes on typing) -->
 				{#if shouldShowChooser}
 					<InlineTemplateChooser
@@ -685,6 +762,23 @@
 				</div>
 			</div>
 		</div>
+	{/if}
+
+	<!-- Hidden image file input -->
+	<input
+		bind:this={imageInputRef}
+		type="file"
+		accept="image/*"
+		onchange={handleImageFileSelect}
+		class="hidden"
+	/>
+
+	<!-- Camera capture modal -->
+	{#if showCameraCapture}
+		<CameraCapture
+			onCapture={handleCameraCapture}
+			onClose={() => (showCameraCapture = false)}
+		/>
 	{/if}
 {:else}
 	<div class="flex h-full items-center justify-center p-4">
