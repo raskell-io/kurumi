@@ -35,7 +35,8 @@ import {
 	type DatabaseViewType,
 	type PropertyDefinition,
 	type DatabaseColumn,
-	type SavedSearch
+	type SavedSearch,
+	type Flashcard
 } from './types';
 
 const STORAGE_KEY = 'kurumi-doc';
@@ -631,6 +632,15 @@ export async function initDB(): Promise<void> {
 				doc = Automerge.change(doc, (d) => {
 					if (!d.savedSearches) d.savedSearches = {};
 					d.version = 15;
+				});
+				await saveDoc();
+			}
+
+			// Migrate: add flashcards collection (v15 -> v16).
+			if ((doc.version ?? 0) < 16) {
+				doc = Automerge.change(doc, (d) => {
+					if (!d.flashcards) d.flashcards = {};
+					d.version = 16;
 				});
 				await saveDoc();
 			}
@@ -2475,6 +2485,137 @@ export function restoreActionItem(item: ActionItem): void {
 	});
 }
 
+// ============ Flashcard CRUD + SM-2 ============
+
+// Derived store for flashcards in the current vault, sorted by next
+// review date ascending so cards due soonest come first.
+export const flashcards: Readable<Flashcard[]> = derived(
+	[docStore, currentVaultId],
+	([$doc, $vaultId]) => {
+		if (!$doc || !$doc.flashcards) return [];
+		return Object.values($doc.flashcards)
+			.filter((c) => c.vaultId === $vaultId)
+			.sort((a, b) => a.nextReview.localeCompare(b.nextReview));
+	}
+);
+
+export function addFlashcard(options: {
+	question: string;
+	answer: string;
+	memoryObjectId?: string | null;
+}): Flashcard {
+	const now = Date.now();
+	const today = todayIso();
+	const card: Flashcard = {
+		id: generateId(),
+		memoryObjectId: options.memoryObjectId ?? null,
+		question: options.question,
+		answer: options.answer,
+		interval: 0,
+		ease: 2.5,
+		repetitions: 0,
+		nextReview: today,
+		lastReviewed: null,
+		vaultId: getCurrentVaultId(),
+		createdAt: now,
+		updatedAt: now
+	};
+	updateDoc((d) => {
+		if (!d.flashcards) d.flashcards = {};
+		d.flashcards[card.id] = card;
+	});
+	return card;
+}
+
+export function deleteFlashcard(id: string): void {
+	updateDoc((d) => {
+		if (d.flashcards) delete d.flashcards[id];
+	});
+}
+
+/**
+ * SM-2 grading. Quality is 0-5:
+ *   0 = "Again" (complete blackout)
+ *   3 = "Hard" (recalled with difficulty)
+ *   4 = "Good" (recalled with some effort)
+ *   5 = "Easy" (recalled instantly)
+ *
+ * Updates the card's interval, ease, repetitions, nextReview, and
+ * lastReviewed fields in place.
+ */
+export function gradeFlashcard(id: string, quality: number): void {
+	const today = todayIso();
+	updateDoc((d) => {
+		const card = d.flashcards?.[id];
+		if (!card) return;
+
+		const q = Math.max(0, Math.min(5, Math.round(quality)));
+
+		if (q < 3) {
+			// Failed — reset
+			card.repetitions = 0;
+			card.interval = 0;
+		} else {
+			card.repetitions++;
+			if (card.repetitions === 1) {
+				card.interval = 1;
+			} else if (card.repetitions === 2) {
+				card.interval = 6;
+			} else {
+				card.interval = Math.round(card.interval * card.ease);
+			}
+		}
+
+		// Update ease factor (never below 1.3)
+		card.ease = Math.max(
+			1.3,
+			card.ease + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02))
+		);
+
+		// Schedule next review
+		const nextDate = new Date(today + 'T00:00:00');
+		nextDate.setDate(nextDate.getDate() + Math.max(1, card.interval));
+		const yy = nextDate.getFullYear();
+		const mm = String(nextDate.getMonth() + 1).padStart(2, '0');
+		const dd = String(nextDate.getDate()).padStart(2, '0');
+		card.nextReview = `${yy}-${mm}-${dd}`;
+		card.lastReviewed = today;
+		card.updatedAt = Date.now();
+	});
+}
+
+/**
+ * Extract Q: / A: pairs from a memory's bodyMarkdown and create
+ * flashcards from them. Dedupes by question text against existing
+ * cards for the same memory.
+ */
+export function extractFlashcardsFromMemory(memoryId: string): number {
+	if (!doc) return 0;
+	const memory = doc.memoryObjects[memoryId];
+	if (!memory) return 0;
+
+	const existing = new Set(
+		Object.values(doc.flashcards ?? {})
+			.filter((c) => c.memoryObjectId === memoryId)
+			.map((c) => c.question.trim().toLowerCase())
+	);
+
+	// Match Q: ... A: ... blocks (each on their own line)
+	const qaRegex = /^Q:\s*(.+?)$\n^A:\s*(.+?)$/gm;
+	let match;
+	let created = 0;
+	while ((match = qaRegex.exec(memory.bodyMarkdown)) !== null) {
+		const question = match[1].trim();
+		const answer = match[2].trim();
+		if (!question || !answer) continue;
+		if (existing.has(question.toLowerCase())) continue;
+		addFlashcard({ question, answer, memoryObjectId: memoryId });
+		existing.add(question.toLowerCase());
+		created++;
+	}
+	return created;
+}
+
 // ============ SavedSearch CRUD ============
 
 export function addSavedSearch(name: string, query: string, icon?: string): SavedSearch {
@@ -3292,7 +3433,7 @@ export interface KurumiExport {
 export function exportFullJSON(): string {
 	if (!doc)
 		return JSON.stringify({
-			version: 15,
+			version: 16,
 			exportedAt: new Date().toISOString(),
 			vaults: [],
 			folders: [],

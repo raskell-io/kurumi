@@ -246,6 +246,17 @@
 			}
 		},
 		{
+			id: 'flashcards',
+			type: 'action',
+			title: 'Flashcards',
+			description: 'Review spaced-repetition cards',
+			icon: 'sparkles',
+			action: () => {
+				goto('/flashcards');
+				onClose();
+			}
+		},
+		{
 			id: 'people',
 			type: 'action',
 			title: 'People',

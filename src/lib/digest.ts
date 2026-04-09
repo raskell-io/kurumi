@@ -16,6 +16,7 @@ import {
 	actionItems,
 	reminderProposals,
 	addMemoryObject,
+	addFlashcard,
 	todayIso,
 	addTemplate,
 	getCurrentVaultName
@@ -324,6 +325,81 @@ export function detectPatterns(): DetectedPattern[] {
 	}
 
 	return patterns;
+}
+
+// ---------------------------------------------------------------------------
+// LLM quiz generation
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate flashcard Q/A pairs from a memory using the LLM. Creates
+ * Flashcard entities linked to the source memory. Returns the number
+ * of cards created.
+ */
+export async function generateQuizFromMemory(memoryId: string): Promise<number> {
+	const all = get(memoryObjects);
+	const memory = all.find((m) => m.id === memoryId);
+	if (!memory) return 0;
+
+	const sourceText = [memory.title, memory.summaryShort, memory.bodyMarkdown]
+		.filter(Boolean)
+		.join('\n\n')
+		.slice(0, 3000);
+
+	if (!sourceText.trim()) return 0;
+
+	const prompt = [
+		'Generate 3-8 flashcard question/answer pairs from this note.',
+		'Each pair should test a key fact, concept, or decision mentioned.',
+		'',
+		'Output ONLY a JSON array of objects with "question" and "answer" keys.',
+		'Keep questions concise (1-2 sentences) and answers brief (1-3 sentences).',
+		'Do not include meta-commentary. Output raw JSON only.',
+		'',
+		'Note content:',
+		sourceText
+	].join('\n');
+
+	for (const provider of inferenceRouter.allProviders()) {
+		try {
+			const result = await provider.summarize({ text: prompt, style: 'long' });
+			if (!result.ok || !result.value) continue;
+
+			// Parse the JSON array from the response
+			let pairs: Array<{ question?: string; answer?: string }> = [];
+			try {
+				// The model might wrap in ```json...``` or just return raw JSON
+				const cleaned = result.value
+					.replace(/^```(?:json)?\n?/m, '')
+					.replace(/\n?```$/m, '')
+					.trim();
+				pairs = JSON.parse(cleaned);
+			} catch {
+				// Try to extract from a narrative response
+				try {
+					const match = result.value.match(/\[[\s\S]*\]/);
+					if (match) pairs = JSON.parse(match[0]);
+				} catch {
+					continue;
+				}
+			}
+
+			if (!Array.isArray(pairs)) continue;
+
+			let created = 0;
+			for (const pair of pairs) {
+				const q = typeof pair.question === 'string' ? pair.question.trim() : '';
+				const a = typeof pair.answer === 'string' ? pair.answer.trim() : '';
+				if (!q || !a) continue;
+				addFlashcard({ question: q, answer: a, memoryObjectId: memoryId });
+				created++;
+			}
+			return created;
+		} catch {
+			continue;
+		}
+	}
+	return 0;
 }
 
 // ---------------------------------------------------------------------------

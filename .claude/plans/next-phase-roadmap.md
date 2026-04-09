@@ -291,7 +291,7 @@ state stored in $lib/stores/workspace.ts.
 
 ## Tier 5 — learning tools
 
-### [ ] Flashcards / spaced repetition
+### [x] Flashcards / spaced repetition
 Mark `Q: ... A: ...` blocks (or any paragraph with a special
 annotation) as practice items. SM-2 scheduler. Review screen with
 typed / multiple-choice / cloze modes. Huge draw for students and
@@ -301,11 +301,12 @@ researchers.
 
 ### [ ] Highlighted study mode
 Read mode variant that hides everything except highlighted passages
-across all memories, stitched into a review document.
+across all memories, stitched into a review document. DEFERRED.
 
-### [ ] Quiz generation
-LLM generates practice questions from a memory or folder on demand.
-Answers check against the source content.
+### [x] Quiz generation
+`generateQuizFromMemory(id)` in digest.ts: sends the memory's
+content to the LLM, parses out Q/A JSON, and creates Flashcard
+entities linked to the source.
 
 ---
 
