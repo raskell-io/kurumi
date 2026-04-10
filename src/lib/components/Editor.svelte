@@ -40,6 +40,7 @@
 	} from '$lib/editor/slashCommands';
 	import { taskListInputPlugin } from '$lib/editor/taskListInput';
 	import { codeBlockExitPlugin } from '$lib/editor/codeBlockExit';
+	import { audioEmbedPlugin } from '$lib/editor/audioEmbed';
 	import { startCheckboxRenderer } from '$lib/editor/checkboxRenderer';
 	import { processAndStoreImage } from '$lib/utils/image';
 	import CameraCapture from './CameraCapture.svelte';
@@ -426,6 +427,7 @@
 			.use(slashCommandPlugin)
 			.use(taskListInputPlugin)
 			.use(codeBlockExitPlugin)
+			.use(audioEmbedPlugin)
 			.use(trailingPlugin)
 			.create();
 
@@ -459,43 +461,17 @@
 		// Periodically resolve blob: image srcs in the editor's rendered
 		// output. Milkdown renders <img src="blob:..."> which the browser
 		// can't fetch; we swap in object URLs from the blob store.
-		// Images whose alt starts with "audio:" are swapped into real
-		// <audio> players so the user gets a playable audio widget.
+		// Audio embeds are handled by the audioEmbedPlugin NodeView, so
+		// we only need to resolve regular images here.
 		const resolveBlobImages = async () => {
 			const { resolveBlobUrl } = await import('$lib/utils/image');
-			// Resolve blob: refs on images (and swap audio embeds)
+			// Resolve blob: refs on images (audio images are handled by NodeView)
 			const imgs = editorContainer.querySelectorAll<HTMLImageElement>('img');
 			for (const img of imgs) {
 				const src = img.getAttribute('src') || '';
-				const alt = img.getAttribute('alt') || '';
 				if (src.startsWith('blob:') && !src.startsWith('blob:http')) {
 					const url = await resolveBlobUrl(src);
-					if (!url) continue;
-
-					if (alt.startsWith('audio:')) {
-						// Replace <img> with a styled <audio> player
-						const audio = document.createElement('audio');
-						audio.controls = true;
-						audio.src = url;
-						audio.style.width = '100%';
-						audio.style.maxWidth = '500px';
-						audio.style.display = 'block';
-						audio.style.margin = '0.5rem 0';
-						// Preserve the blob ref so serialization round-trips
-						audio.dataset.blobRef = src;
-						img.replaceWith(audio);
-					} else {
-						img.src = url;
-					}
-				}
-			}
-			// Resolve blob: refs on any remaining audio elements
-			const audios = editorContainer.querySelectorAll<HTMLAudioElement>('audio');
-			for (const audio of audios) {
-				const src = audio.getAttribute('src') || '';
-				if (src.startsWith('blob:') && !src.startsWith('blob:http')) {
-					const url = await resolveBlobUrl(src);
-					if (url) audio.src = url;
+					if (url) img.src = url;
 				}
 			}
 		};
