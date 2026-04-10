@@ -155,7 +155,6 @@
 			`#### ${icon} ${label} — ${timeStr}`,
 			'',
 			`![audio:${label}](${audioRef})`,
-			'',
 			'> **Transcript:** *Processing...*',
 			''
 		].join('\n');
