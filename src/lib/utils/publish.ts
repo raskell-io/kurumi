@@ -102,6 +102,62 @@ ${body}
 	URL.revokeObjectURL(url);
 }
 
+/**
+ * Copy the published HTML to clipboard so the user can paste it
+ * into an email, CMS, or save it manually.
+ */
+export async function copyMemoryAsHtml(memory: MemoryObject): Promise<boolean> {
+	const title = memory.title || 'Untitled';
+	const body = marked.parse(memory.bodyMarkdown || '', {
+		gfm: true,
+		breaks: true
+	}) as string;
+
+	try {
+		await navigator.clipboard.write([
+			new ClipboardItem({
+				'text/html': new Blob([body], { type: 'text/html' }),
+				'text/plain': new Blob([memory.bodyMarkdown || ''], { type: 'text/plain' })
+			})
+		]);
+		return true;
+	} catch {
+		// Fallback: copy as plain markdown
+		try {
+			await navigator.clipboard.writeText(memory.bodyMarkdown || '');
+			return true;
+		} catch {
+			return false;
+		}
+	}
+}
+
+/**
+ * Use the Web Share API to share a note (title + text). Falls back
+ * to copying the markdown to clipboard if share is unavailable.
+ */
+export async function shareMemory(memory: MemoryObject): Promise<boolean> {
+	const title = memory.title || 'Untitled';
+	const text = memory.bodyMarkdown || '';
+
+	if (navigator.share) {
+		try {
+			await navigator.share({ title, text });
+			return true;
+		} catch {
+			// User cancelled or API error — fall through to clipboard
+		}
+	}
+
+	// Fallback: copy to clipboard
+	try {
+		await navigator.clipboard.writeText(`# ${title}\n\n${text}`);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 function escapeHtml(s: string): string {
 	return s
 		.replace(/&/g, '&amp;')

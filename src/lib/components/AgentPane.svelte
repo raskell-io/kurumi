@@ -1082,8 +1082,12 @@
 	function toolIcon(name: string) {
 		switch (name) {
 			case 'search_memory': return Search;
+			case 'search_people': return Search;
+			case 'search_topics': return Search;
 			case 'create_memory': return FileText;
+			case 'update_memory': return Pencil;
 			case 'add_action_item': return CheckSquare;
+			case 'list_action_items': return CheckSquare;
 			case 'add_reminder': return Bell;
 			default: return Wrench;
 		}
@@ -1093,9 +1097,13 @@
 		switch (tc.name) {
 			case 'search_memory': return `Searched: "${tc.args.query ?? ''}"`;
 			case 'create_memory': return `Created note: "${tc.args.title ?? ''}"`;
+			case 'update_memory': return `Updated note: "${tc.args.title || tc.args.memoryId || ''}"`;
 			case 'add_action_item': return `Added action: "${tc.args.text ?? ''}"`;
+			case 'list_action_items': return `Listed action items${tc.args.status ? ` (${tc.args.status})` : ''}`;
 			case 'add_reminder': return `Proposed reminder: "${tc.args.text ?? ''}"`;
 			case 'generate_daily_digest': return 'Generated daily digest';
+			case 'search_people': return `Searched people: "${tc.args.query ?? 'all'}"`;
+			case 'search_topics': return `Searched topics: "${tc.args.query ?? 'all'}"`;
 			default: return tc.name;
 		}
 	}

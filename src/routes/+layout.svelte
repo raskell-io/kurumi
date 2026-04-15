@@ -19,6 +19,7 @@
 	} from '$lib/db';
 	import { storeBlob } from '$lib/db/blob-store';
 	import { initHashRouter, updateHashFromPath } from '$lib/hash-router';
+	import { generateDailyDigest } from '$lib/digest';
 	import { initSearch, rebuildIndex } from '$lib/search';
 	import { setupVisibilitySync, teardownVisibilitySync, syncState, isSyncConfigured, sync } from '$lib/sync';
 	import { gitSyncState } from '$lib/git';
@@ -402,6 +403,21 @@
 			// Start the notification loop if the user previously opted in.
 			// No-op if disabled or permission not granted.
 			bootNotifications();
+
+			// Auto-generate yesterday's daily digest on first open each day.
+			// Fire-and-forget so it doesn't block boot. Idempotent: checks
+			// localStorage for the last generated date to avoid duplicates.
+			const DIGEST_DATE_KEY = 'kurumi-last-auto-digest';
+			const today = new Date().toISOString().split('T')[0];
+			if (localStorage.getItem(DIGEST_DATE_KEY) !== today) {
+				setTimeout(() => {
+					generateDailyDigest().then(() => {
+						localStorage.setItem(DIGEST_DATE_KEY, today);
+					}).catch(() => {
+						// Silently fail — no inference provider configured, etc.
+					});
+				}, 5000); // delay to not compete with initial render
+			}
 		});
 
 		// Preload local inference models if enabled (default). Fire-and-forget;

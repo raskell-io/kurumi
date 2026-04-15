@@ -16,7 +16,7 @@
 	import InlineTemplateChooser from '$lib/components/InlineTemplateChooser.svelte';
 	import { untrack } from 'svelte';
 	import { downloadSingleMemory, type MarkdownExportFormat } from '$lib/utils/markdown-export';
-	import { publishMemoryAsHtml } from '$lib/utils/publish';
+	import { publishMemoryAsHtml, copyMemoryAsHtml, shareMemory } from '$lib/utils/publish';
 	import { getBlob } from '$lib/db/blob-store';
 	import {
 		Trash2,
@@ -497,7 +497,19 @@
 							onclick={() => { if (memory) publishMemoryAsHtml(memory); showExportMenu = false; }}
 							class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]"
 						>
-							Publish as HTML
+							Download as HTML
+						</button>
+						<button
+							onclick={() => { if (memory) copyMemoryAsHtml(memory); showExportMenu = false; }}
+							class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]"
+						>
+							Copy as rich text
+						</button>
+						<button
+							onclick={() => { if (memory) shareMemory(memory); showExportMenu = false; }}
+							class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]"
+						>
+							Share...
 						</button>
 					</div>
 				{/if}

@@ -25,8 +25,14 @@ import {
 	addMemoryObject,
 	addActionItem,
 	addReminderProposal,
-	todayIso
+	updateMemoryObject,
+	todayIso,
+	memoryObjects,
+	actionItems,
+	getAllPeople,
+	getAllTags
 } from './db';
+import { get } from 'svelte/store';
 import { retrieveMemoryContext, buildContextBlocks } from './ask';
 import { generateDailyDigest } from './digest';
 
@@ -147,6 +153,72 @@ const TOOLS = [
 				}
 			}
 		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'update_memory',
+			description: 'Update an existing note in the vault. Can change title, body, or tags.',
+			parameters: {
+				type: 'object',
+				properties: {
+					memoryId: { type: 'string', description: 'The ID of the memory to update' },
+					title: { type: 'string', description: 'New title (optional)' },
+					body: { type: 'string', description: 'New markdown body (optional)' },
+					appendBody: { type: 'string', description: 'Text to append to the existing body (optional, use instead of body to add without replacing)' },
+					tags: {
+						type: 'array',
+						items: { type: 'string' },
+						description: 'New tags array (optional, replaces existing tags)'
+					}
+				},
+				required: ['memoryId']
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'list_action_items',
+			description: 'List action items from the vault, optionally filtered by status.',
+			parameters: {
+				type: 'object',
+				properties: {
+					status: {
+						type: 'string',
+						enum: ['open', 'in_progress', 'done', 'cancelled'],
+						description: 'Filter by status (optional, defaults to showing open and in_progress)'
+					},
+					limit: { type: 'number', description: 'Max items to return (default 15)' }
+				}
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'search_people',
+			description: "Search for people mentioned in the user's vault.",
+			parameters: {
+				type: 'object',
+				properties: {
+					query: { type: 'string', description: 'Name to search for (optional, returns all if empty)' }
+				}
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'search_topics',
+			description: "Search for topics and projects referenced in the user's vault.",
+			parameters: {
+				type: 'object',
+				properties: {
+					query: { type: 'string', description: 'Topic to search for (optional, returns all if empty)' }
+				}
+			}
+		}
 	}
 ];
 
@@ -155,7 +227,11 @@ const TOOL_STATUS_LABELS: Record<string, string> = {
 	create_memory: 'Creating note...',
 	add_action_item: 'Adding action item...',
 	add_reminder: 'Adding reminder...',
-	generate_daily_digest: 'Generating digest...'
+	generate_daily_digest: 'Generating digest...',
+	update_memory: 'Updating note...',
+	list_action_items: 'Listing action items...',
+	search_people: 'Searching people...',
+	search_topics: 'Searching topics...'
 };
 
 const SYSTEM_PROMPT = [
@@ -168,8 +244,12 @@ const SYSTEM_PROMPT = [
 	'',
 	'You can also take actions:',
 	'- create_memory: create a new note',
+	'- update_memory: update an existing note (title, body, tags, or append)',
 	'- add_action_item: add a task',
 	'- add_reminder: propose a reminder for a future date',
+	'- list_action_items: list tasks by status',
+	'- search_people: find people in the vault',
+	'- search_topics: find topics/projects in the vault',
 	'',
 	`Today's date is ${todayIso()}.`,
 	'',
@@ -233,6 +313,77 @@ async function executeTool(
 			const date = args.date ? String(args.date) : undefined;
 			const memoryId = await generateDailyDigest(date);
 			return { ok: true, memoryId, message: 'Daily digest generated' };
+		}
+		case 'update_memory': {
+			const memoryId = String(args.memoryId ?? '');
+			if (!memoryId) return { ok: false, error: 'memoryId is required' };
+			const all = get(memoryObjects);
+			const existing = all.find((m) => m.id === memoryId);
+			if (!existing) return { ok: false, error: `Memory ${memoryId} not found` };
+			const updates: Record<string, unknown> = {};
+			if (args.title) updates.title = String(args.title);
+			if (args.body) updates.bodyMarkdown = String(args.body);
+			if (args.appendBody) {
+				updates.bodyMarkdown = (existing.bodyMarkdown || '') + '\n\n' + String(args.appendBody);
+			}
+			if (args.tags && Array.isArray(args.tags)) {
+				updates.tags = (args.tags as string[]).map(String);
+			}
+			updateMemoryObject(memoryId, updates);
+			return { ok: true, memoryId, title: args.title || existing.title };
+		}
+		case 'list_action_items': {
+			const allActions = get(actionItems);
+			const statusFilter = args.status ? String(args.status) : null;
+			const limit = typeof args.limit === 'number' ? args.limit : 15;
+			let filtered = allActions;
+			if (statusFilter) {
+				filtered = filtered.filter((a) => a.status === statusFilter);
+			} else {
+				filtered = filtered.filter((a) => a.status === 'open' || a.status === 'in_progress');
+			}
+			return {
+				count: filtered.length,
+				items: filtered.slice(0, limit).map((a) => ({
+					id: a.id,
+					text: a.text,
+					status: a.status,
+					dueDate: a.dueDate,
+					assignee: a.assignee
+				}))
+			};
+		}
+		case 'search_people': {
+			const query = String(args.query ?? '').toLowerCase();
+			let people = getAllPeople();
+			if (query) {
+				people = people.filter((p) => p.name.toLowerCase().includes(query));
+			}
+			return {
+				count: people.length,
+				people: people.slice(0, 20).map((p) => ({ name: p.name, mentions: p.count }))
+			};
+		}
+		case 'search_topics': {
+			const query = String(args.query ?? '').toLowerCase();
+			const all = get(memoryObjects);
+			const topicCounts = new Map<string, number>();
+			for (const m of all) {
+				for (const t of [...(m.topics ?? []), ...(m.projects ?? [])]) {
+					const key = t;
+					topicCounts.set(key, (topicCounts.get(key) || 0) + 1);
+				}
+			}
+			let topics = Array.from(topicCounts.entries())
+				.map(([name, count]) => ({ name, count }))
+				.sort((a, b) => b.count - a.count);
+			if (query) {
+				topics = topics.filter((t) => t.name.toLowerCase().includes(query));
+			}
+			return {
+				count: topics.length,
+				topics: topics.slice(0, 20).map((t) => ({ name: t.name, mentions: t.count }))
+			};
 		}
 		default:
 			return { ok: false, error: `Unknown tool: ${name}` };
