@@ -19,15 +19,27 @@
 		source: string;
 	}
 
-	function extractDataviewBlocks(md: string): { cleaned: string; blocks: DataviewEntry[] } {
+	interface MermaidEntry {
+		id: string;
+		source: string;
+	}
+
+	function extractDataviewBlocks(md: string): { cleaned: string; blocks: DataviewEntry[]; mermaidBlocks: MermaidEntry[] } {
 		const blocks: DataviewEntry[] = [];
-		let idx = 0;
-		const cleaned = md.replace(/```kurumi\n([\s\S]*?)```/g, (_, body) => {
-			const id = `dv-${idx++}`;
+		const mermaidBlocks: MermaidEntry[] = [];
+		let dvIdx = 0;
+		let mmIdx = 0;
+		let cleaned = md.replace(/```kurumi\n([\s\S]*?)```/g, (_, body) => {
+			const id = `dv-${dvIdx++}`;
 			blocks.push({ id, source: body });
 			return `<div data-dataview-id="${id}"></div>`;
 		});
-		return { cleaned, blocks };
+		cleaned = cleaned.replace(/```mermaid\n([\s\S]*?)```/g, (_, body) => {
+			const id = `mm-${mmIdx++}`;
+			mermaidBlocks.push({ id, source: body.trim() });
+			return `<div class="mermaid-block" data-mermaid-id="${id}"></div>`;
+		});
+		return { cleaned, blocks, mermaidBlocks };
 	}
 
 	/**
@@ -105,6 +117,7 @@
 
 	let extracted = $derived(extractDataviewBlocks(content));
 	let dataviewBlocks = $derived(extracted.blocks);
+	let mermaidBlocks = $derived(extracted.mermaidBlocks);
 
 	// Process custom syntax AFTER marked has rendered
 	function postProcessHtml(html: string): string {
@@ -277,6 +290,30 @@
 		void html; // subscribe to changes
 		// Delay to let the DOM update first
 		requestAnimationFrame(() => resolveBlobImages());
+	});
+
+	// Render mermaid diagrams after DOM update
+	$effect(() => {
+		const blocks = mermaidBlocks;
+		if (blocks.length === 0 || !contentDiv) return;
+		requestAnimationFrame(async () => {
+			try {
+				const { default: mermaid } = await import('mermaid');
+				mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'loose' });
+				for (const block of blocks) {
+					const el = contentDiv?.querySelector(`[data-mermaid-id="${block.id}"]`);
+					if (!el) continue;
+					const { svg } = await mermaid.render(`mermaid-${block.id}`, block.source);
+					el.innerHTML = svg;
+				}
+			} catch {
+				// mermaid not installed or rendering failed — show source as fallback
+				for (const block of blocks) {
+					const el = contentDiv?.querySelector(`[data-mermaid-id="${block.id}"]`);
+					if (el) el.innerHTML = `<pre class="mermaid-fallback"><code>${block.source.replace(/</g, '&lt;')}</code></pre>`;
+				}
+			}
+		});
 	});
 </script>
 
@@ -512,6 +549,26 @@
 	.markdown-content :global(.code-block-lang) {
 		color: var(--color-text-muted);
 		text-transform: lowercase;
+	}
+
+	/* ---- Mermaid diagrams ---- */
+	.markdown-content :global(.mermaid-block) {
+		margin: 1.5em 0;
+		padding: 1rem;
+		background: var(--color-bg-secondary);
+		border-radius: 0.5rem;
+		overflow-x: auto;
+		text-align: center;
+	}
+
+	.markdown-content :global(.mermaid-block svg) {
+		max-width: 100%;
+		height: auto;
+	}
+
+	.markdown-content :global(.mermaid-fallback) {
+		text-align: left;
+		margin: 0;
 	}
 
 	.markdown-content :global(.code-copy-btn) {

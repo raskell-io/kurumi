@@ -18,6 +18,8 @@
 	import { downloadSingleMemory, type MarkdownExportFormat } from '$lib/utils/markdown-export';
 	import { publishMemoryAsHtml, copyMemoryAsHtml, shareMemory } from '$lib/utils/publish';
 	import { getBlob } from '$lib/db/blob-store';
+	import { findSemanticBacklinks } from '$lib/digest';
+	import type { MemoryObject } from '$lib/db/types';
 	import {
 		Trash2,
 		Download,
@@ -39,6 +41,8 @@
 	let title = $state('');
 	let content = $state('');
 	let backlinks = $state<ReturnType<typeof findBacklinks>>([]);
+	let relatedNotes = $state<Array<{ memory: MemoryObject; score: number }>>([]);
+	let loadingRelated = $state(false);
 	let showDeleteConfirm = $state(false);
 	let showExportMenu = $state(false);
 	let initializedForId = $state('');
@@ -294,6 +298,12 @@
 				title = memory!.title;
 				content = memory!.bodyMarkdown;
 				backlinks = findBacklinks(id);
+				relatedNotes = [];
+				loadingRelated = true;
+				findSemanticBacklinks(id, 5).then((results) => {
+					relatedNotes = results;
+					loadingRelated = false;
+				}).catch(() => { loadingRelated = false; });
 				initializedForId = id;
 				syncedMemoryTitle = memory!.title;
 			});
@@ -864,6 +874,37 @@
 									<div class="mt-1 truncate text-sm text-[var(--color-text-muted)]">
 										{backlink.bodyMarkdown.slice(0, 80)}...
 									</div>
+								</a>
+							{/each}
+						</div>
+					</div>
+				{/if}
+
+				<!-- Related notes (semantic) -->
+				{#if relatedNotes.length > 0}
+					<div class="mt-6 border-t border-[var(--color-border)] pt-4 md:mt-8 md:pt-6">
+						<h3 class="mb-3 text-xs font-semibold uppercase text-[var(--color-text-muted)] md:text-sm">
+							Related notes ({relatedNotes.length})
+						</h3>
+						<div class="space-y-2">
+							{#each relatedNotes as { memory: related, score }}
+								<a
+									href="/memory/{related.id}"
+									class="block rounded-lg border border-[var(--color-border)] p-3 transition-colors hover:border-[var(--color-accent)] active:scale-[0.99]"
+								>
+									<div class="flex items-center justify-between">
+										<span class="font-medium text-[var(--color-text)]">
+											{related.title || 'Untitled'}
+										</span>
+										<span class="text-xs text-[var(--color-text-muted)] opacity-50">
+											{Math.round(score * 100)}%
+										</span>
+									</div>
+									{#if related.summaryShort || related.bodyMarkdown}
+										<div class="mt-1 truncate text-sm text-[var(--color-text-muted)]">
+											{(related.summaryShort || related.bodyMarkdown || '').slice(0, 80)}...
+										</div>
+									{/if}
 								</a>
 							{/each}
 						</div>
