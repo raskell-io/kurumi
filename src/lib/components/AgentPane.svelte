@@ -86,7 +86,10 @@
 			const raw = sessionStorage?.getItem(SESSION_PREFIX + id) ?? localStorage?.getItem(SESSION_PREFIX + id);
 			if (raw) {
 				const parsed = JSON.parse(raw) as AgentSession;
+				// Reset transient flags (may be missing on old sessions)
 				parsed.thinking = false;
+				parsed.thinkingStatus = null;
+				parsed.streamStats = null;
 				parsed.error = null;
 				return parsed;
 			}
@@ -210,7 +213,7 @@
 
 	// Token budget (rough estimate: ~4 chars per token, gpt-4o-mini = 128k)
 	const MODEL_CONTEXT_TOKENS = 128_000;
-	let estimatedTokens = $derived(() => {
+	let estimatedTokens = $derived.by(() => {
 		let chars = 0;
 		for (const msg of session.messages) {
 			chars += msg.content.length;
@@ -224,24 +227,34 @@
 		return Math.ceil(chars / 4);
 	});
 
-	let tokenPercent = $derived(Math.min(100, Math.round((estimatedTokens() / MODEL_CONTEXT_TOKENS) * 100)));
+	let tokenPercent = $derived(Math.min(100, Math.round((estimatedTokens / MODEL_CONTEXT_TOKENS) * 100)));
 
 	// --- Effects --------------------------------------------------------------
 
 	// Persist session whenever it changes
 	$effect(() => {
 		persistConversation(activeConversationId, session);
-		// Update history index
-		if (session.messages.length > 0) {
-			const existing = historyIndex.findIndex((c) => c.id === activeConversationId);
+	});
+
+	// Update history index when message count changes (not on every session mutation)
+	let sessionMsgCount = $derived(session.messages.length);
+	$effect(() => {
+		// Read the derived count to subscribe, but avoid reading historyIndex
+		// inside this effect to prevent a reactive loop.
+		const count = sessionMsgCount;
+		if (count > 0) {
+			// Use untrack-style: read historyIndex via the load function
+			// so we don't create a dependency on it.
+			const currentIndex = loadHistoryIndex();
+			const existing = currentIndex.findIndex((c) => c.id === activeConversationId);
 			const meta: ConversationMeta = {
 				id: activeConversationId,
 				title: deriveTitle(session),
-				createdAt: existing >= 0 ? historyIndex[existing].createdAt : Date.now(),
+				createdAt: existing >= 0 ? currentIndex[existing].createdAt : Date.now(),
 				updatedAt: Date.now(),
 				messageCount: session.messages.filter((m) => m.role === 'user').length
 			};
-			let next = historyIndex.filter((c) => c.id !== activeConversationId);
+			let next = currentIndex.filter((c) => c.id !== activeConversationId);
 			next = [meta, ...next].slice(0, MAX_CONVERSATIONS);
 			historyIndex = next;
 			saveHistoryIndex(next);
@@ -432,7 +445,7 @@
 			.replace(regex, '<mark class="search-highlight">$1</mark>');
 	}
 
-	let searchMatchCount = $derived(() => {
+	let searchMatchCount = $derived.by(() => {
 		if (!searchQuery || searchQuery.length < 2) return 0;
 		const regex = new RegExp(escapeRegex(searchQuery), 'gi');
 		let count = 0;
@@ -1015,7 +1028,7 @@
 
 		<!-- Token budget bar -->
 		{#if hasMessages}
-			<div class="token-bar" title="~{estimatedTokens()} tokens used ({tokenPercent}% of context)">
+			<div class="token-bar" title="~{estimatedTokens} tokens used ({tokenPercent}% of context)">
 				<div
 					class="token-fill"
 					class:warn={tokenPercent > 60}
@@ -1056,7 +1069,7 @@
 					onkeydown={(e) => { if (e.key === 'Escape') { showSearch = false; searchQuery = ''; } }}
 				/>
 				{#if searchQuery && searchQuery.length >= 2}
-					<span class="search-count">{searchMatchCount()} match{searchMatchCount() === 1 ? '' : 'es'}</span>
+					<span class="search-count">{searchMatchCount} match{searchMatchCount === 1 ? '' : 'es'}</span>
 				{/if}
 				{#if searchQuery}
 					<button class="search-clear" onclick={() => { searchQuery = ''; searchInputEl?.focus(); }}>
