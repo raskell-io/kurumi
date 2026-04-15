@@ -23,17 +23,33 @@ const MAX_TABS = 12;
 export const openTabIds = writable<string[]>([]);
 
 /**
- * Mark a memory as just-opened. Moves it to the end of the tab bar
- * (most recent position) or adds it if not already present.
+ * Mark a memory as just-opened. Adds it to the end of the tab bar
+ * if not already present. Does NOT reorder existing tabs — their
+ * position is preserved so the user can arrange them manually.
  */
 export function touchTab(memoryId: string): void {
 	openTabIds.update((ids) => {
-		const filtered = ids.filter((id) => id !== memoryId);
-		filtered.push(memoryId);
-		if (filtered.length > MAX_TABS) {
-			return filtered.slice(filtered.length - MAX_TABS);
+		if (ids.includes(memoryId)) return ids; // already open, keep position
+		const next = [...ids, memoryId];
+		if (next.length > MAX_TABS) {
+			return next.slice(next.length - MAX_TABS);
 		}
-		return filtered;
+		return next;
+	});
+}
+
+/**
+ * Move a tab from one position to another (drag-and-drop reorder).
+ */
+export function moveTab(fromIndex: number, toIndex: number): void {
+	openTabIds.update((ids) => {
+		if (fromIndex < 0 || fromIndex >= ids.length) return ids;
+		if (toIndex < 0 || toIndex >= ids.length) return ids;
+		if (fromIndex === toIndex) return ids;
+		const next = [...ids];
+		const [moved] = next.splice(fromIndex, 1);
+		next.splice(toIndex, 0, moved);
+		return next;
 	});
 }
 

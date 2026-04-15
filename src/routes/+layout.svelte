@@ -30,7 +30,7 @@
 	import LockScreen from '$lib/components/LockScreen.svelte';
 	import { lockEnabled, isLocked, lock, autoLockMinutes, hasPinSet } from '$lib/stores/lock';
 	import { undoLast } from '$lib/stores/undo';
-	import { focusMode, toggleFocusMode, openTabs, touchTab, closeTab } from '$lib/stores/workspace';
+	import { focusMode, toggleFocusMode, openTabs, touchTab, closeTab, moveTab } from '$lib/stores/workspace';
 	import {
 		bootNotifications,
 		stopNotificationLoop,
@@ -1053,17 +1053,20 @@
 		<main class="relative flex flex-1 flex-col" class:overflow-hidden={!isReadMode} aria-label="Main content">
 			<!-- Tab bar (recently-opened memories) -->
 			{#if $openTabs.length > 0 && !$focusMode}
-				<div class="flex items-center gap-0.5 overflow-x-auto border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2 py-0.5 text-xs">
-					{#each $openTabs as tab (tab.id)}
+				<div class="tab-bar">
+					{#each $openTabs as tab, i (tab.id)}
 						<a
 							href="/memory/{tab.id}"
-							class="inline-flex max-w-[160px] items-center gap-1 rounded px-2 py-1 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
-							class:bg-[var(--color-bg)]={$page.url.pathname === `/memory/${tab.id}`}
-							class:text-[var(--color-text)]={$page.url.pathname === `/memory/${tab.id}`}
+							class="tab-item"
+							class:tab-active={$page.url.pathname === `/memory/${tab.id}`}
+							draggable="true"
+							ondragstart={(e) => { e.dataTransfer?.setData('text/plain', String(i)); e.dataTransfer!.effectAllowed = 'move'; }}
+							ondragover={(e) => e.preventDefault()}
+							ondrop={(e) => { e.preventDefault(); const from = parseInt(e.dataTransfer?.getData('text/plain') ?? '-1', 10); if (from >= 0) moveTab(from, i); }}
 						>
 							<span class="truncate">{tab.title}</span>
 							<button
-								class="ml-0.5 rounded p-0.5 hover:bg-[var(--color-border)]"
+								class="tab-close"
 								onclick={(e) => { e.preventDefault(); e.stopPropagation(); closeTab(tab.id); }}
 								aria-label="Close tab"
 							>
@@ -1188,3 +1191,75 @@
 	<UndoToast />
 	<LockScreen />
 {/if}
+
+<style>
+	.tab-bar {
+		display: flex;
+		align-items: stretch;
+		gap: 1px;
+		overflow-x: auto;
+		border-bottom: 1px solid var(--color-border);
+		background: var(--color-bg-secondary);
+		padding: 0 0.375rem;
+		scrollbar-width: none;
+	}
+
+	.tab-bar::-webkit-scrollbar {
+		display: none;
+	}
+
+	.tab-item {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		max-width: 180px;
+		padding: 0.5rem 0.75rem;
+		font-size: 0.75rem;
+		color: var(--color-text-muted);
+		text-decoration: none;
+		white-space: nowrap;
+		border-bottom: 2px solid transparent;
+		transition: color 0.1s, border-color 0.1s, background 0.1s;
+		cursor: grab;
+		user-select: none;
+	}
+
+	.tab-item:hover {
+		background: var(--color-border);
+		color: var(--color-text);
+	}
+
+	.tab-item.tab-active {
+		color: var(--color-text);
+		background: var(--color-bg);
+		border-bottom-color: var(--color-accent);
+	}
+
+	.tab-item:active {
+		cursor: grabbing;
+	}
+
+	.tab-close {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0.125rem;
+		border: none;
+		border-radius: 0.25rem;
+		background: none;
+		color: var(--color-text-muted);
+		cursor: pointer;
+		opacity: 0;
+		transition: opacity 0.1s;
+		flex-shrink: 0;
+	}
+
+	.tab-item:hover .tab-close {
+		opacity: 1;
+	}
+
+	.tab-close:hover {
+		background: var(--color-border);
+		color: var(--color-text);
+	}
+</style>
