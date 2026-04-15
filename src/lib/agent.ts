@@ -256,6 +256,7 @@ export interface AgentSession {
 	messages: AgentMessage[];
 	thinking: boolean;
 	thinkingStatus: string | null; // e.g. "Searching vault...", "Thinking..."
+	streamStats: { tokensPerSec: number } | null;
 	error: string | null;
 }
 
@@ -397,6 +398,10 @@ export async function sendAgentMessage(
 			}> = new Map();
 			let finishReason: string | null = null;
 
+			// Token speed tracking
+			let streamTokenCount = 0;
+			let streamStartTime = 0;
+
 			// Create a partial assistant message for streaming text
 			const streamMsgId = generateId();
 			let streamMsgAdded = false;
@@ -416,6 +421,8 @@ export async function sendAgentMessage(
 				// Accumulate text content
 				if (typeof delta.content === 'string' && delta.content) {
 					contentAccum += delta.content;
+					streamTokenCount++;
+					if (!streamStartTime) streamStartTime = Date.now();
 
 					// Update the streaming message in real time
 					if (!streamMsgAdded) {
@@ -439,6 +446,11 @@ export async function sendAgentMessage(
 						}
 					}
 					session.thinkingStatus = null;
+					// Update tokens/sec every few tokens to avoid excessive recalc
+					const elapsed = (Date.now() - streamStartTime) / 1000;
+					if (elapsed > 0.3) {
+						session.streamStats = { tokensPerSec: Math.round(streamTokenCount / elapsed) };
+					}
 					onUpdate?.(session);
 				}
 
@@ -563,6 +575,7 @@ export async function sendAgentMessage(
 	} finally {
 		session.thinking = false;
 		session.thinkingStatus = null;
+		session.streamStats = null;
 		onUpdate?.(session);
 	}
 
@@ -574,6 +587,48 @@ export function createAgentSession(): AgentSession {
 		messages: [],
 		thinking: false,
 		thinkingStatus: null,
+		streamStats: null,
 		error: null
 	};
+}
+
+/**
+ * Generate a concise title for a conversation based on the first exchange.
+ * Fire-and-forget — returns the title string or null on failure.
+ */
+export async function generateConversationTitle(
+	userMessage: string,
+	assistantReply: string
+): Promise<string | null> {
+	const apiKey = getApiKey();
+	if (!apiKey) return null;
+	try {
+		const res = await fetch('https://api.openai.com/v1/chat/completions', {
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${apiKey}`,
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify({
+				model: 'gpt-4o-mini',
+				messages: [
+					{
+						role: 'system',
+						content:
+							'Generate a concise 3-5 word title for this conversation. Return ONLY the title, no quotes or punctuation.'
+					},
+					{ role: 'user', content: userMessage },
+					{ role: 'assistant', content: assistantReply.slice(0, 300) }
+				],
+				temperature: 0.3,
+				max_tokens: 20
+			})
+		});
+		if (!res.ok) return null;
+		const data = await res.json();
+		const title = data.choices?.[0]?.message?.content?.trim();
+		return title || null;
+	} catch {
+		return null;
+	}
 }

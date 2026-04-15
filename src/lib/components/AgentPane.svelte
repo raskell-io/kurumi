@@ -3,6 +3,7 @@
 	import {
 		createAgentSession,
 		sendAgentMessage,
+		generateConversationTitle,
 		AVAILABLE_MODELS,
 		getAgentModel,
 		setAgentModel,
@@ -418,6 +419,56 @@
 		return `${Math.floor(hours / 24)}d ago`;
 	}
 
+	// --- Search highlighting --------------------------------------------------
+
+	function escapeRegex(s: string): string {
+		return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	}
+
+	function highlightMatches(text: string, query: string): string {
+		if (!query || query.length < 2) return '';
+		const regex = new RegExp(`(${escapeRegex(query)})`, 'gi');
+		return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+			.replace(regex, '<mark class="search-highlight">$1</mark>');
+	}
+
+	let searchMatchCount = $derived(() => {
+		if (!searchQuery || searchQuery.length < 2) return 0;
+		const regex = new RegExp(escapeRegex(searchQuery), 'gi');
+		let count = 0;
+		for (const msg of session.messages) {
+			if (msg.content) {
+				const matches = msg.content.match(regex);
+				if (matches) count += matches.length;
+			}
+		}
+		return count;
+	});
+
+	// --- Auto-title -----------------------------------------------------------
+
+	async function maybeAutoTitle() {
+		// Only auto-title on the first exchange
+		const userMsgs = session.messages.filter((m) => m.role === 'user');
+		const assistantMsgs = session.messages.filter((m) => m.role === 'assistant' && m.content && !m.toolCalls?.length);
+		if (userMsgs.length !== 1 || assistantMsgs.length === 0) return;
+
+		// Check if already manually titled
+		const existing = historyIndex.find((c) => c.id === activeConversationId);
+		if (existing && existing.title !== userMsgs[0].content.slice(0, 50) + (userMsgs[0].content.length > 50 ? '...' : '')) return;
+
+		const title = await generateConversationTitle(
+			userMsgs[0].content,
+			assistantMsgs[0].content
+		);
+		if (title) {
+			historyIndex = historyIndex.map((c) =>
+				c.id === activeConversationId ? { ...c, title } : c
+			);
+			saveHistoryIndex(historyIndex);
+		}
+	}
+
 	// --- Resize ---------------------------------------------------------------
 
 	function startResize(e: MouseEvent) {
@@ -539,6 +590,8 @@
 		});
 		playNotificationSound();
 		smartScroll();
+		// Fire-and-forget auto-title after first exchange
+		maybeAutoTitle();
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
@@ -1002,6 +1055,9 @@
 					class="search-input"
 					onkeydown={(e) => { if (e.key === 'Escape') { showSearch = false; searchQuery = ''; } }}
 				/>
+				{#if searchQuery && searchQuery.length >= 2}
+					<span class="search-count">{searchMatchCount()} match{searchMatchCount() === 1 ? '' : 'es'}</span>
+				{/if}
 				{#if searchQuery}
 					<button class="search-clear" onclick={() => { searchQuery = ''; searchInputEl?.focus(); }}>
 						<X class="h-3 w-3" />
@@ -1111,8 +1167,12 @@
 								</div>
 							</div>
 						{:else}
-							<div class="msg-body">
-								{msg.content}
+							<div class="msg-body msg-body-user-md">
+								{#if searchQuery && searchQuery.length >= 2}
+									{@html highlightMatches(msg.content, searchQuery)}
+								{:else}
+									<MarkdownRenderer content={msg.content} />
+								{/if}
 								{#if msg.images?.length}
 									<div class="msg-images">
 										{#each msg.images as src}
@@ -1173,9 +1233,18 @@
 						<div class="msg msg-assistant">
 							<div class="msg-avatar assistant"><Bot class="h-3.5 w-3.5" /></div>
 							<div class="msg-body">
-								<MarkdownRenderer content={msg.content} />
+								{#if searchQuery && searchQuery.length >= 2}
+									{@html highlightMatches(msg.content, searchQuery)}
+								{:else}
+									<MarkdownRenderer content={msg.content} />
+								{/if}
 								<div class="msg-footer">
-									<span class="msg-time">{relativeTime(msg.createdAt)}</span>
+									<span class="msg-time">
+										{relativeTime(msg.createdAt)}
+										{#if session.thinking && session.streamStats && msg.id === session.messages[session.messages.length - 1]?.id}
+											<span class="stream-speed">&middot; {session.streamStats.tokensPerSec} tok/s</span>
+										{/if}
+									</span>
 									<div class="msg-actions">
 										<button class="msg-action-btn" onclick={() => copyMessage(msg.id, msg.content)} title="Copy">
 											{#if copiedMsgId === msg.id}
@@ -1623,6 +1692,59 @@
 
 	.search-clear:hover {
 		color: var(--color-text);
+	}
+
+	.search-count {
+		font-size: 0.625rem;
+		color: var(--color-text-muted);
+		white-space: nowrap;
+	}
+
+	/* --- Search highlighting --- */
+	:global(.search-highlight) {
+		background: rgba(250, 204, 21, 0.4);
+		color: inherit;
+		padding: 0.0625rem 0.125rem;
+		border-radius: 0.125rem;
+	}
+
+	/* --- Stream speed --- */
+	.stream-speed {
+		color: var(--color-accent);
+		font-weight: 500;
+	}
+
+	/* --- User message markdown --- */
+	.msg-body-user-md :global(.markdown-content) {
+		color: white;
+		font-size: 0.8125rem;
+		line-height: 1.5;
+	}
+
+	.msg-body-user-md :global(.markdown-content p) {
+		margin-bottom: 0.25em;
+	}
+
+	.msg-body-user-md :global(.markdown-content p:last-child) {
+		margin-bottom: 0;
+	}
+
+	.msg-body-user-md :global(.markdown-content a) {
+		color: rgba(255, 255, 255, 0.85);
+		text-decoration: underline;
+	}
+
+	.msg-body-user-md :global(.markdown-content code) {
+		background: rgba(255, 255, 255, 0.15);
+		color: white;
+	}
+
+	.msg-body-user-md :global(.markdown-content pre) {
+		background: rgba(0, 0, 0, 0.2);
+	}
+
+	.msg-body-user-md :global(.markdown-content pre code) {
+		background: none;
 	}
 
 	/* --- Saved note bar --- */
