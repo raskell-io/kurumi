@@ -674,17 +674,19 @@
 			);
 			smartScroll();
 
-			const lastMsg = session.messages[session.messages.length - 1];
-			if (lastMsg?.role === 'assistant' && lastMsg.content) {
-				let content = lastMsg.content.trim();
+			// Find the last assistant message with actual text content
+			const lastTextMsg = [...session.messages].reverse().find(
+				(m) => m.role === 'assistant' && m.content && !m.toolCalls?.length
+			);
+			if (lastTextMsg?.content) {
+				const content = lastTextMsg.content.trim();
 				// Extract title from first # heading if present
 				let title = 'Chat note';
 				const headingMatch = content.match(/^#\s+(.+)/m);
 				if (headingMatch) {
 					title = headingMatch[1].trim();
-					// Remove the heading line from the body
-					content = content.replace(/^#\s+.+\n?/, '').trim();
 				}
+				// Keep full content as body (including heading — editor handles it)
 				const memory = addMemoryObject(title, content, null);
 				showSavedNotification(memory.id, memory.title ?? title);
 			}
