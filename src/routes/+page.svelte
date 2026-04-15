@@ -8,6 +8,7 @@
 		todayIso
 	} from '$lib/db';
 	import { askKurumi, isAskKurumiResult, type AskKurumiResult } from '$lib/ask';
+	import { parseVoiceCommand } from '$lib/voice-commands';
 	import { parseSearchQuery, hasAnyFilter } from '$lib/search';
 	import { isAIConfigured } from '$lib/ai';
 	import { generateDailyDigest, detectPatterns, type DetectedPattern } from '$lib/digest';
@@ -260,6 +261,21 @@
 	async function handleAsk() {
 		const trimmed = question.trim();
 		if (!trimmed || asking) return;
+
+		// Try voice commands first (only meaningful in voice mode,
+		// but also works for typed commands).
+		const voiceCmd = parseVoiceCommand(trimmed);
+		if (voiceCmd) {
+			question = '';
+			if (voiceMode && ttsAvailable) {
+				void handleSpeak(voiceCmd.response);
+			}
+			if (voiceCmd.navigateTo) {
+				goto(voiceCmd.navigateTo);
+			}
+			return;
+		}
+
 		asking = true;
 		askError = null;
 		try {

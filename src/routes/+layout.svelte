@@ -27,6 +27,8 @@
 	import UndoToast from '$lib/components/UndoToast.svelte';
 	import AgentPane from '$lib/components/AgentPane.svelte';
 	import FocusTimer from '$lib/components/FocusTimer.svelte';
+	import LockScreen from '$lib/components/LockScreen.svelte';
+	import { lockEnabled, isLocked, lock, autoLockMinutes, hasPinSet } from '$lib/stores/lock';
 	import { undoLast } from '$lib/stores/undo';
 	import { focusMode, toggleFocusMode, openTabs, touchTab, closeTab } from '$lib/stores/workspace';
 	import {
@@ -463,6 +465,26 @@
 
 		window.addEventListener('resize', checkMobile);
 		window.addEventListener('keydown', handleKeydown);
+
+		// Auto-lock on idle when PIN is set
+		if (hasPinSet()) {
+			let idleTimer: ReturnType<typeof setTimeout> | null = null;
+			const resetIdle = () => {
+				if (idleTimer) clearTimeout(idleTimer);
+				const mins = $autoLockMinutes;
+				if (mins > 0 && !$isLocked) {
+					idleTimer = setTimeout(() => lock(), mins * 60 * 1000);
+				}
+			};
+			window.addEventListener('mousemove', resetIdle);
+			window.addEventListener('keydown', resetIdle);
+			window.addEventListener('touchstart', resetIdle);
+			resetIdle();
+			// Lock on visibility hidden (e.g. switching tabs)
+			document.addEventListener('visibilitychange', () => {
+				if (document.visibilityState === 'hidden' && hasPinSet()) lock();
+			});
+		}
 
 		// Listen for voice/meeting capture requests from note pages
 		const handleVoiceMemoEvent = () => {
@@ -1164,4 +1186,5 @@
 	{/if}
 
 	<UndoToast />
+	<LockScreen />
 {/if}
