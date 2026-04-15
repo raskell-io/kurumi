@@ -2194,7 +2194,21 @@ export function getOrCreateDailyNote(isoDate: string): MemoryObject {
 		? applyTemplateVariables(template.content, { date: isoDate })
 		: `# ${isoDate}\n\n`;
 
-	return addMemoryObject(expectedTitle, body, null);
+	const memory = addMemoryObject(expectedTitle, body, null);
+
+	// Fire-and-forget: generate journal prompts and append them.
+	// Runs async so the daily note opens immediately without waiting.
+	import('../digest').then(({ generateJournalPrompts }) => {
+		generateJournalPrompts(isoDate).then((prompts) => {
+			if (prompts) {
+				updateMemoryObject(memory.id, {
+					bodyMarkdown: (memory.bodyMarkdown || '') + '\n\n' + prompts
+				});
+			}
+		}).catch(() => {});
+	}).catch(() => {});
+
+	return memory;
 }
 
 /**

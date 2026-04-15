@@ -26,6 +26,7 @@
 	import GitConflictModal from '$lib/components/GitConflictModal.svelte';
 	import UndoToast from '$lib/components/UndoToast.svelte';
 	import AgentPane from '$lib/components/AgentPane.svelte';
+	import FocusTimer from '$lib/components/FocusTimer.svelte';
 	import { undoLast } from '$lib/stores/undo';
 	import { focusMode, toggleFocusMode, openTabs, touchTab, closeTab } from '$lib/stores/workspace';
 	import {
@@ -1089,6 +1090,7 @@
 			</header>
 			{/if}
 
+			<FocusTimer />
 			<div class="flex-1" class:overflow-hidden={!isReadMode} class:overflow-auto={isReadMode}>
 				{@render children()}
 			</div>

@@ -403,6 +403,79 @@ export async function generateQuizFromMemory(memoryId: string): Promise<number> 
 }
 
 // ---------------------------------------------------------------------------
+// Journal prompts
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate 2-3 reflection prompts for a daily journal based on recent
+ * vault activity. Returns markdown-formatted prompts. If no inference
+ * provider is available, returns a set of generic prompts.
+ */
+export async function generateJournalPrompts(isoDate: string): Promise<string> {
+	const all = get(memoryObjects);
+	const allActions = get(actionItems);
+	const { start, end } = dateRangeMs(isoDate);
+
+	// Gather context: recent captures, open actions, mentions
+	const recentCaptures = all
+		.filter((m) => m.createdAt >= start - 3 * 86_400_000 && m.createdAt < end)
+		.slice(0, 10);
+	const openActions = allActions
+		.filter((a) => a.status === 'open' || a.status === 'in_progress')
+		.slice(0, 5);
+
+	const context = [
+		recentCaptures.length > 0
+			? `Recent notes: ${recentCaptures.map((m) => m.title || 'Untitled').join(', ')}`
+			: '',
+		openActions.length > 0
+			? `Open tasks: ${openActions.map((a) => a.text).join('; ')}`
+			: ''
+	]
+		.filter(Boolean)
+		.join('\n');
+
+	if (!context.trim()) {
+		// No context — return generic prompts
+		return [
+			'## Journal prompts',
+			'',
+			'- What is one thing I want to accomplish today?',
+			'- What am I grateful for right now?',
+			'- What is on my mind that I need to process?'
+		].join('\n');
+	}
+
+	const prompt = [
+		'Based on this context from the user\'s recent activity, generate 2-3 short,',
+		'thoughtful journal prompts for today. Each should be a question that encourages',
+		'reflection. Output ONLY the prompts as a markdown list (- items). No preamble.',
+		'',
+		context
+	].join('\n');
+
+	for (const provider of inferenceRouter.allProviders()) {
+		try {
+			const result = await provider.summarize({ text: prompt, style: 'short' });
+			if (result.ok && result.value) {
+				return `## Journal prompts\n\n${result.value}`;
+			}
+		} catch {
+			continue;
+		}
+	}
+
+	// Fallback if no provider works
+	return [
+		'## Journal prompts',
+		'',
+		'- What is one thing I want to accomplish today?',
+		'- What am I grateful for right now?',
+		'- What is on my mind that I need to process?'
+	].join('\n');
+}
+
+// ---------------------------------------------------------------------------
 // Semantic backlinks
 // ---------------------------------------------------------------------------
 
