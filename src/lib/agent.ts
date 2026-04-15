@@ -8,12 +8,13 @@
  * reminders — all with the user seeing each tool call and its result
  * inline in the chat.
  *
- * The orchestration loop:
+ * The orchestration loop (streaming):
  *   1. User sends a message
- *   2. Call OpenAI chat completions with tools defined
- *   3. If the model calls a tool → execute it → append the result
+ *   2. Call OpenAI chat completions with stream: true
+ *   3. Parse SSE chunks → stream text tokens to the UI in real time
+ *   4. If the model calls a tool → execute it → append the result
  *      → call the API again (the model may chain multiple tool calls)
- *   4. When the model produces a text response → surface it
+ *   5. When the model produces a final text response → surface it
  *
  * Tool execution is unapproved for read-only ops (search) and
  * approved inline for write ops (create, add action item). The UI
@@ -30,12 +31,32 @@ import { retrieveMemoryContext, buildContextBlocks } from './ask';
 import { generateDailyDigest } from './digest';
 
 const OPENAI_KEY_STORAGE = 'kurumi-openai-key';
-const CHAT_MODEL = 'gpt-4o-mini';
+const AGENT_MODEL_KEY = 'kurumi-agent-model';
+const DEFAULT_MODEL = 'gpt-4o-mini';
 const MAX_TOOL_ROUNDS = 8;
+
+export const AVAILABLE_MODELS = [
+	{ id: 'gpt-4o-mini', label: 'GPT-4o Mini (fast)' },
+	{ id: 'gpt-4o', label: 'GPT-4o (best quality)' },
+	{ id: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' },
+	{ id: 'gpt-4.1', label: 'GPT-4.1' },
+	{ id: 'gpt-4.1-nano', label: 'GPT-4.1 Nano (fastest)' }
+];
 
 function getApiKey(): string | null {
 	if (typeof localStorage === 'undefined') return null;
 	return localStorage.getItem(OPENAI_KEY_STORAGE);
+}
+
+export function getAgentModel(): string {
+	if (typeof localStorage === 'undefined') return DEFAULT_MODEL;
+	return localStorage.getItem(AGENT_MODEL_KEY) || DEFAULT_MODEL;
+}
+
+export function setAgentModel(model: string) {
+	if (typeof localStorage !== 'undefined') {
+		localStorage.setItem(AGENT_MODEL_KEY, model);
+	}
 }
 
 // --- Tool definitions (OpenAI function-calling schema) ----------------------
@@ -129,6 +150,14 @@ const TOOLS = [
 	}
 ];
 
+const TOOL_STATUS_LABELS: Record<string, string> = {
+	search_memory: 'Searching vault...',
+	create_memory: 'Creating note...',
+	add_action_item: 'Adding action item...',
+	add_reminder: 'Adding reminder...',
+	generate_daily_digest: 'Generating digest...'
+};
+
 const SYSTEM_PROMPT = [
 	'You are Kurumi, an AI-native second-brain assistant.',
 	"You have access to the user's personal vault of notes, voice memos,",
@@ -216,6 +245,7 @@ export interface AgentMessage {
 	id: string;
 	role: 'user' | 'assistant' | 'tool';
 	content: string;
+	images?: string[]; // data-URL images attached to user messages
 	toolCalls?: ToolCall[];
 	createdAt: number;
 }
@@ -225,21 +255,58 @@ export interface AgentMessage {
 export interface AgentSession {
 	messages: AgentMessage[];
 	thinking: boolean;
+	thinkingStatus: string | null; // e.g. "Searching vault...", "Thinking..."
 	error: string | null;
+}
+
+export interface SendOptions {
+	images?: string[];
+	model?: string;
+	onUpdate?: (session: AgentSession) => void;
 }
 
 function generateId(): string {
 	return Math.random().toString(36).slice(2, 10);
 }
 
+// --- SSE stream parser ------------------------------------------------------
+
+async function* parseSSEStream(
+	response: Response
+): AsyncGenerator<Record<string, unknown>> {
+	const reader = response.body!.getReader();
+	const decoder = new TextDecoder();
+	let buffer = '';
+
+	while (true) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		buffer += decoder.decode(value, { stream: true });
+
+		const lines = buffer.split('\n');
+		buffer = lines.pop() || ''; // keep incomplete line in buffer
+
+		for (const line of lines) {
+			const trimmed = line.trim();
+			if (!trimmed || trimmed === 'data: [DONE]') continue;
+			if (trimmed.startsWith('data: ')) {
+				try {
+					yield JSON.parse(trimmed.slice(6));
+				} catch { /* malformed chunk */ }
+			}
+		}
+	}
+}
+
 /**
- * Send a user message to the agent and get back the updated session
- * with the assistant's response (and any tool calls that happened
- * along the way). Mutates the session in place for Svelte reactivity.
+ * Send a user message to the agent with streaming support.
+ * When `options.onUpdate` is provided, the session is updated in
+ * real time as tokens arrive. The final session state is returned.
  */
 export async function sendAgentMessage(
 	session: AgentSession,
-	userMessage: string
+	userMessage: string,
+	options?: SendOptions
 ): Promise<AgentSession> {
 	const apiKey = getApiKey();
 	if (!apiKey) {
@@ -247,8 +314,13 @@ export async function sendAgentMessage(
 		return session;
 	}
 
+	const model = options?.model || getAgentModel();
+	const onUpdate = options?.onUpdate;
+
 	session.error = null;
 	session.thinking = true;
+	session.thinkingStatus = 'Thinking...';
+	onUpdate?.(session);
 
 	// Add the user message
 	session.messages = [
@@ -257,20 +329,35 @@ export async function sendAgentMessage(
 			id: generateId(),
 			role: 'user',
 			content: userMessage,
+			images: options?.images?.length ? options.images : undefined,
 			createdAt: Date.now()
 		}
 	];
+	onUpdate?.(session);
 
 	// Build the OpenAI messages array from session history
-	const apiMessages: Array<{
-		role: string;
-		content: string;
-		name?: string;
-		tool_call_id?: string;
-	}> = [{ role: 'system', content: SYSTEM_PROMPT }];
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const apiMessages: Array<Record<string, any>> = [
+		{ role: 'system', content: SYSTEM_PROMPT }
+	];
 
 	for (const msg of session.messages) {
-		if (msg.role === 'user' || msg.role === 'assistant') {
+		if (msg.role === 'user') {
+			if (msg.images?.length) {
+				apiMessages.push({
+					role: 'user',
+					content: [
+						{ type: 'text', text: msg.content },
+						...msg.images.map((url) => ({
+							type: 'image_url',
+							image_url: { url, detail: 'low' as const }
+						}))
+					]
+				});
+			} else {
+				apiMessages.push({ role: 'user', content: msg.content });
+			}
+		} else if (msg.role === 'assistant') {
 			apiMessages.push({ role: msg.role, content: msg.content });
 		}
 	}
@@ -287,11 +374,12 @@ export async function sendAgentMessage(
 					'Content-Type': 'application/json'
 				},
 				body: JSON.stringify({
-					model: CHAT_MODEL,
+					model,
 					messages: apiMessages,
 					tools: TOOLS,
 					tool_choice: 'auto',
-					temperature: 0.3
+					temperature: 0.3,
+					stream: true
 				})
 			});
 
@@ -300,56 +388,144 @@ export async function sendAgentMessage(
 				throw new Error(`OpenAI error (${response.status}): ${text || 'no body'}`);
 			}
 
-			const data = await response.json();
-			const choice = data.choices?.[0];
-			if (!choice) throw new Error('No response from model');
+			// Parse the streaming response
+			let contentAccum = '';
+			const toolCallAccum: Map<number, {
+				id: string;
+				name: string;
+				arguments: string;
+			}> = new Map();
+			let finishReason: string | null = null;
 
-			const responseMessage = choice.message;
+			// Create a partial assistant message for streaming text
+			const streamMsgId = generateId();
+			let streamMsgAdded = false;
 
-			// If no tool calls, this is the final text response.
-			if (!responseMessage.tool_calls || responseMessage.tool_calls.length === 0) {
-				const assistantMsg: AgentMessage = {
-					id: generateId(),
-					role: 'assistant',
-					content: responseMessage.content || '',
-					createdAt: Date.now()
-				};
-				session.messages = [...session.messages, assistantMsg];
-				apiMessages.push({
-					role: 'assistant',
-					content: responseMessage.content || ''
-				});
+			for await (const chunk of parseSSEStream(response)) {
+				const choice = (chunk.choices as Array<Record<string, unknown>>)?.[0];
+				if (!choice) continue;
+
+				const delta = choice.delta as Record<string, unknown> | undefined;
+				if (!delta) {
+					if (choice.finish_reason) finishReason = String(choice.finish_reason);
+					continue;
+				}
+
+				if (choice.finish_reason) finishReason = String(choice.finish_reason);
+
+				// Accumulate text content
+				if (typeof delta.content === 'string' && delta.content) {
+					contentAccum += delta.content;
+
+					// Update the streaming message in real time
+					if (!streamMsgAdded) {
+						session.messages = [
+							...session.messages,
+							{
+								id: streamMsgId,
+								role: 'assistant',
+								content: contentAccum,
+								createdAt: Date.now()
+							}
+						];
+						streamMsgAdded = true;
+					} else {
+						// Update the last message's content
+						const msgs = [...session.messages];
+						const last = msgs[msgs.length - 1];
+						if (last.id === streamMsgId) {
+							msgs[msgs.length - 1] = { ...last, content: contentAccum };
+							session.messages = msgs;
+						}
+					}
+					session.thinkingStatus = null;
+					onUpdate?.(session);
+				}
+
+				// Accumulate tool calls
+				if (delta.tool_calls && Array.isArray(delta.tool_calls)) {
+					for (const tc of delta.tool_calls as Array<Record<string, unknown>>) {
+						const idx = typeof tc.index === 'number' ? tc.index : 0;
+						const existing = toolCallAccum.get(idx);
+						const fn = tc.function as Record<string, unknown> | undefined;
+
+						if (existing) {
+							if (fn?.arguments) existing.arguments += String(fn.arguments);
+						} else {
+							toolCallAccum.set(idx, {
+								id: (tc.id as string) || `tc_${generateId()}`,
+								name: (fn?.name as string) || '',
+								arguments: (fn?.arguments as string) || ''
+							});
+						}
+					}
+				}
+			}
+
+			// Stream finished — handle the result
+			if (toolCallAccum.size === 0) {
+				// Pure text response — finalize
+				if (!streamMsgAdded && contentAccum) {
+					session.messages = [
+						...session.messages,
+						{
+							id: streamMsgId,
+							role: 'assistant',
+							content: contentAccum,
+							createdAt: Date.now()
+						}
+					];
+				}
+				apiMessages.push({ role: 'assistant', content: contentAccum });
 				break;
 			}
 
-			// Process tool calls
+			// Tool calls — process them
+			// Remove the partial streaming message if it was just empty
+			if (streamMsgAdded && !contentAccum.trim()) {
+				session.messages = session.messages.filter((m) => m.id !== streamMsgId);
+			}
+
 			const toolCalls: ToolCall[] = [];
+			const apiToolCalls = [];
+
+			for (const [, tc] of toolCallAccum) {
+				apiToolCalls.push({
+					id: tc.id,
+					type: 'function',
+					function: { name: tc.name, arguments: tc.arguments }
+				});
+			}
+
 			apiMessages.push({
 				role: 'assistant',
-				content: responseMessage.content || '',
-				...({ tool_calls: responseMessage.tool_calls } as Record<string, unknown>)
+				content: contentAccum || '',
+				tool_calls: apiToolCalls
 			});
 
-			for (const tc of responseMessage.tool_calls) {
-				const name = tc.function.name;
+			for (const [, tc] of toolCallAccum) {
 				let args: Record<string, unknown> = {};
 				try {
-					args = JSON.parse(tc.function.arguments || '{}');
+					args = JSON.parse(tc.arguments || '{}');
 				} catch {
 					args = {};
 				}
 
 				const toolCall: ToolCall = {
 					id: tc.id,
-					name,
+					name: tc.name,
 					args,
 					result: null,
 					status: 'running'
 				};
 				toolCalls.push(toolCall);
 
+				// Show thinking status with tool name
+				session.thinkingStatus = TOOL_STATUS_LABELS[tc.name] || `Running ${tc.name}...`;
+				onUpdate?.(session);
+
 				try {
-					const result = await executeTool(name, args);
+					const result = await executeTool(tc.name, args);
 					toolCall.result = result;
 					toolCall.status = 'done';
 					apiMessages.push({
@@ -370,20 +546,24 @@ export async function sendAgentMessage(
 				}
 			}
 
-			// Add a tool-call message to the session for display
+			// Add tool-call message to session
 			const toolMsg: AgentMessage = {
 				id: generateId(),
 				role: 'assistant',
-				content: responseMessage.content || '',
+				content: contentAccum || '',
 				toolCalls,
 				createdAt: Date.now()
 			};
 			session.messages = [...session.messages, toolMsg];
+			session.thinkingStatus = 'Thinking...';
+			onUpdate?.(session);
 		}
 	} catch (err) {
 		session.error = err instanceof Error ? err.message : 'Agent error';
 	} finally {
 		session.thinking = false;
+		session.thinkingStatus = null;
+		onUpdate?.(session);
 	}
 
 	return session;
@@ -393,6 +573,7 @@ export function createAgentSession(): AgentSession {
 	return {
 		messages: [],
 		thinking: false,
+		thinkingStatus: null,
 		error: null
 	};
 }

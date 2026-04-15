@@ -146,6 +146,16 @@
 			return `<a href="${url}" class="url-reference" target="_blank" rel="noopener noreferrer">${url}</a>`;
 		});
 
+		// Add copy button to fenced code blocks
+		html = html.replace(
+			/<pre><code(?: class="language-(\w+)")?>/g,
+			(_, lang) => {
+				const label = lang || 'code';
+				return `<div class="code-block-wrapper"><div class="code-block-header"><span class="code-block-lang">${label}</span><button type="button" class="code-copy-btn" data-action="copy-code" title="Copy code">Copy</button></div><pre><code${lang ? ` class="language-${lang}"` : ''}>`;
+			}
+		);
+		html = html.replace(/<\/code><\/pre>/g, '</code></pre></div>');
+
 		// Add copy button to transcript blockquotes. Look for
 		// blockquotes containing "Transcript:" and add a copy button.
 		html = html.replace(
@@ -180,6 +190,21 @@
 
 	function handleClick(e: MouseEvent) {
 		const target = e.target as HTMLElement;
+
+		// Handle code block copy button
+		if (target.dataset.action === 'copy-code') {
+			e.preventDefault();
+			e.stopPropagation();
+			const wrapper = target.closest('.code-block-wrapper');
+			const code = wrapper?.querySelector('code');
+			if (code) {
+				navigator.clipboard.writeText(code.textContent || '').then(() => {
+					target.textContent = 'Copied!';
+					setTimeout(() => { target.textContent = 'Copy'; }, 2000);
+				});
+			}
+			return;
+		}
 
 		// Handle transcript copy button
 		if (target.dataset.action === 'copy-transcript') {
@@ -459,6 +484,51 @@
 	.markdown-content :global(pre code) {
 		background: none;
 		padding: 0;
+	}
+
+	/* Code block wrapper with copy button */
+	.markdown-content :global(.code-block-wrapper) {
+		position: relative;
+		margin: 1.5em 0;
+	}
+
+	.markdown-content :global(.code-block-wrapper pre) {
+		margin: 0;
+		border-top-left-radius: 0;
+		border-top-right-radius: 0;
+	}
+
+	.markdown-content :global(.code-block-header) {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 0.375rem 1rem;
+		background: color-mix(in srgb, var(--color-bg-secondary) 80%, black);
+		border-top-left-radius: 8px;
+		border-top-right-radius: 8px;
+		font-size: 0.6875rem;
+	}
+
+	.markdown-content :global(.code-block-lang) {
+		color: var(--color-text-muted);
+		text-transform: lowercase;
+	}
+
+	.markdown-content :global(.code-copy-btn) {
+		padding: 0.125rem 0.5rem;
+		background: var(--color-bg);
+		border: 1px solid var(--color-border);
+		border-radius: 0.25rem;
+		color: var(--color-text-muted);
+		font-size: 0.625rem;
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+
+	.markdown-content :global(.code-copy-btn:hover) {
+		background: var(--color-bg-secondary);
+		color: var(--color-accent);
+		border-color: var(--color-accent);
 	}
 
 	/* Blockquotes */
