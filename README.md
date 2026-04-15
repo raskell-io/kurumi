@@ -68,6 +68,7 @@ Kurumi (クルミ, "walnut" in Japanese — because it looks like a brain) is a 
 | **Smart folders** | Saved query views that auto-populate by type, tag, person, or text |
 | **Canvas** | Spatial workspace — place notes as cards, draw connections |
 | **Database views** | Table and board views with grouping and filtering |
+| **Tab bar** | Recently-opened notes as draggable tabs with stable ordering |
 
 ### Recall
 
