@@ -47,7 +47,7 @@
 	import TemplatePicker from '$lib/components/TemplatePicker.svelte';
 	import VoiceCaptureModal from '$lib/components/VoiceCaptureModal.svelte';
 	import Snackbar from '$lib/components/Snackbar.svelte';
-	import { X, Plus, Search, ChevronDown, GitFork, BookOpen, Settings, ListTree, Cloud, RefreshCw, CheckCircle, AlertCircle, Pencil, Tag, Trash2, Mic, Users, CalendarDays, CheckSquare, Bell } from 'lucide-svelte';
+	import { X, Plus, Search, ChevronDown, GitFork, BookOpen, Settings, ListTree, Cloud, RefreshCw, CheckCircle, AlertCircle, Pencil, Tag, Trash2, Mic, Users, CalendarDays, CheckSquare, Bell, Bot } from 'lucide-svelte';
 	import {
 		showNewNoteSnackbar,
 		triggerSearch,
@@ -886,7 +886,7 @@
 
 			<!-- Footer -->
 			<div class="border-t border-[var(--color-border)] p-2 safe-bottom">
-				<div class="grid grid-cols-5 gap-1">
+				<div class="grid grid-cols-6 gap-1">
 					<a
 						href="/references"
 						onclick={handleNoteClick}
@@ -922,6 +922,14 @@
 							<span class="text-xs">Read</span>
 						</a>
 					{/if}
+					<button
+						onclick={() => (showAgentPane = !showAgentPane)}
+						class="flex flex-col items-center gap-1 rounded-lg px-2 py-2 transition-colors hover:bg-[var(--color-border)] {showAgentPane ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'}"
+						title="Kurumi Agent (⌘`)"
+					>
+						<Bot class="h-5 w-5" />
+						<span class="text-xs">Agent</span>
+					</button>
 					<a
 						href="/trash"
 						onclick={handleNoteClick}
