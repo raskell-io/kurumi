@@ -664,10 +664,9 @@
 		try {
 			session = await sendAgentMessage(
 				session,
-				'Please distill our entire conversation into a single, clean note. ' +
-				'Respond with ONLY a JSON object: {"title": "...", "body": "..."} ' +
-				'where title is a short descriptive title and body is the full markdown content. ' +
-				'No commentary outside the JSON.',
+				'Please distill our entire conversation into a single, clean markdown note. ' +
+				'Start with a # heading as the title, then the body content. ' +
+				'Write clean prose, not a transcript of our chat. No JSON, no code fences wrapping the whole note.',
 				{
 					model: selectedModel,
 					onUpdate: (s) => { session = s; smartScroll(); }
@@ -677,18 +676,17 @@
 
 			const lastMsg = session.messages[session.messages.length - 1];
 			if (lastMsg?.role === 'assistant' && lastMsg.content) {
-				const jsonMatch = lastMsg.content.match(/\{[\s\S]*"title"\s*:[\s\S]*"body"\s*:[\s\S]*\}/);
-				if (jsonMatch) {
-					const parsed = JSON.parse(jsonMatch[0]);
-					const title = String(parsed.title || 'Chat note');
-					const body = String(parsed.body || '');
-					const memory = addMemoryObject(title, body, null);
-					showSavedNotification(memory.id, memory.title ?? title);
-					return;
+				let content = lastMsg.content.trim();
+				// Extract title from first # heading if present
+				let title = 'Chat note';
+				const headingMatch = content.match(/^#\s+(.+)/m);
+				if (headingMatch) {
+					title = headingMatch[1].trim();
+					// Remove the heading line from the body
+					content = content.replace(/^#\s+.+\n?/, '').trim();
 				}
-			}
-			if (lastMsg?.role === 'assistant' && lastMsg.content) {
-				saveMessageAsNote(lastMsg.content);
+				const memory = addMemoryObject(title, content, null);
+				showSavedNotification(memory.id, memory.title ?? title);
 			}
 		} finally {
 			distilling = false;
