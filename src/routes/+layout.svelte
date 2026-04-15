@@ -48,7 +48,7 @@
 	import TemplatePicker from '$lib/components/TemplatePicker.svelte';
 	import VoiceCaptureModal from '$lib/components/VoiceCaptureModal.svelte';
 	import Snackbar from '$lib/components/Snackbar.svelte';
-	import { X, Plus, Search, ChevronDown, GitFork, BookOpen, Settings, ListTree, Cloud, RefreshCw, CheckCircle, AlertCircle, Pencil, Tag, Trash2, Mic, Users, CalendarDays, CheckSquare, Bell, Bot } from 'lucide-svelte';
+	import { X, Plus, Search, ChevronDown, GitFork, BookOpen, Settings, ListTree, Cloud, RefreshCw, CheckCircle, AlertCircle, Pencil, Tag, Trash2, Mic, Users, CalendarDays, CheckSquare, Bell, Bot, Inbox, Calendar } from 'lucide-svelte';
 	import {
 		showNewNoteSnackbar,
 		triggerSearch,
@@ -282,6 +282,18 @@
 			if (e.shiftKey && e.key === 'a') {
 				e.preventDefault();
 				goto('/actions');
+				if (isMobile) sidebarOpen = false;
+				return;
+			}
+			if (e.shiftKey && e.key === 'i') {
+				e.preventDefault();
+				goto('/inbox');
+				if (isMobile) sidebarOpen = false;
+				return;
+			}
+			if (e.shiftKey && e.key === 'c') {
+				e.preventDefault();
+				goto('/calendar');
 				if (isMobile) sidebarOpen = false;
 				return;
 			}
@@ -749,6 +761,24 @@
 				</button>
 				<div class="grid grid-cols-3 gap-1.5">
 					<a
+						href="/inbox"
+						onclick={handleNoteClick}
+						class="relative flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2 py-2 text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
+						title="Inbox"
+					>
+						<Inbox class="h-4 w-4 shrink-0" />
+						<span class="text-xs truncate">Inbox</span>
+					</a>
+					<a
+						href="/calendar"
+						onclick={handleNoteClick}
+						class="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2 py-2 text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
+						title="Calendar"
+					>
+						<Calendar class="h-4 w-4 shrink-0" />
+						<span class="text-xs truncate">Calendar</span>
+					</a>
+					<a
 						href="/daily"
 						onclick={handleNoteClick}
 						class="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2 py-2 text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
@@ -784,6 +814,15 @@
 								{$reminderProposals.filter((p) => p.status === 'pending').length}
 							</span>
 						{/if}
+					</a>
+					<a
+						href="/drafts"
+						onclick={handleNoteClick}
+						class="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2 py-2 text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
+						title="Draft proposals"
+					>
+						<Pencil class="h-4 w-4 shrink-0" />
+						<span class="text-xs truncate">Drafts</span>
 					</a>
 				</div>
 			</div>
