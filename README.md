@@ -7,8 +7,8 @@
 </h1>
 
 <p align="center">
-  <em>A local-first second brain.</em><br>
-  <em>Your ideas, everywhere, offline.</em>
+  <em>A local-first, AI-native second brain.</em><br>
+  <em>Capture everything. Recall anything. Your data, your devices.</em>
 </p>
 
 <p align="center">
@@ -25,9 +25,11 @@
 
 <p align="center">
   <a href="#features">Features</a> •
-  <a href="#installation">Installation</a> •
-  <a href="#usage">Usage</a> •
-  <a href="#sync-setup">Sync Setup</a> •
+  <a href="#capture">Capture</a> •
+  <a href="#recall">Recall</a> •
+  <a href="#ai-assistant">AI</a> •
+  <a href="#installation">Install</a> •
+  <a href="#sync">Sync</a> •
   <a href="#philosophy">Philosophy</a>
 </p>
 
@@ -35,94 +37,118 @@
 
 </div>
 
-Kurumi (クルミ, "walnut" in Japanese - because it looks like a brain) is a personal knowledge management system built for the way you actually think: connected, non-linear, and always available.
-
-It's designed for:
-- **Capturing ideas** instantly, from any device
-- **Connecting thoughts** through wikilinks, tags, and @mentions
-- **Working offline** with full functionality
-- **Owning your data** with local-first architecture
-- **AI assistance** to refine and improve your writing
-
----
-
-## Screenshots
-
-<div align="center">
-
-<table>
-<tr>
-<td align="center"><strong>Editor</strong></td>
-<td align="center"><strong>Graph View</strong></td>
-</tr>
-<tr>
-<td><img src="static/screenshots/editor.png" alt="Editor" width="400" /></td>
-<td><img src="static/screenshots/graph.png" alt="Graph View" width="400" /></td>
-</tr>
-<tr>
-<td align="center"><strong>Read Mode</strong></td>
-<td align="center"><strong>Command Palette</strong></td>
-</tr>
-<tr>
-<td><img src="static/screenshots/read-mode.png" alt="Read Mode" width="400" /></td>
-<td><img src="static/screenshots/command-palette.png" alt="Command Palette" width="400" /></td>
-</tr>
-</table>
-
-</div>
+Kurumi (クルミ, "walnut" in Japanese — because it looks like a brain) is a personal memory assistant built as a local-first PWA. It captures typed notes, voice memos, and meetings, then helps you recall and act on them with AI. Everything works offline, syncs through your own infrastructure, and routes inference between on-device models and remote APIs.
 
 ---
 
 ## Features
 
-### Core
+### Capture
 
 | Feature | Description |
 |---------|-------------|
-| **Vaults** | Organize notes into separate workspaces with custom icons |
-| **Wikilinks** | Link notes with `[[Note Title]]` syntax and autocomplete |
-| **Backlinks** | See all notes that link to the current note |
-| **Graph View** | Interactive visualization of note connections |
-| **Full-text Search** | Find anything instantly with Cmd+K |
-| **Folders** | Organize notes hierarchically with drag-and-drop |
-| **Tags** | Extract and filter by #hashtags |
-| **@Mentions** | Reference people with @name syntax |
-| **#Dates** | Reference dates with #2024-01-15 syntax |
+| **Typed notes** | Milkdown markdown editor with wikilinks, @mentions, #tags, //dates, templates, slash commands |
+| **Voice memos** | Record with pause/resume, waveform visualization, auto-transcription |
+| **Meeting mode** | Long-form recording with structured summary, action items, decisions, participants |
+| **Audio/video upload** | Import existing recordings for transcription and processing |
+| **Camera capture** | Photo capture from webcam or mobile camera, stored as AVIF |
+| **Web clipper** | Bookmarklet captures page title, URL, and selected text |
+| **Share target** | Share content from any app directly into Kurumi (PWA) |
+| **Daily notes** | Template-based daily journal with AI-generated reflection prompts |
 
-### Read Mode
+### Organize
 
-A distraction-free reading experience for your notes:
-- Clean, blog-style article layout
-- Browse by folder, tag, person, or date
-- Quick navigation between notes
-- One-click switch to edit mode
+| Feature | Description |
+|---------|-------------|
+| **Folders** | Unlimited nesting, drag-and-drop, swipe-delete |
+| **Vaults** | Separate workspaces with independent data |
+| **Tags** | Auto-extracted from #hashtags, merge and normalize duplicates |
+| **People** | First-class @mention entities with duplicate detection and merge |
+| **Topics & Projects** | Extracted entities with dedup workflow |
+| **Smart folders** | Saved query views that auto-populate by type, tag, person, or text |
+| **Canvas** | Spatial workspace — place notes as cards, draw connections |
+| **Database views** | Table and board views with grouping and filtering |
+
+### Recall
+
+| Feature | Description |
+|---------|-------------|
+| **Full-text search** | MiniSearch keyword index, `Cmd+K` command palette |
+| **Semantic search** | Local embeddings (MiniLM / multilingual-e5) for meaning-based recall |
+| **Ask Kurumi** | Hybrid keyword + semantic retrieval with inline `[n]` citations |
+| **Graph view** | Force-directed visualization of note connections |
+| **Read mode** | Blog-style browsing with folder, tag, date, and person filter routes |
+| **Timeline** | Vertical chronological view of all captures, filterable by type/person/tag |
+| **Calendar** | Month grid with color-coded dots for notes, voice memos, meetings, and due actions |
+| **Weekly review** | Stats, AI summary, overdue items, pending proposals |
+| **Linked note suggestions** | Semantic backlinks surfaced on every note |
 
 ### AI Assistant
 
-Powered by OpenAI or Anthropic (bring your own API key):
-- **Improve** - Fix grammar, clarity, and flow
-- **Expand** - Add detail and elaboration
-- **Summarize** - Condense to key points
-- **Simplify** - Make text easier to understand
-- **Translate** - Convert to any language
+| Feature | Description |
+|---------|-------------|
+| **Agent chat** | Multi-turn streaming conversation with 10 tools (search, create, update notes, action items, reminders, people, topics) |
+| **Chat to note** | Have a conversation, then save the result as a note — per-message or distilled |
+| **Reference autocomplete** | Type `[[`, `@`, `#`, `//` in the agent chat for note/person/tag/date completion |
+| **Voice commands** | "Create a note about...", "Remind me to...", "What's due today" from push-to-talk |
+| **Transcription** | Whisper (local via transformers.js) with OpenAI fallback |
+| **Summarization** | Auto-generated short and long summaries for voice memos and meetings |
+| **Entity extraction** | Participants, topics, projects, action items extracted from transcripts |
+| **Reminder proposals** | Time-anchored follow-ups extracted from memories, reviewed in `/proposals` |
+| **Draft proposals** | Email and calendar event drafts extracted from meetings |
+| **Daily digest** | Auto-generated on first app open each day |
+| **Inference routing** | Local-first with remote fallback; policy modes (private-first, best-quality, offline-only) |
 
-### Customization
+### Act
 
 | Feature | Description |
 |---------|-------------|
-| **Themes** | Light, dark, and system (Catppuccin palette) |
-| **Editor Font** | iA Writer Quattro S or Geist |
-| **Font Size** | Small, medium, or large |
-| **References** | Browse all tags, people, and dates in one place |
+| **Action items** | Extracted from meetings or manually created, with status, due dates, recurrence, assignees |
+| **Inbox** | Unified triage view: overdue actions, due today, pending proposals, unsummarized memos, untagged notes |
+| **Focus timer** | Pomodoro timer linked to action items, global progress bar with pause/resume/chime |
+| **Habits** | Daily habit tracker with week toggles and 60-day contribution heatmap |
+| **Flashcards** | Spaced repetition (SM-2) with AI-generated Q&A from notes |
+| **Browser notifications** | Due action item alerts while the app is open |
 
-### Sync & Data
+### Privacy & Security
 
 | Feature | Description |
 |---------|-------------|
-| **Offline-first** | Works without internet, syncs when connected |
-| **Cloudflare R2** | Optional cross-device sync via your own account |
-| **Import/Export** | Full JSON backup and restore |
-| **PWA** | Install on any device, feels native |
+| **Local-first** | All data stored in IndexedDB on your device |
+| **PIN lock** | Optional PIN-based lock screen with auto-lock on idle and tab hide |
+| **No account required** | No sign-up, no server, no tracking |
+| **Your keys** | API keys stored locally, never transmitted to third parties |
+
+### Sync & Export
+
+| Feature | Description |
+|---------|-------------|
+| **Git sync** | Push/pull via isomorphic-git to GitHub, GitLab, Codeberg through CORS proxy |
+| **Cloudflare R2** | S3-compatible sync |
+| **S3 / Azure Blob / WebDAV** | Additional sync targets |
+| **Local filesystem** | File System Access API for local folder sync |
+| **Conflict resolution** | Side-by-side merge modal for real conflicts |
+| **Markdown export** | Vanilla, Hugo, or Zola format with full front matter |
+| **Rich text copy** | Copy note as formatted HTML to clipboard |
+| **Share** | Web Share API (mobile share sheet) with clipboard fallback |
+| **HTML publish** | Download self-contained HTML page for any note |
+| **vCard / iCal / CSV** | Export people, events, tags |
+| **Import** | Obsidian vault, Roam Research JSON, Evernote ENEX |
+
+### Editor
+
+| Feature | Description |
+|---------|-------------|
+| **Milkdown** | WYSIWYG markdown with live preview |
+| **Slash commands** | 20+ built-in: headings, lists, code, callouts, embeds, camera, templates |
+| **Wikilinks** | `[[Note Title]]` with autocomplete and backlink tracking |
+| **Mermaid diagrams** | Fenced `mermaid` code blocks render as interactive SVGs |
+| **DataviewBlocks** | Embedded `kurumi` query blocks with list/table/board views |
+| **Code blocks** | Syntax highlighting with copy button and language label |
+| **Callouts** | Obsidian-style `> [!info]` callout blocks |
+| **Embeds** | `![[Title]]` to embed another note inline |
+| **Math** | LaTeX `$inline$` and `$$block$$` syntax |
+| **Audio embeds** | Inline audio players for voice recordings |
 
 ---
 
@@ -150,123 +176,94 @@ npm run preview
 
 ---
 
-## Usage
-
-### Keyboard Shortcuts
+## Keyboard Shortcuts
 
 | Shortcut | Action |
 |----------|--------|
-| `Cmd/Ctrl + K` | Open command palette |
-| `Cmd/Ctrl + N` | Create new note |
-| `Cmd/Ctrl + G` | Open graph view |
-| `Cmd/Ctrl + R` | Open references |
-| `Cmd/Ctrl + Shift + R` | Open read mode |
-| `Cmd/Ctrl + ,` | Open settings |
-| `Escape` | Close modal/sidebar |
-
-### Linking Notes
-
-Type `[[` to start a wikilink. Autocomplete helps you find existing notes. If the note doesn't exist, clicking the link creates it.
-
-```markdown
-This connects to [[Another Idea]] and relates to [[Project Planning]].
-```
-
-### Tags, People & Dates
-
-```markdown
-Working on the #mvp for #kurumi today.
-Meeting with @alice and @bob about the project.
-Deadline is #2024-12-31 for the launch.
-```
-
-All references are automatically extracted and browsable in the References page.
+| `Cmd/Ctrl + K` | Command palette / search |
+| `Cmd/Ctrl + N` | New note |
+| `Cmd/Ctrl + D` | Today's daily note |
+| `Cmd/Ctrl + G` | Graph view |
+| `Cmd/Ctrl + R` | References |
+| `Cmd/Ctrl + Z` | Undo last destructive action |
+| `Cmd/Ctrl + ,` | Settings |
+| `Cmd/Ctrl + `` ` | Toggle agent chat |
+| `Cmd/Ctrl + Shift + R` | Read mode |
+| `Cmd/Ctrl + Shift + A` | Action items |
+| `Cmd/Ctrl + Shift + I` | Inbox |
+| `Cmd/Ctrl + Shift + C` | Calendar |
+| `Cmd/Ctrl + Shift + V` | Voice assistant push-to-talk |
+| `Cmd/Ctrl + Shift + F` | Toggle focus mode |
 
 ---
 
-## Sync Setup
+## Sync
 
-Kurumi can sync across devices using your own Cloudflare account (free tier is plenty).
+Kurumi supports multiple sync backends. Configure in Settings:
 
-### Prerequisites
-
-- A [Cloudflare account](https://dash.cloudflare.com/sign-up) (free)
-- [mise](https://mise.jdx.dev/) installed (`brew install mise`)
-
-### Deploy
-
-```bash
-cd worker
-mise run setup
-```
-
-This will:
-1. Install dependencies
-2. Log you into Cloudflare
-3. Create the R2 bucket
-4. Generate a sync token
-5. Deploy the worker
-
-### Configure
-
-1. Go to Settings > Cloudflare Sync
-2. Enter your Worker URL
-3. Enter the sync token
-4. Click Test Connection
+| Backend | Description |
+|---------|-------------|
+| **Git** | Push/pull markdown + metadata to any Git host via CORS proxy |
+| **Cloudflare R2** | S3-compatible object storage (free tier is plenty) |
+| **AWS S3** | Standard S3 with signed requests |
+| **Azure Blob** | Azure cloud storage |
+| **WebDAV** | Nextcloud, Synology, or any WebDAV server |
+| **Local FS** | File System Access API for local folder sync |
 
 ---
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|------------|
-| Framework | SvelteKit 2 + Svelte 5 Runes |
-| Styling | Tailwind CSS 4 |
-| Data | Automerge CRDTs |
-| Storage | IndexedDB (idb-keyval) |
-| Editor | Milkdown |
-| Search | MiniSearch |
-| Graph | force-graph (WebGL) |
-| Icons | Lucide |
-| Fonts | Geist, Geist Mono, iA Writer Quattro S |
-| PWA | @vite-pwa/sveltekit |
-| Sync | Cloudflare R2 + Workers |
-| AI | OpenAI, Anthropic |
+| Layer | Technology | Purpose |
+|-------|------------|---------|
+| Framework | SvelteKit 2 + Svelte 5 runes | Small bundles, excellent DX |
+| Styling | Tailwind CSS 4 + CSS variables | Utility-first + themeable |
+| Data | Automerge CRDTs | Conflict-free local storage |
+| Storage | IndexedDB | Fast local persistence |
+| Editor | Milkdown | Markdown WYSIWYG |
+| Search | MiniSearch + local embeddings | Hybrid keyword + semantic recall |
+| Graph | force-graph | WebGL connection visualization |
+| Diagrams | Mermaid | Rendered in markdown code blocks |
+| PWA | @vite-pwa/sveltekit | Offline + installable |
+| Sync | isomorphic-git | Git sync to any host |
+| Local AI | transformers.js | Whisper, SmolLM2, Qwen, MiniLM, MMS TTS |
+| Remote AI | OpenAI, Anthropic | Transcription, chat, TTS, extraction |
+| Icons | Lucide | Consistent icon set |
+| Fonts | Geist, iA Writer Quattro S | Editor and UI typography |
 
 ---
 
 ## Philosophy
 
-- **Your data, your control**
-  Everything stored locally. No account required. Export anytime.
-
-- **Offline-first, not offline-capable**
-  Full functionality without internet. Sync is a feature, not a requirement.
-
-- **Plain text at heart**
-  Markdown content that's readable in 50 years.
-
-- **Minimal friction**
-  Fast capture, instant search, keyboard-driven.
-
-- **No vendor lock-in**
-  Automerge CRDTs mean your data syncs without a central server.
+- **Capture first, chat second.** Friction to save a thought should be near zero.
+- **Local-first, not local-only.** Everything works offline; remote is the fallback.
+- **Human-in-the-loop.** The assistant proposes, you approve.
+- **Plain text at heart.** Markdown bodies, YAML frontmatter, exportable. No vendor lock-in.
+- **Policy-routed inference.** Tasks pick local vs. remote based on capability and preference.
+- **Your data, your control.** No account, no server, no tracking. Export anytime.
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────┐
-│           Kurumi UI                 │
-│    (SvelteKit + Svelte 5 Runes)     │
-├─────────────────────────────────────┤
-│       Automerge Documents           │  ← Conflict-free sync
-├─────────────────────────────────────┤
-│   IndexedDB (via idb-keyval)        │  ← Local persistence
-├─────────────────────────────────────┤
-│    Cloudflare R2 (optional)         │  ← Cross-device sync
-└─────────────────────────────────────┘
+┌────────────────────────────────────────────┐
+│               Kurumi UI                    │
+│       (SvelteKit + Svelte 5 runes)         │
+├────────────────────────────────────────────┤
+│      Inference Router (local → remote)     │
+│   Whisper · SmolLM2 · OpenAI · Anthropic   │
+├────────────────────────────────────────────┤
+│         Automerge Document (v11)           │
+│  memories · folders · vaults · people ·    │
+│  events · templates · action items ·       │
+│  proposals · drafts · flashcards           │
+├────────────────────────────────────────────┤
+│   IndexedDB (doc + blobs + embeddings +    │
+│   model cache) + localStorage (settings)   │
+├────────────────────────────────────────────┤
+│   Sync: Git · R2 · S3 · WebDAV · Azure    │
+└────────────────────────────────────────────┘
 ```
 
 ---
