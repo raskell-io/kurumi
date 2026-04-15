@@ -12,7 +12,7 @@
 		type ToolCall,
 		type SendOptions
 	} from '$lib/agent';
-	import { addMemoryObject } from '$lib/db';
+	import { addMemoryObject, memoryObjects, getAllPeople, getAllTags } from '$lib/db';
 	import { goto } from '$app/navigation';
 	import { startPushToTalk, type RecorderHandle } from '$lib/voice';
 	import { inferenceRouter } from '$lib/inference';
@@ -210,6 +210,52 @@
 	// Title editing
 	let editingTitleId: string | null = $state(null);
 	let editingTitleText = $state('');
+
+	// Textarea autocomplete for references
+	type AutocompleteKind = 'wikilink' | 'person' | 'tag' | 'date';
+	interface AutocompleteState {
+		kind: AutocompleteKind;
+		query: string;
+		triggerStart: number; // cursor position where trigger begins (including the trigger chars)
+		triggerLen: number;   // length of trigger chars (2 for [[, 1 for @ #, 2 for //)
+	}
+	let ac = $state<AutocompleteState | null>(null);
+	let acIndex = $state(0);
+
+	let acItems = $derived.by((): Array<{ label: string; detail?: string }> => {
+		if (!ac) return [];
+		const q = ac.query.toLowerCase();
+		switch (ac.kind) {
+			case 'wikilink':
+				return $memoryObjects
+					.filter((m) => !q || (m.title || '').toLowerCase().includes(q))
+					.slice(0, 8)
+					.map((m) => ({ label: m.title || 'Untitled' }));
+			case 'person':
+				return getAllPeople()
+					.filter((p) => !q || p.name.toLowerCase().includes(q))
+					.slice(0, 8)
+					.map((p) => ({ label: p.name, detail: `${p.count} mention${p.count === 1 ? '' : 's'}` }));
+			case 'tag':
+				return getAllTags()
+					.filter((t) => !q || t.tag.toLowerCase().includes(q))
+					.slice(0, 8)
+					.map((t) => ({ label: t.tag, detail: `${t.count}` }));
+			case 'date': {
+				const today = new Date();
+				const dates = [
+					{ label: new Date().toISOString().slice(0, 10), detail: 'Today' },
+					{ label: new Date(today.getTime() + 86400000).toISOString().slice(0, 10), detail: 'Tomorrow' },
+				];
+				if (q) {
+					return dates.filter((d) => d.label.includes(q) || (d.detail?.toLowerCase().includes(q)));
+				}
+				return dates;
+			}
+			default:
+				return [];
+		}
+	});
 
 	// Token budget (rough estimate: ~4 chars per token, gpt-4o-mini = 128k)
 	const MODEL_CONTEXT_TOKENS = 128_000;
@@ -411,12 +457,111 @@
 		if (isAtBottom) scrollToBottom();
 	}
 
+	// --- Textarea autocomplete ------------------------------------------------
+
+	function detectAutocomplete() {
+		if (!textareaEl) { ac = null; return; }
+		const pos = textareaEl.selectionStart;
+		const text = input.slice(0, pos);
+
+		// Check for [[ wikilink trigger
+		const wlMatch = text.match(/\[\[([^\]]*?)$/);
+		if (wlMatch) {
+			ac = { kind: 'wikilink', query: wlMatch[1], triggerStart: pos - wlMatch[0].length, triggerLen: 2 };
+			acIndex = 0;
+			return;
+		}
+		// Check for @ person trigger (after whitespace or start)
+		const atMatch = text.match(/(?:^|\s)@([A-Za-z ]*)$/);
+		if (atMatch) {
+			const fullMatch = atMatch[0];
+			const offset = fullMatch.startsWith(' ') || fullMatch.startsWith('\n') ? 1 : 0;
+			ac = { kind: 'person', query: atMatch[1].trim(), triggerStart: pos - fullMatch.length + offset, triggerLen: 1 };
+			acIndex = 0;
+			return;
+		}
+		// Check for # tag trigger (after whitespace or start)
+		const tagMatch = text.match(/(?:^|\s)#([a-zA-Z0-9_-]*)$/);
+		if (tagMatch) {
+			const fullMatch = tagMatch[0];
+			const offset = fullMatch.startsWith(' ') || fullMatch.startsWith('\n') ? 1 : 0;
+			ac = { kind: 'tag', query: tagMatch[1], triggerStart: pos - fullMatch.length + offset, triggerLen: 1 };
+			acIndex = 0;
+			return;
+		}
+		// Check for // date trigger (after whitespace or start, not inside URL)
+		const dateMatch = text.match(/(?:^|\s)\/\/([^\s]*)$/);
+		if (dateMatch && !text.match(/https?:\/\/[^\s]*$/)) {
+			const fullMatch = dateMatch[0];
+			const offset = fullMatch.startsWith(' ') || fullMatch.startsWith('\n') ? 1 : 0;
+			ac = { kind: 'date', query: dateMatch[1], triggerStart: pos - fullMatch.length + offset, triggerLen: 2 };
+			acIndex = 0;
+			return;
+		}
+
+		ac = null;
+	}
+
+	function acceptAutocomplete(label: string) {
+		if (!ac || !textareaEl) return;
+		const before = input.slice(0, ac.triggerStart);
+		const after = input.slice(textareaEl.selectionStart);
+
+		let insertion: string;
+		switch (ac.kind) {
+			case 'wikilink': insertion = `[[${label}]]`; break;
+			case 'person':   insertion = `@${label} `; break;
+			case 'tag':      insertion = `#${label} `; break;
+			case 'date':     insertion = `//${label} `; break;
+			default:         insertion = label;
+		}
+
+		input = before + insertion + after;
+		ac = null;
+
+		// Restore cursor position after insertion
+		const newPos = before.length + insertion.length;
+		requestAnimationFrame(() => {
+			if (textareaEl) {
+				textareaEl.selectionStart = textareaEl.selectionEnd = newPos;
+				textareaEl.focus();
+			}
+			autoGrow();
+		});
+	}
+
+	function handleAcKeydown(e: KeyboardEvent): boolean {
+		if (!ac || acItems.length === 0) return false;
+		if (e.key === 'ArrowDown') {
+			e.preventDefault();
+			acIndex = Math.min(acIndex + 1, acItems.length - 1);
+			return true;
+		}
+		if (e.key === 'ArrowUp') {
+			e.preventDefault();
+			acIndex = Math.max(acIndex - 1, 0);
+			return true;
+		}
+		if (e.key === 'Enter' || e.key === 'Tab') {
+			e.preventDefault();
+			acceptAutocomplete(acItems[acIndex].label);
+			return true;
+		}
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			ac = null;
+			return true;
+		}
+		return false;
+	}
+
 	// --- Textarea auto-grow ---------------------------------------------------
 
 	function autoGrow() {
 		if (!textareaEl) return;
 		textareaEl.style.height = 'auto';
 		textareaEl.style.height = Math.min(textareaEl.scrollHeight, 120) + 'px';
+		detectAutocomplete();
 	}
 
 	// --- Relative timestamps --------------------------------------------------
@@ -608,6 +753,9 @@
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
+		// Autocomplete takes priority when open
+		if (ac && handleAcKeydown(e)) return;
+
 		if (e.key === 'Enter' && !e.shiftKey) {
 			e.preventDefault();
 			handleSend();
@@ -1302,6 +1450,28 @@
 		{/if}
 
 		<!-- Input area -->
+		<!-- Autocomplete popup -->
+		{#if ac && acItems.length > 0}
+			<div class="ac-popup">
+				<div class="ac-header">
+					{#if ac.kind === 'wikilink'}Note{:else if ac.kind === 'person'}Person{:else if ac.kind === 'tag'}Tag{:else}Date{/if}
+				</div>
+				{#each acItems as item, i}
+					<button
+						class="ac-item"
+						class:selected={i === acIndex}
+						onmousedown={(e) => { e.preventDefault(); acceptAutocomplete(item.label); }}
+						onmouseenter={() => (acIndex = i)}
+					>
+						<span class="ac-label">{ac.kind === 'tag' ? '#' : ac.kind === 'person' ? '@' : ac.kind === 'date' ? '//' : ''}{item.label}</span>
+						{#if item.detail}
+							<span class="ac-detail">{item.detail}</span>
+						{/if}
+					</button>
+				{/each}
+			</div>
+		{/if}
+
 		<div class="input-area">
 			<!-- Pending image previews -->
 			{#if pendingImages.length > 0}
@@ -2217,6 +2387,63 @@
 		justify-content: center;
 		cursor: pointer;
 		font-size: 0;
+	}
+
+	/* --- Autocomplete popup --- */
+	.ac-popup {
+		border-top: 1px solid var(--color-border);
+		background: var(--color-bg-secondary);
+		max-height: 200px;
+		overflow-y: auto;
+		animation: slideUp2 0.12s ease-out;
+	}
+
+	@keyframes slideUp2 {
+		from { opacity: 0; transform: translateY(4px); }
+		to { opacity: 1; transform: translateY(0); }
+	}
+
+	.ac-header {
+		padding: 0.25rem 0.625rem;
+		font-size: 0.5625rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--color-text-muted);
+		opacity: 0.7;
+	}
+
+	.ac-item {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		width: 100%;
+		padding: 0.375rem 0.625rem;
+		border: none;
+		background: none;
+		font-size: 0.75rem;
+		color: var(--color-text);
+		cursor: pointer;
+		text-align: left;
+	}
+
+	.ac-item:hover,
+	.ac-item.selected {
+		background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+	}
+
+	.ac-label {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		min-width: 0;
+	}
+
+	.ac-detail {
+		font-size: 0.625rem;
+		color: var(--color-text-muted);
+		flex-shrink: 0;
+		margin-left: 0.5rem;
 	}
 
 	/* --- Input area --- */
