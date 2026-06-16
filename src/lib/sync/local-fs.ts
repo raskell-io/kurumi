@@ -15,9 +15,18 @@
  */
 
 import { get, set, del } from 'idb-keyval';
+import {
+	notesToMarkdownFiles,
+	createMetadata,
+	serializeMetadata,
+	parseMetadata
+} from '$lib/git/convert';
+import type { MemoryObject, Folder, Vault, Person, Event, ActionItem } from '$lib/db/types';
 
 const IDB_KEY = 'kurumi-local-fs-handle';
 const FILENAME = 'kurumi-sync.bin';
+const METADATA_DIR = '.kurumi';
+const METADATA_FILE = 'metadata.json';
 // Synchronous mirror of "is a folder configured?". The handle itself lives in
 // IndexedDB (async), but sync gating (isSyncConfigured / shouldSync) needs a
 // synchronous answer, so we shadow handle presence in localStorage.
@@ -106,12 +115,105 @@ export async function localFSPull(): Promise<Uint8Array | null> {
 export async function localFSPush(data: Uint8Array): Promise<void> {
 	const dir = await getHandle();
 	if (!dir) throw new Error('Local folder not configured');
-	const fileHandle = await dir.getFileHandle(FILENAME, { create: true });
+	await writeFile(dir, FILENAME, data.buffer as ArrayBuffer);
+}
+
+async function writeFile(
+	dir: FileSystemDirectoryHandle,
+	name: string,
+	contents: string | ArrayBuffer
+): Promise<void> {
+	const fileHandle = await dir.getFileHandle(name, { create: true });
 	const writable = await (fileHandle as FileSystemFileHandle & {
 		createWritable: () => Promise<FileSystemWritableFileStream>;
 	}).createWritable();
-	await writable.write(data.buffer as ArrayBuffer);
+	await writable.write(contents);
 	await writable.close();
+}
+
+// Walk/create a nested subdirectory path relative to `root`.
+async function getOrCreateDir(
+	root: FileSystemDirectoryHandle,
+	parts: string[]
+): Promise<FileSystemDirectoryHandle> {
+	let current = root;
+	for (const part of parts) {
+		current = await current.getDirectoryHandle(part, { create: true });
+	}
+	return current;
+}
+
+// Remove a file at a relative path without creating any directories. Best
+// effort: missing dirs/files are ignored (the goal is pruning stale notes).
+async function removeFileByPath(root: FileSystemDirectoryHandle, path: string): Promise<void> {
+	const parts = path.split('/').filter(Boolean);
+	const filename = parts.pop();
+	if (!filename) return;
+	try {
+		let current = root;
+		for (const part of parts) {
+			current = await current.getDirectoryHandle(part);
+		}
+		await current.removeEntry(filename);
+	} catch {
+		// Already gone or directory missing — nothing to prune.
+	}
+}
+
+// Paths Kurumi wrote on the previous sync (from .kurumi/metadata.json).
+// Used to delete notes that were since renamed or removed.
+async function readManagedPaths(dir: FileSystemDirectoryHandle): Promise<string[]> {
+	try {
+		const metaDir = await dir.getDirectoryHandle(METADATA_DIR);
+		const fileHandle = await metaDir.getFileHandle(METADATA_FILE);
+		const text = await (await fileHandle.getFile()).text();
+		const parsed = parseMetadata(text);
+		return parsed ? Object.keys(parsed.noteIds) : [];
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * Write the current vault as a human-readable tree of markdown files —
+ * one `.md` per note, nested to mirror the folder tree, plus a
+ * `.kurumi/metadata.json` index. Uses the same on-disk format as git sync.
+ *
+ * This is a one-way export mirror: the binary `kurumi-sync.bin` remains the
+ * source of truth for pull/merge, so notes edited externally in these `.md`
+ * files are NOT read back into Kurumi.
+ */
+export async function localFSPushMarkdown(
+	memories: MemoryObject[],
+	folders: Folder[],
+	vault: Vault,
+	people: Person[],
+	events: Event[],
+	actionItems: ActionItem[]
+): Promise<void> {
+	const dir = await getHandle();
+	if (!dir) throw new Error('Local folder not configured');
+
+	const files = notesToMarkdownFiles(memories, folders);
+	const newPaths = new Set(files.map((f) => f.path));
+	const previousPaths = await readManagedPaths(dir);
+
+	for (const file of files) {
+		const parts = file.path.split('/').filter(Boolean);
+		const filename = parts.pop();
+		if (!filename) continue;
+		const targetDir = parts.length ? await getOrCreateDir(dir, parts) : dir;
+		await writeFile(targetDir, filename, file.content);
+	}
+
+	const metadata = createMetadata(vault, folders, memories, people, events, actionItems);
+	const metaDir = await getOrCreateDir(dir, [METADATA_DIR]);
+	await writeFile(metaDir, METADATA_FILE, serializeMetadata(metadata));
+
+	// Prune notes we previously wrote that no longer exist (rename/delete).
+	for (const path of previousPaths) {
+		if (!newPaths.has(path)) await removeFileByPath(dir, path);
+	}
 }
 
 const PROBE_FILENAME = '.kurumi-write-test';

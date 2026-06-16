@@ -36,6 +36,7 @@ import {
 	isLocalFSConfiguredSync,
 	localFSPull,
 	localFSPush,
+	localFSPushMarkdown,
 	localFSTest
 } from './local-fs';
 import {
@@ -380,6 +381,23 @@ async function syncLocalFS(): Promise<{ success: boolean; error?: string }> {
 		if (remoteBinary) await mergeDoc(remoteBinary);
 		const localBinary = getDocBinary();
 		await localFSPush(localBinary);
+
+		// Also write a human-readable markdown mirror of the current vault
+		// (one .md per note, mirroring the folder tree). The binary above
+		// stays the source of truth for pull/merge.
+		const vaultId = get(currentVaultId);
+		const vault = get(vaults).find((v) => v.id === vaultId);
+		if (vault) {
+			await localFSPushMarkdown(
+				get(memoryObjects).filter((m) => m.vaultId === vaultId),
+				get(folders).filter((f) => f.vaultId === vaultId),
+				vault,
+				get(people).filter((p) => p.vaultId === vaultId),
+				get(events).filter((e) => e.vaultId === vaultId),
+				get(actionItems).filter((a) => a.vaultId === vaultId)
+			);
+		}
+
 		setSyncSuccess();
 		return { success: true };
 	} catch (err) {

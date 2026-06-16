@@ -1038,8 +1038,10 @@
 									{/if}
 								</div>
 								<p class="text-xs text-[var(--color-text-muted)]">
-									Kurumi writes a single file (<code>kurumi-sync.bin</code>) holding your
-									whole library — let a cloud client (Dropbox, iCloud, Syncthing…) sync the folder.
+									Kurumi writes your notes as readable <code>.md</code> files (mirroring
+									your folders), plus a <code>kurumi-sync.bin</code> it uses to merge across
+									devices. Let a cloud client (Dropbox, iCloud, Syncthing…) sync the folder.
+									The <code>.md</code> files are a one-way export — edit notes in Kurumi, not on disk.
 								</p>
 							{:else}
 								<button onclick={handlePickFolder}
