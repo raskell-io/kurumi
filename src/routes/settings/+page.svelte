@@ -1025,6 +1025,22 @@
 											: localFSTestResult.error}
 									</div>
 								{/if}
+								<div class="mt-2 flex items-center gap-3">
+									<button onclick={handleSync} disabled={$syncState.status === 'syncing'}
+										class="flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm text-white transition-colors hover:bg-[var(--color-accent-hover)] disabled:opacity-50">
+										<RefreshCw class="h-4 w-4 {$syncState.status === 'syncing' ? 'animate-spin' : ''}" />
+										Sync now
+									</button>
+									{#if $syncState.status === 'error'}
+										<span class="text-sm text-red-500">{$syncState.error || 'Sync failed'}</span>
+									{:else if $syncState.lastSyncedAt}
+										<span class="text-sm text-[var(--color-text-muted)]">Last synced: {formatTimestamp($syncState.lastSyncedAt)}</span>
+									{/if}
+								</div>
+								<p class="text-xs text-[var(--color-text-muted)]">
+									Kurumi writes a single file (<code>kurumi-sync.bin</code>) holding your
+									whole library — let a cloud client (Dropbox, iCloud, Syncthing…) sync the folder.
+								</p>
 							{:else}
 								<button onclick={handlePickFolder}
 									class="flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm text-white">

@@ -18,15 +18,33 @@ import { get, set, del } from 'idb-keyval';
 
 const IDB_KEY = 'kurumi-local-fs-handle';
 const FILENAME = 'kurumi-sync.bin';
+// Synchronous mirror of "is a folder configured?". The handle itself lives in
+// IndexedDB (async), but sync gating (isSyncConfigured / shouldSync) needs a
+// synchronous answer, so we shadow handle presence in localStorage.
+const CONFIGURED_KEY = 'kurumi-local-fs-configured';
+
+function setConfiguredFlag(configured: boolean): void {
+	if (typeof localStorage === 'undefined') return;
+	if (configured) localStorage.setItem(CONFIGURED_KEY, '1');
+	else localStorage.removeItem(CONFIGURED_KEY);
+}
 
 export function isLocalFSSupported(): boolean {
 	return typeof window !== 'undefined' && 'showDirectoryPicker' in window;
 }
 
+export function isLocalFSConfiguredSync(): boolean {
+	return typeof localStorage !== 'undefined' && localStorage.getItem(CONFIGURED_KEY) === '1';
+}
+
 export async function hasLocalFSHandle(): Promise<boolean> {
 	try {
 		const handle = await get(IDB_KEY);
-		return handle != null;
+		const present = handle != null;
+		// Reconcile the synchronous flag with the source of truth on read,
+		// so the two can't drift (e.g. handle cleared by the browser).
+		setConfiguredFlag(present);
+		return present;
 	} catch {
 		return false;
 	}
@@ -39,6 +57,7 @@ export async function pickLocalFSDirectory(): Promise<boolean> {
 			showDirectoryPicker: (opts?: object) => Promise<FileSystemDirectoryHandle>;
 		}).showDirectoryPicker({ mode: 'readwrite' });
 		await set(IDB_KEY, handle);
+		setConfiguredFlag(true);
 		return true;
 	} catch {
 		return false; // User cancelled
@@ -47,6 +66,7 @@ export async function pickLocalFSDirectory(): Promise<boolean> {
 
 export async function clearLocalFSHandle(): Promise<void> {
 	await del(IDB_KEY);
+	setConfiguredFlag(false);
 }
 
 async function getHandle(): Promise<FileSystemDirectoryHandle | null> {

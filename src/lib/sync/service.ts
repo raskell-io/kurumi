@@ -33,6 +33,7 @@ import {
 } from './webdav';
 import {
 	hasLocalFSHandle,
+	isLocalFSConfiguredSync,
 	localFSPull,
 	localFSPush,
 	localFSTest
@@ -134,7 +135,7 @@ export function isMethodConfigured(method: SyncMethod): boolean {
 		case 'git': return isGitSyncConfigured();
 		case 's3': return isS3Configured();
 		case 'webdav': return isWebDAVConfigured();
-		case 'local-fs': return false; // Checked async via hasLocalFSHandle
+		case 'local-fs': return isLocalFSConfiguredSync();
 		case 'azure-blob': return isAzureBlobConfigured();
 		default: return false;
 	}
