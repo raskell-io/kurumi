@@ -37,8 +37,11 @@ import {
 	localFSPull,
 	localFSPush,
 	localFSPushMarkdown,
+	localFSReadMarkdown,
 	localFSTest
 } from './local-fs';
+import { getMemoryObject, updateMemoryObject } from '$lib/db';
+import { parseMarkdownFile, parseFrontMatter } from '$lib/git/convert';
 import {
 	getAzureBlobConfig,
 	isAzureBlobConfigured,
@@ -372,6 +375,65 @@ async function syncWebDAV(): Promise<{ success: boolean; error?: string }> {
 }
 
 /**
+ * Normalize a markdown body for comparison: unify newlines, trim trailing
+ * whitespace per line, collapse blank runs. Mirrors git sync's canonical
+ * comparison so the export round-trip doesn't read as an edit.
+ */
+function canonicalBody(body: string): string {
+	return (body ?? '')
+		.replace(/\r\n/g, '\n')
+		.split('\n')
+		.map((line) => line.replace(/\s+$/, ''))
+		.join('\n')
+		.replace(/\n{3,}/g, '\n\n')
+		.trim();
+}
+
+function tagsEqual(a: string[], b: string[]): boolean {
+	if (a.length !== b.length) return false;
+	const sortedB = [...b].sort();
+	return [...a].sort().every((tag, i) => tag === sortedB[i]);
+}
+
+/**
+ * Read user-edited .md files from disk and apply changes back into the store.
+ *
+ * Scope (v1): only updates the BODY and TAGS of notes Kurumi itself wrote
+ * (matched by the frontmatter `id`). Files without an id (hand-created),
+ * disk deletions, and on-disk renames are intentionally ignored — those stay
+ * app-driven to avoid data loss. Conflicts (both sides changed since the last
+ * sync) keep the in-app version.
+ */
+async function importLocalFSEdits(vaultId: string, lastSyncedAt: number | null): Promise<void> {
+	const diskFiles = await localFSReadMarkdown();
+	for (const file of diskFiles) {
+		// Only adopt files that carry a Kurumi id — i.e. ones we wrote.
+		const { frontMatter } = parseFrontMatter(file.content);
+		if (typeof frontMatter.id !== 'string' || !frontMatter.id) continue;
+
+		const parsed = parseMarkdownFile(file.path, file.content);
+		const existing = getMemoryObject(parsed.id);
+		if (!existing || existing.deletedAt || existing.vaultId !== vaultId) continue;
+
+		const bodyChanged = canonicalBody(parsed.content) !== canonicalBody(existing.bodyMarkdown);
+		const tagsChanged = !tagsEqual(parsed.tags, existing.tags);
+		if (!bodyChanged && !tagsChanged) continue;
+
+		const fileChanged = lastSyncedAt == null ? true : file.lastModified > lastSyncedAt;
+		const docChanged = lastSyncedAt == null ? false : existing.updatedAt > lastSyncedAt;
+
+		if (fileChanged && !docChanged) {
+			updateMemoryObject(parsed.id, { bodyMarkdown: parsed.content, tags: parsed.tags });
+		} else if (fileChanged && docChanged) {
+			// Both edited since last sync — keep the in-app version rather than
+			// silently dropping app edits. (No resolution UI for local FS yet.)
+			console.warn(`Local FS conflict on "${existing.title}" — kept in-app version`);
+		}
+		// else: in-app version is newer; it will be written back on push.
+	}
+}
+
+/**
  * Local filesystem sync implementation
  */
 async function syncLocalFS(): Promise<{ success: boolean; error?: string }> {
@@ -379,13 +441,23 @@ async function syncLocalFS(): Promise<{ success: boolean; error?: string }> {
 	try {
 		const remoteBinary = await localFSPull();
 		if (remoteBinary) await mergeDoc(remoteBinary);
+
+		const vaultId = get(currentVaultId);
+
+		// Pull in edits made directly to the .md files on disk before we
+		// overwrite them on push.
+		try {
+			await importLocalFSEdits(vaultId, get(syncState).lastSyncedAt);
+		} catch (importErr) {
+			console.warn('Local FS markdown import failed:', importErr);
+		}
+
 		const localBinary = getDocBinary();
 		await localFSPush(localBinary);
 
 		// Also write a human-readable markdown mirror of the current vault
 		// (one .md per note, mirroring the folder tree). The binary above
 		// stays the source of truth for pull/merge.
-		const vaultId = get(currentVaultId);
 		const vault = get(vaults).find((v) => v.id === vaultId);
 		if (vault) {
 			await localFSPushMarkdown(

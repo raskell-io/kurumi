@@ -1041,7 +1041,8 @@
 									Kurumi writes your notes as readable <code>.md</code> files (mirroring
 									your folders), plus a <code>kurumi-sync.bin</code> it uses to merge across
 									devices. Let a cloud client (Dropbox, iCloud, Syncthing…) sync the folder.
-									The <code>.md</code> files are a one-way export — edit notes in Kurumi, not on disk.
+									Edits you make to a note's text in those <code>.md</code> files are read back
+									on the next sync. Creating, renaming, or deleting notes still happens in Kurumi.
 								</p>
 							{:else}
 								<button onclick={handlePickFolder}

@@ -179,9 +179,10 @@ async function readManagedPaths(dir: FileSystemDirectoryHandle): Promise<string[
  * one `.md` per note, nested to mirror the folder tree, plus a
  * `.kurumi/metadata.json` index. Uses the same on-disk format as git sync.
  *
- * This is a one-way export mirror: the binary `kurumi-sync.bin` remains the
- * source of truth for pull/merge, so notes edited externally in these `.md`
- * files are NOT read back into Kurumi.
+ * The binary `kurumi-sync.bin` remains the source of truth for cross-device
+ * merge. Text edits to these `.md` files are read back on the next sync (see
+ * localFSReadMarkdown / importLocalFSEdits); structural changes (create,
+ * rename, delete) stay app-driven.
  */
 export async function localFSPushMarkdown(
 	memories: MemoryObject[],
@@ -213,6 +214,43 @@ export async function localFSPushMarkdown(
 	// Prune notes we previously wrote that no longer exist (rename/delete).
 	for (const path of previousPaths) {
 		if (!newPaths.has(path)) await removeFileByPath(dir, path);
+	}
+}
+
+export interface DiskMarkdownFile {
+	path: string;
+	content: string;
+	lastModified: number;
+}
+
+// Recursively read every `.md` file in the picked folder (skipping the
+// `.kurumi` metadata dir). Returns raw contents + the OS file mtime so the
+// caller can decide which side is newer.
+export async function localFSReadMarkdown(): Promise<DiskMarkdownFile[]> {
+	const dir = await getHandle();
+	if (!dir) throw new Error('Local folder not configured');
+	const out: DiskMarkdownFile[] = [];
+	await walkMarkdown(dir, '', out);
+	return out;
+}
+
+async function walkMarkdown(
+	dir: FileSystemDirectoryHandle,
+	prefix: string,
+	out: DiskMarkdownFile[]
+): Promise<void> {
+	const entries = (dir as FileSystemDirectoryHandle & {
+		values: () => AsyncIterableIterator<FileSystemHandle>;
+	}).values();
+	for await (const handle of entries) {
+		const childPath = prefix ? `${prefix}/${handle.name}` : handle.name;
+		if (handle.kind === 'directory') {
+			if (handle.name === METADATA_DIR) continue;
+			await walkMarkdown(handle as FileSystemDirectoryHandle, childPath, out);
+		} else if (handle.kind === 'file' && handle.name.endsWith('.md')) {
+			const file = await (handle as FileSystemFileHandle).getFile();
+			out.push({ path: childPath, content: await file.text(), lastModified: file.lastModified });
+		}
 	}
 }
 
