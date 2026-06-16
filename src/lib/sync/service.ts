@@ -159,7 +159,7 @@ export async function testWebDAVConnection(): Promise<{ success: boolean; error?
 	return webdavTest(config);
 }
 
-export async function testLocalFSConnection(): Promise<{ success: boolean; error?: string }> {
+export async function testLocalFSConnection(): Promise<{ success: boolean; error?: string; folder?: string }> {
 	return localFSTest();
 }
 

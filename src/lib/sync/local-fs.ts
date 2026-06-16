@@ -94,20 +94,40 @@ export async function localFSPush(data: Uint8Array): Promise<void> {
 	await writable.close();
 }
 
-export async function localFSTest(): Promise<{ success: boolean; error?: string }> {
+const PROBE_FILENAME = '.kurumi-write-test';
+
+export async function localFSTest(): Promise<{ success: boolean; error?: string; folder?: string }> {
+	let dir: FileSystemDirectoryHandle | null = null;
 	try {
-		const dir = await getHandle();
+		dir = await getHandle();
 		if (!dir) return { success: false, error: 'No folder selected' };
-		// Try to list the directory to verify access
-		const iter = (dir as FileSystemDirectoryHandle & {
-			values: () => AsyncIterableIterator<FileSystemHandle>;
-		}).values();
-		await iter.next();
-		return { success: true };
+		// Verify write access by creating and reading back a probe file —
+		// listing only proves read access, but the user wants to know Kurumi
+		// can actually write content here before syncing.
+		const fileHandle = await dir.getFileHandle(PROBE_FILENAME, { create: true });
+		const writable = await (fileHandle as FileSystemFileHandle & {
+			createWritable: () => Promise<FileSystemWritableFileStream>;
+		}).createWritable();
+		await writable.write(new TextEncoder().encode('ok').buffer as ArrayBuffer);
+		await writable.close();
+		const readBack = await (await fileHandle.getFile()).text();
+		if (readBack !== 'ok') {
+			return { success: false, error: 'Wrote a test file but read back unexpected content' };
+		}
+		return { success: true, folder: dir.name };
 	} catch (err) {
 		return {
 			success: false,
 			error: err instanceof Error ? err.message : 'Access denied'
 		};
+	} finally {
+		// Clean up the probe file regardless of outcome.
+		if (dir) {
+			try {
+				await dir.removeEntry(PROBE_FILENAME);
+			} catch {
+				// Probe may not have been created; nothing to clean up.
+			}
+		}
 	}
 }

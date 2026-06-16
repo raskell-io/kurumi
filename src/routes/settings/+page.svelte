@@ -132,6 +132,8 @@
 	// Local FS state
 	let localFSAvailable = $state(false);
 	let localFSConfigured = $state(false);
+	let localFSTesting = $state(false);
+	let localFSTestResult = $state<{ success: boolean; error?: string; folder?: string } | null>(null);
 
 	async function loadLocalFSState() {
 		localFSAvailable = isLocalFSSupported();
@@ -141,11 +143,20 @@
 	async function handlePickFolder() {
 		const ok = await pickLocalFSDirectory();
 		localFSConfigured = ok;
+		localFSTestResult = null;
 	}
 
 	async function handleClearFolder() {
 		await clearLocalFSHandle();
 		localFSConfigured = false;
+		localFSTestResult = null;
+	}
+
+	async function handleLocalFSTest() {
+		localFSTesting = true;
+		localFSTestResult = null;
+		localFSTestResult = await testLocalFSConnection();
+		localFSTesting = false;
 	}
 
 	// Azure Blob state
@@ -994,14 +1005,26 @@
 									File System Access API not available in this browser. Use Chrome or Edge.
 								</p>
 							{:else if localFSConfigured}
-								<div class="flex items-center gap-3">
+								<div class="flex flex-wrap items-center gap-3">
 									<span class="flex h-2 w-2 rounded-full bg-green-500"></span>
 									<span class="text-sm text-[var(--color-text)]">Folder selected</span>
+									<button onclick={handleLocalFSTest} disabled={localFSTesting}
+										class="flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-border)] disabled:opacity-50">
+										{#if localFSTesting}<div class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"></div>{/if}
+										Test
+									</button>
 									<button onclick={handleClearFolder}
 										class="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text-muted)] hover:bg-[var(--color-border)]">
 										Change folder
 									</button>
 								</div>
+								{#if localFSTestResult}
+									<div class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm {localFSTestResult.success ? 'bg-green-500/10 text-green-600 dark:text-green-400' : 'bg-red-500/10 text-red-500'}">
+										{localFSTestResult.success
+											? `✓ Writable${localFSTestResult.folder ? ` — ${localFSTestResult.folder}` : ''}`
+											: localFSTestResult.error}
+									</div>
+								{/if}
 							{:else}
 								<button onclick={handlePickFolder}
 									class="flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm text-white">
