@@ -275,8 +275,11 @@
 	let audioUrl = $state<string | null>(null);
 	let loadedAudioRef = $state<string | null>(null);
 
-	// Debounce timer for auto-save
+	// Debounce timer for auto-save. The pending payload captures the target
+	// memory id + values at schedule time so a save can never be misdirected
+	// to (or clobbered by) a different note if the user switches mid-debounce.
 	let saveTimeout: ReturnType<typeof setTimeout>;
+	let pendingSave: { id: string; title: string; content: string } | null = null;
 
 	// Reactive memory object — stays in sync with the store so async updates
 	// (transcription, sync) propagate to the UI without a manual refresh.
@@ -295,6 +298,9 @@
 		const id = $page.params.id;
 		if (memory && id && id !== initializedForId) {
 			untrack(() => {
+				// Persist any debounced edit from the previous note before its
+				// state is overwritten, otherwise the pending edit is lost.
+				flushPendingSave();
 				title = memory!.title;
 				content = memory!.bodyMarkdown;
 				backlinks = findBacklinks(id);
@@ -350,9 +356,11 @@
 		audioUrl = URL.createObjectURL(stored.blob);
 	}
 
-	// Cleanup the object URL when the component is destroyed
+	// Cleanup the object URL when the component is destroyed, and flush any
+	// debounced edit so navigating away (not just between notes) never drops it.
 	$effect(() => {
 		return () => {
+			flushPendingSave();
 			if (audioUrl) URL.revokeObjectURL(audioUrl);
 		};
 	});
@@ -405,12 +413,26 @@
 	}
 
 	function debouncedSave() {
+		if (!memory) return;
+		// Capture the target id + values now; the timer must not read the
+		// reactive `memory`/`content` later, since navigation may have swapped
+		// them to a different note by the time it fires.
+		pendingSave = { id: memory.id, title, content };
 		clearTimeout(saveTimeout);
-		saveTimeout = setTimeout(() => {
-			if (memory) {
-				updateMemoryObject(memory.id, { title, bodyMarkdown: content });
-			}
-		}, 300);
+		saveTimeout = setTimeout(flushPendingSave, 300);
+	}
+
+	// Persist any pending save immediately. Called before switching notes and
+	// on teardown so debounced edits are never dropped.
+	function flushPendingSave() {
+		clearTimeout(saveTimeout);
+		if (pendingSave) {
+			updateMemoryObject(pendingSave.id, {
+				title: pendingSave.title,
+				bodyMarkdown: pendingSave.content
+			});
+			pendingSave = null;
+		}
 	}
 
 	function handleDelete() {
