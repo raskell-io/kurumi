@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { goto } from '$app/navigation';
+	import { goto, beforeNavigate } from '$app/navigation';
 	import {
 		updateMemoryObject,
 		deleteMemoryObject,
@@ -281,6 +281,11 @@
 	let saveTimeout: ReturnType<typeof setTimeout>;
 	let pendingSave: { id: string; title: string; content: string } | null = null;
 
+	// Bound Editor instance — lets us read the live document synchronously,
+	// bypassing Milkdown's internal 200ms change debounce. Critical for not
+	// losing the last keystrokes when switching notes quickly.
+	let editorRef: { getCurrentMarkdown: () => string | null } | undefined = $state();
+
 	// Reactive memory object — stays in sync with the store so async updates
 	// (transcription, sync) propagate to the UI without a manual refresh.
 	let memory = $derived($memoryObjects.find((m) => m.id === $page.params.id));
@@ -402,7 +407,11 @@
 		debouncedSave();
 	}
 
-	function handleContentChange(markdown: string) {
+	function handleContentChange(markdown: string, changedId?: string) {
+		// Milkdown debounces this callback 200ms, so it can arrive after the
+		// user switched notes. Drop updates tagged for a different note,
+		// otherwise the previous note's text would overwrite the current one.
+		if (changedId && memory && changedId !== memory.id) return;
 		content = markdown;
 		// Auto-dismiss the template chooser as soon as the user types
 		// anything into the body — writing should never be blocked.
@@ -434,6 +443,26 @@
 			pendingSave = null;
 		}
 	}
+
+	// Save the live editor content to the current note right now. Reads the
+	// document directly from Milkdown (skipping its 200ms change debounce), so
+	// even the most recent keystrokes are persisted before we leave the note.
+	function saveLiveContent() {
+		clearTimeout(saveTimeout);
+		pendingSave = null;
+		if (!memory) return;
+		const live = editorRef?.getCurrentMarkdown();
+		const body = live ?? content;
+		content = body;
+		updateMemoryObject(memory.id, { title, bodyMarkdown: body });
+	}
+
+	// Flush before any client-side navigation. beforeNavigate fires while we're
+	// still on the current note (before $page updates), so `memory` and the
+	// bound editor still point at the note being left.
+	beforeNavigate(() => {
+		saveLiveContent();
+	});
 
 	function handleDelete() {
 		if (memory) {
@@ -868,7 +897,9 @@
 				<!-- Milkdown Editor -->
 				{#key `${memory.id}-${editorRevision}`}
 					<Editor
+						bind:this={editorRef}
 						content={content}
+						noteId={memory.id}
 						onchange={handleContentChange}
 						onWikilinkClick={handleWikilinkClick}
 						placeholder={shouldShowChooser

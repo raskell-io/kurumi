@@ -52,13 +52,15 @@
 	import AIActionMenu from './AIActionMenu.svelte';
 	import { isAIConfigured } from '$lib/ai';
 	import { editorViewCtx } from '@milkdown/kit/core';
+	import { getMarkdown } from '@milkdown/kit/utils';
 
 	interface Props {
 		content: string;
-		onchange?: (markdown: string) => void;
+		onchange?: (markdown: string, noteId?: string) => void;
 		onWikilinkClick?: (title: string) => void;
 		placeholder?: string;
 		currentFolderId?: string | null;
+		noteId?: string;
 	}
 
 	let {
@@ -66,8 +68,24 @@
 		onchange,
 		onWikilinkClick,
 		placeholder = 'Start writing...',
-		currentFolderId = null
+		currentFolderId = null,
+		noteId
 	}: Props = $props();
+
+	/**
+	 * Read the current document straight from the live editor and return it
+	 * as storage markdown. Bypasses Milkdown's internal 200ms change-listener
+	 * debounce, so callers can capture the very latest keystrokes (e.g. right
+	 * before navigating away). Returns null if the editor isn't ready.
+	 */
+	export function getCurrentMarkdown(): string | null {
+		if (!editor) return null;
+		try {
+			return codeBlockToFrontmatter(editor.action(getMarkdown()));
+		} catch {
+			return null;
+		}
+	}
 
 	let editorContainer: HTMLDivElement;
 	let editor: Editor | null = null;
@@ -410,7 +428,11 @@
 				ctx.get(listenerCtx).markdownUpdated((_, markdown) => {
 					if (onchange) {
 						const storageContent = codeBlockToFrontmatter(markdown);
-						onchange(storageContent);
+						// Tag with the note id this editor was mounted for. Milkdown
+						// debounces this callback 200ms, so it can fire after the user
+						// has switched notes; the parent uses the id to drop stale
+						// updates that would otherwise clobber the new note.
+						onchange(storageContent, noteId);
 					}
 				});
 			})
