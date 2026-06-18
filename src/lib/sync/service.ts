@@ -41,7 +41,7 @@ import {
 	localFSReadMarkdown,
 	localFSTest
 } from './local-fs';
-import { getMemoryObject, updateMemoryObject } from '$lib/db';
+import { getMemoryObject, updateMemoryObject, applyGitImport } from '$lib/db';
 import { parseMarkdownFile, parseFrontMatter } from '$lib/git/convert';
 import {
 	getAzureBlobConfig,
@@ -672,7 +672,11 @@ async function syncGitMethod(): Promise<{ success: boolean; error?: string }> {
 			(a) => a.vaultId === currentVault.id
 		);
 
-		// Import callback - will be called when remote changes need to be imported
+		// Import callback — invoked by syncGit with the merged (local ⊕ remote)
+		// entity lists when the pull brought in remote changes. Persist them
+		// into the Automerge store so notes created/edited on another device
+		// actually show up here (previously this was a no-op placeholder, so
+		// git pulls never imported remote changes).
 		const onImport = async (
 			importedMemories: MemoryObject[],
 			importedFolders: Folder[],
@@ -680,14 +684,12 @@ async function syncGitMethod(): Promise<{ success: boolean; error?: string }> {
 			importedEvents: Event[],
 			importedActionItems: ActionItem[]
 		) => {
-			// TODO: Implement proper import into Automerge store
-			// For now, this is a placeholder - the actual merge happens in syncGit
-			console.log('Importing from git:', {
-				memories: importedMemories.length,
-				folders: importedFolders.length,
-				people: importedPeople.length,
-				events: importedEvents.length,
-				actionItems: importedActionItems.length
+			applyGitImport({
+				memories: importedMemories,
+				folders: importedFolders,
+				people: importedPeople,
+				events: importedEvents,
+				actionItems: importedActionItems
 			});
 		};
 

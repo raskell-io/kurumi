@@ -3427,6 +3427,78 @@ export async function mergeDoc(remoteBinary: Uint8Array): Promise<void> {
 	await saveDoc();
 }
 
+export interface GitImportData {
+	memories: MemoryObject[];
+	folders: Folder[];
+	people: Person[];
+	events: Event[];
+	actionItems: ActionItem[];
+}
+
+/**
+ * Apply entities parsed from a git repo back into the local Automerge document.
+ *
+ * The object-storage backends sync the whole doc binary (via mergeDoc), but git
+ * sync only round-trips a note's markdown-owned fields — title, body, tags.
+ * So for a memory that ALREADY exists locally we merge only those three fields
+ * (newest-wins by updatedAt) and preserve everything the markdown can't carry:
+ * summaries, transcripts, audio/media refs, extracted entities, etc. A blind
+ * overwrite would silently wipe them. Genuinely new remote notes are added
+ * whole. People / events / action items come from `.kurumi/metadata.json` as
+ * complete objects, so they upsert newest-wins.
+ *
+ * Note: git can't represent a deletion (a removed file just disappears), so
+ * this only adds/updates — it never deletes. That matches the existing merge
+ * semantics for the other backends.
+ */
+export function applyGitImport(data: GitImportData): void {
+	updateDoc((d) => {
+		for (const m of data.memories) {
+			const existing = d.memoryObjects[m.id];
+			if (!existing) {
+				d.memoryObjects[m.id] = deepCopy(m);
+				continue;
+			}
+			if (m.updatedAt > existing.updatedAt) {
+				existing.title = m.title;
+				existing.bodyMarkdown = m.bodyMarkdown;
+				// Clear + repopulate so the Automerge array updates in place.
+				while (existing.tags.length > 0) existing.tags.pop();
+				for (const tag of m.tags) existing.tags.push(tag);
+				existing.updatedAt = m.updatedAt;
+			}
+		}
+
+		for (const f of data.folders) {
+			const existing = d.folders[f.id];
+			if (!existing) {
+				d.folders[f.id] = deepCopy(f);
+			} else {
+				// Folder timestamps are regenerated on every parse, so only adopt
+				// actual structural changes rather than churning `modified`.
+				if (existing.name !== f.name) existing.name = f.name;
+				if (existing.parentId !== f.parentId) existing.parentId = f.parentId;
+			}
+		}
+
+		for (const p of data.people) {
+			const existing = d.people[p.id];
+			if (!existing || p.modified > existing.modified) d.people[p.id] = deepCopy(p);
+		}
+
+		for (const e of data.events) {
+			const existing = d.events[e.id];
+			if (!existing || e.modified > existing.modified) d.events[e.id] = deepCopy(e);
+		}
+
+		if (!d.actionItems) d.actionItems = {};
+		for (const a of data.actionItems) {
+			const existing = d.actionItems[a.id];
+			if (!existing || a.updatedAt > existing.updatedAt) d.actionItems[a.id] = deepCopy(a);
+		}
+	});
+}
+
 // Export all memory objects as JSON (for backup) - legacy format
 export function exportMemoryObjectsJSON(): string {
 	if (!doc) return '[]';
@@ -4365,6 +4437,141 @@ export function findMemoryObjectByTitle(title: string): MemoryObject | undefined
 	return Object.values(doc.memoryObjects).find(
 		(memory) => memory.vaultId === vaultId && memory.title.toLowerCase() === lowerTitle
 	);
+}
+
+// Build a regex matching `term` as a whole word, case-insensitively.
+function wholeWordRegex(term: string): RegExp {
+	const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	// `term` may contain spaces, so we bound on non-word chars rather than \b.
+	return new RegExp(`(^|[^\\p{L}\\p{N}_])(${escaped})([^\\p{L}\\p{N}_]|$)`, 'iu');
+}
+
+// Strip wikilink syntax (both raw `[[..]]` and Milkdown's escaped form) so a
+// title that only appears *inside a link* isn't counted as a plain mention.
+function stripWikilinks(content: string): string {
+	return content.replace(/\\?\[\\?\[[^\]]+\]\]/g, ' ');
+}
+
+/**
+ * Notes that mention this note's title as plain text but don't link to it —
+ * Obsidian-style "unlinked mentions". Complements findBacklinks: anything that
+ * already links is excluded. Titles shorter than 3 chars are skipped to avoid
+ * noise. Soft-deleted notes are ignored.
+ */
+export function findUnlinkedMentions(memoryId: string): MemoryObject[] {
+	if (!doc) return [];
+	const target = doc.memoryObjects[memoryId];
+	if (!target) return [];
+
+	const title = (target.title ?? '').trim();
+	if (title.length < 3) return [];
+	const vaultId = target.vaultId;
+	const lowerTitle = title.toLowerCase();
+	const mentionRe = wholeWordRegex(title);
+
+	return Object.values(doc.memoryObjects).filter((memory) => {
+		if (memory.id === memoryId) return false;
+		if (memory.vaultId !== vaultId) return false;
+		if (memory.deletedAt) return false;
+		// Already links to the target → it's a backlink, not an unlinked mention.
+		const links = extractWikilinks(memory.bodyMarkdown);
+		if (links.some((link) => link.toLowerCase() === lowerTitle)) return false;
+		return mentionRe.test(stripWikilinks(memory.bodyMarkdown ?? ''));
+	});
+}
+
+/**
+ * Turn the first plain-text mention of `targetTitle` in note `sourceId` into a
+ * `[[wikilink]]`. Returns true if a mention was found and linked. Used by the
+ * "Link" action next to an unlinked mention.
+ */
+export function linkUnlinkedMention(sourceId: string, targetTitle: string): boolean {
+	const memory = getMemoryObject(sourceId);
+	if (!memory) return false;
+	const re = wholeWordRegex(targetTitle);
+	const body = memory.bodyMarkdown ?? '';
+	const match = re.exec(body);
+	if (!match) return false;
+	// match[1] is the leading boundary char; the term itself starts after it.
+	const termStart = match.index + match[1].length;
+	const term = match[2];
+	const newBody = body.slice(0, termStart) + `[[${term}]]` + body.slice(termStart + term.length);
+	updateMemoryObject(sourceId, { bodyMarkdown: newBody });
+	return true;
+}
+
+// ============ Version History ============
+
+export interface MemoryVersion {
+	// Position in the Automerge change history (ascending = older).
+	index: number;
+	// Change timestamp, normalized to ms since epoch.
+	time: number;
+	hash: string;
+	title: string;
+	bodyMarkdown: string;
+	tags: string[];
+	updatedAt: number;
+}
+
+// Automerge records change time in seconds; older/newer builds vary. Normalize
+// anything that looks like seconds (< ~year 2286 in ms) up to milliseconds.
+function normalizeChangeTime(time: number): number {
+	if (!time) return 0;
+	return time < 1e12 ? time * 1000 : time;
+}
+
+/**
+ * Reconstruct the edit history of a single note from the Automerge change log.
+ * Walks every committed change, materializing the note at each point, and keeps
+ * only the states where its title / body / tags actually changed (deduped),
+ * newest first. Returns [] if the note has no history.
+ *
+ * Cost note: Automerge.getHistory materializes a snapshot per change, so this
+ * is O(changes × doc size). It's invoked on demand (opening the history panel),
+ * not on every render, which is fine for a personal-scale vault.
+ */
+export function getMemoryHistory(id: string): MemoryVersion[] {
+	if (!doc) return [];
+	const history = Automerge.getHistory(doc);
+	const versions: MemoryVersion[] = [];
+	let lastSignature: string | null = null;
+
+	history.forEach((state, index) => {
+		const snapshot = state.snapshot as KurumiDocument;
+		const mem = snapshot.memoryObjects?.[id];
+		if (!mem) return;
+		const tags = [...(mem.tags ?? [])];
+		const signature = `${mem.title} ${mem.bodyMarkdown} ${tags.join(',')}`;
+		if (signature === lastSignature) return; // unchanged at this point
+		lastSignature = signature;
+		versions.push({
+			index,
+			time: normalizeChangeTime(state.change.time),
+			hash: state.change.hash ?? '',
+			title: mem.title,
+			bodyMarkdown: mem.bodyMarkdown,
+			tags,
+			updatedAt: mem.updatedAt
+		});
+	});
+
+	return versions.reverse(); // newest first
+}
+
+/**
+ * Restore a note's title / body / tags to a prior version. Applied as a normal
+ * forward edit, so the restore is itself captured in history (and is undoable).
+ */
+export function restoreMemoryVersion(
+	id: string,
+	version: { title: string; bodyMarkdown: string; tags: string[] }
+): void {
+	updateMemoryObject(id, {
+		title: version.title,
+		bodyMarkdown: version.bodyMarkdown,
+		tags: version.tags
+	});
 }
 
 // ============ Reference Types ============

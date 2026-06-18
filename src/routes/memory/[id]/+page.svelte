@@ -5,6 +5,8 @@
 		updateMemoryObject,
 		deleteMemoryObject,
 		findBacklinks,
+		findUnlinkedMentions,
+		linkUnlinkedMention,
 		memoryObjects,
 		addMemoryObject,
 		folders,
@@ -33,14 +35,19 @@
 		ArrowRight,
 		Bell,
 		ImagePlus,
-		Camera
+		Camera,
+		History,
+		Link2
 	} from 'lucide-svelte';
 	import CameraCapture from '$lib/components/CameraCapture.svelte';
+	import VersionHistoryModal from '$lib/components/VersionHistoryModal.svelte';
 	import { processAndStoreImage } from '$lib/utils/image';
 
 	let title = $state('');
 	let content = $state('');
 	let backlinks = $state<ReturnType<typeof findBacklinks>>([]);
+	let unlinkedMentions = $state<ReturnType<typeof findUnlinkedMentions>>([]);
+	let showHistory = $state(false);
 	let relatedNotes = $state<Array<{ memory: MemoryObject; score: number }>>([]);
 	let loadingRelated = $state(false);
 	let showDeleteConfirm = $state(false);
@@ -241,6 +248,31 @@
 		showCameraCapture = false;
 	}
 
+	// Refresh the editor + link panels after restoring an old version. The
+	// id-change effect won't re-run (same note), so reset content explicitly
+	// and bump the revision to force the Milkdown editor to re-parse.
+	function handleVersionRestored() {
+		const id = $page.params.id;
+		if (!id) return;
+		const restored = get(memoryObjects).find((m) => m.id === id);
+		if (!restored) return;
+		title = restored.title;
+		content = restored.bodyMarkdown;
+		syncedMemoryTitle = restored.title;
+		editorRevision += 1;
+		backlinks = findBacklinks(id);
+		unlinkedMentions = findUnlinkedMentions(id);
+	}
+
+	// Promote an unlinked mention into a real [[wikilink]] in the other note.
+	function handleLinkMention(sourceId: string) {
+		if (!memory) return;
+		if (linkUnlinkedMention(sourceId, memory.title)) {
+			backlinks = findBacklinks(memory.id);
+			unlinkedMentions = findUnlinkedMentions(memory.id);
+		}
+	}
+
 	async function handleExtractReminders() {
 		if (!memory || extractingReminders) return;
 		extractingReminders = true;
@@ -309,6 +341,7 @@
 				title = memory!.title;
 				content = memory!.bodyMarkdown;
 				backlinks = findBacklinks(id);
+				unlinkedMentions = findUnlinkedMentions(id);
 				relatedNotes = [];
 				loadingRelated = true;
 				findSemanticBacklinks(id, 5).then((results) => {
@@ -606,6 +639,15 @@
 				{:else}
 					<Bell class="h-5 w-5" />
 				{/if}
+			</button>
+
+			<!-- Version history button -->
+			<button
+				onclick={() => (showHistory = true)}
+				class="rounded-lg p-2 text-[var(--color-text-muted)] transition-all hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-accent)] active:scale-95"
+				title="Version history"
+			>
+				<History class="h-5 w-5" />
 			</button>
 
 			<!-- Delete button -->
@@ -933,6 +975,39 @@
 					</div>
 				{/if}
 
+				<!-- Unlinked mentions: notes that name this one without linking -->
+				{#if unlinkedMentions.length > 0}
+					<div class="mt-6 border-t border-[var(--color-border)] pt-4 md:mt-8 md:pt-6">
+						<h3 class="mb-3 text-xs font-semibold uppercase text-[var(--color-text-muted)] md:text-sm">
+							Unlinked mentions ({unlinkedMentions.length})
+						</h3>
+						<div class="space-y-2">
+							{#each unlinkedMentions as mention}
+								<div
+									class="flex items-center gap-2 rounded-lg border border-[var(--color-border)] p-3"
+								>
+									<a href="/memory/{mention.id}" class="min-w-0 flex-1">
+										<div class="font-medium text-[var(--color-text)]">
+											{mention.title || 'Untitled'}
+										</div>
+										<div class="mt-1 truncate text-sm text-[var(--color-text-muted)]">
+											{mention.bodyMarkdown.slice(0, 80)}...
+										</div>
+									</a>
+									<button
+										onclick={() => handleLinkMention(mention.id)}
+										class="flex shrink-0 items-center gap-1 rounded-md border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+										title="Insert a [[wikilink]] to this note"
+									>
+										<Link2 class="h-3.5 w-3.5" />
+										Link
+									</button>
+								</div>
+							{/each}
+						</div>
+					</div>
+				{/if}
+
 				<!-- Related notes (semantic) -->
 				{#if relatedNotes.length > 0}
 					<div class="mt-6 border-t border-[var(--color-border)] pt-4 md:mt-8 md:pt-6">
@@ -977,6 +1052,15 @@
 			</div>
 		</div>
 	</div>
+
+	<!-- Version History Modal -->
+	{#if showHistory && memory}
+		<VersionHistoryModal
+			memoryId={memory.id}
+			onClose={() => (showHistory = false)}
+			onRestored={handleVersionRestored}
+		/>
+	{/if}
 
 	<!-- Delete Confirmation Modal -->
 	{#if showDeleteConfirm}
