@@ -10,7 +10,7 @@ import {
 	actionItems
 } from '$lib/db';
 import { setSyncing, setSyncSuccess, setSyncError, syncState } from './status';
-import { get } from 'svelte/store';
+import { get, derived, type Readable } from 'svelte/store';
 import {
 	isGitSyncConfigured,
 	gitSyncState,
@@ -37,6 +37,7 @@ import {
 	localFSPull,
 	localFSPush,
 	localFSPushMarkdown,
+	localFSImportBlobs,
 	localFSReadMarkdown,
 	localFSTest
 } from './local-fs';
@@ -47,8 +48,18 @@ import {
 	isAzureBlobConfigured,
 	azureBlobPull,
 	azureBlobPush,
-	azureBlobTest
+	azureBlobTest,
+	azureGetObject,
+	azurePutObject
 } from './azure-blob';
+import { s3GetObject, s3PutObject } from './s3';
+import { webdavGetObject, webdavPutObject } from './webdav';
+import {
+	syncBlobObjects,
+	gatherBlobPayloads,
+	collectBlobRefs,
+	type ObjectTransport
+} from './blobs';
 import type { MemoryObject, Folder, Person, Event, ActionItem } from '$lib/db/types';
 
 const SYNC_URL_KEY = 'kurumi-sync-url';
@@ -245,6 +256,53 @@ async function pushToRemote(config: SyncConfig, binary: Uint8Array): Promise<voi
 }
 
 /**
+ * Memories belonging to the active vault — the scope for blob sync.
+ */
+function vaultMemories(): MemoryObject[] {
+	const vaultId = get(currentVaultId);
+	return get(memoryObjects).filter((m) => m.vaultId === vaultId);
+}
+
+/** R2 worker object GET by key (used for blob sync). */
+async function r2GetObject(config: SyncConfig, key: string): Promise<Uint8Array | null> {
+	const url = `${config.url}${config.url.includes('?') ? '&' : '?'}key=${encodeURIComponent(key)}`;
+	const response = await fetch(url, { headers: { Authorization: `Bearer ${config.token}` } });
+	if (response.status === 404) return null;
+	if (!response.ok) throw new Error(`R2 GET failed: ${response.status}`);
+	return new Uint8Array(await response.arrayBuffer());
+}
+
+/** R2 worker object PUT by key (used for blob sync). */
+async function r2PutObject(
+	config: SyncConfig,
+	key: string,
+	data: Uint8Array,
+	contentType: string
+): Promise<void> {
+	const buffer = new ArrayBuffer(data.length);
+	new Uint8Array(buffer).set(data);
+	const url = `${config.url}${config.url.includes('?') ? '&' : '?'}key=${encodeURIComponent(key)}`;
+	const response = await fetch(url, {
+		method: 'PUT',
+		headers: { Authorization: `Bearer ${config.token}`, 'Content-Type': contentType },
+		body: buffer
+	});
+	if (!response.ok) throw new Error(`R2 PUT failed: ${response.status}`);
+}
+
+/**
+ * Round-trip blobs for the active vault through an object transport. Always
+ * best-effort: blob sync failures are logged but never fail the doc sync.
+ */
+async function syncBlobsBestEffort(transport: ObjectTransport): Promise<void> {
+	try {
+		await syncBlobObjects(transport, get(currentVaultId), vaultMemories());
+	} catch (err) {
+		console.warn('Blob sync failed (notes still synced):', err);
+	}
+}
+
+/**
  * R2 sync implementation
  */
 async function syncR2(): Promise<{ success: boolean; error?: string }> {
@@ -287,6 +345,12 @@ async function syncR2(): Promise<{ success: boolean; error?: string }> {
 			setSyncError(`Push failed: ${message}`);
 			return { success: false, error: `Push failed: ${message}` };
 		}
+
+		// Step 4: round-trip referenced blobs (images/audio).
+		await syncBlobsBestEffort({
+			get: (key) => r2GetObject(config, key),
+			put: (key, data, ct) => r2PutObject(config, key, data, ct)
+		});
 
 		setSyncSuccess();
 		return { success: true };
@@ -343,6 +407,11 @@ async function syncS3(): Promise<{ success: boolean; error?: string }> {
 			return { success: false, error: `S3 push failed: ${message}` };
 		}
 
+		await syncBlobsBestEffort({
+			get: (key) => s3GetObject(config, key),
+			put: (key, data, ct) => s3PutObject(config, key, data, ct)
+		});
+
 		setSyncSuccess();
 		return { success: true };
 	} catch (err) {
@@ -365,6 +434,10 @@ async function syncWebDAV(): Promise<{ success: boolean; error?: string }> {
 		if (remoteBinary) await mergeDoc(remoteBinary);
 		const localBinary = getDocBinary();
 		await webdavPush(config, vaultId, localBinary);
+		await syncBlobsBestEffort({
+			get: (key) => webdavGetObject(config, key),
+			put: (key, data, ct) => webdavPutObject(config, key, data, ct)
+		});
 		setSyncSuccess();
 		return { success: true };
 	} catch (err) {
@@ -442,6 +515,14 @@ async function syncLocalFS(): Promise<{ success: boolean; error?: string }> {
 		const remoteBinary = await localFSPull();
 		if (remoteBinary) await mergeDoc(remoteBinary);
 
+		// Import blob bytes (images/audio) written into the folder by another
+		// device before we overwrite/append on push.
+		try {
+			await localFSImportBlobs();
+		} catch (blobErr) {
+			console.warn('Local FS blob import failed:', blobErr);
+		}
+
 		const vaultId = get(currentVaultId);
 
 		// Pull in edits made directly to the .md files on disk before we
@@ -460,13 +541,16 @@ async function syncLocalFS(): Promise<{ success: boolean; error?: string }> {
 		// stays the source of truth for pull/merge.
 		const vault = get(vaults).find((v) => v.id === vaultId);
 		if (vault) {
+			const vaultMems = get(memoryObjects).filter((m) => m.vaultId === vaultId);
+			const blobs = await gatherBlobPayloads(collectBlobRefs(vaultMems));
 			await localFSPushMarkdown(
-				get(memoryObjects).filter((m) => m.vaultId === vaultId),
+				vaultMems,
 				get(folders).filter((f) => f.vaultId === vaultId),
 				vault,
 				get(people).filter((p) => p.vaultId === vaultId),
 				get(events).filter((e) => e.vaultId === vaultId),
-				get(actionItems).filter((a) => a.vaultId === vaultId)
+				get(actionItems).filter((a) => a.vaultId === vaultId),
+				blobs
 			);
 		}
 
@@ -492,6 +576,10 @@ async function syncAzureBlob(): Promise<{ success: boolean; error?: string }> {
 		if (remoteBinary) await mergeDoc(remoteBinary);
 		const localBinary = getDocBinary();
 		await azureBlobPush(config, vaultId, localBinary);
+		await syncBlobsBestEffort({
+			get: (key) => azureGetObject(config, key),
+			put: (key, data, ct) => azurePutObject(config, key, data, ct)
+		});
 		setSyncSuccess();
 		return { success: true };
 	} catch (err) {
@@ -671,6 +759,101 @@ export async function sync(): Promise<{ success: boolean; error?: string }> {
 	}
 
 	return result;
+}
+
+// ---------------------------------------------------------------------------
+// Unified status indicator
+// ---------------------------------------------------------------------------
+
+export type IndicatorStatus = 'idle' | 'syncing' | 'success' | 'error' | 'conflict';
+
+export interface SyncIndicator {
+	status: IndicatorStatus;
+	error: string | null;
+	lastSyncedAt: number | null;
+	conflictCount: number;
+}
+
+/**
+ * A single status the UI can render regardless of backend. The git backend
+ * tracks its own richer state machine (`gitSyncState`); every other backend
+ * uses `syncState`. This derived store folds whichever one is active — keyed
+ * off the configured sync method — into one shape, so a single sync sign and
+ * force-sync button work for all backends.
+ */
+export const syncIndicator: Readable<SyncIndicator> = derived(
+	[gitSyncState, syncState],
+	([$git, $generic]) => {
+		if (getSyncMethod() === 'git') {
+			const s = $git.status;
+			const status: IndicatorStatus =
+				s === 'conflict'
+					? 'conflict'
+					: s === 'error'
+						? 'error'
+						: s === 'success'
+							? 'success'
+							: s === 'idle'
+								? 'idle'
+								: 'syncing'; // cloning / pulling / pushing / syncing
+			return {
+				status,
+				error: $git.error,
+				lastSyncedAt: $git.lastSyncedAt,
+				conflictCount: $git.conflicts.length
+			};
+		}
+		return {
+			status: $generic.status as IndicatorStatus,
+			error: $generic.error,
+			lastSyncedAt: $generic.lastSyncedAt,
+			conflictCount: 0
+		};
+	}
+);
+
+// ---------------------------------------------------------------------------
+// Debounced auto-sync after edits
+// ---------------------------------------------------------------------------
+
+const AUTO_SYNC_DEBOUNCE_MS = 4000;
+let autoSyncTimer: ReturnType<typeof setTimeout> | null = null;
+let autoSyncStarted = false;
+let autoSyncUnsub: (() => void) | null = null;
+
+/**
+ * Sync a few seconds after the user stops editing. Subscribes to the memory
+ * store and debounces; the actual sync still goes through `shouldSync()`, so
+ * it respects the min-interval guard and won't fire while a sync is running
+ * or when sync isn't configured. The first (initial-load) emission is skipped.
+ */
+export function setupAutoSync(): void {
+	if (autoSyncStarted) return;
+	autoSyncStarted = true;
+	let first = true;
+	autoSyncUnsub = memoryObjects.subscribe(() => {
+		if (first) {
+			first = false;
+			return;
+		}
+		if (autoSyncTimer) clearTimeout(autoSyncTimer);
+		autoSyncTimer = setTimeout(() => {
+			autoSyncTimer = null;
+			if (shouldSync()) sync().catch(console.error);
+		}, AUTO_SYNC_DEBOUNCE_MS);
+	});
+}
+
+export function teardownAutoSync(): void {
+	if (autoSyncTimer) {
+		clearTimeout(autoSyncTimer);
+		autoSyncTimer = null;
+	}
+	if (autoSyncUnsub) {
+		autoSyncUnsub();
+		autoSyncUnsub = null;
+	}
+	autoSyncStarted = false;
 }
 
 // Visibility change sync

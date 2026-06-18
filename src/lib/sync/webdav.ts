@@ -49,6 +49,40 @@ function objectUrl(config: WebDAVConfig, vaultId: string): string {
 	return `${base}/kurumi-sync/${vaultId}.bin`;
 }
 
+function keyUrl(config: WebDAVConfig, key: string): string {
+	const base = config.url.replace(/\/+$/, '');
+	return `${base}/${key.replace(/^\/+/, '')}`;
+}
+
+/** Generic object GET by key — used for blob sync. */
+export async function webdavGetObject(
+	config: WebDAVConfig,
+	key: string
+): Promise<Uint8Array | null> {
+	const response = await fetch(keyUrl(config, key), {
+		headers: { Authorization: authHeader(config) }
+	});
+	if (response.status === 404) return null;
+	if (!response.ok) throw new Error(`WebDAV GET failed (${response.status})`);
+	return new Uint8Array(await response.arrayBuffer());
+}
+
+/** Generic object PUT by key — used for blob sync. */
+export async function webdavPutObject(
+	config: WebDAVConfig,
+	key: string,
+	data: Uint8Array,
+	contentType = 'application/octet-stream'
+): Promise<void> {
+	await ensureDirectory(config);
+	const response = await fetch(keyUrl(config, key), {
+		method: 'PUT',
+		headers: { Authorization: authHeader(config), 'Content-Type': contentType },
+		body: data.buffer as ArrayBuffer
+	});
+	if (!response.ok) throw new Error(`WebDAV PUT failed (${response.status})`);
+}
+
 async function ensureDirectory(config: WebDAVConfig): Promise<void> {
 	const base = config.url.replace(/\/+$/, '');
 	try {

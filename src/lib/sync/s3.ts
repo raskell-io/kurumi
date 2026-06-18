@@ -243,6 +243,40 @@ export async function s3Push(
 	}
 }
 
+/**
+ * Generic object GET by key — used for blob sync. Returns null when the
+ * object is absent (404/403 on a first sync).
+ */
+export async function s3GetObject(config: S3Config, key: string): Promise<Uint8Array | null> {
+	const { url, headers } = await signRequest(config, 'GET', key, null);
+	const response = await fetch(url, { headers });
+	if (response.status === 404 || response.status === 403) return null;
+	if (!response.ok) {
+		throw new Error(`S3 GET failed (${response.status}): ${await response.text()}`);
+	}
+	return new Uint8Array(await response.arrayBuffer());
+}
+
+/**
+ * Generic object PUT by key — used for blob sync.
+ */
+export async function s3PutObject(
+	config: S3Config,
+	key: string,
+	data: Uint8Array,
+	contentType = 'application/octet-stream'
+): Promise<void> {
+	const { url, headers } = await signRequest(config, 'PUT', key, data, contentType);
+	const response = await fetch(url, {
+		method: 'PUT',
+		headers: { ...headers, 'content-length': String(data.length) },
+		body: data.buffer as ArrayBuffer
+	});
+	if (!response.ok) {
+		throw new Error(`S3 PUT failed (${response.status}): ${await response.text()}`);
+	}
+}
+
 export async function s3Test(config: S3Config): Promise<{ success: boolean; error?: string }> {
 	try {
 		const key = objectKey('__test__');

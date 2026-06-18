@@ -21,12 +21,14 @@ import {
 	serializeMetadata,
 	parseMetadata
 } from '$lib/git/convert';
+import { refToId, importBlobPayloads, type BlobPayload } from './blobs';
 import type { MemoryObject, Folder, Vault, Person, Event, ActionItem } from '$lib/db/types';
 
 const IDB_KEY = 'kurumi-local-fs-handle';
 const FILENAME = 'kurumi-sync.bin';
 const METADATA_DIR = '.kurumi';
 const METADATA_FILE = 'metadata.json';
+const BLOBS_DIR = 'blobs';
 // Synchronous mirror of "is a folder configured?". The handle itself lives in
 // IndexedDB (async), but sync gating (isSyncConfigured / shouldSync) needs a
 // synchronous answer, so we shadow handle presence in localStorage.
@@ -118,6 +120,13 @@ export async function localFSPush(data: Uint8Array): Promise<void> {
 	await writeFile(dir, FILENAME, data.buffer as ArrayBuffer);
 }
 
+/** Copy a (possibly offset/shared-buffer) view into a fresh ArrayBuffer. */
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+	const ab = new ArrayBuffer(bytes.byteLength);
+	new Uint8Array(ab).set(bytes);
+	return ab;
+}
+
 async function writeFile(
 	dir: FileSystemDirectoryHandle,
 	name: string,
@@ -190,7 +199,8 @@ export async function localFSPushMarkdown(
 	vault: Vault,
 	people: Person[],
 	events: Event[],
-	actionItems: ActionItem[]
+	actionItems: ActionItem[],
+	blobs: BlobPayload[] = []
 ): Promise<void> {
 	const dir = await getHandle();
 	if (!dir) throw new Error('Local folder not configured');
@@ -207,7 +217,25 @@ export async function localFSPushMarkdown(
 		await writeFile(targetDir, filename, file.content);
 	}
 
-	const metadata = createMetadata(vault, folders, memories, people, events, actionItems);
+	// Write referenced blob bytes under .kurumi/blobs/<id> and record mimes.
+	const blobMeta: Record<string, { mimeType: string }> = {};
+	if (blobs.length > 0) {
+		const blobDir = await getOrCreateDir(dir, [METADATA_DIR, BLOBS_DIR]);
+		for (const blob of blobs) {
+			await writeFile(blobDir, refToId(blob.ref), toArrayBuffer(blob.bytes));
+			blobMeta[blob.ref] = { mimeType: blob.mimeType };
+		}
+	}
+
+	const metadata = createMetadata(
+		vault,
+		folders,
+		memories,
+		people,
+		events,
+		actionItems,
+		blobMeta
+	);
 	const metaDir = await getOrCreateDir(dir, [METADATA_DIR]);
 	await writeFile(metaDir, METADATA_FILE, serializeMetadata(metadata));
 
@@ -215,6 +243,51 @@ export async function localFSPushMarkdown(
 	for (const path of previousPaths) {
 		if (!newPaths.has(path)) await removeFileByPath(dir, path);
 	}
+}
+
+/**
+ * Read blob bytes written under `.kurumi/blobs/` back into the local store,
+ * using mime types from `.kurumi/metadata.json`. Imports only blobs missing
+ * locally. No-op if the folder has no blobs dir yet.
+ */
+export async function localFSImportBlobs(): Promise<void> {
+	const dir = await getHandle();
+	if (!dir) return;
+
+	let metaDir: FileSystemDirectoryHandle;
+	let blobDir: FileSystemDirectoryHandle;
+	try {
+		metaDir = await dir.getDirectoryHandle(METADATA_DIR);
+		blobDir = await metaDir.getDirectoryHandle(BLOBS_DIR);
+	} catch {
+		return; // No blobs synced into this folder.
+	}
+
+	// Mime lookup from metadata.json.
+	let mimeByRef: Record<string, { mimeType: string }> = {};
+	try {
+		const metaHandle = await metaDir.getFileHandle(METADATA_FILE);
+		const parsed = parseMetadata(await (await metaHandle.getFile()).text());
+		mimeByRef = parsed?.blobs ?? {};
+	} catch {
+		// Missing/unparseable metadata — fall back to octet-stream below.
+	}
+
+	const payloads: BlobPayload[] = [];
+	const entries = (blobDir as FileSystemDirectoryHandle & {
+		values: () => AsyncIterableIterator<FileSystemHandle>;
+	}).values();
+	for await (const handle of entries) {
+		if (handle.kind !== 'file') continue;
+		const ref = `blob:${handle.name}`;
+		const file = await (handle as FileSystemFileHandle).getFile();
+		payloads.push({
+			ref,
+			bytes: new Uint8Array(await file.arrayBuffer()),
+			mimeType: mimeByRef[ref]?.mimeType || 'application/octet-stream'
+		});
+	}
+	await importBlobPayloads(payloads);
 }
 
 export interface DiskMarkdownFile {

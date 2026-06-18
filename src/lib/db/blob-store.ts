@@ -9,7 +9,7 @@
  * to decode it.
  */
 
-import { createStore, set, get, del } from 'idb-keyval';
+import { createStore, set, get, del, keys } from 'idb-keyval';
 import { generateId } from './types';
 
 const blobStore = createStore('kurumi-blobs', 'blobs');
@@ -54,4 +54,52 @@ export async function getBlob(
  */
 export async function deleteBlob(ref: string): Promise<void> {
 	await del(ref, blobStore);
+}
+
+/**
+ * Check whether a blob already exists locally for the given ref.
+ */
+export async function hasBlob(ref: string): Promise<boolean> {
+	const stored = await get<StoredBlob>(ref, blobStore);
+	return stored != null;
+}
+
+/**
+ * Store a blob under a caller-supplied ref instead of a freshly generated
+ * one. Used by sync to import a blob another device created while keeping
+ * the original `blob:<id>` ref so the markdown that references it resolves.
+ */
+export async function putBlobWithRef(
+	ref: string,
+	blob: Blob,
+	mimeType: string
+): Promise<void> {
+	const stored: StoredBlob = {
+		blob,
+		mimeType,
+		size: blob.size,
+		createdAt: Date.now()
+	};
+	await set(ref, stored, blobStore);
+}
+
+/**
+ * Read a blob's raw bytes + mime type by ref. Returns null if not found.
+ * Convenience for sync, which needs a `Uint8Array` to upload/write.
+ */
+export async function getBlobBytes(
+	ref: string
+): Promise<{ bytes: Uint8Array; mimeType: string } | null> {
+	const stored = await get<StoredBlob>(ref, blobStore);
+	if (!stored) return null;
+	const bytes = new Uint8Array(await stored.blob.arrayBuffer());
+	return { bytes, mimeType: stored.mimeType };
+}
+
+/**
+ * List every blob ref currently stored locally.
+ */
+export async function listBlobRefs(): Promise<string[]> {
+	const allKeys = await keys(blobStore);
+	return allKeys.map((k) => String(k));
 }

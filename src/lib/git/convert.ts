@@ -25,6 +25,9 @@ export interface GitMetadata {
 	people: Record<string, Person>;
 	events: Record<string, Event>;
 	actionItems?: Record<string, ActionItem>;
+	// Mime type for each blob ref written under .kurumi/blobs/, so importers
+	// can reconstruct the Blob with the right type. Keyed by `blob:<id>` ref.
+	blobs?: Record<string, { mimeType: string }>;
 }
 
 export interface MarkdownFile {
@@ -64,6 +67,12 @@ export function buildFolderPath(memory: MemoryObject, folders: Folder[]): string
 function generateFrontMatter(memory: MemoryObject): string {
 	const lines = ['---'];
 	lines.push(`id: ${memory.id}`);
+	// Persist the exact title. The filename is a slug (spaces → hyphens, case
+	// folded), so without this the original title can't be recovered on import.
+	if (memory.title) {
+		const escaped = memory.title.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+		lines.push(`name: "${escaped}"`);
+	}
 	lines.push(`created: ${new Date(memory.createdAt).toISOString()}`);
 	lines.push(`modified: ${new Date(memory.updatedAt).toISOString()}`);
 	if (memory.tags.length > 0) {
@@ -104,6 +113,18 @@ export function parseFrontMatter(content: string): { frontMatter: Record<string,
 				.split(',')
 				.map((s) => s.trim().replace(/^["']|["']$/g, ''))
 				.filter(Boolean);
+		} else if (typeof value === 'string') {
+			// Strip surrounding quotes from scalar strings and unescape, so
+			// `name: "My Note: \"Q3\""` round-trips back to the real title.
+			if (
+				(value.startsWith('"') && value.endsWith('"')) ||
+				(value.startsWith("'") && value.endsWith("'"))
+			) {
+				value = value
+					.slice(1, -1)
+					.replace(/\\"/g, '"')
+					.replace(/\\\\/g, '\\');
+			}
 		}
 
 		frontMatter[key] = value;
@@ -142,16 +163,21 @@ export function notesToMarkdownFiles(memories: MemoryObject[], folders: Folder[]
 export function parseMarkdownFile(path: string, content: string): ParsedNote {
 	const { frontMatter, body } = parseFrontMatter(content);
 
-	// Extract title from filename
+	// Prefer the exact title from front matter (preserves spaces, case, and
+	// punctuation). Fall back to de-slugging the filename for notes written
+	// before `name:` existed or created by hand.
 	const filename = path.split('/').pop() || 'untitled.md';
-	const title = filename.replace(/\.md$/, '').replace(/-/g, ' ');
-
-	// Capitalize first letter of each word
-	const formattedTitle = title.replace(/\b\w/g, (c) => c.toUpperCase());
+	const deslugged = filename
+		.replace(/\.md$/, '')
+		.replace(/-/g, ' ')
+		.replace(/\b\w/g, (c) => c.toUpperCase());
+	const frontMatterName =
+		typeof frontMatter.name === 'string' ? frontMatter.name.trim() : '';
+	const title = frontMatterName || deslugged;
 
 	return {
 		id: (frontMatter.id as string) || crypto.randomUUID(),
-		title: formattedTitle,
+		title,
 		content: body,
 		tags: (frontMatter.tags as string[]) || [],
 		created: frontMatter.created ? new Date(frontMatter.created as string).getTime() : Date.now(),
@@ -168,7 +194,8 @@ export function createMetadata(
 	memories: MemoryObject[],
 	people: Person[],
 	events: Event[],
-	actionItems: ActionItem[] = []
+	actionItems: ActionItem[] = [],
+	blobs: Record<string, { mimeType: string }> = {}
 ): GitMetadata {
 	const foldersMap: Record<string, { name: string; parentId: string | null }> = {};
 	for (const folder of folders) {
@@ -207,7 +234,8 @@ export function createMetadata(
 		noteIds,
 		people: peopleMap,
 		events: eventsMap,
-		actionItems: actionItemsMap
+		actionItems: actionItemsMap,
+		blobs
 	};
 }
 

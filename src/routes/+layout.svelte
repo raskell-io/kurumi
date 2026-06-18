@@ -21,7 +21,8 @@
 	import { initHashRouter, updateHashFromPath } from '$lib/hash-router';
 	import { generateDailyDigest } from '$lib/digest';
 	import { initSearch, rebuildIndex } from '$lib/search';
-	import { setupVisibilitySync, teardownVisibilitySync, syncState, isSyncConfigured, sync } from '$lib/sync';
+	import { setupVisibilitySync, teardownVisibilitySync, setupAutoSync, teardownAutoSync, syncIndicator, isSyncConfigured, sync } from '$lib/sync';
+	import SyncFab from '$lib/components/SyncFab.svelte';
 	import { gitSyncState } from '$lib/git';
 	import GitConflictModal from '$lib/components/GitConflictModal.svelte';
 	import UndoToast from '$lib/components/UndoToast.svelte';
@@ -414,6 +415,7 @@
 		initDB().then(() => {
 			initSearch();
 			setupVisibilitySync();
+			setupAutoSync();
 			initialized = true;
 			// Start the notification loop if the user previously opted in.
 			// No-op if disabled or permission not granted.
@@ -525,6 +527,7 @@
 			document.removeEventListener('visibilitychange', handleVisibility);
 			window.clearInterval(rolloverInterval);
 			teardownVisibilitySync();
+			teardownAutoSync();
 			cleanupHashRouter?.();
 			stopNotificationLoop();
 			stopDueCacheSync();
@@ -931,30 +934,30 @@
 			{#if showSyncStatus}
 				<button
 					onclick={() => {
-						if ($gitSyncState.status === 'conflict') {
+						if ($syncIndicator.status === 'conflict') {
 							showConflictModal = true;
 						} else {
 							sync();
 						}
 					}}
-					disabled={$syncState.status === 'syncing'}
+					disabled={$syncIndicator.status === 'syncing'}
 					class="flex w-full items-center gap-2 border-t border-[var(--color-border)] px-3 py-2 text-left transition-colors hover:bg-[var(--color-border)] disabled:opacity-70"
-					title={$gitSyncState.status === 'conflict' ? 'Resolve conflicts' : 'Click to sync'}
+					title={$syncIndicator.status === 'conflict' ? 'Resolve conflicts' : 'Click to sync'}
 				>
-					{#if $gitSyncState.status === 'conflict'}
+					{#if $syncIndicator.status === 'conflict'}
 						<AlertCircle class="h-4 w-4 text-yellow-500" />
 						<span class="text-xs text-yellow-500">
-							{$gitSyncState.conflicts.length} conflict{$gitSyncState.conflicts.length === 1 ? '' : 's'}
+							{$syncIndicator.conflictCount} conflict{$syncIndicator.conflictCount === 1 ? '' : 's'}
 						</span>
-					{:else if $syncState.status === 'syncing'}
+					{:else if $syncIndicator.status === 'syncing'}
 						<RefreshCw class="h-4 w-4 animate-spin text-[var(--color-accent)]" />
 						<span class="text-xs text-[var(--color-text-muted)]">Syncing...</span>
-					{:else if $syncState.status === 'success'}
+					{:else if $syncIndicator.status === 'success'}
 						<CheckCircle class="h-4 w-4 text-green-500" />
 						<span class="text-xs text-[var(--color-text-muted)]">Synced</span>
-					{:else if $syncState.status === 'error'}
+					{:else if $syncIndicator.status === 'error'}
 						<AlertCircle class="h-4 w-4 text-red-500" />
-						<span class="text-xs text-red-500">{$syncState.error || 'Sync failed'}</span>
+						<span class="text-xs text-red-500">{$syncIndicator.error || 'Sync failed'}</span>
 					{:else}
 						<Cloud class="h-4 w-4 text-[var(--color-text-muted)]" />
 						<span class="text-xs text-[var(--color-text-muted)]">Sync ready</span>
@@ -1190,6 +1193,11 @@
 
 	<UndoToast />
 	<LockScreen />
+
+	<!-- Floating sync sign + force-sync button (bottom-right) -->
+	{#if !$isLocked}
+		<SyncFab visible={showSyncStatus} onConflict={() => (showConflictModal = true)} />
+	{/if}
 {/if}
 
 <style>

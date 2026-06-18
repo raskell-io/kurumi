@@ -49,6 +49,40 @@ function blobUrl(config: AzureBlobConfig, vaultId: string): string {
 	return `${base}/${config.container}/kurumi-sync/${vaultId}.bin${sas}`;
 }
 
+function keyUrl(config: AzureBlobConfig, key: string): string {
+	const base = config.accountUrl.replace(/\/+$/, '');
+	const sas = config.sasToken.startsWith('?') ? config.sasToken : `?${config.sasToken}`;
+	return `${base}/${config.container}/${key.replace(/^\/+/, '')}${sas}`;
+}
+
+/** Generic object GET by key — used for blob sync. */
+export async function azureGetObject(
+	config: AzureBlobConfig,
+	key: string
+): Promise<Uint8Array | null> {
+	const response = await fetch(keyUrl(config, key), {
+		headers: { 'x-ms-blob-type': 'BlockBlob' }
+	});
+	if (response.status === 404) return null;
+	if (!response.ok) throw new Error(`Azure Blob GET failed (${response.status})`);
+	return new Uint8Array(await response.arrayBuffer());
+}
+
+/** Generic object PUT by key — used for blob sync. */
+export async function azurePutObject(
+	config: AzureBlobConfig,
+	key: string,
+	data: Uint8Array,
+	contentType = 'application/octet-stream'
+): Promise<void> {
+	const response = await fetch(keyUrl(config, key), {
+		method: 'PUT',
+		headers: { 'x-ms-blob-type': 'BlockBlob', 'Content-Type': contentType },
+		body: data.buffer as ArrayBuffer
+	});
+	if (!response.ok) throw new Error(`Azure Blob PUT failed (${response.status})`);
+}
+
 export async function azureBlobPull(
 	config: AzureBlobConfig,
 	vaultId: string

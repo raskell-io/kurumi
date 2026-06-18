@@ -30,9 +30,17 @@ import {
 	type MemoryConflict
 } from './status';
 import type { MemoryObject, Folder, Vault, Person, Event, ActionItem } from '../db/types';
+import {
+	collectBlobRefs,
+	gatherBlobPayloads,
+	importBlobPayloads,
+	refToId,
+	type BlobPayload
+} from '../sync/blobs';
 
 const REPO_DIR = '/repo';
 const METADATA_PATH = '.kurumi/metadata.json';
+const BLOBS_DIR = '.kurumi/blobs';
 
 /**
  * Progress callback for git operations
@@ -205,15 +213,36 @@ export async function writeNotesToRepo(
 	vault: Vault,
 	people: Person[],
 	events: Event[],
-	actionItems: ActionItem[] = []
+	actionItems: ActionItem[] = [],
+	blobs: BlobPayload[] = []
 ): Promise<void> {
 	const pfs = getFsPromises();
 
 	// Generate markdown files
 	const markdownFiles = notesToMarkdownFiles(memories, folders);
 
+	// Write blob bytes (images/audio/media) and record their mime types so
+	// importers can rebuild the Blob with the correct type.
+	const blobMeta: Record<string, { mimeType: string }> = {};
+	if (blobs.length > 0) {
+		await ensureDir(`${REPO_DIR}/${BLOBS_DIR}`);
+		for (const blob of blobs) {
+			const id = refToId(blob.ref);
+			await pfs.writeFile(`${REPO_DIR}/${BLOBS_DIR}/${id}`, blob.bytes);
+			blobMeta[blob.ref] = { mimeType: blob.mimeType };
+		}
+	}
+
 	// Generate metadata
-	const metadata = createMetadata(vault, folders, memories, people, events, actionItems);
+	const metadata = createMetadata(
+		vault,
+		folders,
+		memories,
+		people,
+		events,
+		actionItems,
+		blobMeta
+	);
 	const metadataJson = serializeMetadata(metadata);
 
 	// Write metadata file
@@ -227,6 +256,41 @@ export async function writeNotesToRepo(
 		await ensureDir(dirPath);
 		await pfs.writeFile(fullPath, file.content, 'utf8');
 	}
+}
+
+/**
+ * Read blob files written under `.kurumi/blobs/` back into payloads, using
+ * the mime types recorded in metadata. Blobs whose mime is unknown default to
+ * application/octet-stream.
+ */
+export async function readRepoBlobs(metadata: GitMetadata | null): Promise<BlobPayload[]> {
+	const pfs = getFsPromises();
+	const dir = `${REPO_DIR}/${BLOBS_DIR}`;
+	if (!(await pathExists(dir))) return [];
+
+	const mimeByRef = metadata?.blobs ?? {};
+	const payloads: BlobPayload[] = [];
+	let entries: string[] = [];
+	try {
+		entries = (await pfs.readdir(dir)) as string[];
+	} catch {
+		return [];
+	}
+
+	for (const id of entries) {
+		const ref = `blob:${id}`;
+		try {
+			const bytes = (await pfs.readFile(`${dir}/${id}`)) as Uint8Array;
+			payloads.push({
+				ref,
+				bytes,
+				mimeType: mimeByRef[ref]?.mimeType || 'application/octet-stream'
+			});
+		} catch {
+			// Skip unreadable entries (e.g. a stray subdirectory).
+		}
+	}
+	return payloads;
 }
 
 /**
@@ -497,6 +561,16 @@ export async function syncGit(
 		const files = await readRepoFiles();
 		const metadata = await readRepoMetadata();
 
+		// Import any blob bytes (images/audio) the remote added that we lack.
+		// Done independently of the memory merge so refs resolve as soon as
+		// their note arrives.
+		try {
+			const remoteBlobs = await readRepoBlobs(metadata);
+			await importBlobPayloads(remoteBlobs);
+		} catch (blobErr) {
+			console.warn('Git blob import failed:', blobErr);
+		}
+
 		// Parse memories from repo
 		const { memories: remoteMemories, folders: remoteFolders } = parseNotesFromFiles(
 			files,
@@ -537,6 +611,10 @@ export async function syncGit(
 		);
 	}
 
+	// Gather the bytes for every blob the local notes reference so they get
+	// written into the repo alongside the markdown.
+	const localBlobs = await gatherBlobPayloads(collectBlobRefs(localMemories));
+
 	// Write local changes to repo
 	await writeNotesToRepo(
 		localMemories,
@@ -544,7 +622,8 @@ export async function syncGit(
 		vault,
 		people,
 		events,
-		localActionItems
+		localActionItems,
+		localBlobs
 	);
 
 	// Check for changes
