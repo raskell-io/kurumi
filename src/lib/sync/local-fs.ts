@@ -169,6 +169,46 @@ async function removeFileByPath(root: FileSystemDirectoryHandle, path: string): 
 	}
 }
 
+// Every directory prefix implied by a set of file paths (e.g. "a/b/note.md"
+// yields "a" and "a/b"). Used to figure out which folders Kurumi managed.
+function dirPrefixes(paths: Iterable<string>): Set<string> {
+	const dirs = new Set<string>();
+	for (const p of paths) {
+		const parts = p.split('/').filter(Boolean);
+		parts.pop(); // drop the filename
+		let cur = '';
+		for (const part of parts) {
+			cur = cur ? `${cur}/${part}` : part;
+			dirs.add(cur);
+		}
+	}
+	return dirs;
+}
+
+// Remove a directory only if it's empty (non-recursive removeEntry rejects on
+// a non-empty dir). This protects any files the user dropped into the folder
+// themselves — we only reclaim folders Kurumi emptied by pruning its notes.
+// Returns true if the directory was removed.
+async function removeEmptyDirByPath(
+	root: FileSystemDirectoryHandle,
+	path: string
+): Promise<boolean> {
+	const parts = path.split('/').filter(Boolean);
+	const name = parts.pop();
+	if (!name) return false;
+	try {
+		let current = root;
+		for (const part of parts) {
+			current = await current.getDirectoryHandle(part);
+		}
+		await current.removeEntry(name); // non-recursive: throws if not empty
+		return true;
+	} catch {
+		// Missing, or still has content (incl. user-added files) — leave it.
+		return false;
+	}
+}
+
 // Paths Kurumi wrote on the previous sync (from .kurumi/metadata.json).
 // Used to delete notes that were since renamed or removed.
 async function readManagedPaths(dir: FileSystemDirectoryHandle): Promise<string[]> {
@@ -242,6 +282,20 @@ export async function localFSPushMarkdown(
 	// Prune notes we previously wrote that no longer exist (rename/delete).
 	for (const path of previousPaths) {
 		if (!newPaths.has(path)) await removeFileByPath(dir, path);
+	}
+
+	// Reclaim folders that Kurumi managed but no longer uses (e.g. a deleted
+	// folder). Removing the stale .md files above leaves the directories
+	// behind, so delete the now-unused ones — deepest first so a parent can
+	// be removed once its children are gone. Empty-only removal protects any
+	// files the user placed in the folder directly.
+	const previousDirs = dirPrefixes(previousPaths);
+	const currentDirs = dirPrefixes(newPaths);
+	const staleDirs = [...previousDirs]
+		.filter((d) => !currentDirs.has(d))
+		.sort((a, b) => b.split('/').length - a.split('/').length);
+	for (const dirPath of staleDirs) {
+		await removeEmptyDirByPath(dir, dirPath);
 	}
 }
 
