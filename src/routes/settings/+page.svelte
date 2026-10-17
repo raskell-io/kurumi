@@ -779,7 +779,7 @@
 		<section class="mb-4 rounded-lg border border-[var(--color-border)] overflow-hidden">
 			<button
 				onclick={() => toggleSection('appearance')}
-				class="flex w-full items-center justify-between bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-border)]"
+				class="flex w-full items-center justify-between bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-hover)]"
 			>
 				<div class="flex items-center gap-3">
 					<Palette class="h-5 w-5 text-[var(--color-accent)]" />
@@ -879,7 +879,7 @@
 		<section class="mb-4 rounded-lg border border-[var(--color-border)] overflow-hidden">
 			<button
 				onclick={() => toggleSection('sync')}
-				class="flex w-full items-center justify-between bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-border)]"
+				class="flex w-full items-center justify-between bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-hover)]"
 			>
 				<div class="flex items-center gap-3">
 					{#if syncMethod === 'git'}
@@ -925,7 +925,7 @@
 							] as item (item.id)}
 								<button
 									onclick={() => handleSyncMethodChange(item.id as SyncMethod)}
-									class="flex items-center justify-center gap-1.5 rounded-lg border px-2 py-2.5 text-xs font-medium transition-colors {syncMethod === item.id ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-border)]'}"
+									class="flex items-center justify-center gap-1.5 rounded-lg border px-2 py-2.5 text-xs font-medium transition-colors {syncMethod === item.id ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-hover)]'}"
 								>
 									{item.label}
 								</button>
@@ -1009,12 +1009,12 @@
 									<span class="flex h-2 w-2 rounded-full bg-green-500"></span>
 									<span class="text-sm text-[var(--color-text)]">Folder selected</span>
 									<button onclick={handleLocalFSTest} disabled={localFSTesting}
-										class="flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-border)] disabled:opacity-50">
+										class="flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-hover)] disabled:opacity-50">
 										{#if localFSTesting}<div class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"></div>{/if}
 										Test
 									</button>
 									<button onclick={handleClearFolder}
-										class="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text-muted)] hover:bg-[var(--color-border)]">
+										class="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text-muted)] hover:bg-[var(--color-hover)]">
 										Change folder
 									</button>
 								</div>
@@ -1158,7 +1158,7 @@
 								<button
 									onclick={handleS3Test}
 									disabled={s3Testing}
-									class="flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] disabled:opacity-50"
+									class="flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] disabled:opacity-50"
 								>
 									{#if s3Testing}
 										<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
@@ -1193,7 +1193,7 @@
 									{#each Object.values(GIT_PROVIDERS) as provider}
 										<button
 											onclick={() => (gitProvider = provider.id)}
-											class="flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors {gitProvider === provider.id ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-border)]'}"
+											class="flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors {gitProvider === provider.id ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-hover)]'}"
 										>
 											{provider.name}
 										</button>
@@ -1260,7 +1260,7 @@
 								<button
 									onclick={handleTestGitConnection}
 									disabled={isTestingGit || !gitRepoUrl || !gitToken}
-									class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] disabled:opacity-50"
+									class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] disabled:opacity-50"
 								>
 									{#if isTestingGit}
 										<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
@@ -1384,7 +1384,7 @@
 								<button
 									onclick={handleTestConnection}
 									disabled={isTesting || !syncUrl || !syncToken}
-									class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] disabled:opacity-50"
+									class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] disabled:opacity-50"
 								>
 									{#if isTesting}
 										<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
@@ -1457,7 +1457,7 @@
 		<section class="mb-4 rounded-lg border border-[var(--color-border)] overflow-hidden">
 			<button
 				onclick={() => toggleSection('localAi')}
-				class="flex w-full items-center justify-between bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-border)]"
+				class="flex w-full items-center justify-between bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-hover)]"
 			>
 				<div class="flex items-center gap-3">
 					<Cpu class="h-5 w-5 text-[var(--color-accent)]" />
@@ -1558,7 +1558,7 @@
 								<button
 									type="button"
 									onclick={() => preloadPipeline('transcribe', currentModelId, { dtype: 'fp32' })}
-									class="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-border)]"
+									class="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-hover)]"
 								>
 									Download now
 								</button>
@@ -1645,7 +1645,7 @@
 										<button
 											type="button"
 											onclick={() => preloadPipeline('text-generation', currentTextModelId)}
-											class="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-border)]"
+											class="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-hover)]"
 										>
 											Download now
 										</button>
@@ -1731,7 +1731,7 @@
 										<button
 											type="button"
 											onclick={() => preloadPipeline('embed', currentEmbedModelId)}
-											class="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-border)]"
+											class="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-hover)]"
 										>
 											Download now
 										</button>
@@ -1748,7 +1748,7 @@
 		<section class="mb-4 rounded-lg border border-[var(--color-border)] overflow-hidden">
 			<button
 				onclick={() => toggleSection('notifications')}
-				class="flex w-full items-center justify-between bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-border)]"
+				class="flex w-full items-center justify-between bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-hover)]"
 			>
 				<div class="flex items-center gap-3">
 					<Bell class="h-5 w-5 text-[var(--color-accent)]" />
@@ -1852,7 +1852,7 @@
 		<section class="mb-4 rounded-lg border border-[var(--color-border)] overflow-hidden">
 			<button
 				onclick={() => toggleSection('ai')}
-				class="flex w-full items-center justify-between bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-border)]"
+				class="flex w-full items-center justify-between bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-hover)]"
 			>
 				<div class="flex items-center gap-3">
 					<Sparkles class="h-5 w-5 text-[var(--color-accent)]" />
@@ -1883,7 +1883,7 @@
 							<div class="flex gap-2">
 								<button
 									onclick={() => handleProviderChange('openai')}
-									class="flex flex-1 items-center justify-center gap-2 rounded-lg border px-4 py-3 transition-colors {aiProvider === 'openai' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-border)]'}"
+									class="flex flex-1 items-center justify-center gap-2 rounded-lg border px-4 py-3 transition-colors {aiProvider === 'openai' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-hover)]'}"
 								>
 									<!-- OpenAI Logo -->
 									<svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
@@ -1893,7 +1893,7 @@
 								</button>
 								<button
 									onclick={() => handleProviderChange('anthropic')}
-									class="flex flex-1 items-center justify-center gap-2 rounded-lg border px-4 py-3 transition-colors {aiProvider === 'anthropic' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-border)]'}"
+									class="flex flex-1 items-center justify-center gap-2 rounded-lg border px-4 py-3 transition-colors {aiProvider === 'anthropic' ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-hover)]'}"
 								>
 									<!-- Anthropic Logo -->
 									<svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
@@ -1963,7 +1963,7 @@
 							<button
 								onclick={handleTestAI}
 								disabled={isTestingAI || !currentApiKey}
-								class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] disabled:opacity-50"
+								class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] disabled:opacity-50"
 							>
 								{#if isTestingAI}
 									<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
@@ -2028,7 +2028,7 @@
 		<section class="mb-4 rounded-lg border border-[var(--color-border)] overflow-hidden">
 			<button
 				onclick={() => toggleSection('data')}
-				class="flex w-full items-center justify-between bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-border)]"
+				class="flex w-full items-center justify-between bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-hover)]"
 			>
 				<div class="flex items-center gap-3">
 					<HardDrive class="h-5 w-5 text-[var(--color-accent)]" />
@@ -2055,14 +2055,14 @@
 						/>
 						<button
 							onclick={triggerFileInput}
-							class="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] active:scale-[0.98] md:w-auto"
+							class="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] active:scale-[0.98] md:w-auto"
 						>
 							<Upload class="h-4 w-4" />
 							Import JSON
 						</button>
 						<button
 							onclick={handleExport}
-							class="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] active:scale-[0.98] md:w-auto"
+							class="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] active:scale-[0.98] md:w-auto"
 						>
 							<Download class="h-4 w-4" />
 							Export JSON
@@ -2084,7 +2084,7 @@
 						<button
 							onclick={handleObsidianImport}
 							disabled={isImportingObsidian}
-							class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] active:scale-[0.98] disabled:opacity-50"
+							class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] active:scale-[0.98] disabled:opacity-50"
 						>
 							{#if isImportingObsidian}
 								<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
@@ -2134,7 +2134,7 @@
 						<button
 							onclick={triggerRoamImport}
 							disabled={isImportingRoam}
-							class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] active:scale-[0.98] disabled:opacity-50"
+							class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] active:scale-[0.98] disabled:opacity-50"
 						>
 							{#if isImportingRoam}
 								<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
@@ -2188,7 +2188,7 @@
 						<button
 							onclick={triggerEvernoteImport}
 							disabled={isImportingEvernote}
-							class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] active:scale-[0.98] disabled:opacity-50"
+							class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] active:scale-[0.98] disabled:opacity-50"
 						>
 							{#if isImportingEvernote}
 								<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
@@ -2245,7 +2245,7 @@
 							<button
 								onclick={() => handleMarkdownExport('vanilla')}
 								disabled={isExportingMarkdown}
-								class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] active:scale-[0.98] disabled:opacity-50"
+								class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] active:scale-[0.98] disabled:opacity-50"
 							>
 								{#if isExportingMarkdown && markdownExportFormat === 'vanilla'}
 									<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
@@ -2257,7 +2257,7 @@
 							<button
 								onclick={() => handleMarkdownExport('hugo')}
 								disabled={isExportingMarkdown}
-								class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] active:scale-[0.98] disabled:opacity-50"
+								class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] active:scale-[0.98] disabled:opacity-50"
 							>
 								{#if isExportingMarkdown && markdownExportFormat === 'hugo'}
 									<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
@@ -2269,7 +2269,7 @@
 							<button
 								onclick={() => handleMarkdownExport('zola')}
 								disabled={isExportingMarkdown}
-								class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] active:scale-[0.98] disabled:opacity-50"
+								class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] active:scale-[0.98] disabled:opacity-50"
 							>
 								{#if isExportingMarkdown && markdownExportFormat === 'zola'}
 									<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
@@ -2337,7 +2337,7 @@
 		<section class="mb-4 rounded-lg border border-[var(--color-border)] overflow-hidden">
 			<button
 				onclick={() => toggleSection('about')}
-				class="flex w-full items-center justify-between bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-border)]"
+				class="flex w-full items-center justify-between bg-[var(--color-bg-secondary)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-hover)]"
 			>
 				<div class="flex items-center gap-3">
 					<Info class="h-5 w-5 text-[var(--color-accent)]" />
@@ -2370,7 +2370,7 @@
 							href="https://ko-fi.com/raskell"
 							target="_blank"
 							rel="noopener"
-							class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)] hover:border-[var(--color-accent)]"
+							class="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-4 py-3 text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:border-[var(--color-accent)]"
 						>
 							<svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
 								<path d="M23.881 8.948c-.773-4.085-4.859-4.593-4.859-4.593H.723c-.604 0-.679.798-.679.798s-.082 7.324-.022 11.822c.164 2.424 2.586 2.672 2.586 2.672s8.267-.023 11.966-.049c2.438-.426 2.683-2.566 2.658-3.734 4.352.24 7.422-2.831 6.649-6.916zm-11.062 3.511c-1.246 1.453-4.011 3.976-4.011 3.976s-.121.119-.31.023c-.076-.057-.108-.09-.108-.09-.443-.441-3.368-3.049-4.034-3.954-.709-.965-1.041-2.7-.091-3.71.951-1.01 3.005-1.086 4.363.407 0 0 1.565-1.782 3.468-.963 1.904.82 1.832 3.011.723 4.311z"/>
@@ -2505,7 +2505,7 @@ mise run setup</code></pre>
 <!-- Import Modal -->
 {#if showImportModal && importAnalysis}
 	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4"
 		onclick={closeImportModal}
 		onkeydown={(e) => e.key === 'Escape' && closeImportModal()}
 		role="dialog"
@@ -2624,7 +2624,7 @@ mise run setup</code></pre>
 <!-- Clear Data Confirmation Step 1 -->
 {#if showClearConfirm1}
 	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4"
 		onclick={cancelClear}
 		onkeydown={(e) => e.key === 'Escape' && cancelClear()}
 		role="dialog"
@@ -2688,7 +2688,7 @@ mise run setup</code></pre>
 <!-- Clear Data Confirmation Step 2 -->
 {#if showClearConfirm2}
 	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4"
 		onclick={cancelClear}
 		onkeydown={(e) => e.key === 'Escape' && cancelClear()}
 		role="dialog"

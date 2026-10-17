@@ -16,7 +16,6 @@
 	import { storeBlob } from '$lib/db/blob-store';
 	import { getIconById } from '$lib/icons/vault-icons';
 	import { syncState } from '$lib/sync/status';
-	import { resourceColors } from '$lib/types/resources';
 	import { exportVaultAsMarkdown, type MarkdownExportFormat } from '$lib/utils/markdown-export';
 	import {
 		triggerVoiceCapture,
@@ -458,14 +457,31 @@
 		} else if (e.key === 'ArrowDown') {
 			e.preventDefault();
 			selectedIndex = Math.min(selectedIndex + 1, results.length - 1);
+			revealSelected();
 		} else if (e.key === 'ArrowUp') {
 			e.preventDefault();
 			selectedIndex = Math.max(selectedIndex - 1, 0);
+			revealSelected();
 		} else if (e.key === 'Enter' && results.length > 0) {
 			e.preventDefault();
 			results[selectedIndex].action();
 		}
 	}
+
+	let listRef: HTMLUListElement | undefined = $state();
+
+	// Keep the keyboard selection in view while arrowing through long lists.
+	function revealSelected() {
+		requestAnimationFrame(() => {
+			listRef?.children[selectedIndex]?.scrollIntoView({ block: 'nearest' });
+		});
+	}
+
+	const typeLabels: Record<string, string> = {
+		action: 'Action',
+		folder: 'Folder',
+		vault: 'Vault'
+	};
 
 	function getIcon(icon?: string) {
 		switch (icon) {
@@ -523,122 +539,94 @@
 </script>
 
 <div
-	class="animate-backdrop fixed inset-0 z-50 flex items-stretch justify-center bg-black/50 p-0 md:items-start md:p-4 md:pt-[15vh]"
+	class="animate-backdrop fixed inset-0 z-50 flex items-stretch justify-center bg-black/30 p-0 backdrop-blur-[1px] md:items-start md:p-4 md:pt-[12vh]"
 	onclick={onClose}
 	onkeydown={handleKeydown}
 	role="dialog"
 	aria-modal="true"
+	aria-label="Command palette"
 	tabindex="-1"
 >
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
-		class="animate-modal flex h-full w-full max-w-none flex-col overflow-hidden rounded-none bg-[var(--color-bg)] shadow-2xl md:h-auto md:max-w-xl md:rounded-xl"
+		class="animate-modal flex h-full w-full max-w-none flex-col overflow-hidden rounded-none bg-[var(--color-bg)] shadow-[var(--shadow-lg)] md:h-auto md:max-w-[40rem] md:rounded-xl md:border md:border-[var(--color-border)]"
 		onclick={(e) => e.stopPropagation()}
 		onkeydown={(e) => e.stopPropagation()}
 		role="search"
 	>
 		<!-- Input -->
-		<div class="flex items-center gap-3 p-4">
-			<div class="flex flex-1 items-center gap-3 rounded-xl bg-[var(--color-bg-secondary)] px-4 py-3 ring-1 ring-[var(--color-border)] focus-within:ring-[var(--color-accent)]">
-				<Search class="h-5 w-5 shrink-0 text-[var(--color-text-muted)]" />
-				<div class="relative flex-1">
-					<input
-						bind:this={inputRef}
-						bind:value={query}
-						type="text"
-						class="command-input w-full bg-transparent text-lg text-[var(--color-text)]"
-						onkeydown={handleKeydown}
-					/>
-					{#if !query}
-						<div class="pointer-events-none absolute inset-0 flex items-center overflow-hidden whitespace-nowrap text-lg text-[var(--color-text-muted)]">
-							Search notes or type <code class="mx-1 rounded bg-[var(--color-border)] px-1.5 py-0.5 font-mono text-sm">&gt;</code> for actions
-						</div>
-					{/if}
-				</div>
-				<kbd
-					class="hidden shrink-0 rounded bg-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-text-muted)] md:inline"
-				>
-					ESC
-				</kbd>
+		<div class="flex items-center gap-3 border-b border-[var(--color-border)] px-4 safe-top">
+			<Search class="h-[1.125rem] w-[1.125rem] shrink-0 text-[var(--color-text-faint)]" />
+			<div class="relative flex-1">
+				<input
+					bind:this={inputRef}
+					bind:value={query}
+					type="text"
+					class="command-input h-14 w-full bg-transparent text-base text-[var(--color-text)]"
+					aria-label="Search notes or run an action"
+					onkeydown={handleKeydown}
+				/>
+				{#if !query}
+					<div class="pointer-events-none absolute inset-0 flex items-center overflow-hidden whitespace-nowrap text-base text-[var(--color-text-faint)]">
+						Search notes, or type <span class="k-kbd mx-1.5 !text-xs">&gt;</span> for actions
+					</div>
+				{/if}
 			</div>
 			<button
 				type="button"
 				onclick={onClose}
-				class="shrink-0 text-[var(--color-accent)] md:hidden"
+				class="shrink-0 text-sm text-[var(--color-accent)] md:hidden"
 			>
 				Cancel
 			</button>
 		</div>
 
 		<!-- Results -->
-		<div class="flex-1 overflow-y-auto md:max-h-[60vh] md:flex-none">
+		<div class="flex-1 overflow-y-auto overscroll-contain md:max-h-[min(60vh,28rem)] md:flex-none">
 			{#if results.length === 0}
-				<div class="px-4 py-8 text-center text-[var(--color-text-muted)]">
-					No results found
+				<div class="px-4 py-10 text-center text-sm text-[var(--color-text-muted)]">
+					No matches for “{query}”
 				</div>
 			{:else}
-				<ul class="py-2">
+				<ul class="p-1.5" bind:this={listRef} role="listbox">
 					{#each results as item, i}
-						<li>
+						<li role="option" aria-selected={i === selectedIndex}>
 							<button
 								type="button"
 								onclick={(e) => { e.preventDefault(); e.stopPropagation(); item.action(); }}
-								class="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[var(--color-bg-secondary)]"
-								class:bg-[var(--color-bg-secondary)]={i === selectedIndex}
+								onmousemove={() => { if (selectedIndex !== i) selectedIndex = i; }}
+								class="flex w-full items-center gap-3 rounded-[var(--radius-md)] px-2.5 py-2 text-left"
+								class:bg-[var(--color-hover)]={i === selectedIndex}
 							>
 								<div
-									class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
-									class:bg-[var(--color-accent)]={item.type === 'action'}
-									class:text-white={item.type === 'action'}
-									style={item.type === 'folder' ? `background: ${resourceColors.folder.bgAlpha}; color: ${resourceColors.folder.color};` : item.type === 'vault' ? `background: ${resourceColors.vault.bgAlpha}; color: ${resourceColors.vault.color};` : item.type === 'note' ? `background: ${resourceColors.note.bgAlpha}; color: ${resourceColors.note.color};` : ''}
+									class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--color-border)]"
+									class:text-[var(--color-accent)]={item.type === 'action'}
+									class:text-[var(--color-text-muted)]={item.type !== 'action'}
 								>
 									<svg
 										xmlns="http://www.w3.org/2000/svg"
-										class="h-4 w-4"
+										class="h-3.5 w-3.5"
 										viewBox="0 0 20 20"
 										fill="currentColor"
+										aria-hidden="true"
 									>
 										<path fill-rule="evenodd" d={getItemIconPath(item)} clip-rule="evenodd" />
 									</svg>
 								</div>
 								<div class="min-w-0 flex-1">
-									<div class="font-medium text-[var(--color-text)]">
+									<div class="truncate text-sm font-medium text-[var(--color-text)]">
 										{item.title}
 									</div>
 									{#if item.description}
-										<div class="truncate text-sm text-[var(--color-text-muted)]">
+										<div class="truncate text-xs text-[var(--color-text-faint)]">
 											{item.description}
 										</div>
 									{/if}
 								</div>
-								{#if item.type === 'action'}
-									<span
-										class="shrink-0 rounded px-2 py-0.5 text-xs font-medium"
-										style="background: {resourceColors.action.bgAlpha}; color: {resourceColors.action.color};"
-									>
-										Action
-									</span>
-								{:else if item.type === 'folder'}
-									<span
-										class="shrink-0 rounded px-2 py-0.5 text-xs font-medium"
-										style="background: {resourceColors.folder.bgAlpha}; color: {resourceColors.folder.color};"
-									>
-										Folder
-									</span>
-								{:else if item.type === 'note'}
-									<span
-										class="shrink-0 rounded px-2 py-0.5 text-xs font-medium"
-										style="background: {resourceColors.note.bgAlpha}; color: {resourceColors.note.color};"
-									>
-										Note
-									</span>
-								{:else if item.type === 'vault'}
-									<span
-										class="shrink-0 rounded px-2 py-0.5 text-xs font-medium"
-										style="background: {resourceColors.vault.bgAlpha}; color: {resourceColors.vault.color};"
-									>
-										Vault
-									</span>
+								{#if i === selectedIndex}
+									<span class="k-kbd hidden shrink-0 md:inline-flex">↵</span>
+								{:else if typeLabels[item.type]}
+									<span class="shrink-0 text-xs text-[var(--color-text-faint)]">{typeLabels[item.type]}</span>
 								{/if}
 							</button>
 						</li>
@@ -649,33 +637,22 @@
 
 		<!-- Footer -->
 		<div
-			class="flex items-center justify-between border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-text-muted)]"
+			class="flex items-center justify-between border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-text-faint)] safe-bottom"
 		>
 			<div class="flex items-center gap-4">
-				<!-- Sync status -->
-				<span class="flex items-center gap-1.5">
-					{#if $syncState.lastSyncedAt}
-						<Cloud class="h-3.5 w-3.5" style="color: {resourceColors.note.color};" />
-						<span>Synced {new Date($syncState.lastSyncedAt).toLocaleDateString()}</span>
-					{:else}
-						<CloudOff class="h-3.5 w-3.5" />
-						<span>Not synced</span>
-					{/if}
-				</span>
-				<span class="hidden items-center gap-1 md:flex">
-					<kbd class="rounded bg-[var(--color-bg-secondary)] px-1.5 py-0.5">↑↓</kbd>
-					navigate
-				</span>
-				<span class="hidden items-center gap-1 md:flex">
-					<kbd class="rounded bg-[var(--color-bg-secondary)] px-1.5 py-0.5">↵</kbd>
-					select
-				</span>
-				<span class="hidden items-center gap-1 md:flex">
-					<kbd class="rounded bg-[var(--color-bg-secondary)] px-1.5 py-0.5 font-mono">&gt;</kbd>
-					actions
-				</span>
+				<span class="hidden items-center gap-1.5 md:flex"><span class="k-kbd">↑</span><span class="k-kbd">↓</span> navigate</span>
+				<span class="hidden items-center gap-1.5 md:flex"><span class="k-kbd">↵</span> open</span>
+				<span class="hidden items-center gap-1.5 md:flex"><span class="k-kbd">esc</span> close</span>
 			</div>
-			<span>{results.length} {results.length === 1 ? 'result' : 'results'}</span>
+			<span class="flex items-center gap-1.5">
+				{#if $syncState.lastSyncedAt}
+					<Cloud class="h-3.5 w-3.5" />
+					<span>Synced {new Date($syncState.lastSyncedAt).toLocaleDateString()}</span>
+				{:else}
+					<CloudOff class="h-3.5 w-3.5" />
+					<span>Not synced</span>
+				{/if}
+			</span>
 		</div>
 	</div>
 </div>

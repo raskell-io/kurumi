@@ -59,7 +59,7 @@
 		disabled={syncing}
 		title={tooltip()}
 		aria-label={tooltip()}
-		class="sync-fab fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 shadow-lg transition-colors hover:bg-[var(--color-border)] disabled:cursor-default disabled:opacity-80"
+		class="sync-fab fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 shadow-lg transition-colors hover:bg-[var(--color-hover)] disabled:cursor-default disabled:opacity-80"
 	>
 		{#if status === 'syncing'}
 			<RefreshCw class="h-4 w-4 animate-spin text-[var(--color-accent)]" />

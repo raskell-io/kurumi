@@ -23,7 +23,6 @@
 	import {
 		Plus,
 		FileText,
-		Clock,
 		Sparkles,
 		Send,
 		AlertCircle,
@@ -367,58 +366,62 @@
 		});
 	}
 
+	const modKey = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
+
 	const tips = [
-		{ icon: '[[', text: 'Use [[Note Title]] to link notes together' },
-		{ icon: '#', text: 'Add #tags to organize your thoughts' },
-		{ icon: '/', text: 'Press Cmd+K to search and navigate quickly' }
+		{ icon: '[[', text: 'Link notes by typing [[ and a title' },
+		{ icon: '#', text: 'Add #tags and @people as you write' },
+		{ icon: '/', text: 'Type / in a note for blocks and commands' },
+		{ icon: `${modKey}K`, text: 'Search and jump anywhere' }
 	];
+
+	const greeting = (() => {
+		const hour = new Date().getHours();
+		if (hour < 5) return 'Good evening';
+		if (hour < 12) return 'Good morning';
+		if (hour < 18) return 'Good afternoon';
+		return 'Good evening';
+	})();
+	const todayLabel = new Date().toLocaleDateString(undefined, {
+		weekday: 'long',
+		month: 'long',
+		day: 'numeric'
+	});
 </script>
 
-<div class="mx-auto max-w-3xl p-6 md:p-10">
+<div class="mx-auto max-w-2xl px-5 py-8 md:px-8 md:py-16">
 	{#if $memoryObjects.length === 0}
 		<!-- Empty-vault welcome state -->
-		<div class="flex flex-col items-center text-center">
-			<img
-				src="/icon-512.avif"
-				alt="Kurumi"
-				class="mx-auto mb-5 h-24 w-24 rounded-2xl shadow-lg md:mb-8 md:h-28 md:w-28"
-			/>
-			<h1 class="mb-3 text-3xl font-bold text-[var(--color-text)] md:text-4xl">Welcome to Kurumi</h1>
-			<p class="mb-8 text-lg text-[var(--color-text-muted)] md:mb-10 md:text-xl">
-				Your local-first second brain
-			</p>
+		<div class="flex flex-col items-center pt-[8vh] text-center">
+			<img src="/icon-512.avif" alt="" class="mb-6 h-16 w-16 rounded-2xl" />
+			<h1 class="mb-2 text-2xl font-semibold tracking-tight text-[var(--color-text)] md:text-3xl">Welcome to Kurumi</h1>
+			<p class="mb-8 text-[var(--color-text-muted)]">A quiet place to offload a thought — and find it again.</p>
 
 			<button
 				type="button"
 				onclick={handleNewNote}
-				class="group relative inline-flex items-center gap-2 overflow-hidden rounded-xl px-6 py-3.5 text-lg font-medium text-[#1e1e2e] shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl active:scale-[0.98] md:px-8 md:text-xl"
-				style="background: linear-gradient(135deg, #89b4fa, #cba6f7, #f5c2e7); box-shadow: 0 10px 40px -10px rgba(203, 166, 247, 0.5);"
+				class="inline-flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2.5 text-sm font-medium text-white shadow-[var(--shadow-sm)] hover:bg-[var(--color-accent-hover)] dark:text-[#1e1e2e]"
 			>
-				<span
-					class="absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-					style="background: linear-gradient(135deg, #74c7ec, #b4befe, #f5c2e7);"
-				></span>
-				<Plus class="relative h-6 w-6 md:h-7 md:w-7" />
-				<span class="relative">Create your first note</span>
+				<Plus class="h-4 w-4" />
+				Create your first note
+				<span class="ml-1 text-xs opacity-70">{modKey}N</span>
 			</button>
 
-			<div class="mx-auto mt-10 max-w-md space-y-4 text-left">
-				<p class="text-center text-sm font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
-					Quick tips
-				</p>
+			<ul class="mx-auto mt-12 w-full max-w-sm divide-y divide-[var(--color-border)] rounded-xl border border-[var(--color-border)] text-left">
 				{#each tips as tip}
-					<div class="flex items-center gap-4 rounded-xl bg-[var(--color-bg-secondary)] px-5 py-4">
-						<span
-							class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--color-accent)] text-base font-mono text-white"
-						>
-							{tip.icon}
-						</span>
-						<span class="text-base text-[var(--color-text-muted)]">{tip.text}</span>
-					</div>
+					<li class="flex items-center gap-3 px-4 py-3">
+						<span class="k-kbd min-w-8 justify-center !text-xs !text-[var(--color-text-muted)]">{tip.icon}</span>
+						<span class="text-sm text-[var(--color-text-muted)]">{tip.text}</span>
+					</li>
 				{/each}
-			</div>
+			</ul>
 		</div>
 	{:else}
+		<header class="mb-8">
+			<p class="text-sm text-[var(--color-text-faint)]">{todayLabel}</p>
+			<h1 class="mt-1 text-2xl font-semibold tracking-tight text-[var(--color-text)] md:text-[1.75rem]">{greeting}</h1>
+		</header>
+
 		<!-- Due today + pending proposals strip -->
 		{#if dueToday.length > 0 || pendingProposalsCount > 0}
 			<div class="mb-6 space-y-3">
@@ -508,8 +511,8 @@
 		<div class="mb-8">
 			<div class="mb-3 flex items-center justify-between gap-2">
 				<div class="flex items-center gap-2">
-					<Sparkles class="h-5 w-5 text-[var(--color-accent)]" />
-					<h1 class="text-xl font-semibold text-[var(--color-text)]">Ask Kurumi</h1>
+					<Sparkles class="h-4 w-4 text-[var(--color-accent)]" />
+					<h2 class="text-sm font-semibold text-[var(--color-text)]">Ask Kurumi</h2>
 				</div>
 				<div class="flex items-center gap-1.5">
 					{#if aiAvailable}
@@ -558,7 +561,7 @@
 							? 'Follow up on this conversation…'
 							: 'Ask anything · try tag:work or person:alice'}
 						disabled={asking || recording || transcribing}
-						class="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-4 pr-24 text-base text-[var(--color-text)] placeholder-[var(--color-text-muted)] outline-none transition-colors focus:border-[var(--color-accent)] disabled:opacity-50"
+						class="ask-input w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3.5 pr-24 text-[0.9375rem] text-[var(--color-text)] placeholder-[var(--color-text-faint)] shadow-[var(--shadow-sm)] outline-none disabled:opacity-50"
 					/>
 					<div class="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
 						{#if voiceMode && transcribeAvailable}
@@ -569,7 +572,7 @@
 								onpointerdown={handleStartRecording}
 								onpointerup={handleStopRecording}
 								onpointerleave={() => recording && handleStopRecording()}
-								class="flex h-10 w-10 items-center justify-center rounded-lg transition-all disabled:opacity-50"
+								class="flex h-9 w-9 items-center justify-center rounded-lg transition-all disabled:opacity-50"
 								class:bg-red-500={recording}
 								class:text-white={recording}
 								class:animate-pulse={recording}
@@ -584,7 +587,7 @@
 						<button
 							type="submit"
 							disabled={!question.trim() || asking || recording || transcribing}
-							class="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--color-accent)] text-white transition-all hover:bg-[var(--color-accent-hover)] disabled:opacity-50 disabled:hover:bg-[var(--color-accent)]"
+							class="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--color-accent)] text-white transition-all hover:bg-[var(--color-accent-hover)] disabled:bg-transparent disabled:text-[var(--color-text-faint)] dark:text-[#1e1e2e]"
 							aria-label="Ask"
 						>
 							{#if asking}
@@ -719,7 +722,7 @@
 							<button
 								type="button"
 								onclick={clearConversation}
-								class="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-1.5 text-xs text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
+								class="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-1.5 text-xs text-[var(--color-text-muted)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
 							>
 								<RotateCcw class="h-3 w-3" />
 								Clear conversation
@@ -728,16 +731,16 @@
 					</div>
 				{/if}
 			{:else}
-				<div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4 text-sm text-[var(--color-text-muted)]">
-					<p>
-						Configure an OpenAI API key to ask natural-language questions across your memories.
+				<div class="flex flex-col gap-3 rounded-xl border border-dashed border-[var(--color-border)] p-4 text-sm text-[var(--color-text-muted)] sm:flex-row sm:items-center">
+					<p class="flex-1">
+						Add an OpenAI API key to ask questions across your memories, with citations.
 					</p>
 					<a
 						href="/settings"
-						class="mt-3 inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-xs text-[var(--color-text)] hover:bg-[var(--color-border)]"
+						class="inline-flex shrink-0 items-center gap-2 self-start rounded-md border border-[var(--color-border)] px-2.5 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-hover)] sm:self-auto"
 					>
 						<Settings class="h-3.5 w-3.5" />
-						Open settings
+						Set up
 					</a>
 				</div>
 			{/if}
@@ -745,42 +748,48 @@
 
 		<!-- Recent captures -->
 		{#if recentMemories.length > 0}
-			<div>
-				<p class="mb-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-					Recent
-				</p>
-				<div class="space-y-2">
-					{#each recentMemories as memory}
-						<a
-							href="/memory/{memory.id}"
-							class="flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-3 transition-all hover:border-[var(--color-accent)]"
-						>
-							<FileText class="h-5 w-5 shrink-0 text-[var(--color-accent)]" />
-							<div class="min-w-0 flex-1">
-								<p class="truncate font-medium text-[var(--color-text)]">
-									{memory.title || 'Untitled'}
-								</p>
-							</div>
-							<div class="flex shrink-0 items-center gap-1 text-xs text-[var(--color-text-muted)]">
-								<Clock class="h-3 w-3" />
-								{formatRelativeTime(memory.updatedAt)}
-							</div>
-						</a>
-					{/each}
+			<section>
+				<div class="mb-1 flex items-center justify-between px-2">
+					<h2 class="text-xs font-semibold text-[var(--color-text-faint)]">Recent</h2>
+					<button
+						type="button"
+						onclick={handleNewNote}
+						class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-[var(--color-text-muted)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
+						title="New note ({modKey}N)"
+					>
+						<Plus class="h-3.5 w-3.5" />
+						New note
+					</button>
 				</div>
-			</div>
-		{/if}
-
-		<div class="mt-6">
+				<ul>
+					{#each recentMemories as memory (memory.id)}
+						<li>
+							<a
+								href="/memory/{memory.id}"
+								class="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-[var(--color-hover)]"
+							>
+								<FileText class="h-4 w-4 shrink-0 text-[var(--color-text-faint)]" />
+								<span class="min-w-0 flex-1 truncate text-sm text-[var(--color-text)]">
+									{memory.title || 'Untitled'}
+								</span>
+								<span class="flex shrink-0 items-center gap-1 text-xs tabular-nums text-[var(--color-text-faint)]">
+									{formatRelativeTime(memory.updatedAt)}
+								</span>
+							</a>
+						</li>
+					{/each}
+				</ul>
+			</section>
+		{:else}
 			<button
 				type="button"
 				onclick={handleNewNote}
-				class="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-border)]"
+				class="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-hover)]"
 			>
 				<Plus class="h-4 w-4" />
 				New note
 			</button>
-		</div>
+		{/if}
 	{/if}
 </div>
 
@@ -806,6 +815,11 @@
 	:global(.markdown-content sup .ask-citation:hover) {
 		background: color-mix(in srgb, var(--color-accent) 35%, transparent);
 		text-decoration: none;
+	}
+
+	.ask-input:focus {
+		border-color: color-mix(in srgb, var(--color-accent) 60%, var(--color-border));
+		box-shadow: 0 0 0 3px var(--color-accent-soft);
 	}
 
 	.voice-toggle {

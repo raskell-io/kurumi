@@ -7,6 +7,18 @@
 		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 		<meta name="apple-mobile-web-app-title" content="Kurumi" />
 		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+		<link rel="preload" href="/fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin />
+		<script>
+			// Apply saved appearance before first paint so there's no flash of
+			// the wrong theme or editor font while the app boots.
+			try {
+				var c = document.documentElement.classList;
+				var t = localStorage.getItem('kurumi-theme');
+				if (t === 'light' || t === 'dark') c.add(t);
+				c.add('font-' + (localStorage.getItem('kurumi-editor-font') || 'quattro'));
+				c.add('font-size-' + (localStorage.getItem('kurumi-editor-font-size') || 'medium'));
+			} catch (e) {}
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

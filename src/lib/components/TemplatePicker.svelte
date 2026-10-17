@@ -156,7 +156,7 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
-		class="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[15vh]"
+		class="fixed inset-0 z-50 flex items-start justify-center bg-black/40 backdrop-blur-[2px] pt-[15vh]"
 		onclick={handleBackdropClick}
 		role="dialog"
 		aria-modal="true"
@@ -178,7 +178,7 @@
 								showTitlePrompt = false;
 								selectedTemplate = null;
 							}}
-							class="rounded p-1 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
+							class="rounded p-1 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
 						>
 							<X class="h-5 w-5" />
 						</button>
@@ -199,7 +199,7 @@
 								showTitlePrompt = false;
 								selectedTemplate = null;
 							}}
-							class="rounded-lg px-3 py-2 text-sm text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)]"
+							class="rounded-lg px-3 py-2 text-sm text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-hover)]"
 						>
 							Cancel
 						</button>
@@ -226,7 +226,7 @@
 						/>
 						<button
 							onclick={onClose}
-							class="rounded p-1 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
+							class="rounded p-1 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
 						>
 							<X class="h-5 w-5" />
 						</button>

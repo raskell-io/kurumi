@@ -11,12 +11,14 @@
 		addMemoryObject,
 		folders,
 		retryMemoryProcessing,
-		extractRemindersFromMemory
+		extractRemindersFromMemory,
+		restoreMemoryObject
 	} from '$lib/db';
+	import { pushUndo } from '$lib/stores/undo';
 	import { get } from 'svelte/store';
 	import Editor from '$lib/components/Editor.svelte';
 	import InlineTemplateChooser from '$lib/components/InlineTemplateChooser.svelte';
-	import { untrack } from 'svelte';
+	import { untrack, tick } from 'svelte';
 	import { downloadSingleMemory, type MarkdownExportFormat } from '$lib/utils/markdown-export';
 	import { publishMemoryAsHtml, copyMemoryAsHtml, shareMemory } from '$lib/utils/publish';
 	import { getBlob } from '$lib/db/blob-store';
@@ -37,7 +39,15 @@
 		ImagePlus,
 		Camera,
 		History,
-		Link2
+		Link2,
+		MoreHorizontal,
+		FileText,
+		ChevronRight,
+		Sparkles,
+		Share2,
+		Copy,
+		FileCode,
+		X
 	} from 'lucide-svelte';
 	import CameraCapture from '$lib/components/CameraCapture.svelte';
 	import VersionHistoryModal from '$lib/components/VersionHistoryModal.svelte';
@@ -50,8 +60,15 @@
 	let showHistory = $state(false);
 	let relatedNotes = $state<Array<{ memory: MemoryObject; score: number }>>([]);
 	let loadingRelated = $state(false);
-	let showDeleteConfirm = $state(false);
-	let showExportMenu = $state(false);
+	let showMoreMenu = $state(false);
+	let titleInput: HTMLInputElement | undefined = $state();
+
+	// Ticks every 30s so the "Edited …" label stays fresh.
+	let now = $state(Date.now());
+	$effect(() => {
+		const timer = setInterval(() => (now = Date.now()), 30_000);
+		return () => clearInterval(timer);
+	});
 	let initializedForId = $state('');
 	// Bump to force Milkdown editor re-mount when content is appended
 	// programmatically (audio embeds, etc). Milkdown doesn't re-parse
@@ -311,6 +328,10 @@
 	// memory id + values at schedule time so a save can never be misdirected
 	// to (or clobbered by) a different note if the user switches mid-debounce.
 	let saveTimeout: ReturnType<typeof setTimeout>;
+	// True once the user has changed this note's title or body since it was
+	// opened. Saves on navigation only run when set, so an editor that failed
+	// to render (and reports an empty document) can never overwrite a note.
+	let hasLocalEdits = false;
 	let pendingSave: { id: string; title: string; content: string } | null = null;
 
 	// Bound Editor instance — lets us read the live document synchronously,
@@ -321,6 +342,19 @@
 	// Reactive memory object — stays in sync with the store so async updates
 	// (transcription, sync) propagate to the UI without a manual refresh.
 	let memory = $derived($memoryObjects.find((m) => m.id === $page.params.id));
+
+	// Folder path for the header breadcrumb.
+	let folderPath = $derived.by(() => {
+		const path: Array<{ id: string; name: string }> = [];
+		let folderId = memory?.folderId ?? null;
+		while (folderId) {
+			const folder = $folders.find((f) => f.id === folderId);
+			if (!folder) break;
+			path.unshift({ id: folder.id, name: folder.name });
+			folderId = folder.parentId;
+		}
+		return path;
+	});
 
 	// Derived: show template chooser when body is empty AND not dismissed.
 	let shouldShowChooser = $derived(
@@ -338,6 +372,7 @@
 				// Persist any debounced edit from the previous note before its
 				// state is overwritten, otherwise the pending edit is lost.
 				flushPendingSave();
+				hasLocalEdits = false;
 				title = memory!.title;
 				content = memory!.bodyMarkdown;
 				backlinks = findBacklinks(id);
@@ -350,6 +385,10 @@
 				}).catch(() => { loadingRelated = false; });
 				initializedForId = id;
 				syncedMemoryTitle = memory!.title;
+				// A brand-new note: put the cursor in the title, ready to type.
+				if (isDefaultTitle(memory!.title) && !memory!.bodyMarkdown.trim()) {
+					tick().then(() => titleInput?.focus());
+				}
 			});
 		}
 	});
@@ -434,9 +473,16 @@
 		}
 	}
 
+	function isDefaultTitle(value: string): boolean {
+		return !value || value === 'Untitled';
+	}
+
 	function handleTitleChange(e: Event) {
 		const target = e.target as HTMLInputElement;
-		title = target.value;
+		// Keep the stored default so links, sync and exports still have a name;
+		// the input shows an empty field with an "Untitled" placeholder instead.
+		title = target.value || 'Untitled';
+		hasLocalEdits = true;
 		debouncedSave();
 	}
 
@@ -445,7 +491,9 @@
 		// user switched notes. Drop updates tagged for a different note,
 		// otherwise the previous note's text would overwrite the current one.
 		if (changedId && memory && changedId !== memory.id) return;
+		if (markdown === content) return;
 		content = markdown;
+		hasLocalEdits = true;
 		// Auto-dismiss the template chooser as soon as the user types
 		// anything into the body — writing should never be blocked.
 		if (markdown.trim() && !templateChooserDismissed) {
@@ -483,7 +531,7 @@
 	function saveLiveContent() {
 		clearTimeout(saveTimeout);
 		pendingSave = null;
-		if (!memory) return;
+		if (!memory || !hasLocalEdits) return;
 		const live = editorRef?.getCurrentMarkdown();
 		const body = live ?? content;
 		content = body;
@@ -497,11 +545,22 @@
 		saveLiveContent();
 	});
 
+	// Deleting is a soft delete into Trash, so skip the confirmation and offer
+	// undo instead (Cmd+Z or the toast).
 	function handleDelete() {
-		if (memory) {
-			deleteMemoryObject(memory.id);
-			goto('/');
-		}
+		if (!memory) return;
+		const { id } = memory;
+		const name = memory.title || 'Untitled';
+		showMoreMenu = false;
+		deleteMemoryObject(id);
+		pushUndo({
+			label: `Moved "${name}" to trash`,
+			undo: () => {
+				restoreMemoryObject(id);
+				goto(`/memory/${id}`);
+			}
+		});
+		goto('/');
 	}
 
 	function handleWikilinkClick(linkTitle: string) {
@@ -519,6 +578,18 @@
 		}
 	}
 
+	function formatEdited(timestamp: number, reference: number): string {
+		const seconds = Math.max(0, Math.round((reference - timestamp) / 1000));
+		if (seconds < 45) return 'Edited just now';
+		const minutes = Math.round(seconds / 60);
+		if (minutes < 60) return `Edited ${minutes}m ago`;
+		const hours = Math.round(minutes / 60);
+		if (hours < 24) return `Edited ${hours}h ago`;
+		const date = new Date(timestamp);
+		const sameYear = date.getFullYear() === new Date(reference).getFullYear();
+		return `Edited ${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: sameYear ? undefined : 'numeric' })}`;
+	}
+
 	function formatDate(timestamp: number): string {
 		const date = new Date(timestamp);
 		const year = date.getFullYear();
@@ -530,7 +601,7 @@
 	}
 
 	function handleTitleKeydown(e: KeyboardEvent) {
-		if (e.key === 'Enter') {
+		if (e.key === 'Enter' || e.key === 'ArrowDown') {
 			e.preventDefault();
 			// Focus the editor
 			const editor = document.querySelector('.ProseMirror') as HTMLElement;
@@ -545,150 +616,174 @@
 		const all = get(memoryObjects);
 		const allFolders = get(folders);
 		downloadSingleMemory(memory, all, allFolders, { format });
-		showExportMenu = false;
+		showMoreMenu = false;
 	}
 </script>
 
+<svelte:window
+	onkeydown={(e) => {
+		if (e.key === 'Escape' && showMoreMenu) {
+			e.stopPropagation();
+			showMoreMenu = false;
+		}
+	}}
+/>
+
 {#if memory}
-	<div class="group/note relative flex h-full flex-col">
-		<!-- Action buttons (appear on hover) -->
-		<div class="absolute bottom-4 right-4 z-10 flex items-center gap-2 opacity-0 transition-all group-hover/note:opacity-100 md:bottom-6 md:right-6">
-			<!-- Export button -->
+	<div class="relative flex h-full flex-col">
+		<!-- Note header: location, freshness, actions -->
+		<div class="note-header flex h-11 shrink-0 items-center gap-1 px-3 md:px-4">
+			<nav class="hidden min-w-0 flex-1 items-center gap-1 text-[0.8125rem] text-[var(--color-text-muted)] md:flex" aria-label="Breadcrumb">
+				{#each folderPath as folder (folder.id)}
+					<a href="/read/folder/{folder.id}" class="max-w-40 truncate rounded px-1 py-0.5 hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]">{folder.name}</a>
+					<span class="text-[var(--color-text-faint)]">/</span>
+				{/each}
+				<span class="truncate px-1 text-[var(--color-text)]">{title && title !== 'Untitled' ? title : 'Untitled'}</span>
+			</nav>
+			<div class="flex-1 md:hidden"></div>
+
+			{#if isRecording}
+				<button
+					onclick={stopInlineRecording}
+					class="recording-pill inline-flex items-center gap-1.5 rounded-full bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-500 hover:bg-red-500/20"
+					title="Stop recording"
+				>
+					<span class="h-1.5 w-1.5 rounded-full bg-red-500"></span>
+					Recording {recordingType === 'meeting' ? 'meeting' : 'memo'} · Stop
+				</button>
+			{/if}
+
+			<span class="hidden shrink-0 px-1 text-xs text-[var(--color-text-faint)] sm:inline" title="Last modified {formatDate(memory.updatedAt)}">
+				{formatEdited(memory.updatedAt, now)}
+			</span>
+
+			<button onclick={() => (showHistory = true)} class="k-icon-btn" title="Version history" aria-label="Version history">
+				<History class="h-4 w-4" />
+			</button>
+
 			<div class="relative">
 				<button
-					onclick={() => (showExportMenu = !showExportMenu)}
-					class="flex items-center gap-1 rounded-lg p-2 text-[var(--color-text-muted)] transition-all hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text)] active:scale-95"
-					title="Export note"
+					onclick={() => (showMoreMenu = !showMoreMenu)}
+					class="k-icon-btn"
+					class:bg-[var(--color-hover)]={showMoreMenu}
+					title="More actions"
+					aria-label="More actions"
+					aria-haspopup="menu"
+					aria-expanded={showMoreMenu}
 				>
-					<Download class="h-5 w-5" />
-					<ChevronDown class="h-3 w-3" />
+					<MoreHorizontal class="h-4 w-4" />
 				</button>
 
-				{#if showExportMenu}
-					<div
-						class="absolute bottom-full right-0 mb-2 w-40 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] py-1 shadow-lg"
-					>
-						<button
-							onclick={() => handleExport('vanilla')}
-							class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]"
-						>
-							Markdown
+				{#if showMoreMenu}
+					<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+					<div class="fixed inset-0 z-40" onclick={() => (showMoreMenu = false)}></div>
+					<div class="k-menu absolute right-0 top-full z-50 mt-1 w-60" role="menu">
+						<div class="k-menu-label">Insert</div>
+						<button class="k-menu-item" role="menuitem" onclick={() => { showMoreMenu = false; handleImageUpload(); }}>
+							<ImagePlus class="h-4 w-4 text-[var(--color-text-muted)]" /> Image
 						</button>
-						<button
-							onclick={() => handleExport('hugo')}
-							class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]"
-						>
-							Hugo-flavoured
+						<button class="k-menu-item" role="menuitem" onclick={() => { showMoreMenu = false; showCameraCapture = true; }}>
+							<Camera class="h-4 w-4 text-[var(--color-text-muted)]" /> Photo
 						</button>
-						<button
-							onclick={() => handleExport('zola')}
-							class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]"
-						>
-							Zola-flavoured
+						<button class="k-menu-item" role="menuitem" disabled={isRecording} onclick={() => { showMoreMenu = false; startInlineRecording('voice'); }}>
+							<Mic class="h-4 w-4 text-[var(--color-text-muted)]" /> Voice memo
 						</button>
-						<div class="my-1 border-t border-[var(--color-border)]"></div>
-						<button
-							onclick={() => { if (memory) publishMemoryAsHtml(memory); showExportMenu = false; }}
-							class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]"
-						>
-							Download as HTML
+						<button class="k-menu-item" role="menuitem" disabled={isRecording} onclick={() => { showMoreMenu = false; startInlineRecording('meeting'); }}>
+							<Users class="h-4 w-4 text-[var(--color-text-muted)]" /> Meeting recording
 						</button>
-						<button
-							onclick={() => { if (memory) copyMemoryAsHtml(memory); showExportMenu = false; }}
-							class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]"
-						>
-							Copy as rich text
+						<div class="k-menu-sep"></div>
+						<button class="k-menu-item" role="menuitem" disabled={extractingReminders} onclick={() => { showMoreMenu = false; handleExtractReminders(); }}>
+							<Bell class="h-4 w-4 text-[var(--color-text-muted)]" /> Find reminders & drafts
 						</button>
-						<button
-							onclick={() => { if (memory) shareMemory(memory); showExportMenu = false; }}
-							class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]"
-						>
-							Share...
+						<button class="k-menu-item" role="menuitem" onclick={() => { showMoreMenu = false; showHistory = true; }}>
+							<History class="h-4 w-4 text-[var(--color-text-muted)]" /> Version history
+						</button>
+						<div class="k-menu-sep"></div>
+						<div class="k-menu-label">Export</div>
+						<button class="k-menu-item" role="menuitem" onclick={() => handleExport('vanilla')}>
+							<Download class="h-4 w-4 text-[var(--color-text-muted)]" /> Markdown
+						</button>
+						<button class="k-menu-item" role="menuitem" onclick={() => handleExport('hugo')}>
+							<FileCode class="h-4 w-4 text-[var(--color-text-muted)]" /> Markdown for Hugo
+						</button>
+						<button class="k-menu-item" role="menuitem" onclick={() => handleExport('zola')}>
+							<FileCode class="h-4 w-4 text-[var(--color-text-muted)]" /> Markdown for Zola
+						</button>
+						<button class="k-menu-item" role="menuitem" onclick={() => { if (memory) publishMemoryAsHtml(memory); showMoreMenu = false; }}>
+							<FileText class="h-4 w-4 text-[var(--color-text-muted)]" /> HTML file
+						</button>
+						<button class="k-menu-item" role="menuitem" onclick={() => { if (memory) copyMemoryAsHtml(memory); showMoreMenu = false; }}>
+							<Copy class="h-4 w-4 text-[var(--color-text-muted)]" /> Copy as rich text
+						</button>
+						<button class="k-menu-item" role="menuitem" onclick={() => { if (memory) shareMemory(memory); showMoreMenu = false; }}>
+							<Share2 class="h-4 w-4 text-[var(--color-text-muted)]" /> Share…
+						</button>
+						<div class="k-menu-sep"></div>
+						<button class="k-menu-item danger" role="menuitem" onclick={handleDelete}>
+							<Trash2 class="h-4 w-4" /> Move to trash
 						</button>
 					</div>
 				{/if}
 			</div>
-
-			<!-- Image upload button -->
-			<button
-				onclick={handleImageUpload}
-				class="rounded-lg p-2 text-[var(--color-text-muted)] transition-all hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-accent)] active:scale-95"
-				title="Upload an image"
-			>
-				<ImagePlus class="h-5 w-5" />
-			</button>
-
-			<!-- Camera button -->
-			<button
-				onclick={() => (showCameraCapture = true)}
-				class="rounded-lg p-2 text-[var(--color-text-muted)] transition-all hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-accent)] active:scale-95"
-				title="Take a photo"
-			>
-				<Camera class="h-5 w-5" />
-			</button>
-
-			<!-- Extract reminders button -->
-			<button
-				onclick={handleExtractReminders}
-				disabled={extractingReminders}
-				class="rounded-lg p-2 text-[var(--color-text-muted)] transition-all hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-accent)] active:scale-95 disabled:opacity-50"
-				title="Extract reminder proposals from this note"
-			>
-				{#if extractingReminders}
-					<RefreshCw class="h-5 w-5 animate-spin" />
-				{:else}
-					<Bell class="h-5 w-5" />
-				{/if}
-			</button>
-
-			<!-- Version history button -->
-			<button
-				onclick={() => (showHistory = true)}
-				class="rounded-lg p-2 text-[var(--color-text-muted)] transition-all hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-accent)] active:scale-95"
-				title="Version history"
-			>
-				<History class="h-5 w-5" />
-			</button>
-
-			<!-- Delete button -->
-			<button
-				onclick={() => (showDeleteConfirm = true)}
-				class="rounded-lg p-2 text-[var(--color-text-muted)] transition-all hover:bg-red-100 hover:text-red-600 active:scale-95 dark:hover:bg-red-900/30"
-				title="Delete note"
-			>
-				<Trash2 class="h-5 w-5" />
-			</button>
 		</div>
 
-		{#if extractionResult}
-			<div class="absolute bottom-20 right-4 z-10 flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-xs text-[var(--color-text)] shadow-lg md:right-6">
-				<Bell class="h-3 w-3 text-[var(--color-accent)]" />
-				{extractionResult}
-				<button
-					onclick={() => (extractionResult = null)}
-					class="ml-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-					aria-label="Dismiss"
-				>×</button>
+		{#if extractingReminders || extractionResult}
+			<div class="animate-dropdown absolute right-4 top-12 z-30 flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-xs text-[var(--color-text)] shadow-[var(--shadow-md)]" role="status">
+				{#if extractingReminders}
+					<RefreshCw class="h-3.5 w-3.5 animate-spin text-[var(--color-accent)]" />
+					Looking for reminders and drafts…
+				{:else}
+					<Bell class="h-3.5 w-3.5 text-[var(--color-accent)]" />
+					{extractionResult}
+					<button
+						onclick={() => (extractionResult = null)}
+						class="ml-1 rounded p-0.5 text-[var(--color-text-muted)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
+						aria-label="Dismiss"
+					><X class="h-3 w-3" /></button>
+				{/if}
 			</div>
 		{/if}
 
 		<!-- Editor -->
-		<div class="flex-1 overflow-y-auto overscroll-contain p-4 md:p-6">
-			<div class="mx-auto flex min-h-full max-w-3xl flex-col">
-				<!-- Title -->
-				<input
-					type="text"
-					value={title}
-					oninput={handleTitleChange}
-					onkeydown={handleTitleKeydown}
-					placeholder="Untitled"
-					class="title-input mb-4 w-full bg-transparent text-[2.5rem] font-bold leading-tight text-[var(--color-text)] placeholder-[var(--color-text-muted)] md:mb-6 md:text-[3rem]"
-					style="font-family: var(--font-editor);"
-				/>
+		<div class="flex-1 overflow-y-auto overscroll-contain px-5 pb-6 md:px-12">
+			<div class="mx-auto flex min-h-full max-w-[46rem] flex-col pt-6 md:pt-12">
+				<!-- Hover-revealed insert bar (always shown on touch devices) -->
+				<div class="group/title">
+					<div class="insert-bar -ml-1.5 mb-1 flex items-center gap-0.5">
+						<button onclick={handleImageUpload} class="insert-btn" title="Insert image">
+							<ImagePlus class="h-3.5 w-3.5" /> Image
+						</button>
+						<button onclick={() => (showCameraCapture = true)} class="insert-btn" title="Take photo">
+							<Camera class="h-3.5 w-3.5" /> Photo
+						</button>
+						{#if !isRecording}
+							<button onclick={() => startInlineRecording('voice')} class="insert-btn" title="Record voice memo">
+								<Mic class="h-3.5 w-3.5" /> Voice
+							</button>
+							<button onclick={() => startInlineRecording('meeting')} class="insert-btn" title="Record meeting">
+								<Users class="h-3.5 w-3.5" /> Meeting
+							</button>
+						{/if}
+						<span class="ml-1 hidden text-xs text-[var(--color-text-faint)] md:inline">Type / in the editor for more</span>
+					</div>
+
+					<!-- Title -->
+					<input
+						bind:this={titleInput}
+						type="text"
+						value={isDefaultTitle(title) ? '' : title}
+						oninput={handleTitleChange}
+						onkeydown={handleTitleKeydown}
+						placeholder="Untitled"
+						aria-label="Note title"
+						class="title-input mb-3 w-full bg-transparent font-bold text-[var(--color-text)] md:mb-5"
+						style="font-family: var(--font-editor);"
+					/>
+				</div>
 
 				<!-- Audio playback for voice memos and meetings -->
 				{#if memory.type === 'voice-memo' || memory.type === 'meeting'}
-					<div class="mb-4 flex items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 md:mb-6">
+					<div class="mb-4 flex items-center gap-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 md:mb-6">
 						{#if memory.type === 'meeting'}
 							<Users class="h-5 w-5 shrink-0 text-[var(--color-accent)]" />
 						{:else}
@@ -705,17 +800,17 @@
 
 					<!-- Processing state -->
 					{#if memory.processingState === 'transcribing'}
-						<div class="mb-4 flex items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 text-sm text-[var(--color-text-muted)] md:mb-6">
+						<div class="mb-4 flex items-center gap-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 text-sm text-[var(--color-text-muted)] md:mb-6">
 							<div class="h-4 w-4 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent"></div>
 							Transcribing…
 						</div>
 					{:else if memory.processingState === 'summarizing'}
-						<div class="mb-4 flex items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 text-sm text-[var(--color-text-muted)] md:mb-6">
+						<div class="mb-4 flex items-center gap-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 text-sm text-[var(--color-text-muted)] md:mb-6">
 							<div class="h-4 w-4 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent"></div>
 							Summarizing…
 						</div>
 					{:else if memory.processingState === 'pending' && audioUrl}
-						<div class="mb-4 flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 text-sm md:mb-6">
+						<div class="mb-4 flex items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 text-sm md:mb-6">
 							<div class="text-[var(--color-text-muted)]">
 								This recording hasn't been transcribed yet.
 							</div>
@@ -723,7 +818,7 @@
 								type="button"
 								onclick={handleRetryProcessing}
 								disabled={retrying}
-								class="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-border)] disabled:opacity-50"
+								class="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-hover)] disabled:opacity-50"
 							>
 								<RefreshCw class="h-3 w-3 {retrying ? 'animate-spin' : ''}" />
 								Transcribe
@@ -762,7 +857,7 @@
 							{#each memory.participants as person}
 								<a
 									href="/read/person/{encodeURIComponent(person)}"
-									class="inline-flex items-center gap-1 rounded-full bg-[var(--color-bg-secondary)] px-3 py-1 text-xs text-[var(--color-text)] hover:bg-[var(--color-border)]"
+									class="inline-flex items-center gap-1 rounded-full bg-[var(--color-bg-secondary)] px-3 py-1 text-xs text-[var(--color-text)] hover:bg-[var(--color-hover)]"
 								>
 									<span class="text-[var(--color-text-muted)]">@</span>{person}
 								</a>
@@ -770,7 +865,7 @@
 							{#each memory.topics as topic}
 								<a
 									href="/read/topic/{encodeURIComponent(topic)}"
-									class="inline-flex items-center gap-1 rounded-full bg-[var(--color-bg-secondary)] px-3 py-1 text-xs text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
+									class="inline-flex items-center gap-1 rounded-full bg-[var(--color-bg-secondary)] px-3 py-1 text-xs text-[var(--color-text-muted)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
 								>
 									{topic}
 								</a>
@@ -783,7 +878,7 @@
 						{@const extras = memory.meetingExtras}
 
 						{#if extras.actionItems.length > 0}
-							<div class="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 md:mb-6">
+							<div class="mb-4 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 md:mb-6">
 								<div class="mb-2 flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
 									<span class="flex items-center gap-2">
 										<CheckSquare class="h-3 w-3" />
@@ -813,7 +908,7 @@
 						{/if}
 
 						{#if memory.decisions.length > 0}
-							<div class="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 md:mb-6">
+							<div class="mb-4 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 md:mb-6">
 								<div class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
 									<Lightbulb class="h-3 w-3" />
 									Decisions
@@ -830,7 +925,7 @@
 						{/if}
 
 						{#if extras.unresolvedQuestions.length > 0}
-							<div class="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 md:mb-6">
+							<div class="mb-4 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 md:mb-6">
 								<div class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
 									<HelpCircle class="h-3 w-3" />
 									Open questions
@@ -847,7 +942,7 @@
 						{/if}
 
 						{#if extras.followUpSuggestions.length > 0}
-							<div class="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 md:mb-6">
+							<div class="mb-4 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 md:mb-6">
 								<div class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
 									<ArrowRight class="h-3 w-3" />
 									Follow-ups
@@ -877,57 +972,6 @@
 					{/if}
 				{/if}
 
-				<!-- Quick insert toolbar (always visible) -->
-				<div class="mb-2 flex items-center gap-1">
-					<button
-						onclick={handleImageUpload}
-						class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text)]"
-						title="Upload image"
-					>
-						<ImagePlus class="h-3.5 w-3.5" />
-						<span class="hidden sm:inline">Image</span>
-					</button>
-					<button
-						onclick={() => (showCameraCapture = true)}
-						class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text)]"
-						title="Take photo"
-					>
-						<Camera class="h-3.5 w-3.5" />
-						<span class="hidden sm:inline">Photo</span>
-					</button>
-					{#if isRecording}
-						<button
-							onclick={stopInlineRecording}
-							class="inline-flex items-center gap-1 rounded-md bg-red-500 px-2.5 py-1 text-xs text-white animate-pulse"
-							title="Stop recording"
-						>
-							<span class="h-2 w-2 rounded-full bg-white"></span>
-							<span>Stop {recordingType === 'meeting' ? 'meeting' : 'voice'}</span>
-						</button>
-					{:else}
-						<button
-							onclick={() => startInlineRecording('voice')}
-							class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text)]"
-							title="Record voice memo"
-						>
-							<Mic class="h-3.5 w-3.5" />
-							<span class="hidden sm:inline">Voice</span>
-						</button>
-						<button
-							onclick={() => startInlineRecording('meeting')}
-							class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text)]"
-							title="Record meeting"
-						>
-							<Users class="h-3.5 w-3.5" />
-							<span class="hidden sm:inline">Meeting</span>
-						</button>
-					{/if}
-					<span class="mx-1 text-xs text-[var(--color-text-muted)] opacity-50">|</span>
-					<span class="text-xs text-[var(--color-text-muted)] opacity-50">
-						Type / for more
-					</span>
-				</div>
-
 				<!-- Inline template chooser (shows when body is empty, vanishes on typing) -->
 				{#if shouldShowChooser}
 					<InlineTemplateChooser
@@ -938,117 +982,103 @@
 
 				<!-- Milkdown Editor -->
 				{#key `${memory.id}-${editorRevision}`}
+					<!-- The keyed editor mounts before the init effect copies the new
+					     note's body into `content`, so read straight from the note
+					     until that has happened; otherwise the previous note's body
+					     would load (and then save) into this one. -->
 					<Editor
 						bind:this={editorRef}
-						content={content}
+						content={initializedForId === memory.id ? content : memory.bodyMarkdown}
 						noteId={memory.id}
 						onchange={handleContentChange}
 						onWikilinkClick={handleWikilinkClick}
 						placeholder={shouldShowChooser
-							? 'Start typing to dismiss templates...'
-							: 'Start writing... Use [[Note Title]] to link to other notes.'}
+							? 'Start typing, or pick a template…'
+							: 'Start writing… Type [[ to link a note, / for commands'}
 						currentFolderId={memory.folderId}
 					/>
 				{/key}
 
-				<!-- Backlinks -->
-				{#if backlinks.length > 0}
-					<div class="mt-6 border-t border-[var(--color-border)] pt-4 md:mt-8 md:pt-6">
-						<h3 class="mb-3 text-xs font-semibold uppercase text-[var(--color-text-muted)] md:text-sm">
-							Backlinks ({backlinks.length})
-						</h3>
-						<div class="space-y-2">
-							{#each backlinks as backlink}
-								<a
-									href="/memory/{backlink.id}"
-									class="block rounded-lg border border-[var(--color-border)] p-3 transition-colors hover:border-[var(--color-accent)] active:scale-[0.99]"
-								>
-									<div class="font-medium text-[var(--color-text)]">
-										{backlink.title || 'Untitled'}
-									</div>
-									<div class="mt-1 truncate text-sm text-[var(--color-text-muted)]">
-										{backlink.bodyMarkdown.slice(0, 80)}...
-									</div>
-								</a>
-							{/each}
-						</div>
-					</div>
-				{/if}
-
-				<!-- Unlinked mentions: notes that name this one without linking -->
-				{#if unlinkedMentions.length > 0}
-					<div class="mt-6 border-t border-[var(--color-border)] pt-4 md:mt-8 md:pt-6">
-						<h3 class="mb-3 text-xs font-semibold uppercase text-[var(--color-text-muted)] md:text-sm">
-							Unlinked mentions ({unlinkedMentions.length})
-						</h3>
-						<div class="space-y-2">
-							{#each unlinkedMentions as mention}
-								<div
-									class="flex items-center gap-2 rounded-lg border border-[var(--color-border)] p-3"
-								>
-									<a href="/memory/{mention.id}" class="min-w-0 flex-1">
-										<div class="font-medium text-[var(--color-text)]">
-											{mention.title || 'Untitled'}
-										</div>
-										<div class="mt-1 truncate text-sm text-[var(--color-text-muted)]">
-											{mention.bodyMarkdown.slice(0, 80)}...
-										</div>
-									</a>
-									<button
-										onclick={() => handleLinkMention(mention.id)}
-										class="flex shrink-0 items-center gap-1 rounded-md border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
-										title="Insert a [[wikilink]] to this note"
-									>
-										<Link2 class="h-3.5 w-3.5" />
-										Link
-									</button>
-								</div>
-							{/each}
-						</div>
-					</div>
-				{/if}
-
-				<!-- Related notes (semantic) -->
-				{#if relatedNotes.length > 0}
-					<div class="mt-6 border-t border-[var(--color-border)] pt-4 md:mt-8 md:pt-6">
-						<h3 class="mb-3 text-xs font-semibold uppercase text-[var(--color-text-muted)] md:text-sm">
-							Related notes ({relatedNotes.length})
-						</h3>
-						<div class="space-y-2">
-							{#each relatedNotes as { memory: related, score }}
-								<a
-									href="/memory/{related.id}"
-									class="block rounded-lg border border-[var(--color-border)] p-3 transition-colors hover:border-[var(--color-accent)] active:scale-[0.99]"
-								>
-									<div class="flex items-center justify-between">
-										<span class="font-medium text-[var(--color-text)]">
-											{related.title || 'Untitled'}
-										</span>
-										<span class="text-xs text-[var(--color-text-muted)] opacity-50">
-											{Math.round(score * 100)}%
-										</span>
-									</div>
-									{#if related.summaryShort || related.bodyMarkdown}
-										<div class="mt-1 truncate text-sm text-[var(--color-text-muted)]">
-											{(related.summaryShort || related.bodyMarkdown || '').slice(0, 80)}...
-										</div>
-									{/if}
-								</a>
-							{/each}
-						</div>
-					</div>
-				{/if}
-
-				<!-- Spacer to push footer to bottom -->
+				<!-- Spacer pushes link panels toward the bottom on short notes -->
 				<div class="min-h-12 flex-1"></div>
 
-				<!-- Last modified -->
-				<div class="mt-8 text-xs text-[var(--color-text-muted)] opacity-40">
-					Last modified: {formatDate(memory.updatedAt)}
-				</div>
+				{#if backlinks.length > 0 || unlinkedMentions.length > 0 || relatedNotes.length > 0}
+					<div class="mt-8 space-y-1 border-t border-[var(--color-border)] pt-4">
+						<!-- Backlinks -->
+						{#if backlinks.length > 0}
+							<details class="link-section" open>
+								<summary>
+									<ChevronRight class="chev h-3.5 w-3.5" />
+									Linked mentions
+									<span class="count">{backlinks.length}</span>
+								</summary>
+								<div class="pb-2">
+									{#each backlinks as backlink (backlink.id)}
+										<a href="/memory/{backlink.id}" class="link-row">
+											<FileText class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)]" />
+											<span class="shrink-0 font-medium text-[var(--color-text)]">{backlink.title || 'Untitled'}</span>
+											<span class="min-w-0 truncate text-[var(--color-text-faint)]">{backlink.bodyMarkdown.slice(0, 120)}</span>
+										</a>
+									{/each}
+								</div>
+							</details>
+						{/if}
+
+						<!-- Unlinked mentions: notes that name this one without linking -->
+						{#if unlinkedMentions.length > 0}
+							<details class="link-section">
+								<summary>
+									<ChevronRight class="chev h-3.5 w-3.5" />
+									Unlinked mentions
+									<span class="count">{unlinkedMentions.length}</span>
+								</summary>
+								<div class="pb-2">
+									{#each unlinkedMentions as mention (mention.id)}
+										<div class="link-row group/mention">
+											<FileText class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)]" />
+											<a href="/memory/{mention.id}" class="flex min-w-0 flex-1 items-center gap-2">
+												<span class="shrink-0 font-medium text-[var(--color-text)]">{mention.title || 'Untitled'}</span>
+												<span class="min-w-0 truncate text-[var(--color-text-faint)]">{mention.bodyMarkdown.slice(0, 120)}</span>
+											</a>
+											<button
+												onclick={() => handleLinkMention(mention.id)}
+												class="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs text-[var(--color-text-muted)] opacity-0 hover:bg-[var(--color-active)] hover:text-[var(--color-text)] focus:opacity-100 group-hover/mention:opacity-100"
+												title="Insert a [[wikilink]] to this note"
+											>
+												<Link2 class="h-3 w-3" />
+												Link
+											</button>
+										</div>
+									{/each}
+								</div>
+							</details>
+						{/if}
+
+						<!-- Related notes (semantic) -->
+						{#if relatedNotes.length > 0}
+							<details class="link-section" open>
+								<summary>
+									<ChevronRight class="chev h-3.5 w-3.5" />
+									Related
+									<span class="count">{relatedNotes.length}</span>
+								</summary>
+								<div class="pb-2">
+									{#each relatedNotes as { memory: related, score } (related.id)}
+										<a href="/memory/{related.id}" class="link-row">
+											<Sparkles class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)]" />
+											<span class="shrink-0 font-medium text-[var(--color-text)]">{related.title || 'Untitled'}</span>
+											<span class="min-w-0 flex-1 truncate text-[var(--color-text-faint)]">{(related.summaryShort || related.bodyMarkdown || '').slice(0, 120)}</span>
+											<span class="shrink-0 text-[0.6875rem] tabular-nums text-[var(--color-text-faint)]">{Math.round(score * 100)}%</span>
+										</a>
+									{/each}
+								</div>
+							</details>
+						{/if}
+					</div>
+				{/if}
 
 				<!-- Bottom safe area spacer -->
-				<div class="h-8 md:h-0 safe-bottom"></div>
+				<div class="h-16 safe-bottom"></div>
 			</div>
 		</div>
 	</div>
@@ -1060,45 +1090,6 @@
 			onClose={() => (showHistory = false)}
 			onRestored={handleVersionRestored}
 		/>
-	{/if}
-
-	<!-- Delete Confirmation Modal -->
-	{#if showDeleteConfirm}
-		<div
-			class="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 md:items-center"
-			onclick={() => (showDeleteConfirm = false)}
-			onkeydown={(e) => e.key === 'Escape' && (showDeleteConfirm = false)}
-			role="dialog"
-			aria-modal="true"
-			tabindex="-1"
-		>
-			<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-			<div
-				class="w-full max-w-md rounded-xl bg-[var(--color-bg)] p-6 shadow-xl safe-bottom"
-				onclick={(e) => e.stopPropagation()}
-				onkeydown={(e) => e.stopPropagation()}
-				role="document"
-			>
-				<h2 class="mb-2 text-xl font-bold text-[var(--color-text)]">Delete Note?</h2>
-				<p class="mb-6 text-[var(--color-text-muted)]">
-					Are you sure you want to delete "{title || 'Untitled'}"? This action cannot be undone.
-				</p>
-				<div class="flex flex-col-reverse gap-2 md:flex-row md:justify-end md:gap-3">
-					<button
-						onclick={() => (showDeleteConfirm = false)}
-						class="w-full rounded-lg px-4 py-3 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] md:w-auto md:py-2"
-					>
-						Cancel
-					</button>
-					<button
-						onclick={handleDelete}
-						class="w-full rounded-lg bg-red-600 px-4 py-3 text-white transition-colors hover:bg-red-700 active:scale-[0.98] md:w-auto md:py-2"
-					>
-						Delete
-					</button>
-				</div>
-			</div>
-		</div>
 	{/if}
 
 	<!-- Hidden image file input -->
@@ -1135,7 +1126,14 @@
 		box-shadow: none !important;
 		-webkit-appearance: none;
 		appearance: none;
-		font-size: 2.5rem !important;
+		font-size: 2rem !important;
+		line-height: 1.2;
+		letter-spacing: -0.015em;
+	}
+
+	.title-input::placeholder {
+		color: var(--color-text-faint);
+		opacity: 0.7;
 	}
 
 	.title-input:focus,
@@ -1147,7 +1145,108 @@
 
 	@media (min-width: 768px) {
 		.title-input {
-			font-size: 3rem !important;
+			font-size: 2.375rem !important;
 		}
+	}
+
+	/* Insert bar: quiet until you hover the title area (always on touch) */
+	.insert-bar {
+		min-height: 1.75rem;
+	}
+
+	@media (hover: hover) {
+		.insert-bar {
+			opacity: 0;
+			transition: opacity 150ms var(--ease-out);
+		}
+
+		:global(.group\/title:hover) .insert-bar,
+		.insert-bar:focus-within {
+			opacity: 1;
+		}
+	}
+
+	.insert-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3125rem;
+		padding: 0.1875rem 0.4375rem;
+		border-radius: var(--radius-sm);
+		font-size: 0.75rem;
+		color: var(--color-text-faint);
+	}
+
+	.insert-btn:hover {
+		background: var(--color-hover);
+		color: var(--color-text-muted);
+	}
+
+	.note-header {
+		background: var(--color-bg);
+	}
+
+	.recording-pill span {
+		animation: rec-pulse 1.2s ease-in-out infinite;
+	}
+
+	@keyframes rec-pulse {
+		50% { opacity: 0.3; }
+	}
+
+	/* Linked / unlinked / related sections */
+	.link-section summary {
+		display: flex;
+		align-items: center;
+		gap: 0.375rem;
+		padding: 0.375rem 0.25rem;
+		margin: 0 -0.25rem;
+		border-radius: var(--radius-sm);
+		font-size: 0.8125rem;
+		font-weight: 500;
+		color: var(--color-text-muted);
+		cursor: pointer;
+		list-style: none;
+		user-select: none;
+	}
+
+	.link-section summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.link-section summary:hover {
+		background: var(--color-hover);
+		color: var(--color-text);
+	}
+
+	.link-section summary :global(.chev) {
+		color: var(--color-text-faint);
+		transition: transform 150ms var(--ease-out);
+	}
+
+	.link-section[open] summary :global(.chev) {
+		transform: rotate(90deg);
+	}
+
+	.link-section .count {
+		font-size: 0.75rem;
+		font-weight: 400;
+		color: var(--color-text-faint);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.link-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		min-height: 2rem;
+		padding: 0 0.5rem 0 1.375rem;
+		margin: 0 -0.25rem;
+		border-radius: var(--radius-sm);
+		font-size: 0.8125rem;
+		text-decoration: none;
+	}
+
+	.link-row:hover {
+		background: var(--color-hover);
 	}
 </style>

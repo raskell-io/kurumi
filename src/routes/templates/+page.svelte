@@ -156,7 +156,7 @@
 							<div class="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
 								<button
 									onclick={() => openEditTemplate(template)}
-									class="rounded p-1 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
+									class="rounded p-1 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
 									title="Edit template"
 								>
 									<Pencil class="h-4 w-4" />
@@ -186,7 +186,7 @@
 {#if showEditor}
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4"
 		onclick={closeEditor}
 		onkeydown={(e) => e.key === 'Escape' && closeEditor()}
 		role="dialog"
@@ -205,7 +205,7 @@
 				</h2>
 				<button
 					onclick={closeEditor}
-					class="rounded p-1 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
+					class="rounded p-1 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
 				>
 					<X class="h-5 w-5" />
 				</button>
@@ -278,7 +278,7 @@
 			<div class="mt-6 flex justify-end gap-3">
 				<button
 					onclick={closeEditor}
-					class="rounded-lg px-4 py-2 text-sm font-medium text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)]"
+					class="rounded-lg px-4 py-2 text-sm font-medium text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-hover)]"
 				>
 					Cancel
 				</button>
@@ -298,7 +298,7 @@
 {#if showDeleteConfirm && templateToDelete}
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4"
 		onclick={() => (showDeleteConfirm = false)}
 		onkeydown={(e) => e.key === 'Escape' && (showDeleteConfirm = false)}
 		role="dialog"
@@ -318,7 +318,7 @@
 			<div class="flex justify-end gap-3">
 				<button
 					onclick={() => (showDeleteConfirm = false)}
-					class="rounded-lg px-4 py-2 text-sm font-medium text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)]"
+					class="rounded-lg px-4 py-2 text-sm font-medium text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-hover)]"
 				>
 					Cancel
 				</button>

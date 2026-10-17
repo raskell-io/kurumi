@@ -66,7 +66,7 @@
 </script>
 
 <div
-	class="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[15vh]"
+	class="fixed inset-0 z-50 flex items-start justify-center bg-black/40 backdrop-blur-[2px] p-4 pt-[15vh]"
 	onclick={onClose}
 	onkeydown={handleKeydown}
 	role="dialog"

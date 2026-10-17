@@ -39,7 +39,7 @@
 		<span class="text-sm font-medium text-[var(--color-text)]">{message}</span>
 		<button
 			onclick={onClose}
-			class="ml-2 shrink-0 rounded-lg p-1 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
+			class="ml-2 shrink-0 rounded-lg p-1 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
 			aria-label="Dismiss"
 		>
 			<X class="h-4 w-4" />

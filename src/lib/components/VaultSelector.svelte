@@ -174,14 +174,14 @@
 	<!-- Trigger Button -->
 	<button
 		onclick={() => (showDropdown = !showDropdown)}
-		class="flex items-center gap-2 rounded-lg px-2 py-1 text-left transition-colors hover:bg-[var(--color-border)]"
+		class="flex max-w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left hover:bg-[var(--color-hover)]"
 	>
 		{#if $currentVault?.icon}
 			{@const vaultIcon = getIconById($currentVault.icon)}
 			{#if vaultIcon}
 				<svg
 					xmlns="http://www.w3.org/2000/svg"
-					class="h-5 w-5 text-[var(--color-accent)]"
+					class="h-4 w-4 shrink-0 text-[var(--color-accent)]"
 					viewBox="0 0 20 20"
 					fill="currentColor"
 				>
@@ -189,24 +189,24 @@
 				</svg>
 			{/if}
 		{/if}
-		<span class="font-semibold text-[var(--color-text)]">
+		<span class="truncate text-sm font-semibold text-[var(--color-text)]">
 			{$currentVault?.name || 'Select Vault'}
 		</span>
 		<ChevronDown
-			class="h-4 w-4 text-[var(--color-text-muted)] transition-transform {showDropdown ? 'rotate-180' : ''}"
+			class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)] transition-transform {showDropdown ? 'rotate-180' : ''}"
 		/>
 	</button>
 
 	<!-- Dropdown Menu -->
 	{#if showDropdown}
 		<div
-			class="absolute left-0 top-full z-50 mt-1 min-w-[220px] overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] shadow-lg"
+			class="animate-dropdown absolute left-0 top-full z-50 mt-1 min-w-[220px] overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] shadow-[var(--shadow-lg)]"
 		>
 			<div class="max-h-[300px] overflow-y-auto py-1">
 				{#each $vaults as vault (vault.id)}
 					{@const vaultIcon = vault.icon ? getIconById(vault.icon) : null}
 					<div
-						class="group flex w-full items-center gap-2 px-3 py-2 transition-colors hover:bg-[var(--color-bg-secondary)]"
+						class="group flex w-full items-center gap-2 px-3 py-2 transition-colors hover:bg-[var(--color-hover)]"
 						class:bg-[var(--color-accent)]={vault.id === $currentVaultId}
 						class:text-white={vault.id === $currentVaultId}
 					>
@@ -233,7 +233,7 @@
 						</button>
 						<button
 							onclick={(e) => openEditModal(vault, e)}
-							class="rounded p-1 transition-opacity {vault.id === $currentVaultId ? 'hover:bg-white/20' : 'opacity-0 group-hover:opacity-100 hover:bg-[var(--color-border)]'}"
+							class="rounded p-1 transition-opacity {vault.id === $currentVaultId ? 'hover:bg-white/20' : 'opacity-0 group-hover:opacity-100 hover:bg-[var(--color-hover)]'}"
 							title="Edit vault"
 						>
 							<Pencil
@@ -250,7 +250,7 @@
 			<div class="border-t border-[var(--color-border)] py-1">
 				<button
 					onclick={openCreateModal}
-					class="flex w-full items-center gap-2 px-3 py-2 text-left text-[var(--color-accent)] transition-colors hover:bg-[var(--color-bg-secondary)]"
+					class="flex w-full items-center gap-2 px-3 py-2 text-left text-[var(--color-accent)] transition-colors hover:bg-[var(--color-hover)]"
 				>
 					<Plus class="h-5 w-5" />
 					<span>Create Vault</span>
@@ -264,7 +264,7 @@
 {#if showCreateModal || showEditModal}
 	<div
 		use:portal
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4"
 		onclick={closeModals}
 		onkeydown={(e) => e.key === 'Escape' && closeModals()}
 		role="dialog"
@@ -327,7 +327,7 @@
 										e.stopPropagation();
 										clearIcon();
 									}}
-									class="rounded p-0.5 text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
+									class="rounded p-0.5 text-[var(--color-text-muted)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
 								>
 									<X class="h-4 w-4" />
 								</span>
@@ -369,7 +369,7 @@
 												<button
 													type="button"
 													onclick={() => selectIcon(icon.id)}
-													class="flex flex-col items-center gap-1 rounded-lg p-2 transition-colors hover:bg-[var(--color-bg-secondary)]"
+													class="flex flex-col items-center gap-1 rounded-lg p-2 transition-colors hover:bg-[var(--color-hover)]"
 													class:bg-[var(--color-accent)]={formIconId === icon.id}
 													class:text-white={formIconId === icon.id}
 													title={icon.name}
@@ -436,7 +436,7 @@
 										deleteConfirmName = '';
 										deleteError = null;
 									}}
-									class="rounded-lg px-3 py-1.5 text-sm text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-secondary)]"
+									class="rounded-lg px-3 py-1.5 text-sm text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-hover)]"
 								>
 									Cancel
 								</button>
@@ -456,7 +456,7 @@
 			<div class="mt-6 flex justify-end gap-3">
 				<button
 					onclick={closeModals}
-					class="rounded-lg px-4 py-2 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-bg-secondary)]"
+					class="rounded-lg px-4 py-2 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-hover)]"
 				>
 					Cancel
 				</button>

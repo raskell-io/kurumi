@@ -247,7 +247,7 @@
 {#if showDeleteConfirm && itemToDelete}
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4"
 		onclick={() => (showDeleteConfirm = false)}
 		onkeydown={(e) => e.key === 'Escape' && (showDeleteConfirm = false)}
 		role="dialog"
@@ -274,7 +274,7 @@
 			<div class="flex justify-end gap-3">
 				<button
 					onclick={() => (showDeleteConfirm = false)}
-					class="rounded-lg px-4 py-2 text-sm font-medium text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)]"
+					class="rounded-lg px-4 py-2 text-sm font-medium text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-hover)]"
 				>
 					Cancel
 				</button>
@@ -293,7 +293,7 @@
 {#if showEmptyConfirm}
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4"
 		onclick={() => (showEmptyConfirm = false)}
 		onkeydown={(e) => e.key === 'Escape' && (showEmptyConfirm = false)}
 		role="dialog"
@@ -320,7 +320,7 @@
 			<div class="flex justify-end gap-3">
 				<button
 					onclick={() => (showEmptyConfirm = false)}
-					class="rounded-lg px-4 py-2 text-sm font-medium text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)]"
+					class="rounded-lg px-4 py-2 text-sm font-medium text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-hover)]"
 				>
 					Cancel
 				</button>

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
+	import { currentRoutePath } from '$lib/hash-router';
 	import {
 		folders,
 		memoryObjects,
@@ -281,8 +282,10 @@
 		closeContextMenu();
 	}
 
+	let currentPath = $derived(currentRoutePath($page.route.id, $page.params, $page.url.pathname));
+
 	function isNoteActive(noteId: string): boolean {
-		return $page.url.pathname === `/memory/${noteId}`;
+		return currentPath === `/memory/${noteId}`;
 	}
 
 	function handleNoteClick() {
@@ -761,9 +764,9 @@
 			return;
 		}
 
-		// Select folder when clicking on it
+		// Clicking a folder row toggles it open/closed
 		if (type === 'folder') {
-			selectFolder(id);
+			toggleFolder(id);
 		} else {
 			// When clicking a memory, select its parent folder (or deselect if at root)
 			const memory = $memoryObjects.find((m) => m.id === id);
@@ -777,7 +780,7 @@
 
 	// Reveal current file in tree
 	function revealCurrentFile() {
-		const match = $page.url.pathname.match(/^\/memory\/(.+)$/);
+		const match = currentPath.match(/^\/memory\/(.+)$/);
 		if (!match) return;
 
 		const memoryId = match[1];
@@ -804,6 +807,25 @@
 			noteElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 		}, 100);
 	}
+
+	// Keep the open note visible in the tree: expand its ancestors whenever
+	// the route changes (e.g. after opening a note from search or a link).
+	let lastRevealedId: string | null = null;
+	$effect(() => {
+		const match = currentPath.match(/^\/memory\/(.+)$/);
+		const memoryId = match?.[1] ?? null;
+		if (!memoryId || memoryId === lastRevealedId) return;
+		const memory = $memoryObjects.find((m) => m.id === memoryId);
+		if (!memory) return;
+		lastRevealedId = memoryId;
+		const missing: string[] = [];
+		let folderId: string | null = memory.folderId;
+		while (folderId) {
+			if (!expandedFolders.has(folderId)) missing.push(folderId);
+			folderId = $folders.find((f) => f.id === folderId)?.parentId ?? null;
+		}
+		if (missing.length > 0) expandedFolders = new Set([...expandedFolders, ...missing]);
+	});
 
 	// Collapse all folders
 	function collapseAll() {
@@ -852,7 +874,7 @@
 		if (e.key === 'F2' && !renamingFolder && !renamingNote) {
 			e.preventDefault();
 			// Get the currently active note from URL
-			const match = $page.url.pathname.match(/^\/note\/(.+)$/);
+			const match = currentPath.match(/^\/memory\/(.+)$/);
 			if (match) {
 				const noteId = match[1];
 				handleRenameNote(noteId);
@@ -870,49 +892,43 @@
 	role="tree"
 	tabindex="-1"
 >
-	<!-- Toolbar -->
-	<div class="mb-3 flex items-center justify-center gap-3">
-		<button
-			onclick={() => handleCreateNote(selectedFolderId)}
-			class="rounded-lg p-3 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
-			title={selectedFolderId ? `Add note in ${$folders.find(f => f.id === selectedFolderId)?.name}` : 'Add note'}
-		>
-			<SquarePen class="h-6 w-6" />
-		</button>
-		<button
-			onclick={() => handleCreateFolder(selectedFolderId)}
-			class="rounded-lg p-3 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
-			title={selectedFolderId ? `New folder in ${$folders.find(f => f.id === selectedFolderId)?.name}` : 'New folder'}
-		>
-			<FolderPlus class="h-6 w-6" />
-		</button>
-		<button
-			onclick={cycleSortOrder}
-			class="rounded-lg p-3 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
-			title={getSortTooltip()}
-		>
-			<ArrowUpNarrowWide class="h-6 w-6" />
-		</button>
-		<button
-			onclick={revealCurrentFile}
-			class="rounded-lg p-3 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
-			title="Reveal current file"
-		>
-			<AlignVerticalSpaceAround class="h-6 w-6" />
-		</button>
-		<button
-			onclick={collapseAll}
-			class="rounded-lg p-3 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
-			title="Collapse all"
-		>
-			<ChevronsDownUp class="h-6 w-6" />
-		</button>
+	<!-- Section header -->
+	<div class="group/tree mb-0.5 flex items-center gap-0.5 pl-2 pr-0.5">
+		<span class="flex-1 text-[0.6875rem] font-semibold tracking-[0.02em] text-[var(--color-text-faint)]">Notes</span>
+		<div class="flex items-center opacity-60 transition-opacity group-hover/tree:opacity-100 focus-within:opacity-100">
+			<button
+				onclick={() => handleCreateNote(selectedFolderId)}
+				class="k-icon-btn !h-6 !w-6"
+				title={selectedFolderId ? `New note in ${$folders.find(f => f.id === selectedFolderId)?.name}` : 'New note'}
+				aria-label="New note"
+			>
+				<SquarePen class="h-3.5 w-3.5" />
+			</button>
+			<button
+				onclick={() => handleCreateFolder(selectedFolderId)}
+				class="k-icon-btn !h-6 !w-6"
+				title={selectedFolderId ? `New folder in ${$folders.find(f => f.id === selectedFolderId)?.name}` : 'New folder'}
+				aria-label="New folder"
+			>
+				<FolderPlus class="h-3.5 w-3.5" />
+			</button>
+			<button onclick={cycleSortOrder} class="k-icon-btn !h-6 !w-6" title={getSortTooltip()} aria-label={getSortTooltip()}>
+				<ArrowUpNarrowWide class="h-3.5 w-3.5" />
+			</button>
+			<button onclick={revealCurrentFile} class="k-icon-btn !h-6 !w-6" title="Reveal current note" aria-label="Reveal current note">
+				<AlignVerticalSpaceAround class="h-3.5 w-3.5" />
+			</button>
+			<button onclick={collapseAll} class="k-icon-btn !h-6 !w-6" title="Collapse all" aria-label="Collapse all folders">
+				<ChevronsDownUp class="h-3.5 w-3.5" />
+			</button>
+		</div>
 	</div>
 
 	<!-- New folder input at root -->
 	{#if creatingFolderIn === 'root'}
-		<div class="mb-0.5 flex items-center rounded-lg bg-[var(--color-bg-secondary)] px-2 py-2">
-			<Folder class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
+		<div class="tree-row bg-[var(--color-hover)]">
+			<span class="tree-chevron"></span>
+			<Folder class="tree-icon text-[var(--color-text-muted)]" />
 			<!-- svelte-ignore a11y_autofocus -->
 			<input
 				type="text"
@@ -923,7 +939,7 @@
 				}}
 				onblur={submitNewFolder}
 				placeholder="Folder name"
-				class="w-full bg-transparent text-base text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
+				class="w-full bg-transparent text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-faint)]"
 				autofocus
 			/>
 		</div>
@@ -940,19 +956,19 @@
 
 		<div class="folder-item" class:deleting={isDeleting('folder', folder.id)}>
 			<!-- Folder header with swipe container -->
-			<div class="swipe-container relative mb-0.5 overflow-hidden rounded-lg">
+			<div class="swipe-container relative overflow-hidden rounded-[var(--radius-sm)]">
 				<button
 					onclick={() => requestDelete('folder', folder.id)}
 					class="delete-action absolute right-0 top-0 flex h-full items-center justify-center bg-red-500 text-white transition-opacity"
 					style="width: {DELETE_BUTTON_WIDTH}px; opacity: {folderSwipeOffset > 0 ? 1 : 0};"
 					tabindex={folderSwipeOffset > 0 ? 0 : -1}
 				>
-					<Trash2 class="h-5 w-5" />
+					<Trash2 class="h-4 w-4" />
 				</button>
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<!-- svelte-ignore a11y_click_events_have_key_events -->
 				<div
-					class="folder-row group relative flex items-center rounded-lg bg-[var(--color-bg-secondary)] px-2 py-2 transition-transform hover:bg-[var(--color-border)]"
+					class="folder-row tree-row group"
 					class:drop-target={isDraggedOver(folder.id)}
 					class:dragging={draggedItem?.type === 'folder' && draggedItem.id === folder.id}
 					class:selected={isSelected}
@@ -973,10 +989,19 @@
 					aria-selected={isSelected}
 					tabindex="-1"
 				>
+					<button
+						onclick={(e) => { e.stopPropagation(); toggleFolder(folder.id); }}
+						class="tree-chevron"
+						aria-label={isExpanded ? 'Collapse folder' : 'Expand folder'}
+						aria-expanded={isExpanded}
+						tabindex="-1"
+					>
+						<ChevronRight class="h-3 w-3 transition-transform duration-150 {isExpanded ? 'rotate-90' : ''}" />
+					</button>
 					{#if isExpanded && hasContents}
-						<FolderOpen class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
+						<FolderOpen class="tree-icon text-[var(--color-text-muted)]" />
 					{:else}
-						<Folder class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
+						<Folder class="tree-icon text-[var(--color-text-muted)]" />
 					{/if}
 					{#if renamingFolder === folder.id}
 						<!-- svelte-ignore a11y_autofocus -->
@@ -988,23 +1013,20 @@
 								if (e.key === 'Escape') cancelRename();
 							}}
 							onblur={submitRename}
-							class="min-w-0 flex-1 bg-transparent text-base text-[var(--color-text)] outline-none"
+							class="min-w-0 flex-1 bg-transparent text-[var(--color-text)] outline-none"
 							autofocus
 							onclick={(e) => e.stopPropagation()}
 						/>
 					{:else}
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<span
-							class="truncate text-base text-[var(--color-text)]"
+							class="min-w-0 flex-1 truncate"
 							ondblclick={(e) => handleDoubleClick(e, 'folder', folder.id)}
 							role="button"
 							tabindex="-1"
 						>{folder.name}</span>
 					{/if}
-					<button onclick={(e) => { e.stopPropagation(); toggleFolder(folder.id); }} class="ml-1 shrink-0 p-0.5 text-[var(--color-text-muted)]" aria-label="Toggle folder">
-						<ChevronRight class="h-4 w-4 transition-transform {isExpanded ? 'rotate-90' : ''}" />
-					</button>
-					<span class="ml-auto text-xs text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100">
+					<span class="ml-1 shrink-0 text-[0.6875rem] tabular-nums text-[var(--color-text-faint)] opacity-0 group-hover:opacity-100">
 						{folderMemories.length}
 					</span>
 				</div>
@@ -1012,11 +1034,12 @@
 
 			<!-- Folder contents -->
 			{#if isExpanded}
-				<div class="ml-4 border-l border-[var(--color-border)] pl-2">
+				<div class="tree-children">
 					<!-- New folder input inside this folder -->
 					{#if creatingFolderIn === folder.id}
-						<div class="mb-0.5 flex items-center rounded-lg bg-[var(--color-bg-secondary)] px-2 py-2">
-							<Folder class="mr-2 h-5 w-5 shrink-0 text-[var(--color-accent)]" />
+						<div class="tree-row bg-[var(--color-hover)]">
+							<span class="tree-chevron"></span>
+							<Folder class="tree-icon text-[var(--color-text-muted)]" />
 							<!-- svelte-ignore a11y_autofocus -->
 							<input
 								type="text"
@@ -1027,7 +1050,7 @@
 								}}
 								onblur={submitNewFolder}
 								placeholder="Folder name"
-								class="w-full bg-transparent text-base text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
+								class="w-full bg-transparent text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-faint)]"
 								autofocus
 							/>
 						</div>
@@ -1050,7 +1073,7 @@
 	<!-- Memory snippet for reuse -->
 	{#snippet renderNote(memory: typeof $memoryObjects[0])}
 		{@const swipeOffset = getSwipeOffset('note', memory.id)}
-		<div class="swipe-container relative mb-0.5 overflow-hidden rounded-lg" class:deleting={isDeleting('note', memory.id)}>
+		<div class="swipe-container relative overflow-hidden rounded-[var(--radius-sm)]" class:deleting={isDeleting('note', memory.id)}>
 			<button
 				onclick={() => requestDelete('note', memory.id)}
 				class="delete-action absolute right-0 top-0 flex h-full items-center justify-center bg-red-500 text-white transition-opacity"
@@ -1066,16 +1089,17 @@
 				ontouchstart={(e) => handleSwipeStart(e, { type: 'note', id: memory.id })}
 				ontouchmove={handleSwipeMove}
 				ontouchend={handleSwipeEnd}
-				class="note-row relative flex items-center rounded-lg bg-[var(--color-bg-secondary)] px-2 py-2 transition-transform hover:bg-[var(--color-border)]"
-				class:bg-[var(--color-accent)]={isNoteActive(memory.id)}
-				class:text-white={isNoteActive(memory.id)}
+				class="note-row tree-row"
+				class:tree-row-active={isNoteActive(memory.id)}
+				aria-current={isNoteActive(memory.id) ? 'page' : undefined}
 				class:dragging={draggedItem?.type === 'note' && draggedItem.id === memory.id}
 				style="transform: translateX(-{swipeOffset}px);"
 				draggable="true"
 				ondragstart={(e) => handleDragStart(e, { type: 'note', id: memory.id })}
 				ondragend={handleDragEnd}
 			>
-				<NotebookText class="mr-2 h-5 w-5 shrink-0 {!isNoteActive(memory.id) ? 'text-[var(--color-text-muted)]' : ''}" />
+				<span class="tree-chevron" aria-hidden="true"></span>
+				<NotebookText class="tree-icon" />
 				{#if renamingNote === memory.id}
 					<!-- svelte-ignore a11y_autofocus -->
 					<input
@@ -1087,13 +1111,13 @@
 						}}
 						onblur={submitNoteRename}
 						onclick={(e) => e.preventDefault()}
-						class="flex-1 bg-transparent text-base text-[var(--color-text)] outline-none"
+						class="min-w-0 flex-1 bg-transparent text-[var(--color-text)] outline-none"
 						autofocus
 					/>
 				{:else}
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<span
-						class="truncate text-base"
+						class="min-w-0 flex-1 truncate"
 						ondblclick={(e) => handleDoubleClick(e, 'note', memory.id)}
 						role="button"
 						tabindex="-1"
@@ -1119,7 +1143,7 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
-		class="animate-menu fixed z-[100] min-w-[160px] rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] py-1 shadow-lg"
+		class="k-menu fixed z-[100]"
 		style="left: {contextMenuPosition.x}px; top: {contextMenuPosition.y}px;"
 		onclick={(e) => e.stopPropagation()}
 		role="menu"
@@ -1127,39 +1151,39 @@
 	>
 		<button
 			onclick={() => handleCreateNote(contextMenuFolder)}
-			class="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-border)]"
+			class="k-menu-item"
 		>
 			<FilePlus class="h-4 w-4" />
 			New Note
 		</button>
 		<button
 			onclick={() => handleCreateFolder(contextMenuFolder)}
-			class="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-border)]"
+			class="k-menu-item"
 		>
 			<FolderPlus class="h-4 w-4" />
 			New Subfolder
 		</button>
-		<div class="my-1 border-t border-[var(--color-border)]"></div>
+		<div class="k-menu-sep"></div>
 		<button
 			onclick={() => handleRenameFolder(contextMenuFolder!)}
-			class="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-border)]"
+			class="k-menu-item"
 		>
 			<Pencil class="h-4 w-4" />
 			Rename
 		</button>
 		<button
 			onclick={() => handleDeleteFolder(contextMenuFolder!)}
-			class="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+			class="k-menu-item danger"
 		>
 			<Trash2 class="h-4 w-4" />
 			Delete
 		</button>
 		{#if $vaults.length > 1}
-			<div class="my-1 border-t border-[var(--color-border)]"></div>
+			<div class="k-menu-sep"></div>
 			<div class="relative">
 				<button
 					onclick={() => (showVaultSubmenu = !showVaultSubmenu)}
-					class="flex w-full items-center justify-between gap-2 px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-border)]"
+					class="k-menu-item justify-between"
 				>
 					<div class="flex items-center gap-2">
 						<FolderInput class="h-4 w-4" />
@@ -1168,14 +1192,14 @@
 					<ChevronRight class="h-4 w-4" />
 				</button>
 				{#if showVaultSubmenu}
-					<div class="absolute left-full top-0 ml-1 min-w-[140px] rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] py-1 shadow-lg">
+					<div class="k-menu absolute left-full top-0 ml-1 !min-w-[140px]">
 						{#each $vaults.filter((v) => v.id !== $currentVaultId) as vault (vault.id)}
 							<button
 								onclick={() => {
 									moveFolderToVault(contextMenuFolder!, vault.id);
 									closeContextMenu();
 								}}
-								class="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-border)]"
+								class="k-menu-item"
 							>
 								{#if vault.icon}
 									<span>{vault.icon}</span>
@@ -1196,7 +1220,7 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
-		class="animate-menu fixed z-[100] min-w-[160px] rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] py-1 shadow-lg"
+		class="k-menu fixed z-[100]"
 		style="left: {contextMenuPosition.x}px; top: {contextMenuPosition.y}px;"
 		onclick={(e) => e.stopPropagation()}
 		role="menu"
@@ -1205,7 +1229,7 @@
 		{#if memory?.folderId}
 			<button
 				onclick={handleMoveNoteToRoot}
-				class="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-border)]"
+				class="k-menu-item"
 			>
 				<FolderSymlink class="h-4 w-4" />
 				Move to Root
@@ -1213,12 +1237,12 @@
 		{/if}
 		{#if $vaults.length > 1}
 			{#if memory?.folderId}
-				<div class="my-1 border-t border-[var(--color-border)]"></div>
+				<div class="k-menu-sep"></div>
 			{/if}
 			<div class="relative">
 				<button
 					onclick={() => (showVaultSubmenu = !showVaultSubmenu)}
-					class="flex w-full items-center justify-between gap-2 px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-border)]"
+					class="k-menu-item justify-between"
 				>
 					<div class="flex items-center gap-2">
 						<FolderInput class="h-4 w-4" />
@@ -1227,14 +1251,14 @@
 					<ChevronRight class="h-4 w-4" />
 				</button>
 				{#if showVaultSubmenu}
-					<div class="absolute left-full top-0 ml-1 min-w-[140px] rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] py-1 shadow-lg">
+					<div class="k-menu absolute left-full top-0 ml-1 !min-w-[140px]">
 						{#each $vaults.filter((v) => v.id !== $currentVaultId) as vault (vault.id)}
 							<button
 								onclick={() => {
 									moveMemoryObjectToVault(contextMenuNote!, vault.id);
 									closeContextMenu();
 								}}
-								class="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-border)]"
+								class="k-menu-item"
 							>
 								{#if vault.icon}
 									<span>{vault.icon}</span>
@@ -1254,7 +1278,7 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
-		class="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4"
+		class="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4"
 		onclick={cancelDelete}
 	>
 		<div
@@ -1307,7 +1331,7 @@
 		background-color: color-mix(in srgb, var(--color-accent) 20%, transparent);
 		outline: 2px dashed var(--color-accent);
 		outline-offset: -2px;
-		border-radius: 0.5rem;
+		border-radius: var(--radius-sm);
 	}
 
 	.drop-target-root {
@@ -1324,9 +1348,7 @@
 
 	/* Selected folder indicator */
 	.folder-row.selected {
-		background-color: color-mix(in srgb, var(--color-accent) 15%, var(--color-bg-secondary));
-		outline: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
-		outline-offset: -1px;
+		color: var(--color-text);
 	}
 
 	/* Make draggable elements show grab cursor (desktop only) */
@@ -1425,19 +1447,74 @@
 		}
 	}
 
-	/* Desktop: show a subtle hint on the right edge */
-	@media (hover: hover) {
-		.swipe-container:hover .note-row::after,
-		.swipe-container:hover .folder-row::after {
-			content: '';
-			position: absolute;
-			right: 0;
-			top: 0;
-			bottom: 0;
-			width: 4px;
-			background: linear-gradient(to left, rgba(239, 68, 68, 0.3), transparent);
-			border-radius: 0 0.5rem 0.5rem 0;
-			pointer-events: none;
+	/* Tree rows */
+	.tree-row {
+		position: relative;
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+		min-height: 1.75rem;
+		padding: 0 0.375rem 0 0.125rem;
+		border-radius: var(--radius-sm);
+		font-size: 0.8125rem;
+		color: var(--color-text-muted);
+		text-decoration: none;
+		background: var(--color-bg-secondary);
+	}
+
+	.tree-row:hover {
+		background: color-mix(in srgb, var(--color-text) 6%, var(--color-bg-secondary));
+		color: var(--color-text);
+	}
+
+	.tree-row-active,
+	.tree-row-active:hover {
+		background: color-mix(in srgb, var(--color-text) 10%, var(--color-bg-secondary));
+		color: var(--color-text);
+		font-weight: 500;
+	}
+
+	.tree-row :global(.tree-icon) {
+		width: 0.9375rem;
+		height: 0.9375rem;
+		flex-shrink: 0;
+		margin-right: 0.25rem;
+		opacity: 0.8;
+	}
+
+	.tree-chevron {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1rem;
+		height: 1rem;
+		flex-shrink: 0;
+		border-radius: 0.25rem;
+		color: var(--color-text-faint);
+		min-width: 0;
+		min-height: 0;
+	}
+
+	button.tree-chevron:hover {
+		background: var(--color-active);
+		color: var(--color-text);
+	}
+
+	.tree-children {
+		position: relative;
+		margin-left: 0.625rem;
+		padding-left: 0.375rem;
+		border-left: 1px solid transparent;
+	}
+
+	.folder-tree:hover .tree-children {
+		border-left-color: var(--color-border);
+	}
+
+	@media (hover: none) and (pointer: coarse) {
+		.tree-row {
+			min-height: 2.5rem;
+			font-size: 0.9375rem;
 		}
 	}
 </style>

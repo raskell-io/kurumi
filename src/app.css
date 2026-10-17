@@ -1,3 +1,7 @@
+/* Milkdown's theme ships its own compiled Tailwind layers. Import it before
+   ours so the app's utilities (e.g. `hidden md:flex`) win within each layer
+   instead of being overridden whenever the editor is loaded. */
+@import '@milkdown/theme-nord/style.css';
 @import 'tailwindcss';
 
 /* Font Face Declarations */
@@ -61,14 +65,32 @@
 	--font-editor: 'iA Writer Quattro S', Georgia, 'Times New Roman', serif;
 	--font-size-editor: 1.0625rem;
 
+	/* Shape */
+	--radius-sm: 0.3125rem;
+	--radius-md: 0.5rem;
+	--radius-lg: 0.75rem;
+
 	/* Colors - Catppuccin Latte with white background */
 	--color-bg: #ffffff;
-	--color-bg-secondary: #f5f5f5;
+	--color-bg-secondary: #f7f7f8;
 	--color-text: #4c4f69;
 	--color-text-muted: #6c6f85;
+	--color-text-faint: #9ca0b0;
 	--color-accent: #7287fd;
 	--color-accent-hover: #1e66f5;
-	--color-border: #ccd0da;
+	--color-border: #e3e5ea;
+	--color-danger: #d20f39;
+
+	/* Inline references in the editor */
+	--color-ref-person: #40a02b;
+	--color-ref-date: #1e66f5;
+	--color-ref-tag: #fe640b;
+	--color-ref-url: #8839ef;
+
+	/* Elevation */
+	--shadow-sm: 0 1px 2px rgba(15, 15, 30, 0.06);
+	--shadow-md: 0 4px 12px rgba(15, 15, 30, 0.08), 0 1px 3px rgba(15, 15, 30, 0.06);
+	--shadow-lg: 0 16px 40px rgba(15, 15, 30, 0.14), 0 2px 8px rgba(15, 15, 30, 0.06);
 }
 
 /* Dark theme via system preference - Catppuccin Mocha */
@@ -78,9 +100,18 @@
 		--color-bg-secondary: #181825;
 		--color-text: #cdd6f4;
 		--color-text-muted: #a6adc8;
+		--color-text-faint: #7f849c;
 		--color-accent: #b4befe;
 		--color-accent-hover: #89b4fa;
 		--color-border: #313244;
+		--color-danger: #f38ba8;
+		--color-ref-person: #a6e3a1;
+		--color-ref-date: #89b4fa;
+		--color-ref-tag: #fab387;
+		--color-ref-url: #cba6f7;
+		--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+		--shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.3);
+		--shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
 	}
 }
 
@@ -90,20 +121,46 @@
 	--color-bg-secondary: #181825;
 	--color-text: #cdd6f4;
 	--color-text-muted: #a6adc8;
+	--color-text-faint: #7f849c;
 	--color-accent: #b4befe;
 	--color-accent-hover: #89b4fa;
 	--color-border: #313244;
+	--color-danger: #f38ba8;
+	--color-ref-person: #a6e3a1;
+	--color-ref-date: #89b4fa;
+	--color-ref-tag: #fab387;
+	--color-ref-url: #cba6f7;
+	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+	--shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.3);
+	--shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 /* Manual light theme override - Catppuccin Latte (with white bg) */
 :root.light {
 	--color-bg: #ffffff;
-	--color-bg-secondary: #f5f5f5;
+	--color-bg-secondary: #f7f7f8;
 	--color-text: #4c4f69;
 	--color-text-muted: #6c6f85;
+	--color-text-faint: #9ca0b0;
 	--color-accent: #7287fd;
 	--color-accent-hover: #1e66f5;
-	--color-border: #ccd0da;
+	--color-border: #e3e5ea;
+	--color-danger: #d20f39;
+	--color-ref-person: #40a02b;
+	--color-ref-date: #1e66f5;
+	--color-ref-tag: #fe640b;
+	--color-ref-url: #8839ef;
+	--shadow-sm: 0 1px 2px rgba(15, 15, 30, 0.06);
+	--shadow-md: 0 4px 12px rgba(15, 15, 30, 0.08), 0 1px 3px rgba(15, 15, 30, 0.06);
+	--shadow-lg: 0 16px 40px rgba(15, 15, 30, 0.14), 0 2px 8px rgba(15, 15, 30, 0.06);
+}
+
+/* Interaction surfaces derive from the text color so they work in both
+   themes and on both the main and sidebar backgrounds. */
+:root {
+	--color-hover: color-mix(in srgb, var(--color-text) 6%, transparent);
+	--color-active: color-mix(in srgb, var(--color-text) 10%, transparent);
+	--color-accent-soft: color-mix(in srgb, var(--color-accent) 14%, transparent);
 }
 
 /* Editor font options */
@@ -155,15 +212,9 @@ body {
 	outline-offset: 2px;
 }
 
-/* Smooth scrolling */
-html {
-	scroll-behavior: smooth;
-}
-
 /* Selection */
 ::selection {
-	background-color: var(--color-accent);
-	color: white;
+	background-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
 }
 
 /* Safe area utilities for iPhone notch/home indicator */
@@ -448,4 +499,103 @@ textarea {
 .milkdown code,
 .milkdown pre {
 	font-family: var(--font-mono);
+}
+
+/* ========================================
+   SHARED UI PRIMITIVES
+   ======================================== */
+
+/* Small square icon button (toolbars, headers) */
+.k-icon-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 1.75rem;
+	height: 1.75rem;
+	border-radius: var(--radius-sm);
+	color: var(--color-text-muted);
+	flex-shrink: 0;
+}
+
+.k-icon-btn:hover {
+	background: var(--color-hover);
+	color: var(--color-text);
+}
+
+.k-icon-btn:disabled {
+	opacity: 0.5;
+	pointer-events: none;
+}
+
+/* Popover menus */
+.k-menu {
+	min-width: 12rem;
+	padding: 0.25rem;
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-md);
+	background: var(--color-bg);
+	box-shadow: var(--shadow-lg);
+	animation: slideDownFadeIn 120ms var(--ease-out);
+}
+
+.k-menu-item {
+	display: flex;
+	width: 100%;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.375rem 0.5rem;
+	border-radius: var(--radius-sm);
+	font-size: 0.8125rem;
+	color: var(--color-text);
+	text-align: left;
+}
+
+.k-menu-item:hover,
+.k-menu-item:focus-visible {
+	background: var(--color-hover);
+	outline: none;
+}
+
+.k-menu-item.danger {
+	color: var(--color-danger);
+}
+
+.k-menu-sep {
+	height: 1px;
+	margin: 0.25rem 0.25rem;
+	background: var(--color-border);
+}
+
+.k-menu-label {
+	padding: 0.375rem 0.5rem 0.25rem;
+	font-size: 0.6875rem;
+	font-weight: 500;
+	color: var(--color-text-faint);
+}
+
+/* Keyboard hint */
+.k-kbd {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.125rem;
+	padding: 0 0.3125rem;
+	min-height: 1.125rem;
+	border: 1px solid var(--color-border);
+	border-radius: 0.25rem;
+	background: var(--color-bg);
+	font-family: var(--font-sans);
+	font-size: 0.6875rem;
+	line-height: 1;
+	color: var(--color-text-faint);
+}
+
+/* Respect users who ask for less motion */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+	}
 }

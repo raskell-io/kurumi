@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { Editor, rootCtx, defaultValueCtx } from '@milkdown/kit/core';
 	import { commonmark } from '@milkdown/kit/preset/commonmark';
@@ -8,7 +8,6 @@
 	import { history } from '@milkdown/kit/plugin/history';
 	import { clipboard } from '@milkdown/kit/plugin/clipboard';
 	import { nord } from '@milkdown/theme-nord';
-	import '@milkdown/theme-nord/style.css';
 	import { wikilinkPlugin, setWikilinkClickHandler } from '$lib/editor/wikilink';
 	import { trailingPlugin } from '$lib/editor/trailing';
 	import {
@@ -18,7 +17,8 @@
 	import {
 		wikilinkAutocompletePlugin,
 		setAutocompleteCallbacks,
-		completeWikilink
+		completeWikilink,
+		closeAutocomplete as dismissWikilinkAutocomplete
 	} from '$lib/editor/wikilinkAutocomplete';
 	import {
 	datePeoplePlugin,
@@ -32,6 +32,7 @@
 		insertDate,
 		insertPerson,
 		insertTag,
+		closeAutocomplete as dismissDatePeopleAutocomplete,
 		type AutocompleteType
 	} from '$lib/editor/datePeopleAutocomplete';
 	import {
@@ -92,13 +93,14 @@
 
 	// Wikilink autocomplete state
 	let showAutocomplete = $state(false);
-	let autocompletePosition = $state<{ x: number; y: number }>({ x: 0, y: 0 });
+	let autocompletePosition = $state<{ x: number; y: number; top?: number }>({ x: 0, y: 0 });
+	let autocompleteQuery = $state('');
 
 	// Date/People/Tag autocomplete state
 	let showDatePicker = $state(false);
 	let showPersonInput = $state(false);
 	let showTagAutocomplete = $state(false);
-	let datePeoplePosition = $state<{ x: number; y: number }>({ x: 0, y: 0 });
+	let datePeoplePosition = $state<{ x: number; y: number; top?: number }>({ x: 0, y: 0 });
 	let datePeopleQuery = $state('');
 
 	// Camera capture state
@@ -126,7 +128,10 @@
 		showAutocomplete = false;
 	}
 
+	// Escape: dismiss in the plugin too, so continuing to type in the same
+	// `[[…` doesn't reopen the popup.
 	function handleAutocompleteClose() {
+		dismissWikilinkAutocomplete();
 		showAutocomplete = false;
 	}
 
@@ -136,6 +141,7 @@
 	}
 
 	function handleDateClose() {
+		dismissDatePeopleAutocomplete();
 		showDatePicker = false;
 	}
 
@@ -145,6 +151,7 @@
 	}
 
 	function handlePersonClose() {
+		dismissDatePeopleAutocomplete();
 		showPersonInput = false;
 	}
 
@@ -154,6 +161,7 @@
 	}
 
 	function handleTagClose() {
+		dismissDatePeopleAutocomplete();
 		showTagAutocomplete = false;
 	}
 
@@ -335,6 +343,14 @@
 		}
 	}
 
+	// Props are live getters into the parent, so `noteId`/`content` can already
+	// read the *next* note's values while this instance starts up or is torn
+	// down. Capture what this editor was mounted for, and ignore callbacks
+	// after destroy.
+	const mountedNoteId = untrack(() => noteId);
+	const mountedContent = untrack(() => content);
+	let destroyed = false;
+
 	onMount(async () => {
 		// Set up wikilink click handler
 		if (onWikilinkClick) {
@@ -359,6 +375,7 @@
 			onOpen: (state) => {
 				if (state.position) {
 					autocompletePosition = state.position;
+					autocompleteQuery = state.query;
 					showAutocomplete = true;
 				}
 			},
@@ -369,6 +386,7 @@
 				if (state.position) {
 					autocompletePosition = state.position;
 				}
+				autocompleteQuery = state.query;
 			}
 		});
 
@@ -417,7 +435,7 @@
 		});
 
 		// Transform frontmatter to code block for display
-		const displayContent = frontmatterToCodeBlock(content || '');
+		const displayContent = frontmatterToCodeBlock(mountedContent || '');
 
 		editor = await Editor.make()
 			.config((ctx) => {
@@ -426,13 +444,13 @@
 
 				// Listen for changes - transform code block back to frontmatter for storage
 				ctx.get(listenerCtx).markdownUpdated((_, markdown) => {
-					if (onchange) {
+					if (onchange && !destroyed) {
 						const storageContent = codeBlockToFrontmatter(markdown);
 						// Tag with the note id this editor was mounted for. Milkdown
 						// debounces this callback 200ms, so it can fire after the user
 						// has switched notes; the parent uses the id to drop stale
 						// updates that would otherwise clobber the new note.
-						onchange(storageContent, noteId);
+						onchange(storageContent, mountedNoteId);
 					}
 				});
 			})
@@ -487,6 +505,8 @@
 		// we only need to resolve regular images here.
 		const resolveBlobImages = async () => {
 			const { resolveBlobUrl } = await import('$lib/utils/image');
+			// The editor may have unmounted during the await (e.g. note switch)
+			if (!editorContainer) return;
 			// Resolve blob: refs on images (audio images are handled by NodeView)
 			const imgs = editorContainer.querySelectorAll<HTMLImageElement>('img');
 			for (const img of imgs) {
@@ -548,6 +568,7 @@
 	});
 
 	onDestroy(() => {
+		destroyed = true;
 		if (editorContainer) {
 			editorContainer.removeEventListener('mouseup', checkSelection);
 		}
@@ -584,6 +605,7 @@
 		<WikilinkAutocomplete
 			{currentFolderId}
 			position={autocompletePosition}
+			query={autocompleteQuery}
 			onSelect={handleAutocompleteSelect}
 			onClose={handleAutocompleteClose}
 		/>
@@ -592,7 +614,7 @@
 	{#if showDatePicker}
 		<DatePicker
 			position={datePeoplePosition}
-			initialQuery={datePeopleQuery}
+			query={datePeopleQuery}
 			onSelect={handleDateSelect}
 			onClose={handleDateClose}
 		/>
@@ -601,7 +623,7 @@
 	{#if showPersonInput}
 		<PersonInput
 			position={datePeoplePosition}
-			initialQuery={datePeopleQuery}
+			query={datePeopleQuery}
 			onSelect={handlePersonSelect}
 			onClose={handlePersonClose}
 		/>
@@ -610,7 +632,7 @@
 	{#if showTagAutocomplete}
 		<TagAutocomplete
 			position={datePeoplePosition}
-			initialQuery={datePeopleQuery}
+			query={datePeopleQuery}
 			onSelect={handleTagSelect}
 			onClose={handleTagClose}
 		/>
@@ -675,252 +697,191 @@
 		outline: none !important;
 	}
 
-	/* Wikilinks */
+	/* Wikilinks: read as links, not buttons */
 	:global(.milkdown .wikilink) {
-		background: linear-gradient(
-			135deg,
-			color-mix(in srgb, var(--color-accent) 15%, transparent),
-			color-mix(in srgb, var(--color-accent) 25%, transparent)
-		);
 		color: var(--color-accent);
-		padding: 0.1em 0.3em;
-		border-radius: 4px;
+		border-radius: 3px;
 		cursor: pointer;
-		transition: all 0.15s ease;
 		font-weight: 500;
+		text-decoration: underline;
+		text-decoration-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
+		text-underline-offset: 0.2em;
+		text-decoration-thickness: 1px;
+		transition: background-color 0.12s ease, text-decoration-color 0.12s ease;
 	}
 
 	:global(.milkdown .wikilink:hover) {
-		background: linear-gradient(
-			135deg,
-			color-mix(in srgb, var(--color-accent) 25%, transparent),
-			color-mix(in srgb, var(--color-accent) 35%, transparent)
-		);
-		text-decoration: underline;
+		background: var(--color-accent-soft);
+		text-decoration-color: var(--color-accent);
 	}
 
-	/* Date references //YYYY-MM-DD - Catppuccin Blue */
-	:global(.milkdown .date-reference) {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.25em;
-		background: linear-gradient(
-			135deg,
-			rgba(137, 180, 250, 0.15),
-			rgba(137, 180, 250, 0.25)
-		);
-		color: #89b4fa;
-		padding: 0.1em 0.4em;
-		border-radius: 4px;
-		font-weight: 500;
-		font-size: 0.95em;
-		cursor: pointer;
-		transition: all 0.15s ease;
-	}
-
-	:global(.milkdown .date-reference:hover) {
-		background: linear-gradient(
-			135deg,
-			rgba(137, 180, 250, 0.25),
-			rgba(137, 180, 250, 0.35)
-		);
-		text-decoration: underline;
-	}
-
-	:global(.milkdown .date-reference::before) {
-		content: '';
-		display: inline-block;
-		width: 0.875em;
-		height: 0.875em;
-		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2389b4fa'%3E%3Cpath fill-rule='evenodd' d='M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z' clip-rule='evenodd'/%3E%3C/svg%3E");
-		background-size: contain;
-		background-repeat: no-repeat;
-		flex-shrink: 0;
-	}
-
-	/* Person references @Name - Catppuccin Green */
-	:global(.milkdown .person-reference) {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.25em;
-		background: linear-gradient(
-			135deg,
-			rgba(166, 227, 161, 0.15),
-			rgba(166, 227, 161, 0.25)
-		);
-		color: #a6e3a1;
-		padding: 0.1em 0.4em;
-		border-radius: 1em;
-		font-weight: 500;
-		font-size: 0.95em;
-		cursor: pointer;
-		transition: all 0.15s ease;
-	}
-
-	:global(.milkdown .person-reference:hover) {
-		background: linear-gradient(
-			135deg,
-			rgba(166, 227, 161, 0.25),
-			rgba(166, 227, 161, 0.35)
-		);
-		text-decoration: underline;
-	}
-
-	:global(.milkdown .person-reference::before) {
-		content: '';
-		display: inline-block;
-		width: 0.875em;
-		height: 0.875em;
-		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23a6e3a1'%3E%3Cpath fill-rule='evenodd' d='M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z' clip-rule='evenodd'/%3E%3C/svg%3E");
-		background-size: contain;
-		background-repeat: no-repeat;
-		flex-shrink: 0;
-	}
-
-	/* Tag references #tag - Catppuccin Peach */
-	:global(.milkdown .tag-reference) {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.25em;
-		background: linear-gradient(
-			135deg,
-			rgba(250, 179, 135, 0.15),
-			rgba(250, 179, 135, 0.25)
-		);
-		color: #fab387;
-		padding: 0.1em 0.4em;
-		border-radius: 4px;
-		font-weight: 500;
-		font-size: 0.95em;
-		cursor: pointer;
-		transition: all 0.15s ease;
-	}
-
-	:global(.milkdown .tag-reference:hover) {
-		background: linear-gradient(
-			135deg,
-			rgba(250, 179, 135, 0.25),
-			rgba(250, 179, 135, 0.35)
-		);
-		text-decoration: underline;
-	}
-
-	:global(.milkdown .tag-reference::before) {
-		content: '';
-		display: inline-block;
-		width: 0.875em;
-		height: 0.875em;
-		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23fab387'%3E%3Cpath fill-rule='evenodd' d='M17.707 9.293a1 1 0 010 1.414l-7 7a1 1 0 01-1.414 0l-7-7A.997.997 0 012 10V5a3 3 0 013-3h5c.256 0 .512.098.707.293l7 7zM5 6a1 1 0 100-2 1 1 0 000 2z' clip-rule='evenodd'/%3E%3C/svg%3E");
-		background-size: contain;
-		background-repeat: no-repeat;
-		flex-shrink: 0;
-	}
-
-	/* URL references - Catppuccin Mauve */
+	/* Inline references share one chip shape; each type sets --ref */
+	:global(.milkdown .date-reference),
+	:global(.milkdown .person-reference),
+	:global(.milkdown .tag-reference),
 	:global(.milkdown .url-reference) {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25em;
-		background: linear-gradient(
-			135deg,
-			rgba(203, 166, 247, 0.15),
-			rgba(203, 166, 247, 0.25)
-		);
-		color: #cba6f7;
-		padding: 0.1em 0.4em;
+		background: color-mix(in srgb, var(--ref) 12%, transparent);
+		color: var(--ref);
+		padding: 0.05em 0.4em;
 		border-radius: 4px;
 		font-weight: 500;
-		font-size: 0.95em;
+		font-size: 0.92em;
+		line-height: 1.5;
 		cursor: pointer;
-		transition: all 0.15s ease;
-		word-break: break-all;
+		transition: background-color 0.12s ease;
 	}
 
+	:global(.milkdown .date-reference:hover),
+	:global(.milkdown .person-reference:hover),
+	:global(.milkdown .tag-reference:hover),
 	:global(.milkdown .url-reference:hover) {
-		background: linear-gradient(
-			135deg,
-			rgba(203, 166, 247, 0.25),
-			rgba(203, 166, 247, 0.35)
-		);
-		text-decoration: underline;
+		background: color-mix(in srgb, var(--ref) 22%, transparent);
 	}
 
+	:global(.milkdown .date-reference::before),
+	:global(.milkdown .person-reference::before),
 	:global(.milkdown .url-reference::before) {
 		content: '';
 		display: inline-block;
-		width: 0.875em;
-		height: 0.875em;
-		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23cba6f7'%3E%3Cpath fill-rule='evenodd' d='M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z' clip-rule='evenodd'/%3E%3C/svg%3E");
-		background-size: contain;
-		background-repeat: no-repeat;
+		width: 0.85em;
+		height: 0.85em;
 		flex-shrink: 0;
+		background-color: currentColor;
+		-webkit-mask-size: contain;
+		mask-size: contain;
+		-webkit-mask-repeat: no-repeat;
+		mask-repeat: no-repeat;
+		opacity: 0.8;
+	}
+
+	:global(.milkdown .date-reference) {
+		--ref: var(--color-ref-date);
+	}
+
+	:global(.milkdown .date-reference::before) {
+		-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath fill-rule='evenodd' d='M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z' clip-rule='evenodd'/%3E%3C/svg%3E");
+		mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath fill-rule='evenodd' d='M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z' clip-rule='evenodd'/%3E%3C/svg%3E");
+	}
+
+	:global(.milkdown .person-reference) {
+		--ref: var(--color-ref-person);
+		border-radius: 1em;
+	}
+
+	:global(.milkdown .person-reference::before) {
+		-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath fill-rule='evenodd' d='M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z' clip-rule='evenodd'/%3E%3C/svg%3E");
+		mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath fill-rule='evenodd' d='M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z' clip-rule='evenodd'/%3E%3C/svg%3E");
+	}
+
+	:global(.milkdown .tag-reference) {
+		--ref: var(--color-ref-tag);
+	}
+
+	:global(.milkdown .url-reference) {
+		--ref: var(--color-ref-url);
+		word-break: break-all;
+	}
+
+	:global(.milkdown .url-reference::before) {
+		-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath fill-rule='evenodd' d='M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z' clip-rule='evenodd'/%3E%3C/svg%3E");
+		mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath fill-rule='evenodd' d='M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z' clip-rule='evenodd'/%3E%3C/svg%3E");
 	}
 
 	/* Placeholder */
 	:global(.milkdown .ProseMirror p.is-editor-empty:first-child::before) {
 		content: attr(data-placeholder);
-		color: var(--color-text-muted);
+		color: var(--color-text-faint);
 		pointer-events: none;
 		float: left;
 		height: 0;
 	}
 
 	/* Headings */
+	:global(.milkdown h1),
+	:global(.milkdown h2),
+	:global(.milkdown h3),
+	:global(.milkdown h4),
+	:global(.milkdown h5),
+	:global(.milkdown h6) {
+		color: var(--color-text);
+		line-height: 1.3;
+		letter-spacing: -0.01em;
+	}
+
 	:global(.milkdown h1) {
 		font-size: 1.75em;
 		font-weight: 700;
-		margin-top: 1em;
-		margin-bottom: 0.5em;
-		color: var(--color-text);
+		margin-top: 1.4em;
+		margin-bottom: 0.4em;
 	}
 
 	:global(.milkdown h2) {
-		font-size: 1.5em;
-		font-weight: 600;
-		margin-top: 0.8em;
-		margin-bottom: 0.4em;
-		color: var(--color-text);
+		font-size: 1.4em;
+		font-weight: 650;
+		margin-top: 1.3em;
+		margin-bottom: 0.35em;
 	}
 
 	:global(.milkdown h3) {
-		font-size: 1.25em;
+		font-size: 1.18em;
 		font-weight: 600;
-		margin-top: 0.6em;
+		margin-top: 1.1em;
 		margin-bottom: 0.3em;
-		color: var(--color-text);
+	}
+
+	:global(.milkdown h4),
+	:global(.milkdown h5),
+	:global(.milkdown h6) {
+		font-size: 1em;
+		font-weight: 600;
+		margin-top: 1em;
+		margin-bottom: 0.25em;
+	}
+
+	:global(.milkdown .ProseMirror > :first-child) {
+		margin-top: 0;
 	}
 
 	/* Paragraphs */
 	:global(.milkdown p) {
-		margin-bottom: 0.75em;
+		margin-bottom: 0.6em;
 		line-height: 1.7;
 	}
 
 	/* Links */
 	:global(.milkdown a) {
 		color: var(--color-accent);
-		text-decoration: none;
+		text-decoration: underline;
+		text-decoration-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
+		text-underline-offset: 0.2em;
 	}
 
 	:global(.milkdown a:hover) {
-		text-decoration: underline;
+		text-decoration-color: var(--color-accent);
 	}
 
 	/* Code */
 	:global(.milkdown code) {
-		background: var(--color-bg-secondary);
-		padding: 0.2em 0.4em;
+		background: var(--color-hover);
+		color: var(--color-text);
+		padding: 0.15em 0.35em;
 		border-radius: 4px;
-		font-family: 'SF Mono', 'Fira Code', monospace;
-		font-size: 0.9em;
+		font-family: var(--font-mono);
+		font-size: 0.85em;
 	}
 
 	:global(.milkdown pre) {
 		background: var(--color-bg-secondary);
-		padding: 1em;
-		border-radius: 8px;
+		border: 1px solid var(--color-border);
+		padding: 0.875em 1em;
+		border-radius: var(--radius-md);
 		overflow-x: auto;
 		margin: 1em 0;
+		font-size: 0.95em;
+		line-height: 1.6;
 	}
 
 	:global(.milkdown pre code) {
@@ -930,11 +891,10 @@
 
 	/* Blockquotes */
 	:global(.milkdown blockquote) {
-		border-left: 4px solid var(--color-accent);
+		border-left: 3px solid var(--color-border);
 		padding-left: 1em;
-		margin-left: 0;
+		margin: 0.75em 0;
 		color: var(--color-text-muted);
-		font-style: italic;
 	}
 
 	/* Lists */
@@ -945,7 +905,15 @@
 	}
 
 	:global(.milkdown li) {
-		margin-bottom: 0.25em;
+		margin-bottom: 0.15em;
+	}
+
+	:global(.milkdown li > p) {
+		margin-bottom: 0.15em;
+	}
+
+	:global(.milkdown li::marker) {
+		color: var(--color-text-faint);
 	}
 
 	:global(.milkdown ul) {
@@ -976,19 +944,15 @@
 	/* Horizontal rule */
 	:global(.milkdown hr) {
 		border: none;
-		border-top: 2px solid var(--color-border);
-		margin: 1.5em 0;
+		border-top: 1px solid var(--color-border);
+		margin: 1.75em 0;
 	}
 
 	/* Frontmatter code block - styled as Properties panel */
 	:global(.milkdown pre:first-child) {
-		background: linear-gradient(
-			135deg,
-			rgba(99, 102, 241, 0.08),
-			rgba(99, 102, 241, 0.12)
-		);
-		border: 1px solid rgba(99, 102, 241, 0.2);
-		border-radius: 8px;
+		background: var(--color-bg-secondary);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
 		padding: 1em;
 		margin-bottom: 1.5em;
 		position: relative;
@@ -1005,7 +969,7 @@
 		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
-		color: #6366f1;
+		color: var(--color-text-faint);
 	}
 
 	:global(.milkdown pre:first-child code) {
@@ -1051,31 +1015,31 @@
 	/* Images */
 	:global(.milkdown img) {
 		max-width: 100%;
-		border-radius: 8px;
+		border-radius: var(--radius-md);
 		margin: 1em 0;
 	}
 
 	/* Mobile: larger font for better readability */
 	@media (max-width: 768px) {
 		:global(.milkdown .ProseMirror) {
-			font-size: 1.25rem;
-			line-height: 1.8;
+			font-size: 1.125rem;
+			line-height: 1.75;
 		}
 
 		:global(.milkdown h1) {
-			font-size: 1.5em;
+			font-size: 1.55em;
 		}
 
 		:global(.milkdown h2) {
-			font-size: 1.5em;
+			font-size: 1.3em;
 		}
 
 		:global(.milkdown h3) {
-			font-size: 1.25em;
+			font-size: 1.12em;
 		}
 
 		:global(.milkdown p) {
-			margin-bottom: 1em;
+			margin-bottom: 0.75em;
 		}
 
 		:global(.milkdown code) {

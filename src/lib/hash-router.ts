@@ -93,3 +93,23 @@ export function hashHref(path: string): string {
 	if (path.startsWith('/')) return '/#' + path;
 	return '/#/' + path;
 }
+
+/**
+ * The path of the route that is actually rendered, rebuilt from the route
+ * id and params (e.g. "/memory/[id]" + { id: "abc" } -> "/memory/abc").
+ *
+ * Prefer this over `page.url.pathname` for "is this link active?" checks:
+ * because updateHashFromPath rewrites the address bar to "/#/…", the page
+ * URL can read "/" after a direct load even though a deeper route renders.
+ */
+export function currentRoutePath(
+	routeId: string | null,
+	params: Record<string, string>,
+	fallback: string
+): string {
+	if (!routeId) return fallback;
+	const path = routeId
+		.replace(/\/\([^)]+\)/g, '')
+		.replace(/\[(?:\.\.\.)?([^\]=]+)(?:=[^\]]+)?\]/g, (_, key: string) => params[key] ?? '');
+	return path || '/';
+}

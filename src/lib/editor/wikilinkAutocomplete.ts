@@ -15,7 +15,7 @@ export interface AutocompleteState {
 	query: string;
 	from: number; // Position where [[ starts
 	to: number; // Current cursor position
-	position: { x: number; y: number } | null;
+	position: { x: number; y: number; top: number } | null;
 }
 
 export interface AutocompleteCallbacks {
@@ -27,6 +27,9 @@ export interface AutocompleteCallbacks {
 let callbacks: AutocompleteCallbacks | null = null;
 let currentView: EditorView | null = null;
 let isAutocompleteActive = false;
+// `from` of a `[[` the user dismissed with Escape. Keeps the popup closed
+// while they keep typing in that same link; cleared once the context changes.
+let dismissedFrom: number | null = null;
 
 export function setAutocompleteCallbacks(cb: AutocompleteCallbacks) {
 	callbacks = cb;
@@ -64,9 +67,13 @@ export function completeWikilink(noteTitle: string) {
 }
 
 /**
- * Close autocomplete without inserting
+ * Close autocomplete without inserting. It stays closed for the current
+ * `[[` until the user starts a new one or moves out of it.
  */
 export function closeAutocomplete() {
+	if (currentView) {
+		dismissedFrom = getAutocompleteState(currentView)?.from ?? null;
+	}
 	isAutocompleteActive = false;
 	if (callbacks) {
 		callbacks.onClose();
@@ -76,12 +83,16 @@ export function closeAutocomplete() {
 /**
  * Get cursor coordinates in the viewport
  */
-function getCursorCoords(view: EditorView, pos: number): { x: number; y: number } | null {
+function getCursorCoords(
+	view: EditorView,
+	pos: number
+): { x: number; y: number; top: number } | null {
 	try {
 		const coords = view.coordsAtPos(pos);
 		return {
 			x: coords.left,
-			y: coords.bottom + 4 // Slight offset below cursor
+			y: coords.bottom + 4, // Slight offset below cursor
+			top: coords.top // Lets the popup flip above the caret
 		};
 	} catch {
 		return null;
@@ -140,7 +151,12 @@ export const wikilinkAutocompletePlugin = $prose(() => {
 			return {
 				update(view) {
 					currentView = view;
-					const autocompleteState = getAutocompleteState(view);
+					let autocompleteState = getAutocompleteState(view);
+					if (!autocompleteState || autocompleteState.from !== dismissedFrom) {
+						dismissedFrom = null;
+					} else {
+						autocompleteState = null;
+					}
 
 					const wasActive = isAutocompleteActive;
 					const isActive = autocompleteState !== null;

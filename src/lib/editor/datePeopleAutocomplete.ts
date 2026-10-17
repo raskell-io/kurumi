@@ -19,7 +19,7 @@ export interface AutocompleteState {
 	query: string;
 	from: number;
 	to: number;
-	position: { x: number; y: number } | null;
+	position: { x: number; y: number; top: number } | null;
 }
 
 export interface AutocompleteCallbacks {
@@ -31,6 +31,9 @@ export interface AutocompleteCallbacks {
 let callbacks: AutocompleteCallbacks | null = null;
 let currentView: EditorView | null = null;
 let activeType: AutocompleteType = null;
+// `from` of a trigger the user dismissed with Escape, so typing on doesn't
+// reopen the popup for that same mention/tag/date.
+let dismissedFrom: number | null = null;
 
 export function setDatePeopleCallbacks(cb: AutocompleteCallbacks) {
 	callbacks = cb;
@@ -108,17 +111,48 @@ export function insertTag(tag: string) {
 	callbacks?.onClose();
 }
 
+/**
+ * Dismiss the popup without inserting. It stays closed for the current
+ * trigger until the user types a new one or moves elsewhere.
+ */
 export function closeAutocomplete() {
+	if (currentView) {
+		dismissedFrom = getAutocompleteState(currentView)?.from ?? null;
+	}
 	activeType = null;
 	callbacks?.onClose();
 }
 
-function getCursorCoords(view: EditorView, pos: number): { x: number; y: number } | null {
+/**
+ * Inline style placing an autocomplete popup at the caret: below it by
+ * default, flipped above when it would run off the bottom of the viewport,
+ * and nudged left to stay on screen. Shared by all editor popups.
+ */
+export function placePopup(
+	position: { x: number; y: number; top?: number },
+	width: number,
+	height: number
+): string {
+	const margin = 8;
+	const left = Math.max(margin, Math.min(position.x, window.innerWidth - width - margin));
+	let top = position.y;
+	if (top + height > window.innerHeight - margin && position.top !== undefined) {
+		const above = position.top - height - 4;
+		if (above >= margin) top = above;
+	}
+	return `left: ${left}px; top: ${top}px;`;
+}
+
+function getCursorCoords(
+	view: EditorView,
+	pos: number
+): { x: number; y: number; top: number } | null {
 	try {
 		const coords = view.coordsAtPos(pos);
 		return {
 			x: coords.left,
-			y: coords.bottom + 4
+			y: coords.bottom + 4,
+			top: coords.top
 		};
 	} catch {
 		return null;
@@ -166,11 +200,14 @@ function getAutocompleteState(view: EditorView): AutocompleteState | null {
 		};
 	}
 
-	// Check for person trigger: @
-	const personMatch = textBefore.match(/@([A-Za-z ]*)$/);
+	// Check for person trigger: @ at the start of a word (so emails don't
+	// trigger it). The query stops at whitespace: typing a space after
+	// "@Sam" closes the popup and leaves the text as typed. Multi-word
+	// names are still reachable by picking them from the list.
+	const personMatch = textBefore.match(/(?:^|\s)@([A-Za-z][A-Za-z'.-]*)?$/);
 	if (personMatch) {
 		const blockStart = pos - $pos.parentOffset;
-		const from = blockStart + personMatch.index!;
+		const from = blockStart + personMatch.index! + (personMatch[0].startsWith('@') ? 0 : 1);
 		const query = personMatch[1] || '';
 
 		return {
@@ -216,7 +253,12 @@ export const datePeopleAutocompletePlugin = $prose(() => {
 			return {
 				update(view) {
 					currentView = view;
-					const state = getAutocompleteState(view);
+					let state = getAutocompleteState(view);
+					if (!state || state.from !== dismissedFrom) {
+						dismissedFrom = null;
+					} else {
+						state = null;
+					}
 
 					const wasActive = activeType !== null;
 					const isActive = state !== null;
