@@ -11,6 +11,8 @@
 		restoreReminderProposal,
 		updateReminderProposalRecurrence,
 		deleteActionItem,
+		restoreActionItem,
+		actionItems,
 		todayIso,
 		type ReminderProposal,
 		type Recurrence
@@ -220,10 +222,23 @@
 
 	function handleReopen(proposal: ReminderProposal) {
 		const snapshot: ReminderProposal = { ...proposal };
+		// Approving created an action item. If it's still untouched (never
+		// edited, still open), take it back too so re-approving later doesn't
+		// leave a duplicate. Items the user has worked on are kept.
+		const created = proposal.actionItemId
+			? get(actionItems).find((item) => item.id === proposal.actionItemId)
+			: undefined;
+		const removeCreated =
+			created && created.status === 'open' && created.updatedAt === created.createdAt;
+		const itemSnapshot = removeCreated ? { ...created } : null;
+		if (itemSnapshot) deleteActionItem(itemSnapshot.id);
 		reopenReminderProposal(proposal.id);
 		pushUndo({
-			label: `Reopened reminder`,
-			undo: () => restoreReminderProposal(snapshot)
+			label: itemSnapshot ? 'Reopened reminder and removed its action item' : 'Reopened reminder',
+			undo: () => {
+				if (itemSnapshot) restoreActionItem(itemSnapshot);
+				restoreReminderProposal(snapshot);
+			}
 		});
 	}
 

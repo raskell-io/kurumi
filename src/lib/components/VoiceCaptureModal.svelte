@@ -126,17 +126,38 @@
 		captureStartedAt = Date.now();
 	}
 
-	function handleBackdropClick(e: MouseEvent) {
-		if (e.target === e.currentTarget && !busy) {
-			onClose();
+	// Closing mid-recording asks first; "Keep recording" is the default.
+	let confirmDiscard = $state(false);
+	let keepButton = $state<HTMLButtonElement | null>(null);
+
+	$effect(() => {
+		if (!open) confirmDiscard = false;
+	});
+
+	function requestClose() {
+		if (saving) return;
+		if (busy) {
+			confirmDiscard = true;
+			requestAnimationFrame(() => keepButton?.focus());
+			return;
 		}
+		onClose();
+	}
+
+	function discardAndClose() {
+		confirmDiscard = false;
+		onClose();
+	}
+
+	function handleBackdropClick(e: MouseEvent) {
+		if (e.target === e.currentTarget) requestClose();
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
-		if (open && e.key === 'Escape' && !busy) {
-			e.preventDefault();
-			onClose();
-		}
+		if (!open || e.key !== 'Escape') return;
+		e.preventDefault();
+		if (confirmDiscard) confirmDiscard = false;
+		else requestClose();
 	}
 </script>
 
@@ -159,7 +180,7 @@
 				</h2>
 				<button
 					type="button"
-					onclick={onClose}
+					onclick={requestClose}
 					disabled={saving}
 					class="k-icon-btn"
 					aria-label="Close"
@@ -167,6 +188,14 @@
 					<X class="h-4 w-4" />
 				</button>
 			</div>
+
+			{#if confirmDiscard}
+				<div class="mx-4 mb-2 flex flex-wrap items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-bg-secondary)] px-3 py-2 text-sm" role="alertdialog" aria-label="Discard recording?">
+					<span class="flex-1 text-[var(--color-text)]">Discard this recording?</span>
+					<button bind:this={keepButton} class="k-btn k-btn-sm" onclick={() => (confirmDiscard = false)}>Keep recording</button>
+					<button class="k-btn k-btn-sm k-btn-danger" onclick={discardAndClose}>Discard</button>
+				</div>
+			{/if}
 
 			{#if saving}
 				<div class="flex flex-col items-center gap-3 px-6 py-10">
@@ -231,7 +260,7 @@
 				{/if}
 				<VoiceRecorder
 					onComplete={handleComplete}
-					onCancel={onClose}
+					onCancel={requestClose}
 					onStart={handleRecordingStart}
 					onStateChange={(s) => (recorderState = s)}
 					audioSources={mode === 'meeting' && captureTabAudio ? 'mic+tab' : 'mic'}

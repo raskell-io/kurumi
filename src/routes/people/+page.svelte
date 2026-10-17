@@ -7,12 +7,15 @@
 		deletePerson,
 		restorePerson,
 		getMemoryObjectsByPerson,
+		getAllPeople,
+		addPerson,
+		memoryObjects,
 		type Person
 	} from '$lib/db';
 	import { pushUndo } from '$lib/stores/undo';
 	import { goto } from '$app/navigation';
 	import { onMount, tick } from 'svelte';
-	import { Users, GitMerge, ArrowRight, Trash2, X } from 'lucide-svelte';
+	import { Users, GitMerge, ArrowRight, Trash2, X, UserPlus } from 'lucide-svelte';
 
 	const modKey = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
 
@@ -22,6 +25,31 @@
 		void $people;
 		return proposePersonMerges();
 	});
+
+	// People @mentioned in notes (or extracted from recordings) who don't
+	// have a saved entry yet. Shown below the saved list with a one-click
+	// Save, so nobody you've written about is missing from this page.
+	let unsaved = $derived.by(() => {
+		void $memoryObjects;
+		const saved = new Set($people.map((p) => p.name.toLowerCase()));
+		return getAllPeople()
+			.filter((p) => !saved.has(p.name.toLowerCase()))
+			.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+	});
+
+	function saveAll() {
+		const names = unsaved.map((p) => p.name);
+		const created = names.map((name) => addPerson(name));
+		pushUndo({
+			label: `Saved ${created.length} ${created.length === 1 ? 'person' : 'people'}`,
+			undo: () => created.forEach((person) => deletePerson(person.id))
+		});
+	}
+
+	function savePerson(name: string) {
+		const person = addPerson(name);
+		pushUndo({ label: `Saved ${name}`, undo: () => deletePerson(person.id) });
+	}
 
 	let mergeSource = $state<Person | null>(null);
 	let mergeTarget = $state<Person | null>(null);
@@ -156,7 +184,13 @@
 		<div class="min-w-0">
 			<h1 class="k-page-title">People</h1>
 			<p class="k-page-subtitle">
-				{$people.length} {$people.length === 1 ? 'person' : 'people'} mentioned across your notes
+				{#if $people.length === 0}
+					{unsaved.length} {unsaved.length === 1 ? 'person' : 'people'} mentioned in your notes
+				{:else if unsaved.length === 0}
+					{$people.length} {$people.length === 1 ? 'person' : 'people'}
+				{:else}
+					{$people.length} saved · {unsaved.length} more mentioned
+				{/if}
 			</p>
 			{#if $people.length > 0}
 				<div class="k-hints">
@@ -190,14 +224,13 @@
 		</section>
 	{/if}
 
-	{#if $people.length === 0}
+	{#if $people.length === 0 && unsaved.length === 0}
 		<div class="k-empty">
 			<Users />
-			<p class="k-empty-title">No saved people yet</p>
-			<p>People you @mention show up under References. Save them there to manage them here.</p>
-			<a href="/references?tab=people" class="k-btn mt-2">Browse mentions</a>
+			<p class="k-empty-title">No people yet</p>
+			<p>Type @ and a name in any note — they'll appear here.</p>
 		</div>
-	{:else}
+	{:else if $people.length > 0}
 		<section>
 			{#if proposals.length > 0}
 				<h2 class="k-section-title">All people</h2>
@@ -222,6 +255,31 @@
 							title="Delete"
 						>
 							<Trash2 class="h-4 w-4" />
+						</button>
+					</li>
+				{/each}
+			</ul>
+		</section>
+	{/if}
+
+	{#if unsaved.length > 0}
+		<section>
+			<h2 class="k-section-title" class:!mt-0={$people.length === 0 && proposals.length === 0}>
+				<span class="flex-1">Mentioned in notes</span>
+				{#if unsaved.length > 1}
+					<button class="k-btn k-btn-ghost k-btn-sm" onclick={saveAll}>Save all</button>
+				{/if}
+			</h2>
+			<ul>
+				{#each unsaved as mention (mention.name)}
+					<li class="k-row group">
+						<a href="/read/person/{encodeURIComponent(mention.name)}" class="min-w-0 flex-1 truncate">
+							{mention.name}
+						</a>
+						<span class="k-badge" title="{mention.count} mention{mention.count === 1 ? '' : 's'}">{mention.count}</span>
+						<button class="k-btn k-btn-ghost k-btn-sm" onclick={() => savePerson(mention.name)} title="Save as a person to add details and merge duplicates">
+							<UserPlus class="h-3.5 w-3.5" />
+							Save
 						</button>
 					</li>
 				{/each}

@@ -43,7 +43,12 @@ export function initHashRouter(): () => void {
 		const currentPath = window.location.pathname;
 
 		if (hashPath && hashPath !== currentPath) {
-			goto(hashPath, { replaceState: true });
+			// Defer a tick: the address bar's pathname is always "/", so
+			// SvelteKit may start its own navigation for this history change.
+			// Going after it guarantees the hash route is the one that wins.
+			setTimeout(() => {
+				if (getPathFromHash() === hashPath) goto(hashPath, { replaceState: true });
+			}, 0);
 		}
 	};
 
