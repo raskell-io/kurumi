@@ -505,88 +505,448 @@ textarea {
    SHARED UI PRIMITIVES
    ======================================== */
 
-/* Small square icon button (toolbars, headers) */
-.k-icon-btn {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	width: 1.75rem;
-	height: 1.75rem;
-	border-radius: var(--radius-sm);
-	color: var(--color-text-muted);
-	flex-shrink: 0;
-}
+@layer components {
+	/* Small square icon button (toolbars, headers) */
+	.k-icon-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.75rem;
+		height: 1.75rem;
+		border-radius: var(--radius-sm);
+		color: var(--color-text-muted);
+		flex-shrink: 0;
+	}
 
-.k-icon-btn:hover {
-	background: var(--color-hover);
-	color: var(--color-text);
-}
+	.k-icon-btn:hover {
+		background: var(--color-hover);
+		color: var(--color-text);
+	}
 
-.k-icon-btn:disabled {
-	opacity: 0.5;
-	pointer-events: none;
-}
+	.k-icon-btn:disabled {
+		opacity: 0.5;
+		pointer-events: none;
+	}
 
-/* Popover menus */
-.k-menu {
-	min-width: 12rem;
-	padding: 0.25rem;
-	border: 1px solid var(--color-border);
-	border-radius: var(--radius-md);
-	background: var(--color-bg);
-	box-shadow: var(--shadow-lg);
-	animation: slideDownFadeIn 120ms var(--ease-out);
-}
+	/* Popover menus */
+	.k-menu {
+		min-width: 12rem;
+		padding: 0.25rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		background: var(--color-bg);
+		box-shadow: var(--shadow-lg);
+		animation: slideDownFadeIn 120ms var(--ease-out);
+	}
 
-.k-menu-item {
-	display: flex;
-	width: 100%;
-	align-items: center;
-	gap: 0.5rem;
-	padding: 0.375rem 0.5rem;
-	border-radius: var(--radius-sm);
-	font-size: 0.8125rem;
-	color: var(--color-text);
-	text-align: left;
-}
+	.k-menu-item {
+		display: flex;
+		width: 100%;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.375rem 0.5rem;
+		border-radius: var(--radius-sm);
+		font-size: 0.8125rem;
+		color: var(--color-text);
+		text-align: left;
+	}
 
-.k-menu-item:hover,
-.k-menu-item:focus-visible {
-	background: var(--color-hover);
-	outline: none;
-}
+	.k-menu-item:hover,
+	.k-menu-item:focus-visible {
+		background: var(--color-hover);
+		outline: none;
+	}
 
-.k-menu-item.danger {
-	color: var(--color-danger);
-}
+	.k-menu-item.danger {
+		color: var(--color-danger);
+	}
 
-.k-menu-sep {
-	height: 1px;
-	margin: 0.25rem 0.25rem;
-	background: var(--color-border);
-}
+	.k-menu-sep {
+		height: 1px;
+		margin: 0.25rem 0.25rem;
+		background: var(--color-border);
+	}
 
-.k-menu-label {
-	padding: 0.375rem 0.5rem 0.25rem;
-	font-size: 0.6875rem;
-	font-weight: 500;
-	color: var(--color-text-faint);
-}
+	.k-menu-label {
+		padding: 0.375rem 0.5rem 0.25rem;
+		font-size: 0.6875rem;
+		font-weight: 500;
+		color: var(--color-text-faint);
+	}
 
-/* Keyboard hint */
-.k-kbd {
-	display: inline-flex;
-	align-items: center;
-	gap: 0.125rem;
-	padding: 0 0.3125rem;
-	min-height: 1.125rem;
-	border: 1px solid var(--color-border);
-	border-radius: 0.25rem;
-	background: var(--color-bg);
-	font-family: var(--font-sans);
-	font-size: 0.6875rem;
-	line-height: 1;
-	color: var(--color-text-faint);
+	/* Keyboard hint */
+	.k-kbd {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.125rem;
+		padding: 0 0.3125rem;
+		min-height: 1.125rem;
+		border: 1px solid var(--color-border);
+		border-radius: 0.25rem;
+		background: var(--color-bg);
+		font-family: var(--font-sans);
+		font-size: 0.6875rem;
+		line-height: 1;
+		color: var(--color-text-faint);
+	}
+
+	/* ---- Page scaffolding ----
+	   Secondary pages (actions, inbox, settings, ...) share one rhythm:
+	   <div class="k-page"> <header class="k-page-header"> title + actions,
+	   then content sections. */
+	.k-page {
+		width: 100%;
+		max-width: 46rem;
+		margin: 0 auto;
+		padding: 2rem 1.25rem 6rem;
+	}
+
+	.k-page-wide {
+		max-width: 64rem;
+	}
+
+	@media (min-width: 768px) {
+		.k-page {
+			padding: 3rem 2.5rem 6rem;
+		}
+	}
+
+	.k-page-header {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 1rem;
+		margin-bottom: 1.75rem;
+	}
+
+	.k-page-title {
+		font-size: 1.625rem;
+		font-weight: 600;
+		line-height: 1.25;
+		letter-spacing: -0.015em;
+		color: var(--color-text);
+	}
+
+	.k-page-subtitle {
+		margin-top: 0.25rem;
+		font-size: 0.875rem;
+		color: var(--color-text-muted);
+	}
+
+	.k-section-title {
+		display: flex;
+		align-items: center;
+		gap: 0.375rem;
+		margin: 1.75rem 0 0.5rem;
+		padding: 0 0.25rem;
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--color-text-faint);
+	}
+
+	/* Keyboard hint line under a page title */
+	.k-hints {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem 0.75rem;
+		margin-top: 0.5rem;
+		font-size: 0.75rem;
+		color: var(--color-text-faint);
+	}
+
+	@media (hover: none) {
+		.k-hints {
+			display: none;
+		}
+	}
+
+	/* ---- Buttons ---- */
+	.k-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.375rem;
+		height: 2rem;
+		padding: 0 0.75rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		background: var(--color-bg);
+		font-size: 0.8125rem;
+		font-weight: 500;
+		color: var(--color-text);
+		white-space: nowrap;
+		cursor: pointer;
+	}
+
+	.k-btn:hover {
+		background: var(--color-hover);
+	}
+
+	.k-btn:disabled {
+		opacity: 0.5;
+		pointer-events: none;
+	}
+
+	.k-btn-primary {
+		border-color: transparent;
+		background: var(--color-accent);
+		color: #fff;
+		box-shadow: var(--shadow-sm);
+	}
+
+	.k-btn-primary:hover {
+		background: var(--color-accent-hover);
+	}
+
+	:root.dark .k-btn-primary {
+		color: #1e1e2e;
+	}
+
+	@media (prefers-color-scheme: dark) {
+		:root:not(.light) .k-btn-primary {
+			color: #1e1e2e;
+		}
+	}
+
+	.k-btn-ghost {
+		border-color: transparent;
+		background: transparent;
+		color: var(--color-text-muted);
+	}
+
+	.k-btn-ghost:hover {
+		color: var(--color-text);
+	}
+
+	.k-btn-danger {
+		color: var(--color-danger);
+	}
+
+	.k-btn-danger:hover {
+		background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+	}
+
+	.k-btn-sm {
+		height: 1.625rem;
+		padding: 0 0.5rem;
+		font-size: 0.75rem;
+	}
+
+	/* ---- Form controls ---- */
+	.k-input {
+		width: 100%;
+		height: 2.25rem;
+		padding: 0 0.75rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		background: var(--color-bg);
+		font-size: 0.875rem;
+		color: var(--color-text);
+		outline: none;
+	}
+
+	textarea.k-input {
+		height: auto;
+		min-height: 5rem;
+		padding: 0.5rem 0.75rem;
+		line-height: 1.5;
+		resize: vertical;
+	}
+
+	.k-input::placeholder {
+		color: var(--color-text-faint);
+	}
+
+	.k-input:focus {
+		border-color: color-mix(in srgb, var(--color-accent) 60%, var(--color-border));
+		box-shadow: 0 0 0 3px var(--color-accent-soft);
+	}
+
+	.k-label {
+		display: block;
+		margin-bottom: 0.375rem;
+		font-size: 0.8125rem;
+		font-weight: 500;
+		color: var(--color-text);
+	}
+
+	.k-help {
+		margin-top: 0.25rem;
+		font-size: 0.75rem;
+		color: var(--color-text-muted);
+	}
+
+	/* Segmented control: <div class="k-segmented"><button aria-pressed> */
+	.k-segmented {
+		display: inline-flex;
+		gap: 0.125rem;
+		padding: 0.1875rem;
+		border-radius: var(--radius-md);
+		background: var(--color-hover);
+	}
+
+	.k-segmented > button {
+		height: 1.625rem;
+		padding: 0 0.625rem;
+		border-radius: var(--radius-sm);
+		font-size: 0.8125rem;
+		color: var(--color-text-muted);
+	}
+
+	.k-segmented > button:hover {
+		color: var(--color-text);
+	}
+
+	.k-segmented > button[aria-pressed='true'],
+	.k-segmented > button.active {
+		background: var(--color-bg);
+		color: var(--color-text);
+		box-shadow: var(--shadow-sm);
+	}
+
+	/* ---- Surfaces ---- */
+	.k-card {
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		background: var(--color-bg);
+	}
+
+	/* List row: hover highlight, optional .selected / .focused */
+	.k-row {
+		display: flex;
+		align-items: center;
+		gap: 0.625rem;
+		min-height: 2.25rem;
+		padding: 0.375rem 0.625rem;
+		border-radius: var(--radius-md);
+		font-size: 0.875rem;
+		color: var(--color-text);
+		text-decoration: none;
+	}
+
+	.k-row:hover {
+		background: var(--color-hover);
+	}
+
+	.k-row.focused {
+		background: var(--color-hover);
+		box-shadow: inset 2px 0 0 var(--color-accent);
+	}
+
+	.k-row.selected {
+		background: var(--color-accent-soft);
+	}
+
+	.k-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		height: 1.25rem;
+		padding: 0 0.4375rem;
+		border-radius: 999px;
+		background: var(--color-hover);
+		font-size: 0.6875rem;
+		font-weight: 500;
+		color: var(--color-text-muted);
+		white-space: nowrap;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.k-badge-accent {
+		background: var(--color-accent-soft);
+		color: var(--color-accent);
+	}
+
+	.k-badge-danger {
+		background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+		color: var(--color-danger);
+	}
+
+	.k-badge-warn {
+		background: color-mix(in srgb, #df8e1d 16%, transparent);
+		color: #df8e1d;
+	}
+
+	.k-badge-success {
+		background: color-mix(in srgb, #40a02b 14%, transparent);
+		color: #40a02b;
+	}
+
+	/* Empty state */
+	.k-empty {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 4rem 1rem;
+		text-align: center;
+		color: var(--color-text-muted);
+		font-size: 0.875rem;
+	}
+
+	.k-empty > svg:first-child {
+		width: 2rem;
+		height: 2rem;
+		margin-bottom: 0.25rem;
+		color: var(--color-text-faint);
+	}
+
+	.k-empty-title {
+		font-size: 0.9375rem;
+		font-weight: 500;
+		color: var(--color-text);
+	}
+
+	/* Floating bulk-action bar for multi-select list pages */
+	.k-bulk-bar {
+		position: sticky;
+		top: 0.75rem;
+		z-index: 20;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.25rem;
+		margin-bottom: 1rem;
+		padding: 0.25rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		background: var(--color-bg);
+		box-shadow: var(--shadow-md);
+		animation: slideDownFadeIn 120ms var(--ease-out);
+	}
+
+	/* Modal dialog shell: backdrop + panel */
+	.k-dialog-backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 60;
+		display: flex;
+		align-items: flex-end;
+		justify-content: center;
+		padding: 1rem;
+		background: rgb(0 0 0 / 0.4);
+		backdrop-filter: blur(2px);
+		animation: fadeIn 150ms var(--ease-out);
+	}
+
+	@media (min-width: 768px) {
+		.k-dialog-backdrop {
+			align-items: flex-start;
+			padding-top: 12vh;
+		}
+	}
+
+	.k-dialog {
+		width: 100%;
+		max-width: 28rem;
+		max-height: 80vh;
+		overflow: auto;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		background: var(--color-bg);
+		box-shadow: var(--shadow-lg);
+		animation: scaleIn 160ms var(--ease-out);
+	}
 }
 
 /* Respect users who ask for less motion */

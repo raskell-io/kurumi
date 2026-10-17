@@ -573,6 +573,9 @@
 			captureMode = 'meeting';
 		};
 		window.addEventListener('kurumi-voice-memo', handleVoiceMemoEvent);
+		// Pages with their own mobile top bar (the note page) ask for the sidebar.
+		const handleOpenSidebar = () => (sidebarOpen = true);
+		window.addEventListener('kurumi-open-sidebar', handleOpenSidebar);
 		window.addEventListener('kurumi-meeting', handleMeetingEvent);
 
 		// Periodic + visibility-triggered recurring rollover so long-lived
@@ -598,6 +601,7 @@
 			window.removeEventListener('resize', checkMobile);
 			window.removeEventListener('keydown', handleKeydown);
 			window.removeEventListener('kurumi-voice-memo', handleVoiceMemoEvent);
+			window.removeEventListener('kurumi-open-sidebar', handleOpenSidebar);
 			window.removeEventListener('kurumi-meeting', handleMeetingEvent);
 			document.removeEventListener('visibilitychange', handleVisibility);
 			window.clearInterval(rolloverInterval);
@@ -1036,8 +1040,9 @@
 				</div>
 			{/if}
 
-			<!-- Mobile header (hidden in read mode and on desktop) -->
-			{#if !isReadMode}
+			<!-- Mobile header (hidden in read mode, on notes — which have their
+			     own top bar — and on desktop) -->
+			{#if !isReadMode && !editNoteId}
 			<header
 				class="flex items-center justify-between gap-1 border-b border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1.5 safe-top md:hidden"
 			>

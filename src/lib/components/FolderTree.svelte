@@ -34,7 +34,10 @@
 		SquarePen,
 		ArrowUpNarrowWide,
 		AlignVerticalSpaceAround,
-		ChevronsDownUp
+		ChevronsDownUp,
+		MoreHorizontal,
+		Plus,
+		Link2
 	} from 'lucide-svelte';
 	import { pushUndo } from '$lib/stores/undo';
 
@@ -174,6 +177,18 @@
 		contextMenuPosition = { x: e.clientX, y: e.clientY };
 	}
 
+	// Hover "⋯" buttons open the same menu as right-click, anchored below
+	// the button instead of the pointer.
+	function openRowMenu(e: MouseEvent, type: 'note' | 'folder', id: string) {
+		e.preventDefault();
+		e.stopPropagation();
+		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		contextMenuNote = type === 'note' ? id : null;
+		contextMenuFolder = type === 'folder' ? id : null;
+		showVaultSubmenu = false;
+		contextMenuPosition = { x: rect.left, y: rect.bottom + 4 };
+	}
+
 	function closeContextMenu() {
 		contextMenuFolder = null;
 		contextMenuNote = null;
@@ -273,6 +288,26 @@
 		closeContextMenu();
 		// For now, move contents to root when deleting
 		deleteFolder(folderId, false);
+	}
+
+	// Keep popup menus fully on screen (e.g. when opened near the bottom).
+	function keepInViewport(node: HTMLElement) {
+		const rect = node.getBoundingClientRect();
+		const margin = 8;
+		if (rect.bottom > window.innerHeight - margin) {
+			node.style.top = `${Math.max(margin, window.innerHeight - rect.height - margin)}px`;
+		}
+		if (rect.right > window.innerWidth - margin) {
+			node.style.left = `${Math.max(margin, window.innerWidth - rect.width - margin)}px`;
+		}
+	}
+
+	// Copy a [[wikilink]] to the note so it can be pasted into another note.
+	function copyNoteLink(noteId: string) {
+		const memory = $memoryObjects.find((m) => m.id === noteId);
+		closeContextMenu();
+		if (!memory) return;
+		void navigator.clipboard?.writeText(`[[${memory.title || 'Untitled'}]]`);
 	}
 
 	function handleMoveNoteToRoot() {
@@ -1026,8 +1061,25 @@
 							tabindex="-1"
 						>{folder.name}</span>
 					{/if}
-					<span class="ml-1 shrink-0 text-[0.6875rem] tabular-nums text-[var(--color-text-faint)] opacity-0 group-hover:opacity-100">
-						{folderMemories.length}
+					<span class="row-actions">
+						<button
+							class="row-action"
+							onclick={(e) => { e.stopPropagation(); handleCreateNote(folder.id); }}
+							title="New note in {folder.name}"
+							aria-label="New note in {folder.name}"
+							tabindex="-1"
+						>
+							<Plus class="h-3.5 w-3.5" />
+						</button>
+						<button
+							class="row-action"
+							onclick={(e) => openRowMenu(e, 'folder', folder.id)}
+							title="More"
+							aria-label="Folder actions"
+							tabindex="-1"
+						>
+							<MoreHorizontal class="h-3.5 w-3.5" />
+						</button>
 					</span>
 				</div>
 			</div>
@@ -1122,6 +1174,17 @@
 						role="button"
 						tabindex="-1"
 					>{memory.title || 'Untitled'}</span>
+					<span class="row-actions">
+						<button
+							class="row-action"
+							onclick={(e) => openRowMenu(e, 'note', memory.id)}
+							title="More"
+							aria-label="Note actions"
+							tabindex="-1"
+						>
+							<MoreHorizontal class="h-3.5 w-3.5" />
+						</button>
+					</span>
 				{/if}
 			</a>
 		</div>
@@ -1145,6 +1208,7 @@
 	<div
 		class="k-menu fixed z-[100]"
 		style="left: {contextMenuPosition.x}px; top: {contextMenuPosition.y}px;"
+		use:keepInViewport
 		onclick={(e) => e.stopPropagation()}
 		role="menu"
 		tabindex="-1"
@@ -1222,10 +1286,19 @@
 	<div
 		class="k-menu fixed z-[100]"
 		style="left: {contextMenuPosition.x}px; top: {contextMenuPosition.y}px;"
+		use:keepInViewport
 		onclick={(e) => e.stopPropagation()}
 		role="menu"
 		tabindex="-1"
 	>
+		<button onclick={() => handleRenameNote(contextMenuNote!)} class="k-menu-item">
+			<Pencil class="h-4 w-4" />
+			Rename
+		</button>
+		<button onclick={() => copyNoteLink(contextMenuNote!)} class="k-menu-item">
+			<Link2 class="h-4 w-4" />
+			Copy [[link]]
+		</button>
 		{#if memory?.folderId}
 			<button
 				onclick={handleMoveNoteToRoot}
@@ -1236,9 +1309,6 @@
 			</button>
 		{/if}
 		{#if $vaults.length > 1}
-			{#if memory?.folderId}
-				<div class="k-menu-sep"></div>
-			{/if}
 			<div class="relative">
 				<button
 					onclick={() => (showVaultSubmenu = !showVaultSubmenu)}
@@ -1270,6 +1340,14 @@
 				{/if}
 			</div>
 		{/if}
+		<div class="k-menu-sep"></div>
+		<button
+			onclick={() => { const id = contextMenuNote!; closeContextMenu(); requestDelete('note', id); }}
+			class="k-menu-item danger"
+		>
+			<Trash2 class="h-4 w-4" />
+			Move to trash
+		</button>
 	</div>
 {/if}
 
@@ -1496,6 +1574,37 @@
 	}
 
 	button.tree-chevron:hover {
+		background: var(--color-active);
+		color: var(--color-text);
+	}
+
+	/* Hover actions on rows (Notion-style); hidden on touch, where swipe and
+	   long-press already cover them */
+	.row-actions {
+		display: none;
+		align-items: center;
+		gap: 0.0625rem;
+		margin-left: auto;
+		flex-shrink: 0;
+	}
+
+	@media (hover: hover) {
+		.tree-row:hover .row-actions {
+			display: flex;
+		}
+	}
+
+	.row-action {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.25rem;
+		height: 1.25rem;
+		border-radius: 0.25rem;
+		color: var(--color-text-muted);
+	}
+
+	.row-action:hover {
 		background: var(--color-active);
 		color: var(--color-text);
 	}

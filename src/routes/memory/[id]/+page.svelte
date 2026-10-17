@@ -12,12 +12,14 @@
 		folders,
 		retryMemoryProcessing,
 		extractRemindersFromMemory,
-		restoreMemoryObject
+		restoreMemoryObject,
+		permanentlyDeleteMemoryObject
 	} from '$lib/db';
 	import { pushUndo } from '$lib/stores/undo';
 	import { get } from 'svelte/store';
 	import Editor from '$lib/components/Editor.svelte';
 	import InlineTemplateChooser from '$lib/components/InlineTemplateChooser.svelte';
+	import LinkPreview from '$lib/components/LinkPreview.svelte';
 	import { untrack, tick } from 'svelte';
 	import { downloadSingleMemory, type MarkdownExportFormat } from '$lib/utils/markdown-export';
 	import { publishMemoryAsHtml, copyMemoryAsHtml, shareMemory } from '$lib/utils/publish';
@@ -47,8 +49,11 @@
 		Share2,
 		Copy,
 		FileCode,
-		X
+		X,
+		Menu,
+		Search
 	} from 'lucide-svelte';
+	import { triggerSearch } from '$lib/stores/snackbar';
 	import CameraCapture from '$lib/components/CameraCapture.svelte';
 	import VersionHistoryModal from '$lib/components/VersionHistoryModal.svelte';
 	import { processAndStoreImage } from '$lib/utils/image';
@@ -62,6 +67,7 @@
 	let loadingRelated = $state(false);
 	let showMoreMenu = $state(false);
 	let titleInput: HTMLInputElement | undefined = $state();
+	let scrollArea: HTMLDivElement | undefined = $state();
 
 	// Ticks every 30s so the "Edited …" label stays fresh.
 	let now = $state(Date.now());
@@ -332,6 +338,20 @@
 	// opened. Saves on navigation only run when set, so an editor that failed
 	// to render (and reports an empty document) can never overwrite a note.
 	let hasLocalEdits = false;
+
+	// A note that was created moments before it was opened (Cmd+N, "New
+	// note"). If it's still untitled and empty when the user leaves, it's
+	// discarded instead of littering the tree — like Notion's blank pages.
+	let freshNoteId: string | null = null;
+
+	function discardIfUntouched(id: string) {
+		if (freshNoteId !== id) return;
+		freshNoteId = null;
+		const note = get(memoryObjects).find((m) => m.id === id);
+		if (note && note.type === 'note' && isDefaultTitle(note.title) && !note.bodyMarkdown.trim()) {
+			permanentlyDeleteMemoryObject(id);
+		}
+	}
 	let pendingSave: { id: string; title: string; content: string } | null = null;
 
 	// Bound Editor instance — lets us read the live document synchronously,
@@ -342,6 +362,11 @@
 	// Reactive memory object — stays in sync with the store so async updates
 	// (transcription, sync) propagate to the UI without a manual refresh.
 	let memory = $derived($memoryObjects.find((m) => m.id === $page.params.id));
+
+	// Rough word count for the header (ignores markdown punctuation).
+	let wordCount = $derived(
+		content.replace(/[#>*_`~\[\]()!|-]+/g, ' ').split(/\s+/).filter(Boolean).length
+	);
 
 	// Folder path for the header breadcrumb.
 	let folderPath = $derived.by(() => {
@@ -372,7 +397,15 @@
 				// Persist any debounced edit from the previous note before its
 				// state is overwritten, otherwise the pending edit is lost.
 				flushPendingSave();
+				if (initializedForId) discardIfUntouched(initializedForId);
 				hasLocalEdits = false;
+				freshNoteId =
+					memory!.type === 'note' &&
+					Date.now() - memory!.createdAt < 5000 &&
+					isDefaultTitle(memory!.title) &&
+					!memory!.bodyMarkdown.trim()
+						? id
+						: null;
 				title = memory!.title;
 				content = memory!.bodyMarkdown;
 				backlinks = findBacklinks(id);
@@ -438,6 +471,7 @@
 	$effect(() => {
 		return () => {
 			flushPendingSave();
+			if (initializedForId) discardIfUntouched(initializedForId);
 			if (audioUrl) URL.revokeObjectURL(audioUrl);
 		};
 	});
@@ -620,6 +654,10 @@
 	}
 </script>
 
+<svelte:head>
+	<title>{memory && !isDefaultTitle(title) ? title : 'Untitled'} - Kurumi</title>
+</svelte:head>
+
 <svelte:window
 	onkeydown={(e) => {
 		if (e.key === 'Escape' && showMoreMenu) {
@@ -632,7 +670,18 @@
 {#if memory}
 	<div class="relative flex h-full flex-col">
 		<!-- Note header: location, freshness, actions -->
-		<div class="note-header flex h-11 shrink-0 items-center gap-1 px-3 md:px-4">
+		<div class="note-header flex min-h-11 shrink-0 items-center gap-1 border-b border-[var(--color-border)] px-2 safe-top md:border-b-0 md:px-4 md:pt-0">
+			<!-- Mobile: this bar replaces the global top bar -->
+			<button
+				onclick={() => window.dispatchEvent(new Event('kurumi-open-sidebar'))}
+				class="rounded-lg p-2 text-[var(--color-text-muted)] hover:bg-[var(--color-hover)] md:hidden"
+				aria-label="Open sidebar"
+			>
+				<Menu class="h-5 w-5" />
+			</button>
+			<span class="min-w-0 flex-1 truncate text-sm font-medium text-[var(--color-text)] md:hidden">
+				{folderPath.length > 0 ? `${folderPath[folderPath.length - 1].name} / ` : ''}{isDefaultTitle(title) ? 'Untitled' : title}
+			</span>
 			<nav class="hidden min-w-0 flex-1 items-center gap-1 text-[0.8125rem] text-[var(--color-text-muted)] md:flex" aria-label="Breadcrumb">
 				{#each folderPath as folder (folder.id)}
 					<a href="/read/folder/{folder.id}" class="max-w-40 truncate rounded px-1 py-0.5 hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]">{folder.name}</a>
@@ -640,7 +689,6 @@
 				{/each}
 				<span class="truncate px-1 text-[var(--color-text)]">{title && title !== 'Untitled' ? title : 'Untitled'}</span>
 			</nav>
-			<div class="flex-1 md:hidden"></div>
 
 			{#if isRecording}
 				<button
@@ -653,10 +701,18 @@
 				</button>
 			{/if}
 
+			{#if wordCount > 0}
+				<span class="hidden shrink-0 px-1 text-xs tabular-nums text-[var(--color-text-faint)] lg:inline">
+					{wordCount.toLocaleString()} {wordCount === 1 ? 'word' : 'words'}
+				</span>
+			{/if}
 			<span class="hidden shrink-0 px-1 text-xs text-[var(--color-text-faint)] sm:inline" title="Last modified {formatDate(memory.updatedAt)}">
 				{formatEdited(memory.updatedAt, now)}
 			</span>
 
+			<button onclick={() => triggerSearch.set(true)} class="k-icon-btn md:hidden" aria-label="Search">
+				<Search class="h-4 w-4" />
+			</button>
 			<button onclick={() => (showHistory = true)} class="k-icon-btn" title="Version history" aria-label="Version history">
 				<History class="h-4 w-4" />
 			</button>
@@ -745,7 +801,7 @@
 		{/if}
 
 		<!-- Editor -->
-		<div class="flex-1 overflow-y-auto overscroll-contain px-5 pb-6 md:px-12">
+		<div bind:this={scrollArea} class="flex-1 overflow-y-auto overscroll-contain px-5 pb-6 md:px-12">
 			<div class="mx-auto flex min-h-full max-w-[46rem] flex-col pt-6 md:pt-12">
 				<!-- Hover-revealed insert bar (always shown on touch devices) -->
 				<div class="group/title">
@@ -1082,6 +1138,8 @@
 			</div>
 		</div>
 	</div>
+
+	<LinkPreview container={scrollArea} onOpen={handleWikilinkClick} />
 
 	<!-- Version History Modal -->
 	{#if showHistory && memory}
