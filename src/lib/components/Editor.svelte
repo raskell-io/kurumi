@@ -9,11 +9,9 @@
 	import { clipboard } from '@milkdown/kit/plugin/clipboard';
 	import { nord } from '@milkdown/theme-nord';
 	import { wikilinkPlugin, setWikilinkClickHandler } from '$lib/editor/wikilink';
+	import { toStorageMarkdown } from '$lib/editor/serialize';
 	import { trailingPlugin } from '$lib/editor/trailing';
-	import {
-		frontmatterToCodeBlock,
-		codeBlockToFrontmatter
-	} from '$lib/editor/frontmatter';
+	import { frontmatterToCodeBlock } from '$lib/editor/frontmatter';
 	import {
 		wikilinkAutocompletePlugin,
 		setAutocompleteCallbacks,
@@ -82,7 +80,7 @@
 	export function getCurrentMarkdown(): string | null {
 		if (!editor) return null;
 		try {
-			return codeBlockToFrontmatter(editor.action(getMarkdown()));
+			return toStorageMarkdown(editor.action(getMarkdown()));
 		} catch {
 			return null;
 		}
@@ -445,7 +443,7 @@
 				// Listen for changes - transform code block back to frontmatter for storage
 				ctx.get(listenerCtx).markdownUpdated((_, markdown) => {
 					if (onchange && !destroyed) {
-						const storageContent = codeBlockToFrontmatter(markdown);
+						const storageContent = toStorageMarkdown(markdown);
 						// Tag with the note id this editor was mounted for. Milkdown
 						// debounces this callback 200ms, so it can fire after the user
 						// has switched notes; the parent uses the id to drop stale
@@ -673,7 +671,7 @@
 
 	.milkdown-editor {
 		height: 100%;
-		min-height: 400px;
+		min-height: 12rem;
 	}
 
 	/* Override Nord theme for our color scheme */
@@ -689,7 +687,7 @@
 	}
 
 	:global(.milkdown .ProseMirror) {
-		min-height: 400px;
+		min-height: 12rem;
 		outline: none !important;
 	}
 
