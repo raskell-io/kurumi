@@ -9,20 +9,38 @@
 		type DraftProposal
 	} from '$lib/db';
 	import { pushUndo } from '$lib/stores/undo';
+	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import {
-		Mail,
+		ArrowUpRight,
 		Calendar,
-		Copy,
 		Check,
-		X,
-		Trash2,
-		ArrowRight,
+		CircleCheck,
+		Copy,
+		Mail,
 		RotateCcw,
 		Square,
-		MinusSquare,
-		CheckSquare
+		SquareCheck,
+		Trash2,
+		X
 	} from 'lucide-svelte';
+
+	// Filter tabs. Pending is the review queue; used/rejected drafts are
+	// history, one click away.
+	type Filter = 'pending' | 'decided' | 'all';
+	const FILTERS: Array<{ value: Filter; label: string }> = [
+		{ value: 'pending', label: 'Pending' },
+		{ value: 'decided', label: 'Used & rejected' },
+		{ value: 'all', label: 'All' }
+	];
+	let filter = $state<Filter>('pending');
+
+	function setFilter(next: Filter) {
+		if (filter === next) return;
+		filter = next;
+		clearSelection();
+		focusIndex = -1;
+	}
 
 	type Group = {
 		label: string;
@@ -39,16 +57,24 @@
 			else if (d.status === 'used') used.push(d);
 			else rejected.push(d);
 		}
-		return [
+		const all: Group[] = [
 			{ label: 'Pending review', status: 'pending', items: pending },
 			{ label: 'Used', status: 'used', items: used },
 			{ label: 'Rejected', status: 'rejected', items: rejected }
 		];
+		if (filter === 'pending') return all.slice(0, 1);
+		if (filter === 'decided') return all.slice(1);
+		return all;
 	});
 
 	let pendingCount = $derived(
 		$draftProposals.filter((d) => d.status === 'pending').length
 	);
+	let filterCounts = $derived<Record<Filter, number>>({
+		pending: pendingCount,
+		decided: $draftProposals.length - pendingCount,
+		all: $draftProposals.length
+	});
 
 	let copiedId = $state<string | null>(null);
 
@@ -60,6 +86,28 @@
 	let focusedId = $derived<string | null>(
 		focusIndex >= 0 && focusIndex < flatOrder.length ? flatOrder[focusIndex].id : null
 	);
+	let visiblePendingCount = $derived(flatOrder.filter((d) => d.status === 'pending').length);
+
+	// Keep the keyboard cursor visible while moving through long lists.
+	$effect(() => {
+		if (!focusedId) return;
+		document
+			.querySelector(`[data-row-id="${CSS.escape(focusedId)}"]`)
+			?.scrollIntoView({ block: 'nearest' });
+	});
+
+	// Bodies are clamped to two lines; the keyboard-focused row and any
+	// row the user clicked open show the full text.
+	let expanded = $state<Set<string>>(new Set());
+
+	function toggleExpanded(id: string) {
+		// Don't collapse while the user is selecting text to copy by hand.
+		if (window.getSelection()?.toString()) return;
+		const next = new Set(expanded);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		expanded = next;
+	}
 
 	function isSelected(id: string): boolean {
 		return selected.has(id);
@@ -81,7 +129,7 @@
 	}
 
 	function memoryTitle(id: string): string {
-		return $memoryObjects.find((m) => m.id === id)?.title ?? 'Untitled';
+		return $memoryObjects.find((m) => m.id === id)?.title || 'Untitled';
 	}
 
 	async function copyDraft(draft: DraftProposal) {
@@ -112,15 +160,27 @@
 			setTimeout(() => {
 				if (copiedId === draft.id) copiedId = null;
 			}, 2000);
-			markDraftUsed(draft.id);
+			if (draft.status === 'pending') {
+				// Copying moves the draft out of the pending view, so the
+				// undo toast doubles as the "copied" confirmation.
+				const snapshot: DraftProposal = { ...draft };
+				markDraftUsed(draft.id);
+				pushUndo({
+					label: `Copied draft — marked used`,
+					undo: () => restoreDraftProposal(snapshot)
+				});
+			} else {
+				markDraftUsed(draft.id);
+			}
 		} catch {
 			// Clipboard API can fail in some contexts (permissions, insecure
-			// origin). Silently ignore — the markdown is still visible in
-			// the UI so the user can select-copy.
+			// origin). Silently ignore — the full text is visible when the
+			// row is expanded so the user can select-copy.
 		}
 	}
 
 	function handleReject(draft: DraftProposal) {
+		if (draft.status === 'rejected') return;
 		const snapshot: DraftProposal = { ...draft };
 		rejectDraftProposal(draft.id);
 		pushUndo({
@@ -130,13 +190,11 @@
 	}
 
 	function handleReopen(draft: DraftProposal) {
-		// For this pass, "reopen" on a decided draft just deletes it,
-		// letting the user re-extract from the source memory if they
-		// want. Dedicated reopenDraft helper can come later if needed.
+		// Move a used/rejected draft back to the pending queue.
 		const snapshot: DraftProposal = { ...draft };
-		deleteDraftProposal(draft.id);
+		restoreDraftProposal({ ...draft, status: 'pending', decidedAt: null });
 		pushUndo({
-			label: `Removed draft`,
+			label: `Reopened draft`,
 			undo: () => restoreDraftProposal(snapshot)
 		});
 	}
@@ -181,6 +239,9 @@
 	}
 
 	// --- Keyboard navigation ---------------------------------------------
+	//
+	// Ignored while typing in form controls and when a modifier is held,
+	// so Cmd+C / Cmd+R etc. keep their normal meaning.
 
 	function handlePageKeydown(e: KeyboardEvent) {
 		const target = e.target as HTMLElement | null;
@@ -188,10 +249,14 @@
 		if (
 			target.tagName === 'INPUT' ||
 			target.tagName === 'TEXTAREA' ||
+			target.tagName === 'SELECT' ||
 			target.isContentEditable
 		) {
 			return;
 		}
+		if (e.metaKey || e.ctrlKey || e.altKey) return;
+		// Let a focused button/link handle its own activation keys.
+		if ((e.key === 'Enter' || e.key === ' ') && target.closest('button, a')) return;
 		if (flatOrder.length === 0) return;
 
 		switch (e.key) {
@@ -211,7 +276,8 @@
 				break;
 			case 'Enter':
 				if (flatOrder[focusIndex]?.memoryObjectId) {
-					window.location.hash = `#/memory/${flatOrder[focusIndex].memoryObjectId}`;
+					e.preventDefault();
+					goto(`/memory/${flatOrder[focusIndex].memoryObjectId}`);
 				}
 				break;
 			case 'c':
@@ -251,147 +317,226 @@
 </script>
 
 <svelte:head>
-	<title>Draft proposals - Kurumi</title>
+	<title>Drafts - Kurumi</title>
 </svelte:head>
 
-<main class="drafts-page">
-	<header class="page-header">
-		<div class="header-icon">
-			<Mail class="h-8 w-8" />
+<div class="k-page">
+	<header class="k-page-header">
+		<div class="min-w-0">
+			<h1 class="k-page-title">Drafts</h1>
+			<p class="k-page-subtitle">
+				{pendingCount} pending
+				{#if $draftProposals.length > pendingCount}
+					· {$draftProposals.length - pendingCount} decided
+				{/if}
+			</p>
+			<div class="k-hints">
+				<span><kbd class="k-kbd">j</kbd> <kbd class="k-kbd">k</kbd> navigate</span>
+				<span><kbd class="k-kbd">Space</kbd> select</span>
+				<span><kbd class="k-kbd">c</kbd> copy</span>
+				<span><kbd class="k-kbd">r</kbd> reject</span>
+				<span><kbd class="k-kbd">d</kbd> delete</span>
+				<span><kbd class="k-kbd">↵</kbd> open source</span>
+			</div>
 		</div>
-		<h1>Draft proposals</h1>
-		<p class="count">
-			{pendingCount} pending
-			{#if $draftProposals.length > pendingCount}
-				· {$draftProposals.length - pendingCount} decided
-			{/if}
-			<span class="hint">j/k nav · Space select · c copy · r reject · d delete</span>
-		</p>
+		{#if visiblePendingCount > 0}
+			<button class="k-btn shrink-0" onclick={selectAllPending}>
+				<SquareCheck class="h-4 w-4" />
+				Select pending
+			</button>
+		{/if}
 	</header>
 
+	{#if $draftProposals.length > 0}
+		<div class="k-segmented mb-4" role="group" aria-label="Filter">
+			{#each FILTERS as f (f.value)}
+				<button
+					class="inline-flex items-center gap-1.5"
+					onclick={() => setFilter(f.value)}
+					aria-pressed={filter === f.value}
+				>
+					{f.label}
+					<span class="text-xs tabular-nums text-[var(--color-text-faint)]">{filterCounts[f.value]}</span>
+				</button>
+			{/each}
+		</div>
+	{/if}
+
 	{#if selectionSize > 0}
-		<div class="bulk-bar">
-			<button class="bulk-select" onclick={clearSelection}>
-				<CheckSquare class="h-4 w-4" />
+		<div class="k-bulk-bar" role="toolbar" aria-label="Bulk actions">
+			<span class="px-2 text-xs font-medium tabular-nums text-[var(--color-text)]">
 				{selectionSize} selected
-			</button>
-			<button class="bulk-action" onclick={bulkReject}>
-				<X class="h-4 w-4" />
+			</span>
+			<button class="k-btn k-btn-ghost k-btn-sm" onclick={bulkReject}>
+				<X class="h-3.5 w-3.5" />
 				Reject
 			</button>
-			<button class="bulk-action danger" onclick={bulkDelete}>
-				<Trash2 class="h-4 w-4" />
+			<button class="k-btn k-btn-ghost k-btn-danger k-btn-sm" onclick={bulkDelete}>
+				<Trash2 class="h-3.5 w-3.5" />
 				Delete
 			</button>
-			<button class="bulk-select-all" onclick={selectAllPending}>
-				Select all pending
-			</button>
+			<span class="ml-auto flex items-center gap-1">
+				{#if visiblePendingCount > 0}
+					<button class="k-btn k-btn-ghost k-btn-sm" onclick={selectAllPending}>
+						Select all pending
+					</button>
+				{/if}
+				<button class="k-icon-btn" onclick={clearSelection} title="Clear selection (Esc)" aria-label="Clear selection">
+					<X class="h-4 w-4" />
+				</button>
+			</span>
 		</div>
 	{/if}
 
 	{#if $draftProposals.length === 0}
-		<div class="empty-state">
-			<p>No draft proposals yet.</p>
-			<p class="muted">
-				Kurumi scans voice memos and meetings for obvious follow-up emails and
-				calendar invites. Drafts appear here for your review — copy them into
-				your real email/calendar client when ready.
+		<div class="k-empty">
+			<Mail />
+			<p class="k-empty-title">No drafts yet</p>
+			<p class="max-w-sm">
+				Follow-up emails and calendar invites spotted in voice memos and
+				meetings land here, ready to copy into your mail or calendar.
+			</p>
+		</div>
+	{:else if flatOrder.length === 0}
+		<div class="k-empty">
+			<CircleCheck />
+			<p class="k-empty-title">{filter === 'pending' ? 'All reviewed' : 'Nothing here yet'}</p>
+			<p>
+				{filter === 'pending'
+					? 'Every draft has been used or rejected.'
+					: 'Used and rejected drafts will show up here.'}
 			</p>
 		</div>
 	{:else}
 		{#each groups as group (group.status)}
 			{#if group.items.length > 0}
-				<section class="group">
-					<h2 class="group-title">
+				<section>
+					<h2 class="k-section-title">
 						{group.label}
-						<span class="group-count">{group.items.length}</span>
+						<span class="tabular-nums font-normal">{group.items.length}</span>
 					</h2>
-					<ul class="items">
+					<ul class="items" class:has-selection={selectionSize > 0}>
 						{#each group.items as draft (draft.id)}
+							{@const isExpanded = expanded.has(draft.id) || focusedId === draft.id}
 							<li
-								class="draft"
+								class="k-row item"
 								class:decided={draft.status !== 'pending'}
 								class:focused={focusedId === draft.id}
 								class:selected={isSelected(draft.id)}
+								data-row-id={draft.id}
 							>
 								<button
 									class="select-box"
 									onclick={() => toggleSelected(draft.id)}
 									aria-label={isSelected(draft.id) ? 'Deselect' : 'Select'}
+									aria-pressed={isSelected(draft.id)}
 								>
 									{#if isSelected(draft.id)}
-										<MinusSquare class="h-4 w-4" />
+										<SquareCheck class="h-4 w-4" />
 									{:else}
 										<Square class="h-4 w-4" />
 									{/if}
 								</button>
-								<div class="draft-content">
-								<div class="draft-header">
-									<span class="kind">
-										{#if draft.kind === 'email'}
-											<Mail class="h-4 w-4" />
-											Email
-										{:else}
-											<Calendar class="h-4 w-4" />
-											Calendar event
-										{/if}
-									</span>
-									{#if draft.target}
-										<span class="target">→ {draft.target}</span>
+								<span class="lead" title={draft.kind === 'email' ? 'Email' : 'Calendar event'}>
+									{#if draft.kind === 'email'}
+										<Mail class="h-4 w-4" />
+									{:else}
+										<Calendar class="h-4 w-4" />
 									{/if}
-									{#if draft.suggestedDate}
-										<span class="when">
-											{draft.suggestedDate}
-											{#if draft.suggestedTime} · {draft.suggestedTime}{/if}
-										</span>
-									{/if}
-								</div>
-								<h3 class="subject">{draft.subject}</h3>
-								<p class="body">{draft.body}</p>
-								<div class="footer">
-									<a class="source" href="/memory/{draft.memoryObjectId}">
-										from {memoryTitle(draft.memoryObjectId)}
-										<ArrowRight class="h-3 w-3" />
-									</a>
-									<div class="actions">
-										{#if draft.status === 'pending'}
-											<button
-												class="action-btn primary"
-												onclick={() => copyDraft(draft)}
-											>
-												{#if copiedId === draft.id}
-													<Check class="h-4 w-4" />
-													Copied
-												{:else}
-													<Copy class="h-4 w-4" />
-													Copy
-												{/if}
-											</button>
-											<button
-												class="action-btn"
-												onclick={() => handleReject(draft)}
-												title="Reject"
-											>
-												<X class="h-4 w-4" />
-											</button>
-										{:else}
-											<button
-												class="action-btn"
-												onclick={() => handleReopen(draft)}
-												title="Reopen"
-											>
-												<RotateCcw class="h-4 w-4" />
-											</button>
-											<button
-												class="action-btn danger"
-												onclick={() => handleDelete(draft)}
-												title="Delete permanently"
-											>
-												<Trash2 class="h-4 w-4" />
-											</button>
+								</span>
+
+								<div class="content">
+									<div class="head">
+										<p class="subject">{draft.subject || '(no subject)'}</p>
+										{#if draft.status === 'used'}
+											<span class="k-badge k-badge-success">Used</span>
+										{:else if draft.status === 'rejected'}
+											<span class="k-badge">Rejected</span>
 										{/if}
 									</div>
+									<div class="meta">
+										{#if draft.target}
+											<span class="truncate">
+												{draft.kind === 'email' ? 'To' : 'With'}
+												<span class="text-[var(--color-text-muted)]">{draft.target}</span>
+											</span>
+										{/if}
+										{#if draft.suggestedDate}
+											<span class="shrink-0 tabular-nums">
+												{draft.suggestedDate}{#if draft.suggestedTime}&nbsp;· {draft.suggestedTime}{/if}
+											</span>
+										{/if}
+										<a class="source" href="/memory/{draft.memoryObjectId}">
+											<ArrowUpRight class="h-3 w-3 shrink-0" />
+											<span class="truncate">{memoryTitle(draft.memoryObjectId)}</span>
+										</a>
+									</div>
+									{#if draft.body}
+										<button
+											class="preview"
+											class:expanded={isExpanded}
+											onclick={() => toggleExpanded(draft.id)}
+											aria-expanded={isExpanded}
+										>
+											{draft.body}
+										</button>
+									{/if}
 								</div>
+
+								<div class="row-actions">
+									{#if draft.status === 'pending'}
+										<button
+											class="k-icon-btn"
+											class:copied={copiedId === draft.id}
+											onclick={() => copyDraft(draft)}
+											title={copiedId === draft.id ? 'Copied' : 'Copy to clipboard (c)'}
+											aria-label={copiedId === draft.id ? 'Copied' : 'Copy to clipboard'}
+										>
+											{#if copiedId === draft.id}
+												<Check class="h-4 w-4" />
+											{:else}
+												<Copy class="h-4 w-4" />
+											{/if}
+										</button>
+										<button
+											class="k-icon-btn"
+											onclick={() => handleReject(draft)}
+											title="Reject (r)"
+											aria-label="Reject"
+										>
+											<X class="h-4 w-4" />
+										</button>
+									{:else}
+										<button
+											class="k-icon-btn"
+											class:copied={copiedId === draft.id}
+											onclick={() => copyDraft(draft)}
+											title={copiedId === draft.id ? 'Copied' : 'Copy again (c)'}
+											aria-label={copiedId === draft.id ? 'Copied' : 'Copy to clipboard'}
+										>
+											{#if copiedId === draft.id}
+												<Check class="h-4 w-4" />
+											{:else}
+												<Copy class="h-4 w-4" />
+											{/if}
+										</button>
+										<button
+											class="k-icon-btn"
+											onclick={() => handleReopen(draft)}
+											title="Move back to pending"
+											aria-label="Reopen"
+										>
+											<RotateCcw class="h-4 w-4" />
+										</button>
+										<button
+											class="k-icon-btn danger"
+											onclick={() => handleDelete(draft)}
+											title="Delete (d)"
+											aria-label="Delete"
+										>
+											<Trash2 class="h-4 w-4" />
+										</button>
+									{/if}
 								</div>
 							</li>
 						{/each}
@@ -400,267 +545,95 @@
 			{/if}
 		{/each}
 	{/if}
-</main>
+</div>
 
 <style>
-	.drafts-page {
-		max-width: 900px;
-		margin: 0 auto;
-		padding: 2rem 1.5rem 4rem;
-	}
-
-	.page-header {
-		text-align: center;
-		margin-bottom: 2rem;
-	}
-
-	.header-icon {
-		display: inline-flex;
-		padding: 1rem;
-		background: color-mix(in srgb, var(--color-accent) 15%, transparent);
-		color: var(--color-accent);
-		border-radius: 1rem;
-		margin-bottom: 0.75rem;
-	}
-
-	.page-header h1 {
-		font-size: 2rem;
-		font-weight: 700;
-		color: var(--color-text);
-		margin-bottom: 0.25rem;
-	}
-
-	.count {
-		color: var(--color-text-muted);
-		font-size: 0.875rem;
-	}
-
-	.hint {
-		display: block;
-		margin-top: 0.25rem;
-		font-size: 0.75rem;
-		opacity: 0.7;
-	}
-
-	.bulk-bar {
+	.items {
 		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
+		flex-direction: column;
+		gap: 1px;
+	}
+
+	.item {
+		align-items: flex-start;
 		gap: 0.5rem;
-		margin-bottom: 1rem;
-		padding: 0.625rem 0.875rem;
-		background: color-mix(in srgb, var(--color-accent) 8%, var(--color-bg-secondary));
-		border: 1px solid var(--color-accent);
-		border-radius: 0.625rem;
+		padding-top: 0.5rem;
+		padding-bottom: 0.5rem;
+		/* Keep the cursor clear of the sticky bulk bar when scrolling */
+		scroll-margin: 4rem 0 1rem;
 	}
 
-	.bulk-select {
+	.select-box,
+	.lead {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.375rem;
-		padding: 0.375rem 0.625rem;
-		background: var(--color-accent);
-		color: white;
-		border: none;
-		border-radius: 0.375rem;
-		font-size: 0.8125rem;
-		font-weight: 500;
-		cursor: pointer;
-	}
-
-	.bulk-action {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
-		padding: 0.375rem 0.75rem;
-		background: var(--color-bg);
-		color: var(--color-text);
-		border: 1px solid var(--color-border);
-		border-radius: 0.375rem;
-		font-size: 0.8125rem;
-		cursor: pointer;
-		transition: all 0.15s;
-	}
-
-	.bulk-action:hover {
-		border-color: var(--color-accent);
-	}
-
-	.bulk-action.danger:hover {
-		background: rgba(239, 68, 68, 0.15);
-		color: #ef4444;
-		border-color: rgba(239, 68, 68, 0.4);
-	}
-
-	.bulk-select-all {
-		margin-left: auto;
-		background: none;
-		border: none;
-		color: var(--color-text-muted);
-		font-size: 0.75rem;
-		cursor: pointer;
-	}
-
-	.bulk-select-all:hover {
-		color: var(--color-text);
+		justify-content: center;
+		width: 1.25rem;
+		height: 1.375rem;
+		flex-shrink: 0;
+		color: var(--color-text-faint);
 	}
 
 	.select-box {
-		background: none;
-		border: none;
-		padding: 0;
-		cursor: pointer;
-		color: var(--color-text-muted);
-		flex-shrink: 0;
-		margin-top: 0.125rem;
+		margin-left: -0.25rem;
+		opacity: 0;
 	}
 
-	.select-box:hover {
+	.select-box:hover,
+	.item.selected .select-box {
 		color: var(--color-accent);
 	}
 
-	.draft.selected .select-box {
-		color: var(--color-accent);
+	.item:hover .select-box,
+	.item.focused .select-box,
+	.item.selected .select-box,
+	.has-selection .select-box,
+	.select-box:focus-visible {
+		opacity: 1;
 	}
 
-	.empty-state {
-		text-align: center;
-		padding: 4rem 2rem;
-		color: var(--color-text);
+	.content {
+		flex: 1;
+		min-width: 0;
+		padding-top: 0.0625rem;
 	}
 
-	.empty-state .muted {
-		margin-top: 0.75rem;
-		color: var(--color-text-muted);
-		max-width: 32rem;
-		margin-left: auto;
-		margin-right: auto;
-	}
-
-	.group {
-		margin-bottom: 2rem;
-	}
-
-	.group-title {
+	.head {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		font-size: 0.75rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--color-text-muted);
-		margin-bottom: 0.75rem;
-	}
-
-	.group-count {
-		background: var(--color-bg-secondary);
-		border-radius: 999px;
-		padding: 0.125rem 0.5rem;
-		font-weight: 500;
-	}
-
-	.items {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-	}
-
-	.draft {
-		display: flex;
-		align-items: flex-start;
-		gap: 0.75rem;
-		padding: 1rem;
-		background: var(--color-bg-secondary);
-		border: 1px solid var(--color-border);
-		border-radius: 0.75rem;
-		transition: border-color 0.15s;
-	}
-
-	.draft-content {
-		flex: 1;
 		min-width: 0;
 	}
 
-	.draft:hover {
-		border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
-	}
-
-	.draft.decided {
-		opacity: 0.65;
-	}
-
-	.draft.focused {
-		box-shadow: 0 0 0 2px var(--color-accent);
-	}
-
-	.draft.selected {
-		background: color-mix(in srgb, var(--color-accent) 12%, var(--color-bg-secondary));
-		border-color: var(--color-accent);
-	}
-
-	.draft-header {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.75rem;
-		font-size: 0.75rem;
-		color: var(--color-text-muted);
-		margin-bottom: 0.5rem;
-	}
-
-	.kind {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.25rem;
-		color: var(--color-accent);
-		font-weight: 500;
-	}
-
-	.target {
-		color: var(--color-text);
-	}
-
-	.when {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.25rem;
-		padding: 0.125rem 0.5rem;
-		background: var(--color-bg);
-		border-radius: 999px;
-	}
-
 	.subject {
-		font-size: 1rem;
-		font-weight: 600;
-		color: var(--color-text);
-		margin: 0 0 0.5rem 0;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-weight: 500;
+		line-height: 1.4;
 	}
 
-	.body {
-		font-size: 0.875rem;
-		line-height: 1.5;
-		color: var(--color-text);
-		margin: 0 0 0.75rem 0;
-		white-space: pre-wrap;
+	.item.decided .subject {
+		color: var(--color-text-muted);
 	}
 
-	.footer {
+	.meta {
 		display: flex;
-		justify-content: space-between;
 		align-items: center;
 		gap: 0.75rem;
+		min-width: 0;
+		margin-top: 0.125rem;
+		font-size: 0.75rem;
+		color: var(--color-text-faint);
 	}
 
 	.source {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25rem;
-		font-size: 0.75rem;
-		color: var(--color-text-muted);
+		min-width: 0;
+		color: inherit;
 		text-decoration: none;
 	}
 
@@ -668,43 +641,72 @@
 		color: var(--color-accent);
 	}
 
-	.actions {
-		display: flex;
-		gap: 0.375rem;
-	}
-
-	.action-btn {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.25rem;
-		padding: 0.375rem 0.75rem;
-		background: transparent;
-		border: 1px solid var(--color-border);
-		border-radius: 0.375rem;
-		cursor: pointer;
+	.preview {
+		display: -webkit-box;
+		width: 100%;
+		margin-top: 0.25rem;
+		overflow: hidden;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		font-size: 0.8125rem;
+		line-height: 1.5;
 		color: var(--color-text-muted);
-		font-size: 0.75rem;
-		transition: all 0.15s;
+		text-align: left;
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+		cursor: pointer;
 	}
 
-	.action-btn:hover {
-		background: var(--color-bg);
+	.preview.expanded {
+		display: block;
 		color: var(--color-text);
+		cursor: text;
+		user-select: text;
 	}
 
-	.action-btn.primary {
-		background: var(--color-accent);
-		border-color: var(--color-accent);
-		color: white;
+	/* Row actions appear on hover / keyboard focus, always on touch. */
+	.row-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.125rem;
+		flex-shrink: 0;
+		margin: -0.1875rem -0.25rem -0.1875rem 0;
+		opacity: 0;
 	}
 
-	.action-btn.primary:hover {
-		background: var(--color-accent-hover);
+	.item:hover .row-actions,
+	.item.focused .row-actions,
+	.row-actions:focus-within {
+		opacity: 1;
 	}
 
-	.action-btn.danger:hover {
-		background: rgba(239, 68, 68, 0.15);
-		color: #ef4444;
-		border-color: rgba(239, 68, 68, 0.4);
+	.row-actions .copied {
+		color: var(--color-accent);
+	}
+
+	.row-actions .danger:hover {
+		color: var(--color-danger);
+	}
+
+	@media (hover: none) {
+		.select-box,
+		.row-actions {
+			opacity: 1;
+		}
+	}
+
+	@media (max-width: 639px) {
+		.item {
+			flex-wrap: wrap;
+		}
+
+		.content {
+			flex-basis: calc(100% - 5rem);
+		}
+
+		.row-actions {
+			margin-left: auto;
+		}
 	}
 </style>

@@ -53,39 +53,129 @@
 </script>
 
 {#if visible}
+	<!-- Idle/synced: a tiny status dot that grows into a labelled pill on
+	     hover or focus. Syncing / error / conflict: the pill stays open. -->
 	<button
 		type="button"
 		onclick={handleClick}
 		disabled={syncing}
 		title={tooltip()}
 		aria-label={tooltip()}
-		class="sync-fab fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 shadow-lg transition-colors hover:bg-[var(--color-hover)] disabled:cursor-default disabled:opacity-80"
+		class="sync-fab"
+		class:expanded={syncing || status === 'error' || status === 'conflict'}
+		class:is-error={status === 'error'}
+		class:is-conflict={status === 'conflict'}
 	>
 		{#if status === 'syncing'}
-			<RefreshCw class="h-4 w-4 animate-spin text-[var(--color-accent)]" />
-		{:else if status === 'success'}
-			<CheckCircle class="h-4 w-4 text-green-500" />
+			<RefreshCw class="h-3.5 w-3.5 shrink-0 animate-spin text-[var(--color-accent)]" />
 		{:else if status === 'error'}
-			<CloudOff class="h-4 w-4 text-red-500" />
+			<CloudOff class="h-3.5 w-3.5 shrink-0" />
 		{:else if status === 'conflict'}
-			<AlertCircle class="h-4 w-4 text-yellow-500" />
+			<AlertCircle class="h-3.5 w-3.5 shrink-0" />
 		{:else}
-			<Cloud class="h-4 w-4 text-[var(--color-text-muted)]" />
+			<span class="dot" class:ok={status === 'success'} aria-hidden="true"></span>
+			<span class="idle-icon" aria-hidden="true">
+				{#if status === 'success'}
+					<CheckCircle class="h-3.5 w-3.5" />
+				{:else}
+					<Cloud class="h-3.5 w-3.5" />
+				{/if}
+			</span>
 		{/if}
-		<span
-			class="max-w-[12rem] truncate text-xs"
-			class:text-red-500={status === 'error'}
-			class:text-yellow-500={status === 'conflict'}
-			class:text-[var(--color-text-muted)]={status !== 'error' && status !== 'conflict'}
-		>
-			{label()}
-		</span>
+		<span class="label">{label()}</span>
 	</button>
 {/if}
 
 <style>
-	/* Keep clear of the mobile home indicator. */
 	.sync-fab {
-		margin-bottom: env(safe-area-inset-bottom, 0);
+		position: fixed;
+		right: 0.75rem;
+		bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+		z-index: 40;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.375rem;
+		min-width: 1.5rem;
+		height: 1.5rem;
+		padding: 0 0.375rem;
+		border: 1px solid transparent;
+		border-radius: 999px;
+		font-size: 0.75rem;
+		color: var(--color-text-muted);
+		cursor: pointer;
+		transition:
+			background-color 120ms var(--ease-out),
+			border-color 120ms var(--ease-out);
+	}
+
+	/* The agent pane's composer (and send button) owns the bottom-right
+	   corner while it's open; lift the indicator clear of it. */
+	:global(body:has(.agent-pane-wrapper)) .sync-fab {
+		bottom: calc(7rem + env(safe-area-inset-bottom, 0px));
+	}
+
+	.sync-fab:disabled {
+		cursor: default;
+	}
+
+	.sync-fab .label,
+	.sync-fab .idle-icon {
+		display: none;
+		max-width: 12rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.dot {
+		width: 0.4375rem;
+		height: 0.4375rem;
+		border-radius: 999px;
+		background: var(--color-text-faint);
+		opacity: 0.6;
+	}
+
+	.dot.ok {
+		background: #40a02b;
+	}
+
+	/* Open pill: hover/focus on the idle dot, or any active state */
+	.sync-fab:hover,
+	.sync-fab:focus-visible,
+	.sync-fab.expanded {
+		height: 1.75rem;
+		padding: 0 0.625rem;
+		border-color: var(--color-border);
+		background: var(--color-bg);
+		box-shadow: var(--shadow-sm);
+	}
+
+	.sync-fab:hover .label,
+	.sync-fab:focus-visible .label,
+	.sync-fab.expanded .label {
+		display: inline;
+	}
+
+	.sync-fab:hover .idle-icon,
+	.sync-fab:focus-visible .idle-icon {
+		display: inline-flex;
+	}
+
+	.sync-fab:hover .dot,
+	.sync-fab:focus-visible .dot {
+		display: none;
+	}
+
+	.sync-fab:hover {
+		color: var(--color-text);
+	}
+
+	.sync-fab.is-error {
+		color: var(--color-danger);
+	}
+
+	.sync-fab.is-conflict {
+		color: #df8e1d;
 	}
 </style>

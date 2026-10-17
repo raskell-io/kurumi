@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { autofocus } from '$lib/actions/autofocus';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import {
@@ -17,17 +18,7 @@
 		type DatabaseColumn
 	} from '$lib/db';
 	import { search, filterMemories, parseSearchQuery, hasAnyFilter } from '$lib/search';
-	import {
-		Table,
-		LayoutGrid,
-		Calendar,
-		Settings,
-		Trash2,
-		Plus,
-		ChevronDown,
-		ArrowUp,
-		ArrowDown
-	} from 'lucide-svelte';
+	import { Table, LayoutGrid, Trash2, ArrowUp, ArrowDown, Database, Folder } from 'lucide-svelte';
 
 	let viewId = $derived($page.params.id ?? '');
 	let view = $derived.by(() => {
@@ -166,6 +157,7 @@
 		}
 	}
 
+	// Hard delete with no undo path, so this keeps a confirm.
 	function handleDelete() {
 		if (!view) return;
 		if (confirm(`Delete database view "${view.name}"?`)) {
@@ -196,35 +188,47 @@
 </svelte:head>
 
 {#if view}
-	<main class="db-page">
-		<header class="db-header">
-			<div>
-				<h1 class="db-title">{view.name}</h1>
-				{#if folder}
-					<a href="/read/folder/{folder.id}" class="db-folder">{folder.name}</a>
-				{/if}
+	<div class="k-page k-page-wide">
+		<header class="k-page-header">
+			<div class="min-w-0">
+				<h1 class="k-page-title truncate">{view.name}</h1>
+				<p class="k-page-subtitle flex items-center gap-1.5 text-sm">
+					{#if folder}
+						<a
+							href="/read/folder/{folder.id}"
+							class="inline-flex min-w-0 items-center gap-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+						>
+							<Folder class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)]" />
+							<span class="truncate">{folder.name}</span>
+						</a>
+						<span class="text-[var(--color-text-faint)]">·</span>
+					{/if}
+					<span class="tabular-nums">{memories.length} row{memories.length === 1 ? '' : 's'}</span>
+				</p>
 			</div>
-			<div class="db-actions">
-				<span class="db-count">{memories.length} row{memories.length === 1 ? '' : 's'}</span>
-				<button class="icon-btn danger" onclick={handleDelete} title="Delete view">
-					<Trash2 class="h-4 w-4" />
-				</button>
-			</div>
+			<button
+				class="k-icon-btn hover:!text-[var(--color-danger)]"
+				onclick={handleDelete}
+				aria-label="Delete view"
+				title="Delete view"
+			>
+				<Trash2 class="h-4 w-4" />
+			</button>
 		</header>
 
 		<!-- View switcher -->
-		<div class="view-tabs">
+		<div class="k-segmented mb-4" role="group" aria-label="Layout">
 			<button
-				class="vtab"
-				class:active={view.viewType === 'table'}
+				class="inline-flex items-center gap-1.5"
+				aria-pressed={view.viewType === 'table'}
 				onclick={() => updateDatabaseView(view.id, { viewType: 'table' })}
 			>
 				<Table class="h-3.5 w-3.5" />
 				Table
 			</button>
 			<button
-				class="vtab"
-				class:active={view.viewType === 'board'}
+				class="inline-flex items-center gap-1.5"
+				aria-pressed={view.viewType === 'board'}
 				onclick={() => updateDatabaseView(view.id, { viewType: 'board' })}
 			>
 				<LayoutGrid class="h-3.5 w-3.5" />
@@ -238,7 +242,7 @@
 					<thead>
 						<tr>
 							{#each visibleColumns as col (col.field)}
-								<th>
+								<th aria-sort={view.sortField === col.field ? (view.sortDirection === 'asc' ? 'ascending' : 'descending') : undefined}>
 									<button class="th-btn" onclick={() => toggleSort(col.field)}>
 										{getColumnLabel(col)}
 										{#if view.sortField === col.field}
@@ -263,14 +267,14 @@
 												{memory.title || 'Untitled'}
 											</a>
 										{:else if col.field.startsWith('prop:') && editingCell?.memoryId === memory.id && editingCell?.field === col.field}
-											<!-- svelte-ignore a11y_autofocus -->
-											<input
+																						<input
 												type="text"
 												bind:value={editValue}
 												onkeydown={handleCellKeydown}
 												onblur={saveCell}
-												class="cell-input"
-												autofocus
+												class="k-input !h-7 !px-1.5 !text-[0.8125rem]"
+												aria-label="Edit {getColumnLabel(col)}"
+												use:autofocus
 											/>
 										{:else if col.field.startsWith('prop:')}
 											<button
@@ -285,10 +289,16 @@
 												{formatFieldValue(memory, col) || '—'}
 											</button>
 										{:else}
-											{formatFieldValue(memory, col)}
+											<span class:faint={formatFieldValue(memory, col) === '—'}>{formatFieldValue(memory, col)}</span>
 										{/if}
 									</td>
 								{/each}
+							</tr>
+						{:else}
+							<tr class="empty-row">
+								<td colspan={Math.max(1, visibleColumns.length)}>
+									No notes in this folder{view.filterQuery ? ' match the filter' : ' yet'}.
+								</td>
 							</tr>
 						{/each}
 					</tbody>
@@ -298,121 +308,43 @@
 			<div class="board">
 				{#each [...boardGroups.entries()] as [groupName, items] (groupName)}
 					<div class="board-col">
-						<div class="board-col-header">
-							{groupName}
-							<span class="board-col-count">{items.length}</span>
+						<div class="flex items-center justify-between gap-2 px-2 pt-1 pb-2">
+							<span class="truncate text-xs font-semibold text-[var(--color-text-muted)]">{groupName}</span>
+							<span class="k-badge">{items.length}</span>
 						</div>
 						{#each items as memory (memory.id)}
 							<a href="/memory/{memory.id}" class="board-card">
-								<span class="board-card-title">{memory.title || 'Untitled'}</span>
+								{memory.title || 'Untitled'}
 							</a>
 						{/each}
 					</div>
+				{:else}
+					<p class="px-1 py-8 text-sm text-[var(--color-text-muted)]">No notes in this folder yet.</p>
 				{/each}
 			</div>
 		{:else if view.viewType === 'board'}
-			<p class="hint">Set a Group field to use board view. Edit the view config to choose one.</p>
+			<div class="k-empty">
+				<LayoutGrid />
+				<p class="k-empty-title">Choose a group field</p>
+				<p>Board view groups rows by a field. Set one in the view config to use it.</p>
+			</div>
 		{/if}
-	</main>
+	</div>
 {:else}
-	<div class="not-found">
-		<h1>Database view not found</h1>
-		<a href="/">Back to home</a>
+	<div class="k-empty">
+		<Database />
+		<p class="k-empty-title">Database view not found</p>
+		<p>It may have been deleted or moved to another vault.</p>
+		<a href="/" class="k-btn mt-2">Back to home</a>
 	</div>
 {/if}
 
 <style>
-	.db-page {
-		max-width: 1200px;
-		margin: 0 auto;
-		padding: 2rem 1.5rem 4rem;
-	}
-
-	.db-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: flex-start;
-		gap: 1rem;
-		margin-bottom: 1rem;
-	}
-
-	.db-title {
-		font-size: 1.75rem;
-		font-weight: 700;
-		color: var(--color-text);
-	}
-
-	.db-folder {
-		font-size: 0.8125rem;
-		color: var(--color-text-muted);
-		text-decoration: none;
-	}
-
-	.db-folder:hover {
-		color: var(--color-accent);
-	}
-
-	.db-actions {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-	}
-
-	.db-count {
-		font-size: 0.8125rem;
-		color: var(--color-text-muted);
-	}
-
-	.icon-btn {
-		background: none;
-		border: none;
-		padding: 0.375rem;
-		border-radius: 0.375rem;
-		cursor: pointer;
-		color: var(--color-text-muted);
-	}
-
-	.icon-btn.danger:hover {
-		background: rgba(239, 68, 68, 0.15);
-		color: #ef4444;
-	}
-
-	.view-tabs {
-		display: flex;
-		gap: 0.25rem;
-		margin-bottom: 1rem;
-		border-bottom: 1px solid var(--color-border);
-	}
-
-	.vtab {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
-		padding: 0.5rem 0.75rem;
-		background: transparent;
-		border: none;
-		border-bottom: 2px solid transparent;
-		color: var(--color-text-muted);
-		font-size: 0.8125rem;
-		font-weight: 500;
-		cursor: pointer;
-		margin-bottom: -1px;
-	}
-
-	.vtab:hover {
-		color: var(--color-text);
-	}
-
-	.vtab.active {
-		color: var(--color-accent);
-		border-bottom-color: var(--color-accent);
-	}
-
 	/* Table view */
 	.table-wrap {
 		overflow-x: auto;
 		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
+		border-radius: var(--radius-lg);
 	}
 
 	.db-table {
@@ -422,10 +354,11 @@
 	}
 
 	.db-table th {
-		text-align: left;
 		padding: 0;
-		background: var(--color-bg-secondary);
 		border-bottom: 1px solid var(--color-border);
+		background: var(--color-bg-secondary);
+		text-align: left;
+		white-space: nowrap;
 	}
 
 	.th-btn {
@@ -433,14 +366,9 @@
 		align-items: center;
 		gap: 0.25rem;
 		width: 100%;
-		padding: 0.5rem 0.75rem;
-		background: transparent;
-		border: none;
-		cursor: pointer;
-		font-size: 0.6875rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
+		padding: 0.4375rem 0.75rem;
+		font-size: 0.75rem;
+		font-weight: 500;
 		color: var(--color-text-muted);
 		text-align: left;
 	}
@@ -450,55 +378,55 @@
 	}
 
 	.db-table td {
-		padding: 0.5rem 0.75rem;
+		padding: 0.4375rem 0.75rem;
 		border-bottom: 1px solid var(--color-border);
 		color: var(--color-text);
+		vertical-align: middle;
 	}
 
-	.db-table tr:last-child td {
+	.db-table tbody tr:last-child td {
 		border-bottom: none;
 	}
 
-	.db-table tr:hover td {
-		background: var(--color-bg-secondary);
+	.db-table tbody tr:not(.empty-row):hover td {
+		background: var(--color-hover);
+	}
+
+	.empty-row td {
+		padding: 2rem 0.75rem;
+		text-align: center;
+		color: var(--color-text-muted);
+	}
+
+	.faint {
+		color: var(--color-text-faint);
 	}
 
 	.title-link {
-		color: var(--color-accent);
-		text-decoration: none;
 		font-weight: 500;
+		color: var(--color-text);
+		text-decoration: none;
 	}
 
 	.title-link:hover {
 		text-decoration: underline;
+		text-decoration-color: var(--color-text-faint);
+		text-underline-offset: 2px;
 	}
 
 	.cell-btn {
-		background: transparent;
-		border: 1px dashed transparent;
-		padding: 0.125rem 0.375rem;
-		border-radius: 0.25rem;
-		cursor: pointer;
-		color: var(--color-text);
-		font-size: 0.8125rem;
-		text-align: left;
 		width: 100%;
+		margin: -0.125rem -0.375rem;
+		padding: 0.125rem 0.375rem;
+		border-radius: var(--radius-sm);
+		font-size: 0.8125rem;
+		color: var(--color-text);
+		text-align: left;
+		cursor: text;
 	}
 
 	.cell-btn:hover {
-		border-color: var(--color-border);
-		background: var(--color-bg);
-	}
-
-	.cell-input {
-		width: 100%;
-		padding: 0.125rem 0.375rem;
-		border: 1px solid var(--color-accent);
-		border-radius: 0.25rem;
-		background: var(--color-bg);
-		color: var(--color-text);
-		font-size: 0.8125rem;
-		outline: none;
+		background: var(--color-hover);
 	}
 
 	/* Board view */
@@ -511,73 +439,29 @@
 	}
 
 	.board-col {
-		flex: 0 0 240px;
-		background: var(--color-bg-secondary);
-		border-radius: 0.5rem;
 		display: flex;
+		flex: 0 0 15rem;
 		flex-direction: column;
-	}
-
-	.board-col-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 0.5rem 0.75rem;
-		font-weight: 600;
-		font-size: 0.8125rem;
-		color: var(--color-text);
-		border-bottom: 1px solid var(--color-border);
-	}
-
-	.board-col-count {
-		font-size: 0.6875rem;
-		color: var(--color-text-muted);
-		padding: 0.125rem 0.375rem;
-		background: var(--color-bg);
-		border-radius: 999px;
+		gap: 0.375rem;
+		padding: 0.5rem;
+		border-radius: var(--radius-lg);
+		background: var(--color-bg-secondary);
 	}
 
 	.board-card {
 		display: block;
-		margin: 0.375rem;
 		padding: 0.5rem 0.75rem;
-		background: var(--color-bg);
 		border: 1px solid var(--color-border);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-md);
+		background: var(--color-bg);
+		box-shadow: var(--shadow-sm);
+		font-size: 0.8125rem;
+		font-weight: 500;
+		color: var(--color-text);
 		text-decoration: none;
-		transition: border-color 0.1s;
 	}
 
 	.board-card:hover {
-		border-color: var(--color-accent);
-	}
-
-	.board-card-title {
-		font-weight: 500;
-		color: var(--color-text);
-		font-size: 0.8125rem;
-	}
-
-	.hint {
-		color: var(--color-text-muted);
-		font-size: 0.875rem;
-		text-align: center;
-		padding: 3rem 1rem;
-	}
-
-	.not-found {
-		text-align: center;
-		padding: 4rem 2rem;
-		color: var(--color-text-muted);
-	}
-
-	.not-found h1 {
-		font-size: 1.5rem;
-		color: var(--color-text);
-		margin-bottom: 1rem;
-	}
-
-	.not-found a {
-		color: var(--color-accent);
+		border-color: color-mix(in srgb, var(--color-text) 18%, var(--color-border));
 	}
 </style>

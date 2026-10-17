@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { autofocus } from '$lib/actions/autofocus';
 	import {
 		reminderProposals,
 		memoryObjects,
@@ -9,23 +10,29 @@
 		deleteReminderProposal,
 		restoreReminderProposal,
 		updateReminderProposalRecurrence,
+		deleteActionItem,
+		todayIso,
 		type ReminderProposal,
 		type Recurrence
 	} from '$lib/db';
 	import { pushUndo } from '$lib/stores/undo';
+	import { goto } from '$app/navigation';
+	import { get } from 'svelte/store';
 	import { onMount } from 'svelte';
 	import {
+		AlarmClock,
+		ArrowUpRight,
 		Bell,
+		CalendarClock,
 		Check,
-		X,
-		Clock,
-		ArrowRight,
-		Trash2,
+		CircleCheck,
+		CircleX,
+		Repeat,
 		RotateCcw,
 		Square,
-		MinusSquare,
-		CheckSquare,
-		Repeat
+		SquareCheck,
+		Trash2,
+		X
 	} from 'lucide-svelte';
 
 	const RECURRENCE_OPTIONS: Array<{ value: Recurrence; label: string }> = [
@@ -35,6 +42,24 @@
 		{ value: 'monthly', label: 'Monthly' },
 		{ value: 'yearly', label: 'Yearly' }
 	];
+
+	// Filter tabs. "To review" (pending + snoozed) is the default — the
+	// decided ones are an audit log, one click away.
+	type Filter = 'open' | 'decided' | 'all';
+	const FILTERS: Array<{ value: Filter; label: string }> = [
+		{ value: 'open', label: 'To review' },
+		{ value: 'decided', label: 'Decided' },
+		{ value: 'all', label: 'All' }
+	];
+	let filter = $state<Filter>('open');
+
+	function setFilter(next: Filter) {
+		if (filter === next) return;
+		filter = next;
+		clearSelection();
+		focusIndex = -1;
+		snoozingId = null;
+	}
 
 	type Group = { label: string; status: ReminderProposal['status']; items: ReminderProposal[] };
 
@@ -49,17 +74,30 @@
 			else if (item.status === 'approved') approved.push(item);
 			else rejected.push(item);
 		}
-		return [
+		const all: Group[] = [
 			{ label: 'Pending review', status: 'pending', items: pending },
 			{ label: 'Snoozed', status: 'snoozed', items: snoozed },
 			{ label: 'Approved', status: 'approved', items: approved },
 			{ label: 'Rejected', status: 'rejected', items: rejected }
 		];
+		if (filter === 'open') return all.slice(0, 2);
+		if (filter === 'decided') return all.slice(2);
+		return all;
 	});
 
 	let pendingCount = $derived(
 		$reminderProposals.filter((p) => p.status === 'pending').length
 	);
+	let openCount = $derived($reminderProposals.filter(isOpen).length);
+	let filterCounts = $derived<Record<Filter, number>>({
+		open: openCount,
+		decided: $reminderProposals.length - openCount,
+		all: $reminderProposals.length
+	});
+
+	function isOpen(p: ReminderProposal): boolean {
+		return p.status === 'pending' || p.status === 'snoozed';
+	}
 
 	// Flat order for keyboard navigation / bulk operations.
 	let flatOrder = $derived(groups.flatMap((g) => g.items));
@@ -89,14 +127,47 @@
 		selected = new Set(flatOrder.filter((p) => p.status === 'pending').map((p) => p.id));
 	}
 
+	let visiblePendingCount = $derived(flatOrder.filter((p) => p.status === 'pending').length);
+
 	// Keyboard focus
 	let focusIndex = $state(-1);
 	let focusedId = $derived<string | null>(
 		focusIndex >= 0 && focusIndex < flatOrder.length ? flatOrder[focusIndex].id : null
 	);
 
+	// Keep the keyboard cursor visible while moving through long lists.
+	$effect(() => {
+		if (!focusedId) return;
+		document
+			.querySelector(`[data-row-id="${CSS.escape(focusedId)}"]`)
+			?.scrollIntoView({ block: 'nearest' });
+	});
+
 	function memoryTitle(id: string): string {
-		return $memoryObjects.find((m) => m.id === id)?.title ?? 'Untitled';
+		return $memoryObjects.find((m) => m.id === id)?.title || 'Untitled';
+	}
+
+	// Human date label + tone. Only open proposals get overdue/today
+	// colouring; a decided proposal's date is just history.
+	const today = todayIso();
+
+	function dueInfo(iso: string, active: boolean): { label: string; tone: '' | 'danger' | 'warn' } {
+		const date = new Date(iso + 'T00:00:00');
+		if (Number.isNaN(date.getTime())) return { label: iso, tone: '' };
+		const days = Math.round((date.getTime() - new Date(today + 'T00:00:00').getTime()) / 86_400_000);
+		let label: string;
+		if (days === 0) label = 'Today';
+		else if (days === 1) label = 'Tomorrow';
+		else if (days === -1) label = 'Yesterday';
+		else if (days > 1 && days < 7) label = date.toLocaleDateString(undefined, { weekday: 'short' });
+		else
+			label = date.toLocaleDateString(undefined, {
+				month: 'short',
+				day: 'numeric',
+				year: date.getFullYear() === new Date().getFullYear() ? undefined : 'numeric'
+			});
+		const tone = !active ? '' : days < 0 ? 'danger' : days === 0 ? 'warn' : '';
+		return { label, tone };
 	}
 
 	function formatDate(iso: string): string {
@@ -113,45 +184,86 @@
 	}
 
 	// --- Individual actions with undo ------------------------------------
+	//
+	// Undo restores the exact pre-action snapshot (status, date,
+	// recurrence) rather than blindly reopening, and approving also
+	// removes the ActionItem it created so undo + re-approve doesn't
+	// leave duplicates behind.
+
+	function createdActionItemId(id: string): string | null {
+		return get(reminderProposals).find((p) => p.id === id)?.actionItemId ?? null;
+	}
 
 	function handleApprove(proposal: ReminderProposal) {
+		if (proposal.status === 'approved') return;
+		const snapshot: ReminderProposal = { ...proposal };
 		approveReminderProposal(proposal.id);
+		const actionItemId = createdActionItemId(proposal.id);
 		pushUndo({
 			label: `Approved reminder`,
-			undo: () => reopenReminderProposal(proposal.id)
+			undo: () => {
+				if (actionItemId) deleteActionItem(actionItemId);
+				restoreReminderProposal(snapshot);
+			}
 		});
 	}
 
 	function handleReject(proposal: ReminderProposal) {
+		if (proposal.status === 'rejected') return;
+		const snapshot: ReminderProposal = { ...proposal };
 		rejectReminderProposal(proposal.id);
 		pushUndo({
 			label: `Rejected reminder`,
-			undo: () => reopenReminderProposal(proposal.id)
+			undo: () => restoreReminderProposal(snapshot)
 		});
 	}
 
-	function handleSnooze(proposal: ReminderProposal) {
-		const next = prompt('Snooze until (YYYY-MM-DD)?', proposal.suggestedDate);
-		if (!next) return;
-		if (!/^\d{4}-\d{2}-\d{2}$/.test(next)) {
-			alert('Please use YYYY-MM-DD format');
-			return;
-		}
-		const previousDate = proposal.suggestedDate;
-		const previousStatus = proposal.status;
+	function handleReopen(proposal: ReminderProposal) {
+		const snapshot: ReminderProposal = { ...proposal };
+		reopenReminderProposal(proposal.id);
+		pushUndo({
+			label: `Reopened reminder`,
+			undo: () => restoreReminderProposal(snapshot)
+		});
+	}
+
+	// Inline snooze: the row swaps its meta for a date field (Enter
+	// saves, Escape cancels) instead of a blocking prompt().
+	let snoozingId = $state<string | null>(null);
+	let snoozeDate = $state('');
+
+	function startSnooze(proposal: ReminderProposal) {
+		if (!isOpen(proposal)) return;
+		snoozingId = proposal.id;
+		snoozeDate = proposal.suggestedDate;
+	}
+
+	function cancelSnooze() {
+		snoozingId = null;
+		snoozeDate = '';
+	}
+
+	function saveSnooze() {
+		const proposal = $reminderProposals.find((p) => p.id === snoozingId);
+		const next = snoozeDate.trim();
+		if (!proposal || !/^\d{4}-\d{2}-\d{2}$/.test(next)) return;
+		const snapshot: ReminderProposal = { ...proposal };
 		snoozeReminderProposal(proposal.id, next);
 		pushUndo({
 			label: `Snoozed reminder`,
-			undo: () => {
-				// snoozeReminderProposal sets status='snoozed'; we need to
-				// restore the prior status + date by re-snoozing with the
-				// old date and then transitioning back.
-				snoozeReminderProposal(proposal.id, previousDate);
-				if (previousStatus !== 'snoozed') {
-					reopenReminderProposal(proposal.id);
-				}
-			}
+			undo: () => restoreReminderProposal(snapshot)
 		});
+		cancelSnooze();
+	}
+
+	function handleSnoozeKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			saveSnooze();
+		} else if (e.key === 'Escape') {
+			e.preventDefault();
+			cancelSnooze();
+		}
 	}
 
 	function handleDelete(proposal: ReminderProposal) {
@@ -168,12 +280,14 @@
 	function bulkApprove() {
 		const targets = flatOrder.filter((p) => selected.has(p.id) && p.status !== 'approved');
 		if (targets.length === 0) return;
+		const snapshots = targets.map((p) => ({ ...p }));
 		for (const t of targets) approveReminderProposal(t.id);
-		const ids = targets.map((t) => t.id);
+		const created = targets.map((t) => createdActionItemId(t.id));
 		pushUndo({
 			label: `Approved ${targets.length} proposals`,
 			undo: () => {
-				for (const id of ids) reopenReminderProposal(id);
+				for (const id of created) if (id) deleteActionItem(id);
+				for (const snap of snapshots) restoreReminderProposal(snap);
 			}
 		});
 		clearSelection();
@@ -182,12 +296,12 @@
 	function bulkReject() {
 		const targets = flatOrder.filter((p) => selected.has(p.id) && p.status !== 'rejected');
 		if (targets.length === 0) return;
+		const snapshots = targets.map((p) => ({ ...p }));
 		for (const t of targets) rejectReminderProposal(t.id);
-		const ids = targets.map((t) => t.id);
 		pushUndo({
 			label: `Rejected ${targets.length} proposals`,
 			undo: () => {
-				for (const id of ids) reopenReminderProposal(id);
+				for (const snap of snapshots) restoreReminderProposal(snap);
 			}
 		});
 		clearSelection();
@@ -208,6 +322,10 @@
 	}
 
 	// --- Keyboard navigation ---------------------------------------------
+	//
+	// Ignored while typing in form controls and when a modifier is held,
+	// so global shortcuts (Cmd+R, Cmd+Shift+A, ...) don't also act on
+	// the focused row.
 
 	function handlePageKeydown(e: KeyboardEvent) {
 		const target = e.target as HTMLElement | null;
@@ -215,10 +333,14 @@
 		if (
 			target.tagName === 'INPUT' ||
 			target.tagName === 'TEXTAREA' ||
+			target.tagName === 'SELECT' ||
 			target.isContentEditable
 		) {
 			return;
 		}
+		if (e.metaKey || e.ctrlKey || e.altKey) return;
+		// Let a focused button/link handle its own activation keys.
+		if ((e.key === 'Enter' || e.key === ' ') && target.closest('button, a')) return;
 		if (flatOrder.length === 0) return;
 
 		switch (e.key) {
@@ -238,7 +360,8 @@
 				break;
 			case 'Enter':
 				if (flatOrder[focusIndex]?.memoryObjectId) {
-					window.location.hash = `#/memory/${flatOrder[focusIndex].memoryObjectId}`;
+					e.preventDefault();
+					goto(`/memory/${flatOrder[focusIndex].memoryObjectId}`);
 				}
 				break;
 			case 'a':
@@ -250,6 +373,11 @@
 			case 'R':
 				e.preventDefault();
 				if (flatOrder[focusIndex]) handleReject(flatOrder[focusIndex]);
+				break;
+			case 's':
+			case 'S':
+				e.preventDefault();
+				if (flatOrder[focusIndex]) startSnooze(flatOrder[focusIndex]);
 				break;
 			case 'Delete':
 			case 'd':
@@ -281,96 +409,176 @@
 	<title>Reminder proposals - Kurumi</title>
 </svelte:head>
 
-<main class="proposals-page">
-	<header class="page-header">
-		<div class="header-icon">
-			<Bell class="h-8 w-8" />
+<div class="k-page">
+	<header class="k-page-header">
+		<div class="min-w-0">
+			<h1 class="k-page-title">Reminder proposals</h1>
+			<p class="k-page-subtitle">
+				{pendingCount} pending
+				{#if $reminderProposals.length > pendingCount}
+					· {$reminderProposals.length - pendingCount} snoozed or decided
+				{/if}
+			</p>
+			<div class="k-hints">
+				<span><kbd class="k-kbd">j</kbd> <kbd class="k-kbd">k</kbd> navigate</span>
+				<span><kbd class="k-kbd">Space</kbd> select</span>
+				<span><kbd class="k-kbd">a</kbd> approve</span>
+				<span><kbd class="k-kbd">s</kbd> snooze</span>
+				<span><kbd class="k-kbd">r</kbd> reject</span>
+				<span><kbd class="k-kbd">d</kbd> delete</span>
+			</div>
 		</div>
-		<h1>Reminder proposals</h1>
-		<p class="count">
-			{pendingCount} pending
-			{#if $reminderProposals.length > pendingCount}
-				· {$reminderProposals.length - pendingCount} decided
-			{/if}
-			<span class="hint">j/k nav · Space select · a approve · r reject · d delete</span>
-		</p>
+		{#if visiblePendingCount > 0}
+			<button class="k-btn shrink-0" onclick={selectAllPending}>
+				<SquareCheck class="h-4 w-4" />
+				Select pending
+			</button>
+		{/if}
 	</header>
 
+	{#if $reminderProposals.length > 0}
+		<div class="k-segmented mb-4" role="group" aria-label="Filter">
+			{#each FILTERS as f (f.value)}
+				<button
+					class="inline-flex items-center gap-1.5"
+					onclick={() => setFilter(f.value)}
+					aria-pressed={filter === f.value}
+				>
+					{f.label}
+					<span class="text-xs tabular-nums text-[var(--color-text-faint)]">{filterCounts[f.value]}</span>
+				</button>
+			{/each}
+		</div>
+	{/if}
+
 	{#if selectionSize > 0}
-		<div class="bulk-bar">
-			<button class="bulk-select" onclick={clearSelection}>
-				<CheckSquare class="h-4 w-4" />
+		<div class="k-bulk-bar" role="toolbar" aria-label="Bulk actions">
+			<span class="px-2 text-xs font-medium tabular-nums text-[var(--color-text)]">
 				{selectionSize} selected
-			</button>
-			<button class="bulk-action" onclick={bulkApprove}>
-				<Check class="h-4 w-4" />
+			</span>
+			<button class="k-btn k-btn-ghost k-btn-sm" onclick={bulkApprove}>
+				<Check class="h-3.5 w-3.5" />
 				Approve
 			</button>
-			<button class="bulk-action" onclick={bulkReject}>
-				<X class="h-4 w-4" />
+			<button class="k-btn k-btn-ghost k-btn-sm" onclick={bulkReject}>
+				<X class="h-3.5 w-3.5" />
 				Reject
 			</button>
-			<button class="bulk-action danger" onclick={bulkDelete}>
-				<Trash2 class="h-4 w-4" />
+			<button class="k-btn k-btn-ghost k-btn-danger k-btn-sm" onclick={bulkDelete}>
+				<Trash2 class="h-3.5 w-3.5" />
 				Delete
 			</button>
-			<button
-				class="bulk-select-all"
-				onclick={selectAllPending}
-			>
-				Select all pending
-			</button>
+			<span class="ml-auto flex items-center gap-1">
+				{#if visiblePendingCount > 0}
+					<button class="k-btn k-btn-ghost k-btn-sm" onclick={selectAllPending}>
+						Select all pending
+					</button>
+				{/if}
+				<button class="k-icon-btn" onclick={clearSelection} title="Clear selection (Esc)" aria-label="Clear selection">
+					<X class="h-4 w-4" />
+				</button>
+			</span>
 		</div>
 	{/if}
 
 	{#if $reminderProposals.length === 0}
-		<div class="empty-state">
-			<p>No reminder proposals yet.</p>
-			<p class="muted">
-				Kurumi scans voice memos and meetings for time-anchored follow-ups
-				("remind me tomorrow", "next Monday", "in two weeks"). Proposals
-				appear here for your review.
+		<div class="k-empty">
+			<Bell />
+			<p class="k-empty-title">No reminder proposals yet</p>
+			<p class="max-w-sm">
+				Kurumi scans voice memos and meetings for follow-ups like “remind me
+				tomorrow” and queues them here for your review.
+			</p>
+		</div>
+	{:else if flatOrder.length === 0}
+		<div class="k-empty">
+			<CircleCheck />
+			<p class="k-empty-title">{filter === 'open' ? 'All reviewed' : 'Nothing decided yet'}</p>
+			<p>
+				{filter === 'open'
+					? 'Every proposal has been approved or rejected.'
+					: 'Approved and rejected proposals will show up here.'}
 			</p>
 		</div>
 	{:else}
 		{#each groups as group (group.status)}
 			{#if group.items.length > 0}
-				<section class="group">
-					<h2 class="group-title">
+				<section>
+					<h2 class="k-section-title">
 						{group.label}
-						<span class="group-count">{group.items.length}</span>
+						<span class="tabular-nums font-normal">{group.items.length}</span>
 					</h2>
-					<ul class="items">
+					<ul class="items" class:has-selection={selectionSize > 0}>
 						{#each group.items as proposal (proposal.id)}
+							{@const open = isOpen(proposal)}
+							{@const due = dueInfo(proposal.suggestedDate, open)}
 							<li
-								class="item"
-								class:decided={proposal.status !== 'pending' && proposal.status !== 'snoozed'}
+								class="k-row item"
+								class:decided={!open}
 								class:focused={focusedId === proposal.id}
 								class:selected={isSelected(proposal.id)}
+								data-row-id={proposal.id}
 							>
 								<button
 									class="select-box"
 									onclick={() => toggleSelected(proposal.id)}
 									aria-label={isSelected(proposal.id) ? 'Deselect' : 'Select'}
+									aria-pressed={isSelected(proposal.id)}
 								>
 									{#if isSelected(proposal.id)}
-										<MinusSquare class="h-4 w-4" />
+										<SquareCheck class="h-4 w-4" />
 									{:else}
 										<Square class="h-4 w-4" />
 									{/if}
 								</button>
+								<span class="lead" class:lead-approved={proposal.status === 'approved'} aria-hidden="true">
+									{#if proposal.status === 'approved'}
+										<CircleCheck class="h-4 w-4" />
+									{:else if proposal.status === 'rejected'}
+										<CircleX class="h-4 w-4" />
+									{:else if proposal.status === 'snoozed'}
+										<AlarmClock class="h-4 w-4" />
+									{:else}
+										<Bell class="h-4 w-4" />
+									{/if}
+								</span>
+
 								<div class="body">
 									<p class="text">{proposal.text}</p>
 									<div class="meta">
-										<span class="due">
-											<Clock class="h-3 w-3" />
-											{formatDate(proposal.suggestedDate)}
-										</span>
-										{#if proposal.status === 'pending' || proposal.status === 'snoozed'}
-											<label class="recurrence-picker">
+										{#if proposal.reason}
+											<span class="reason" title={proposal.reason}>“{proposal.reason}”</span>
+										{/if}
+										<a class="source" href="/memory/{proposal.memoryObjectId}">
+											<ArrowUpRight class="h-3 w-3 shrink-0" />
+											<span class="truncate">{memoryTitle(proposal.memoryObjectId)}</span>
+										</a>
+									</div>
+								</div>
+
+								{#if snoozingId === proposal.id}
+									<div class="snooze-form">
+																				<input
+											type="date"
+											bind:value={snoozeDate}
+											onkeydown={handleSnoozeKeydown}
+											class="k-input h-7 w-auto text-xs"
+											aria-label="Snooze until"
+											use:autofocus
+										/>
+										<button class="k-btn k-btn-ghost k-btn-sm" onclick={cancelSnooze}>Cancel</button>
+										<button class="k-btn k-btn-primary k-btn-sm" onclick={saveSnooze} disabled={!snoozeDate}>
+											Snooze
+										</button>
+									</div>
+								{:else}
+									<div class="badges">
+										{#if open}
+											<label class="k-badge recurrence-picker" title="Repeat">
 												<Repeat class="h-3 w-3" />
 												<select
 													value={proposal.recurrence ?? 'none'}
+													aria-label="Repeat"
 													onchange={(e) =>
 														updateReminderProposalRecurrence(
 															proposal.id,
@@ -383,62 +591,68 @@
 												</select>
 											</label>
 										{:else if proposal.recurrence && proposal.recurrence !== 'none'}
-											<span class="recurrence-pill">
+											<span class="k-badge capitalize">
 												<Repeat class="h-3 w-3" />
 												{proposal.recurrence}
 											</span>
 										{/if}
-										{#if proposal.reason}
-											<span class="reason">"{proposal.reason}"</span>
-										{/if}
-										<a class="source" href="/memory/{proposal.memoryObjectId}">
-											from {memoryTitle(proposal.memoryObjectId)}
-											<ArrowRight class="h-3 w-3" />
-										</a>
+										<span
+											class="k-badge"
+											class:k-badge-danger={due.tone === 'danger'}
+											class:k-badge-warn={due.tone === 'warn'}
+											title={formatDate(proposal.suggestedDate)}
+										>
+											<CalendarClock class="h-3 w-3" />
+											{due.label}
+										</span>
 									</div>
-								</div>
 
-								<div class="actions">
-									{#if proposal.status === 'pending' || proposal.status === 'snoozed'}
-										<button
-											class="action-btn approve"
-											onclick={() => handleApprove(proposal)}
-											title="Approve and create action item"
-										>
-											<Check class="h-4 w-4" />
-											<span class="label">Approve</span>
-										</button>
-										<button
-											class="action-btn"
-											onclick={() => handleSnooze(proposal)}
-											title="Snooze"
-										>
-											<Clock class="h-4 w-4" />
-										</button>
-										<button
-											class="action-btn"
-											onclick={() => handleReject(proposal)}
-											title="Reject"
-										>
-											<X class="h-4 w-4" />
-										</button>
-									{:else}
-										<button
-											class="action-btn"
-											onclick={() => reopenReminderProposal(proposal.id)}
-											title="Reopen"
-										>
-											<RotateCcw class="h-4 w-4" />
-										</button>
-										<button
-											class="action-btn danger"
-											onclick={() => handleDelete(proposal)}
-											title="Delete permanently"
-										>
-											<Trash2 class="h-4 w-4" />
-										</button>
-									{/if}
-								</div>
+									<div class="row-actions">
+										{#if open}
+											<button
+												class="k-icon-btn approve"
+												onclick={() => handleApprove(proposal)}
+												title="Approve and create action item (a)"
+												aria-label="Approve"
+											>
+												<Check class="h-4 w-4" />
+											</button>
+											<button
+												class="k-icon-btn"
+												onclick={() => startSnooze(proposal)}
+												title="Snooze (s)"
+												aria-label="Snooze"
+											>
+												<AlarmClock class="h-4 w-4" />
+											</button>
+											<button
+												class="k-icon-btn"
+												onclick={() => handleReject(proposal)}
+												title="Reject (r)"
+												aria-label="Reject"
+											>
+												<X class="h-4 w-4" />
+											</button>
+										{:else}
+											<button
+												class="k-icon-btn"
+												onclick={() => handleReopen(proposal)}
+												title="Reopen"
+												aria-label="Reopen"
+											>
+												<RotateCcw class="h-4 w-4" />
+											</button>
+											<button
+												class="k-icon-btn danger"
+												onclick={() => handleDelete(proposal)}
+												title="Delete (d)"
+												aria-label="Delete"
+											>
+												<Trash2 class="h-4 w-4" />
+											</button>
+										{/if}
+									</div>
+								{/if}
 							</li>
 						{/each}
 					</ul>
@@ -446,324 +660,186 @@
 			{/if}
 		{/each}
 	{/if}
-</main>
+</div>
 
 <style>
-	.proposals-page {
-		max-width: 900px;
-		margin: 0 auto;
-		padding: 2rem 1.5rem 4rem;
-	}
-
-	.page-header {
-		text-align: center;
-		margin-bottom: 2rem;
-	}
-
-	.header-icon {
-		display: inline-flex;
-		padding: 1rem;
-		background: color-mix(in srgb, var(--color-accent) 15%, transparent);
-		color: var(--color-accent);
-		border-radius: 1rem;
-		margin-bottom: 0.75rem;
-	}
-
-	.page-header h1 {
-		font-size: 2rem;
-		font-weight: 700;
-		color: var(--color-text);
-		margin-bottom: 0.25rem;
-	}
-
-	.count {
-		color: var(--color-text-muted);
-		font-size: 0.875rem;
-	}
-
-	.hint {
-		display: block;
-		margin-top: 0.25rem;
-		font-size: 0.75rem;
-		opacity: 0.7;
-	}
-
-	.bulk-bar {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.5rem;
-		margin-bottom: 1rem;
-		padding: 0.625rem 0.875rem;
-		background: color-mix(in srgb, var(--color-accent) 8%, var(--color-bg-secondary));
-		border: 1px solid var(--color-accent);
-		border-radius: 0.625rem;
-	}
-
-	.bulk-select {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
-		padding: 0.375rem 0.625rem;
-		background: var(--color-accent);
-		color: white;
-		border: none;
-		border-radius: 0.375rem;
-		font-size: 0.8125rem;
-		font-weight: 500;
-		cursor: pointer;
-	}
-
-	.bulk-action {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
-		padding: 0.375rem 0.75rem;
-		background: var(--color-bg);
-		color: var(--color-text);
-		border: 1px solid var(--color-border);
-		border-radius: 0.375rem;
-		font-size: 0.8125rem;
-		cursor: pointer;
-		transition: all 0.15s;
-	}
-
-	.bulk-action:hover {
-		border-color: var(--color-accent);
-	}
-
-	.bulk-action.danger:hover {
-		background: rgba(239, 68, 68, 0.15);
-		color: #ef4444;
-		border-color: rgba(239, 68, 68, 0.4);
-	}
-
-	.bulk-select-all {
-		margin-left: auto;
-		background: none;
-		border: none;
-		color: var(--color-text-muted);
-		font-size: 0.75rem;
-		cursor: pointer;
-	}
-
-	.bulk-select-all:hover {
-		color: var(--color-text);
-	}
-
-	.select-box {
-		background: none;
-		border: none;
-		padding: 0;
-		cursor: pointer;
-		color: var(--color-text-muted);
-		flex-shrink: 0;
-		margin-top: 0.1875rem;
-	}
-
-	.select-box:hover {
-		color: var(--color-accent);
-	}
-
-	.item.selected .select-box {
-		color: var(--color-accent);
-	}
-
-	.empty-state {
-		text-align: center;
-		padding: 4rem 2rem;
-		color: var(--color-text);
-	}
-
-	.empty-state .muted {
-		margin-top: 0.75rem;
-		color: var(--color-text-muted);
-		max-width: 32rem;
-		margin-left: auto;
-		margin-right: auto;
-	}
-
-	.group {
-		margin-bottom: 2rem;
-	}
-
-	.group-title {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		font-size: 0.75rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--color-text-muted);
-		margin-bottom: 0.75rem;
-	}
-
-	.group-count {
-		background: var(--color-bg-secondary);
-		border-radius: 999px;
-		padding: 0.125rem 0.5rem;
-		font-weight: 500;
-	}
-
 	.items {
-		list-style: none;
-		padding: 0;
-		margin: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: 1px;
 	}
 
 	.item {
-		display: flex;
 		align-items: flex-start;
-		gap: 0.75rem;
-		padding: 0.875rem 1rem;
-		background: var(--color-bg-secondary);
-		border: 1px solid var(--color-border);
-		border-radius: 0.75rem;
-		transition: border-color 0.15s;
+		gap: 0.5rem;
+		padding-top: 0.4375rem;
+		padding-bottom: 0.4375rem;
+		/* Keep the cursor clear of the sticky bulk bar when scrolling */
+		scroll-margin: 4rem 0 1rem;
 	}
 
-	.item:hover {
-		border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+	.select-box,
+	.lead {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.25rem;
+		height: 1.375rem;
+		flex-shrink: 0;
+		color: var(--color-text-faint);
 	}
 
-	.item.decided {
-		opacity: 0.65;
+	.select-box {
+		margin-left: -0.25rem;
+		opacity: 0;
 	}
 
-	.item.focused {
-		box-shadow: 0 0 0 2px var(--color-accent);
+	.select-box:hover,
+	.item.selected .select-box,
+	.lead-approved {
+		color: var(--color-accent);
 	}
 
-	.item.selected {
-		background: color-mix(in srgb, var(--color-accent) 12%, var(--color-bg-secondary));
-		border-color: var(--color-accent);
+	.item:hover .select-box,
+	.item.focused .select-box,
+	.item.selected .select-box,
+	.has-selection .select-box,
+	.select-box:focus-visible {
+		opacity: 1;
 	}
 
 	.body {
 		flex: 1;
 		min-width: 0;
+		padding-top: 0.0625rem;
 	}
 
 	.text {
-		color: var(--color-text);
-		margin: 0 0 0.375rem 0;
-		line-height: 1.45;
+		line-height: 1.4;
+		overflow-wrap: anywhere;
+	}
+
+	.item.decided .text {
+		color: var(--color-text-muted);
 	}
 
 	.meta {
 		display: flex;
-		flex-wrap: wrap;
+		align-items: center;
 		gap: 0.75rem;
+		min-width: 0;
+		margin-top: 0.125rem;
 		font-size: 0.75rem;
-		color: var(--color-text-muted);
-	}
-
-	.due {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.25rem;
-		color: var(--color-accent);
-		font-weight: 500;
-	}
-
-	.recurrence-picker {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.25rem;
-		padding: 0.125rem 0.375rem;
-		background: color-mix(in srgb, var(--color-accent) 10%, transparent);
-		color: var(--color-accent);
-		border-radius: 999px;
-		cursor: pointer;
-	}
-
-	.recurrence-picker select {
-		background: transparent;
-		border: none;
-		color: var(--color-accent);
-		font-size: 0.75rem;
-		font-family: inherit;
-		cursor: pointer;
-		outline: none;
-		padding: 0;
-	}
-
-	.recurrence-pill {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.25rem;
-		padding: 0.125rem 0.5rem;
-		background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-		color: var(--color-accent);
-		border-radius: 999px;
-		text-transform: capitalize;
+		color: var(--color-text-faint);
 	}
 
 	.reason {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 		font-style: italic;
+		color: var(--color-text-muted);
 	}
 
 	.source {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25rem;
-		color: var(--color-text-muted);
+		min-width: 0;
+		max-width: 50%;
+		flex-shrink: 0;
+		color: inherit;
 		text-decoration: none;
-		opacity: 0.8;
 	}
 
 	.source:hover {
 		color: var(--color-accent);
-		opacity: 1;
 	}
 
-	.actions {
+	.badges {
 		display: flex;
+		align-items: center;
 		gap: 0.25rem;
 		flex-shrink: 0;
-		align-items: center;
+		padding-top: 0.0625rem;
 	}
 
-	.action-btn {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.25rem;
-		background: transparent;
-		border: 1px solid var(--color-border);
-		padding: 0.375rem 0.625rem;
-		border-radius: 0.375rem;
+	/* Recurrence picker dressed as a badge; the native select keeps
+	   keyboard + mobile pickers working. */
+	.recurrence-picker {
 		cursor: pointer;
-		color: var(--color-text-muted);
-		font-size: 0.75rem;
-		transition: all 0.15s;
 	}
 
-	.action-btn:hover {
-		background: var(--color-bg);
+	.recurrence-picker:hover {
 		color: var(--color-text);
 	}
 
-	.action-btn.approve {
-		background: var(--color-accent);
-		border-color: var(--color-accent);
-		color: white;
+	.recurrence-picker select {
+		padding: 0;
+		border: none;
+		background: transparent;
+		color: inherit;
+		font: inherit;
+		cursor: pointer;
+		outline: none;
 	}
 
-	.action-btn.approve:hover {
-		background: var(--color-accent-hover);
+	.snooze-form {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+		flex-shrink: 0;
+		margin: -0.125rem 0;
 	}
 
-	.action-btn.danger:hover {
-		background: rgba(239, 68, 68, 0.15);
-		color: #ef4444;
-		border-color: rgba(239, 68, 68, 0.4);
+	/* Row actions appear on hover / keyboard focus, always on touch. */
+	.row-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.125rem;
+		flex-shrink: 0;
+		margin: -0.1875rem -0.25rem -0.1875rem 0;
+		opacity: 0;
 	}
 
-	.action-btn .label {
-		font-weight: 500;
+	.item:hover .row-actions,
+	.item.focused .row-actions,
+	.row-actions:focus-within {
+		opacity: 1;
+	}
+
+	.row-actions .approve:hover {
+		color: var(--color-accent);
+	}
+
+	.row-actions .danger:hover {
+		color: var(--color-danger);
+	}
+
+	@media (hover: none) {
+		.select-box,
+		.row-actions {
+			opacity: 1;
+		}
+	}
+
+	@media (max-width: 639px) {
+		.item {
+			flex-wrap: wrap;
+		}
+
+		.body {
+			flex-basis: calc(100% - 5rem);
+		}
+
+		.badges,
+		.snooze-form {
+			margin-left: 2.5rem;
+		}
+
+		.row-actions {
+			margin-left: auto;
+		}
 	}
 </style>

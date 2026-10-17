@@ -9,7 +9,7 @@
 	} from '$lib/db';
 	import ReadNav from '$lib/components/ReadNav.svelte';
 	import NoteCard from '$lib/components/NoteCard.svelte';
-	import { NotebookText, Folder, ChevronRight, Search, X, ArrowDownWideNarrow } from 'lucide-svelte';
+	import { NotebookText, Folder, ChevronRight, Search, X, ArrowDownWideNarrow, ArrowUpRight, Check, SearchX } from 'lucide-svelte';
 
 	type SortOption = 'recent' | 'alphabetical' | 'oldest';
 	type ViewOption = 'all' | 'folders';
@@ -21,8 +21,8 @@
 	let sortDropdownOpen = $state(false);
 
 	const sortOptions: { value: SortOption; label: string }[] = [
-		{ value: 'recent', label: 'Most Recent' },
-		{ value: 'oldest', label: 'Oldest First' },
+		{ value: 'recent', label: 'Most recent' },
+		{ value: 'oldest', label: 'Oldest first' },
 		{ value: 'alphabetical', label: 'Alphabetical' },
 	];
 
@@ -114,13 +114,31 @@
 	function getFolderSubfolders(folderId: string) {
 		return getSubfolders(folderId);
 	}
+
+	let filterInput: HTMLInputElement | undefined = $state();
+
+	function handleKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape' && sortDropdownOpen) {
+			closeSortDropdown();
+			return;
+		}
+		// "/" jumps to the filter, like the read-mode search elsewhere
+		if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+		const target = e.target as HTMLElement;
+		if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+		e.preventDefault();
+		filterInput?.focus();
+	}
 </script>
 
-<svelte:window onclick={(e) => {
-	if (sortDropdownOpen && !(e.target as HTMLElement).closest('.sort-dropdown')) {
-		closeSortDropdown();
-	}
-}} />
+<svelte:window
+	onclick={(e) => {
+		if (sortDropdownOpen && !(e.target as HTMLElement).closest('.sort-dropdown')) {
+			closeSortDropdown();
+		}
+	}}
+	onkeydown={handleKeydown}
+/>
 
 <svelte:head>
 	<title>Kurumi - Read</title>
@@ -128,530 +146,334 @@
 
 <ReadNav showSearch={false} />
 
-<main class="blog-index">
-	<!-- Hero -->
-	<header class="hero">
-		<h1>{$currentVault?.name || 'Notes'}</h1>
-		<div class="stats">
-			<span>{$memoryObjects.length} notes</span>
-			<span class="dot"></span>
-			<span>{$folders.length} folders</span>
-			<span class="dot"></span>
-			<span>{allTags.length} tags</span>
+<div class="k-page">
+	<header class="k-page-header">
+		<div class="min-w-0">
+			<h1 class="k-page-title">{$currentVault?.name || 'Notes'}</h1>
+			<p class="k-page-subtitle">
+				{$memoryObjects.length} note{$memoryObjects.length === 1 ? '' : 's'} ·
+				{$folders.length} folder{$folders.length === 1 ? '' : 's'} ·
+				{allTags.length} tag{allTags.length === 1 ? '' : 's'}
+			</p>
 		</div>
 	</header>
 
 	<!-- Controls -->
 	<div class="controls">
-		<div class="controls-top">
-			<div class="view-toggle">
-				<button
-					class="toggle-btn"
-					class:active={viewBy === 'all'}
-					onclick={() => (viewBy = 'all')}
-				>
-					All Notes
-				</button>
-				<button
-					class="toggle-btn"
-					class:active={viewBy === 'folders'}
-					onclick={() => (viewBy = 'folders')}
-				>
-					By Folder
-				</button>
-			</div>
-
-			<div class="sort-dropdown">
-				<button
-					class="sort-btn"
-					onclick={toggleSortDropdown}
-					aria-label="Sort order"
-					aria-expanded={sortDropdownOpen}
-				>
-					<ArrowDownWideNarrow class="sort-icon" />
-				</button>
-				{#if sortDropdownOpen}
-					<div class="sort-menu">
-						{#each sortOptions as option}
-							<button
-								class="sort-option"
-								class:active={sortBy === option.value}
-								onclick={() => selectSort(option.value)}
-							>
-								{option.label}
-							</button>
-						{/each}
-					</div>
-				{/if}
-			</div>
+		<div class="k-segmented" role="group" aria-label="View">
+			<button aria-pressed={viewBy === 'all'} onclick={() => (viewBy = 'all')}>All notes</button>
+			<button aria-pressed={viewBy === 'folders'} onclick={() => (viewBy = 'folders')}>By folder</button>
 		</div>
 
-		<div class="search-filter">
-			<Search class="search-icon" />
+		<div class="filter">
+			<Search class="filter-icon h-3.5 w-3.5" />
 			<input
+				bind:this={filterInput}
 				type="text"
 				bind:value={searchQuery}
-				placeholder="Filter notes..."
-				class="search-input"
+				placeholder="Filter notes"
+				aria-label="Filter notes"
+				class="k-input filter-input"
+				onkeydown={(e) => e.key === 'Escape' && clearSearch()}
 			/>
 			{#if searchQuery}
-				<button class="clear-btn" onclick={clearSearch} aria-label="Clear search">
-					<X class="clear-icon" />
+				<button class="k-icon-btn filter-clear" onclick={clearSearch} aria-label="Clear filter">
+					<X class="h-3.5 w-3.5" />
 				</button>
+			{/if}
+		</div>
+
+		<div class="sort-dropdown">
+			<button
+				class="k-icon-btn"
+				class:bg-[var(--color-hover)]={sortDropdownOpen}
+				onclick={toggleSortDropdown}
+				aria-label="Sort order"
+				title="Sort order"
+				aria-haspopup="menu"
+				aria-expanded={sortDropdownOpen}
+			>
+				<ArrowDownWideNarrow class="h-4 w-4" />
+			</button>
+			{#if sortDropdownOpen}
+				<div class="k-menu sort-menu" role="menu">
+					<div class="k-menu-label">Sort by</div>
+					{#each sortOptions as option (option.value)}
+						<button
+							class="k-menu-item"
+							role="menuitemradio"
+							aria-checked={sortBy === option.value}
+							onclick={() => selectSort(option.value)}
+						>
+							<span class="flex-1">{option.label}</span>
+							{#if sortBy === option.value}
+								<Check class="h-3.5 w-3.5 text-[var(--color-accent)]" />
+							{/if}
+						</button>
+					{/each}
+				</div>
 			{/if}
 		</div>
 	</div>
 
 	<!-- Tags -->
 	{#if allTags.length > 0}
-		<div class="tags-section">
-			<h2 class="section-title">Tags</h2>
-			<div class="tags-list">
-				{#each allTags.slice(0, 15) as tag}
-					<a href="/read/tag/{tag.tag}" class="tag-pill">
-						#{tag.tag}
-						<span class="tag-count">{tag.count}</span>
-					</a>
-				{/each}
-				{#if allTags.length > 15}
-					<span class="more-tags">+{allTags.length - 15} more</span>
-				{/if}
-			</div>
+		<div class="tag-cloud">
+			{#each allTags.slice(0, 15) as tag (tag.tag)}
+				<a href="/read/tag/{tag.tag}" class="tag-link">
+					#{tag.tag}<span class="tag-count">{tag.count}</span>
+				</a>
+			{/each}
+			{#if allTags.length > 15}
+				<a href="/references?tab=tags" class="tag-link">+{allTags.length - 15} more</a>
+			{/if}
 		</div>
 	{/if}
 
 	<!-- Content -->
 	{#if viewBy === 'all'}
-		<!-- All Notes -->
-		<section class="notes-section">
-			<h2 class="section-title">All Notes</h2>
-			{#if sortedMemories.length === 0}
-				<div class="empty-state">
-					<p>No notes yet. Start writing in edit mode!</p>
-					<a href="/" class="empty-cta">Go to Editor</a>
+		{#if sortedMemories.length === 0}
+			{#if searchQuery.trim()}
+				<div class="k-empty">
+					<SearchX />
+					<p class="k-empty-title">No matches</p>
+					<p>No notes match “{searchQuery}”.</p>
+					<button class="k-btn mt-2" onclick={clearSearch}>Clear filter</button>
 				</div>
 			{:else}
-				<div class="notes-grid">
-					{#each sortedMemories as memory (memory.id)}
-						<NoteCard memory={memory} />
-					{/each}
+				<div class="k-empty">
+					<NotebookText />
+					<p class="k-empty-title">Nothing to read yet</p>
+					<p>Notes you write show up here as a quiet reading list.</p>
+					<a href="/" class="k-btn mt-2">Go to editor</a>
 				</div>
 			{/if}
-		</section>
+		{:else}
+			<div class="note-list">
+				{#each sortedMemories as memory (memory.id)}
+					<NoteCard {memory} />
+				{/each}
+			</div>
+		{/if}
 	{:else}
 		<!-- By Folder -->
-		<section class="folders-section">
-			<!-- Folders -->
+		<div class="folder-list">
 			{#each rootFolders as folder (folder.id)}
 				{@const folderMemories = getFolderMemories(folder.id)}
 				{@const subfolders = getFolderSubfolders(folder.id)}
 				{@const isExpanded = expandedFolders.has(folder.id)}
 
-				<div class="folder-group">
-					<button class="folder-header" onclick={() => toggleFolder(folder.id)}>
-						<ChevronRight class="chevron {isExpanded ? 'expanded' : ''}" />
-						<Folder class="folder-icon" />
-						<span class="folder-name">{folder.name}</span>
-						<span class="folder-count">{folderMemories.length} notes</span>
-					</button>
-
-					{#if isExpanded}
-						<div class="folder-content">
-							{#if folderMemories.length === 0 && subfolders.length === 0}
-								<p class="empty-folder">Empty folder</p>
-							{:else}
-								<div class="notes-grid">
-									{#each folderMemories as memory (memory.id)}
-										<NoteCard memory={memory} showFolder={false} />
-									{/each}
-								</div>
-							{/if}
+				{#if !searchQuery.trim() || folderMemories.length > 0}
+					<div class="folder-group">
+						<div class="folder-row">
+							<button
+								class="k-row folder-toggle"
+								onclick={() => toggleFolder(folder.id)}
+								aria-expanded={isExpanded}
+							>
+								<ChevronRight class="chevron h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)] {isExpanded ? 'expanded' : ''}" />
+								<Folder class="h-4 w-4 shrink-0 text-[var(--color-text-faint)]" />
+								<span class="folder-name">{folder.name}</span>
+								<span class="folder-count">{folderMemories.length}</span>
+							</button>
+							<a href="/read/folder/{folder.id}" class="k-icon-btn folder-open" title="Open folder" aria-label="Open {folder.name}">
+								<ArrowUpRight class="h-4 w-4" />
+							</a>
 						</div>
-					{/if}
-				</div>
-			{/each}
 
-			<!-- Unfiled Notes -->
-			{#if filteredRootMemories.length > 0}
-				<div class="folder-group">
-					<h2 class="folder-title">
-						<NotebookText class="folder-icon" />
-						Unfiled Notes
-						<span class="folder-count">{filteredRootMemories.length}</span>
-					</h2>
-					<div class="notes-grid">
-						{#each filteredRootMemories as memory (memory.id)}
-							<NoteCard memory={memory} showFolder={false} />
-						{/each}
+						{#if isExpanded}
+							<div class="folder-content">
+								{#each subfolders as sub (sub.id)}
+									<a href="/read/folder/{sub.id}" class="k-row">
+										<Folder class="h-4 w-4 shrink-0 text-[var(--color-text-faint)]" />
+										<span class="folder-name">{sub.name}</span>
+									</a>
+								{/each}
+								{#if folderMemories.length === 0 && subfolders.length === 0}
+									<p class="empty-folder">Empty folder</p>
+								{:else}
+									<div class="note-list">
+										{#each folderMemories as memory (memory.id)}
+											<NoteCard {memory} showFolder={false} />
+										{/each}
+									</div>
+								{/if}
+							</div>
+						{/if}
 					</div>
-				</div>
-			{/if}
+				{/if}
+			{/each}
+		</div>
 
-			{#if rootFolders.length === 0 && rootMemories.length === 0}
-				<div class="empty-state">
-					<p>No notes yet. Start writing in edit mode!</p>
-					<a href="/" class="empty-cta">Go to Editor</a>
-				</div>
-			{/if}
-		</section>
+		<!-- Unfiled Notes -->
+		{#if filteredRootMemories.length > 0}
+			<h2 class="k-section-title">
+				Unfiled
+				<span class="font-normal">{filteredRootMemories.length}</span>
+			</h2>
+			<div class="note-list">
+				{#each filteredRootMemories as memory (memory.id)}
+					<NoteCard {memory} showFolder={false} />
+				{/each}
+			</div>
+		{/if}
+
+		{#if rootFolders.length === 0 && rootMemories.length === 0}
+			<div class="k-empty">
+				<NotebookText />
+				<p class="k-empty-title">Nothing to read yet</p>
+				<p>Notes you write show up here as a quiet reading list.</p>
+				<a href="/" class="k-btn mt-2">Go to editor</a>
+			</div>
+		{/if}
 	{/if}
-</main>
+</div>
 
 <style>
-	.blog-index {
-		max-width: 1000px;
-		margin: 0 auto;
-		padding: 2rem 1.5rem 4rem;
-	}
-
-	/* Hero */
-	.hero {
-		text-align: center;
-		margin-bottom: 3rem;
-		padding: 2rem 0;
-	}
-
-	.hero h1 {
-		font-size: 2.5rem;
-		font-weight: 700;
-		color: var(--color-text);
-		margin-bottom: 1rem;
-	}
-
-	.stats {
-		display: flex;
-		justify-content: center;
-		align-items: center;
-		gap: 0.75rem;
-		font-size: 0.875rem;
-		color: var(--color-text-muted);
-	}
-
-	.dot {
-		width: 4px;
-		height: 4px;
-		background: var(--color-border);
-		border-radius: 50%;
-	}
-
 	/* Controls */
 	.controls {
 		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 2rem;
 		flex-wrap: wrap;
-		gap: 1rem;
-	}
-
-	.controls-top {
-		display: flex;
 		align-items: center;
-		gap: 0.75rem;
+		gap: 0.5rem;
+		margin-bottom: 1.25rem;
 	}
 
-	.view-toggle {
+	.filter {
+		position: relative;
 		display: flex;
-		background: var(--color-bg-secondary);
-		border-radius: 0.5rem;
-		padding: 0.25rem;
+		flex: 1;
+		align-items: center;
+		min-width: 10rem;
 	}
 
-	.toggle-btn {
-		padding: 0.5rem 1rem;
-		border: none;
-		background: transparent;
-		border-radius: 0.375rem;
-		font-size: 0.875rem;
-		color: var(--color-text-muted);
-		cursor: pointer;
-		transition: all 0.15s;
+	.filter :global(.filter-icon) {
+		position: absolute;
+		left: 0.625rem;
+		color: var(--color-text-faint);
+		pointer-events: none;
 	}
 
-	.toggle-btn.active {
-		background: var(--color-bg);
-		color: var(--color-text);
-		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+	.filter-input {
+		height: 2rem;
+		padding-left: 1.875rem;
+		padding-right: 2rem;
+		font-size: 0.8125rem;
+	}
+
+	.filter-clear {
+		position: absolute;
+		right: 0.25rem;
+		width: 1.5rem;
+		height: 1.5rem;
 	}
 
 	.sort-dropdown {
 		position: relative;
 	}
 
-	.sort-btn {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		padding: 0.5rem;
-		background: var(--color-bg-secondary);
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		color: var(--color-text-muted);
-		cursor: pointer;
-		transition: all 0.15s;
-	}
-
-	.sort-btn:hover {
-		background: var(--color-border);
-		color: var(--color-text);
-	}
-
 	.sort-menu {
 		position: absolute;
-		top: 100%;
+		top: calc(100% + 0.25rem);
 		right: 0;
-		margin-top: 0.25rem;
-		min-width: 140px;
-		background: var(--color-bg);
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-		overflow: hidden;
-		z-index: 50;
+		z-index: 40;
+		min-width: 11rem;
 	}
 
-	.sort-option {
-		display: block;
-		width: 100%;
-		padding: 0.625rem 0.875rem;
-		background: transparent;
-		border: none;
-		text-align: left;
-		font-size: 0.875rem;
-		color: var(--color-text);
-		cursor: pointer;
-		transition: background 0.1s;
-	}
-
-	.sort-option:hover {
-		background: var(--color-bg-secondary);
-	}
-
-	.sort-option.active {
-		background: color-mix(in srgb, var(--color-accent) 15%, transparent);
-		color: var(--color-accent);
-	}
-
-	/* Search Filter */
-	.search-filter {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.5rem 0.75rem;
-		background: var(--color-bg-secondary);
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		min-width: 200px;
-		max-width: 300px;
-		transition: border-color 0.15s;
-	}
-
-	.search-filter:focus-within {
-		border-color: var(--color-accent);
-	}
-
-	.search-filter .search-input {
-		flex: 1;
-		background: transparent;
-		border: none;
-		outline: none;
-		font-size: 0.875rem;
-		color: var(--color-text);
-		min-width: 0;
-	}
-
-	.search-filter .search-input::placeholder {
-		color: var(--color-text-muted);
-	}
-
-	.clear-btn {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		padding: 0.25rem;
-		background: transparent;
-		border: none;
-		border-radius: 0.25rem;
-		color: var(--color-text-muted);
-		cursor: pointer;
-		transition: all 0.15s;
-	}
-
-	.clear-btn:hover {
-		background: var(--color-border);
-		color: var(--color-text);
-	}
-
-	/* Tags */
-	.tags-section {
-		margin-bottom: 2rem;
-	}
-
-	.section-title {
-		font-size: 1rem;
-		font-weight: 600;
-		color: var(--color-text-muted);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		margin-bottom: 1rem;
-	}
-
-	.tags-list {
+	/* Tags as quiet inline text */
+	.tag-cloud {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.5rem;
+		gap: 0.25rem 0.875rem;
+		margin-bottom: 1.25rem;
+		padding: 0 0.125rem;
+		font-size: 0.8125rem;
 	}
 
-	.tag-pill {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
-		padding: 0.375rem 0.75rem;
-		background: rgba(250, 179, 135, 0.15);
-		color: #fab387;
-		border-radius: 1rem;
-		font-size: 0.875rem;
+	.tag-link {
+		color: var(--color-text-muted);
 		text-decoration: none;
-		transition: all 0.15s;
 	}
 
-	.tag-pill:hover {
-		background: rgba(250, 179, 135, 0.25);
+	.tag-link:hover {
+		color: var(--color-ref-tag);
 	}
 
 	.tag-count {
-		font-size: 0.75rem;
-		opacity: 0.7;
+		margin-left: 0.25rem;
+		font-size: 0.6875rem;
+		color: var(--color-text-faint);
+		font-variant-numeric: tabular-nums;
 	}
 
-	.more-tags {
-		padding: 0.375rem 0.75rem;
-		color: var(--color-text-muted);
-		font-size: 0.875rem;
+	/* Lists bleed into the gutter so text aligns with the title */
+	.note-list {
+		display: flex;
+		flex-direction: column;
+		margin: 0 -0.75rem;
 	}
 
-	/* Notes Grid */
-	.notes-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-		gap: 1rem;
+	.folder-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.0625rem;
+		margin: 0 -0.625rem;
 	}
 
-	/* Folders */
-	.folder-group {
-		margin-bottom: 1.5rem;
-	}
-
-	.folder-header {
+	.folder-row {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
-		width: 100%;
-		padding: 0.75rem 1rem;
-		background: var(--color-bg-secondary);
-		border: none;
-		border-radius: 0.5rem;
-		cursor: pointer;
+		gap: 0.125rem;
+	}
+
+	.folder-toggle {
+		flex: 1;
+		min-width: 0;
 		text-align: left;
-		transition: background 0.15s;
 	}
 
-	.folder-header:hover {
-		background: var(--color-border);
+	.folder-open {
+		opacity: 0;
 	}
 
-	.folder-title {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		font-size: 1rem;
-		font-weight: 600;
-		color: var(--color-text);
-		margin-bottom: 1rem;
+	.folder-row:hover .folder-open,
+	.folder-open:focus-visible {
+		opacity: 1;
+	}
+
+	@media (hover: none) {
+		.folder-open {
+			opacity: 1;
+		}
 	}
 
 	.folder-name {
 		flex: 1;
-		font-weight: 500;
-		color: var(--color-text);
+		min-width: 0;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
 	}
 
 	.folder-count {
 		font-size: 0.75rem;
-		color: var(--color-text-muted);
-		background: var(--color-bg);
-		padding: 0.25rem 0.5rem;
-		border-radius: 1rem;
+		color: var(--color-text-faint);
+		font-variant-numeric: tabular-nums;
 	}
 
 	.folder-content {
-		padding: 1rem 0 0 2rem;
+		margin: 0.125rem 0 0.75rem 1.25rem;
+		padding-left: 0.5rem;
+		border-left: 1px solid var(--color-border);
+	}
+
+	.folder-content .note-list {
+		margin: 0;
 	}
 
 	.empty-folder {
-		color: var(--color-text-muted);
-		font-size: 0.875rem;
-		font-style: italic;
-	}
-
-	/* Empty State */
-	.empty-state {
-		text-align: center;
-		padding: 4rem 2rem;
-		color: var(--color-text-muted);
-	}
-
-	.empty-cta {
-		display: inline-block;
-		margin-top: 1rem;
-		padding: 0.75rem 1.5rem;
-		background: var(--color-accent);
-		color: white;
-		text-decoration: none;
-		border-radius: 0.5rem;
-		font-weight: 500;
-		transition: background 0.15s;
-	}
-
-	.empty-cta:hover {
-		background: var(--color-accent-hover);
-	}
-
-	@media (max-width: 640px) {
-		.blog-index {
-			padding: 1rem;
-		}
-
-		.hero h1 {
-			font-size: 2rem;
-		}
-
-		.notes-grid {
-			grid-template-columns: 1fr;
-		}
-
-		.controls {
-			flex-direction: column;
-			align-items: stretch;
-		}
-
-		.controls-top {
-			width: 100%;
-			justify-content: space-between;
-		}
-
-		.view-toggle {
-			flex: 1;
-		}
-
-		.toggle-btn {
-			flex: 1;
-		}
-
-		.search-filter {
-			min-width: 0;
-			max-width: none;
-			width: 100%;
-		}
+		padding: 0.375rem 0.625rem;
+		font-size: 0.8125rem;
+		color: var(--color-text-faint);
 	}
 </style>

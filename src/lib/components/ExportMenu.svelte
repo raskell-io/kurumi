@@ -60,10 +60,18 @@
 		}
 	}
 
+	function handleEscape(event: KeyboardEvent) {
+		if (event.key === 'Escape') closeMenu();
+	}
+
 	$effect(() => {
 		if (isOpen) {
 			document.addEventListener('click', handleClickOutside);
-			return () => document.removeEventListener('click', handleClickOutside);
+			document.addEventListener('keydown', handleEscape);
+			return () => {
+				document.removeEventListener('click', handleClickOutside);
+				document.removeEventListener('keydown', handleEscape);
+			};
 		}
 	});
 
@@ -79,130 +87,52 @@
 	);
 </script>
 
-<div class="export-menu" bind:this={menuRef}>
-	<button class="export-btn" onclick={toggleMenu} disabled={itemCount === 0} title="Export">
+<div class="relative" bind:this={menuRef}>
+	<button
+		class="k-icon-btn"
+		onclick={toggleMenu}
+		disabled={itemCount === 0}
+		title="Export"
+		aria-label="Export"
+		aria-haspopup="menu"
+		aria-expanded={isOpen}
+	>
 		<Download class="h-4 w-4" />
 	</button>
 
 	{#if isOpen}
-		<div class="dropdown">
-			<div class="dropdown-header">
-				<span>Export {itemCount} {itemCount === 1 ? 'item' : 'items'}</span>
-			</div>
+		<div class="k-menu absolute right-0 top-full z-50 mt-1" role="menu">
+			<div class="k-menu-label">Export {itemCount} {itemCount === 1 ? 'item' : 'items'}</div>
 
 			{#if type === 'people'}
-				<button class="dropdown-item" onclick={() => handleExport('vcard')}>
-					<Users class="h-4 w-4" />
-					<span>vCard (.vcf)</span>
-					<span class="format-desc">Contact format</span>
+				<button class="k-menu-item" role="menuitem" onclick={() => handleExport('vcard')}>
+					<Users class="h-4 w-4 text-[var(--color-text-faint)]" />
+					<span class="flex-1">vCard (.vcf)</span>
+					<span class="text-xs text-[var(--color-text-faint)]">Contacts</span>
 				</button>
-				<button class="dropdown-item" onclick={() => handleExport('csv')}>
-					<Table class="h-4 w-4" />
-					<span>CSV</span>
-					<span class="format-desc">Spreadsheet</span>
+				<button class="k-menu-item" role="menuitem" onclick={() => handleExport('csv')}>
+					<Table class="h-4 w-4 text-[var(--color-text-faint)]" />
+					<span class="flex-1">CSV</span>
+					<span class="text-xs text-[var(--color-text-faint)]">Spreadsheet</span>
 				</button>
 			{:else if type === 'dates'}
-				<button class="dropdown-item" onclick={() => handleExport('ical')}>
-					<CalendarIcon class="h-4 w-4" />
-					<span>iCal (.ics)</span>
-					<span class="format-desc">Calendar format</span>
+				<button class="k-menu-item" role="menuitem" onclick={() => handleExport('ical')}>
+					<CalendarIcon class="h-4 w-4 text-[var(--color-text-faint)]" />
+					<span class="flex-1">iCal (.ics)</span>
+					<span class="text-xs text-[var(--color-text-faint)]">Calendar</span>
 				</button>
-				<button class="dropdown-item" onclick={() => handleExport('csv')}>
-					<Table class="h-4 w-4" />
-					<span>CSV</span>
-					<span class="format-desc">Spreadsheet</span>
+				<button class="k-menu-item" role="menuitem" onclick={() => handleExport('csv')}>
+					<Table class="h-4 w-4 text-[var(--color-text-faint)]" />
+					<span class="flex-1">CSV</span>
+					<span class="text-xs text-[var(--color-text-faint)]">Spreadsheet</span>
 				</button>
 			{:else}
-				<button class="dropdown-item" onclick={() => handleExport('csv')}>
-					<Table class="h-4 w-4" />
-					<span>CSV</span>
-					<span class="format-desc">Spreadsheet</span>
+				<button class="k-menu-item" role="menuitem" onclick={() => handleExport('csv')}>
+					<Table class="h-4 w-4 text-[var(--color-text-faint)]" />
+					<span class="flex-1">CSV</span>
+					<span class="text-xs text-[var(--color-text-faint)]">Spreadsheet</span>
 				</button>
 			{/if}
 		</div>
 	{/if}
 </div>
-
-<style>
-	.export-menu {
-		position: relative;
-	}
-
-	.export-btn {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 2rem;
-		height: 2rem;
-		padding: 0;
-		color: var(--color-text-muted);
-		background: transparent;
-		border: 1px solid var(--color-border);
-		border-radius: 0.375rem;
-		cursor: pointer;
-		transition: all 0.1s;
-	}
-
-	.export-btn:hover:not(:disabled) {
-		color: var(--color-accent);
-		border-color: var(--color-accent);
-	}
-
-	.export-btn:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
-	.dropdown {
-		position: absolute;
-		top: 100%;
-		right: 0;
-		margin-top: 0.25rem;
-		min-width: 180px;
-		background: var(--color-bg);
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		box-shadow:
-			0 4px 6px -1px rgba(0, 0, 0, 0.1),
-			0 2px 4px -1px rgba(0, 0, 0, 0.06);
-		z-index: 50;
-		overflow: hidden;
-	}
-
-	.dropdown-header {
-		padding: 0.5rem 0.75rem;
-		font-size: 0.75rem;
-		font-weight: 500;
-		color: var(--color-text-muted);
-		background: var(--color-bg-secondary);
-		border-bottom: 1px solid var(--color-border);
-	}
-
-	.dropdown-item {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		width: 100%;
-		padding: 0.625rem 0.75rem;
-		font-size: 0.875rem;
-		color: var(--color-text);
-		background: transparent;
-		border: none;
-		cursor: pointer;
-		text-align: left;
-		transition: background 0.1s;
-	}
-
-	.dropdown-item:hover {
-		background: var(--color-bg-secondary);
-	}
-
-	.dropdown-item span:first-of-type {
-		flex: 1;
-	}
-
-	.format-desc {
-		font-size: 0.75rem;
-		color: var(--color-text-muted);
-	}
-</style>

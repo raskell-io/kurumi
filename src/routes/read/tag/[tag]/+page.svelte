@@ -3,7 +3,7 @@
 	import { getMemoryObjectsByTag } from '$lib/db';
 	import ReadNav from '$lib/components/ReadNav.svelte';
 	import NoteCard from '$lib/components/NoteCard.svelte';
-	import { Tag } from 'lucide-svelte';
+	import { Hash, Tag } from 'lucide-svelte';
 
 	let tag = $derived($page.params.tag ?? '');
 	let memories = $derived(getMemoryObjectsByTag(tag));
@@ -17,89 +17,46 @@
 
 <ReadNav {breadcrumbs} />
 
-<main class="filter-page">
-	<header class="page-header">
-		<div class="header-icon tag-icon">
-			<Tag />
+<div class="k-page">
+	<header class="k-page-header">
+		<div class="min-w-0">
+			<p class="eyebrow"><Tag class="h-3.5 w-3.5 text-[var(--color-ref-tag)]" /> Tag</p>
+			<h1 class="k-page-title break-words">#{tag}</h1>
+			<p class="k-page-subtitle">{memories.length} note{memories.length === 1 ? '' : 's'}</p>
 		</div>
-		<h1>#{tag}</h1>
-		<p class="count">{memories.length} note{memories.length === 1 ? '' : 's'}</p>
 	</header>
 
 	{#if memories.length > 0}
-		<div class="notes-grid">
+		<div class="note-list">
 			{#each memories as memory (memory.id)}
-				<NoteCard memory={memory} />
+				<NoteCard {memory} />
 			{/each}
 		</div>
 	{:else}
-		<div class="empty-state">
-			<p>No notes with this tag.</p>
-			<a href="/read" class="back-link">Back to all notes</a>
+		<div class="k-empty">
+			<Hash />
+			<p class="k-empty-title">No notes with this tag</p>
+			<p>Add #{tag} to a note and it will show up here.</p>
+			<a href="/read" class="k-btn mt-2">All notes</a>
 		</div>
 	{/if}
-</main>
+</div>
 
 <style>
-	.filter-page {
-		max-width: 1000px;
-		margin: 0 auto;
-		padding: 2rem 1.5rem 4rem;
+	.eyebrow {
+		display: flex;
+		align-items: center;
+		gap: 0.375rem;
+		margin-bottom: 0.375rem;
+		font-size: 0.75rem;
+		font-weight: 500;
+		color: var(--color-text-faint);
 	}
 
-	.page-header {
-		text-align: center;
-		margin-bottom: 2rem;
-	}
-
-	.header-icon {
-		width: 4rem;
-		height: 4rem;
-		margin: 0 auto 1rem;
-		padding: 1rem;
-		border-radius: 1rem;
-	}
-
-	.tag-icon {
-		background: rgba(245, 158, 11, 0.15);
-		color: #f59e0b;
-	}
-
-	.page-header h1 {
-		font-size: 2rem;
-		font-weight: 700;
-		color: var(--color-text);
-		margin-bottom: 0.5rem;
-	}
-
-	.count {
-		color: var(--color-text-muted);
-		font-size: 0.875rem;
-	}
-
-	.notes-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-		gap: 1rem;
-	}
-
-	.empty-state {
-		text-align: center;
-		padding: 4rem 2rem;
-		color: var(--color-text-muted);
-	}
-
-	.back-link {
-		display: inline-block;
-		margin-top: 1rem;
-		padding: 0.75rem 1.5rem;
-		background: var(--color-accent);
-		color: white;
-		text-decoration: none;
-		border-radius: 0.5rem;
-	}
-
-	.back-link:hover {
-		background: var(--color-accent-hover);
+	/* Bleed into the gutter so entry text aligns with the title */
+	.note-list {
+		display: flex;
+		flex-direction: column;
+		margin: 0 -0.75rem;
 	}
 </style>

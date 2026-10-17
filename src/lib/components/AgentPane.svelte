@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { autofocus } from '$lib/actions/autofocus';
 	import { onMount, tick } from 'svelte';
 	import {
 		createAgentSession,
@@ -18,9 +19,8 @@
 	import { inferenceRouter } from '$lib/inference';
 	import MarkdownRenderer from './MarkdownRenderer.svelte';
 	import {
-		Bot,
-		User,
-		Send,
+		Sparkles,
+		ArrowUp,
 		X,
 		Wrench,
 		Search,
@@ -28,7 +28,8 @@
 		FilePlus,
 		CheckSquare,
 		Bell,
-		RotateCcw,
+		SquarePen,
+		MoreHorizontal,
 		Loader2,
 		Copy,
 		Check,
@@ -42,8 +43,7 @@
 		History,
 		Trash2,
 		Volume2,
-		VolumeX,
-		Settings2
+		VolumeX
 	} from 'lucide-svelte';
 
 	// --- Props ----------------------------------------------------------------
@@ -194,6 +194,22 @@
 	// Model selector
 	let selectedModel = $state(getAgentModel());
 	let showModelPicker = $state(false);
+	let showMoreMenu = $state(false);
+	let modelLabel = $derived(
+		(AVAILABLE_MODELS.find((m) => m.id === selectedModel)?.label ?? selectedModel).replace(/\s*\(.*\)$/, '')
+	);
+
+	function closeMenus() {
+		showModelPicker = false;
+		showMoreMenu = false;
+		showHistory = false;
+	}
+
+	function toggleSearch() {
+		showSearch = !showSearch;
+		if (showSearch) tick().then(() => searchInputEl?.focus());
+		else searchQuery = '';
+	}
 
 	// Sound notification
 	const SOUND_KEY = 'kurumi-agent-sound';
@@ -339,8 +355,11 @@
 					searchQuery = '';
 				} else if (showHistory) {
 					showHistory = false;
-				} else if (showModelPicker) {
+				} else if (showModelPicker || showMoreMenu) {
 					showModelPicker = false;
+					showMoreMenu = false;
+				} else if (confirmingReset) {
+					confirmingReset = false;
 				} else {
 					onClose();
 				}
@@ -349,12 +368,7 @@
 			// Cmd+F within pane → open conversation search
 			if ((e.metaKey || e.ctrlKey) && e.key === 'f' && paneEl?.contains(document.activeElement)) {
 				e.preventDefault();
-				showSearch = !showSearch;
-				if (showSearch) {
-					tick().then(() => searchInputEl?.focus());
-				} else {
-					searchQuery = '';
-				}
+				toggleSearch();
 			}
 		}
 		window.addEventListener('keydown', handleGlobalKeydown);
@@ -748,6 +762,9 @@
 		});
 		playNotificationSound();
 		smartScroll();
+		// The textarea was disabled while thinking; hand focus back (not on
+		// mobile, where that would pop the keyboard over the reply)
+		if (!isMobile) tick().then(() => textareaEl?.focus());
 		// Fire-and-forget auto-title after first exchange
 		maybeAutoTitle();
 	}
@@ -1140,110 +1157,154 @@
 		<!-- Header -->
 		<div class="pane-header">
 			<div class="pane-title">
-				<Bot class="h-4 w-4 text-[var(--color-accent)]" />
-				<span>Kurumi Agent</span>
+				<span class="pane-name">Agent</span>
+				<button
+					type="button"
+					class="model-chip"
+					class:open={showModelPicker}
+					onclick={() => { const next = !showModelPicker; closeMenus(); showModelPicker = next; }}
+					title="Change model"
+					aria-haspopup="menu"
+					aria-expanded={showModelPicker}
+				>
+					{modelLabel}
+					<ChevronDown class="h-3 w-3" />
+				</button>
 			</div>
 			<div class="pane-actions">
 				{#if confirmingReset}
 					<div class="confirm-reset">
-						<span class="confirm-label">New chat?</span>
-						<button class="confirm-btn yes" onclick={handleReset}>Yes</button>
-						<button class="confirm-btn no" onclick={cancelReset}>No</button>
+						<span class="confirm-label">Start a new chat?</span>
+						<button type="button" class="k-btn k-btn-sm k-btn-ghost" onclick={cancelReset}>Cancel</button>
+						<button type="button" class="k-btn k-btn-sm k-btn-primary" onclick={handleReset}>New chat</button>
 					</div>
 				{:else}
-					<button class="pane-btn" onclick={() => (showModelPicker = !showModelPicker)} title="Model: {selectedModel}">
-						<Settings2 class="h-3.5 w-3.5" />
+					<button
+						type="button"
+						class="k-icon-btn"
+						class:active={showHistory}
+						onclick={() => { const next = !showHistory; closeMenus(); showHistory = next; }}
+						title="Conversation history"
+						aria-label="Conversation history"
+						aria-expanded={showHistory}
+					>
+						<History class="h-4 w-4" />
 					</button>
-					<button class="pane-btn" onclick={toggleSound} title={soundEnabled ? 'Mute notifications' : 'Enable notifications'}>
-						{#if soundEnabled}
-							<Volume2 class="h-3.5 w-3.5" />
-						{:else}
-							<VolumeX class="h-3.5 w-3.5" />
-						{/if}
+					<button type="button" class="k-icon-btn" onclick={handleReset} title="New conversation" aria-label="New conversation">
+						<SquarePen class="h-4 w-4" />
 					</button>
-					<button class="pane-btn" onclick={() => (showHistory = !showHistory)} title="Conversation history">
-						<History class="h-3.5 w-3.5" />
-					</button>
-					{#if hasMessages}
-						<button class="pane-btn" onclick={() => { showSearch = !showSearch; if (showSearch) tick().then(() => searchInputEl?.focus()); else searchQuery = ''; }} title="Search conversation">
-							<Search class="h-3.5 w-3.5" />
-						</button>
-						<button class="pane-btn" onclick={exportConversation} title="Export as markdown">
-							<Download class="h-3.5 w-3.5" />
-						</button>
-					{/if}
-					<button class="pane-btn" onclick={handleReset} title="New conversation">
-						<RotateCcw class="h-3.5 w-3.5" />
+					<button
+						type="button"
+						class="k-icon-btn"
+						class:active={showMoreMenu}
+						onclick={() => { const next = !showMoreMenu; closeMenus(); showMoreMenu = next; }}
+						title="More"
+						aria-label="More options"
+						aria-haspopup="menu"
+						aria-expanded={showMoreMenu}
+					>
+						<MoreHorizontal class="h-4 w-4" />
 					</button>
 				{/if}
-				<button class="pane-btn" onclick={onClose} title="Close (Esc)">
-					<X class="h-3.5 w-3.5" />
+				<button type="button" class="k-icon-btn" onclick={onClose} title="Close (Esc)" aria-label="Close agent pane">
+					<X class="h-4 w-4" />
 				</button>
 			</div>
+
+			<!-- Token budget: hairline along the header's bottom edge -->
+			{#if hasMessages}
+				<div class="token-bar" title="~{estimatedTokens} tokens used ({tokenPercent}% of context)">
+					<div
+						class="token-fill"
+						class:warn={tokenPercent > 60}
+						class:danger={tokenPercent > 85}
+						style="width: {tokenPercent}%"
+					></div>
+				</div>
+			{/if}
 		</div>
 
-		<!-- Token budget bar -->
-		{#if hasMessages}
-			<div class="token-bar" title="~{estimatedTokens} tokens used ({tokenPercent}% of context)">
-				<div
-					class="token-fill"
-					class:warn={tokenPercent > 60}
-					class:danger={tokenPercent > 85}
-					style="width: {tokenPercent}%"
-				></div>
-			</div>
+		<!-- Click-away layer for the header menus -->
+		{#if showModelPicker || showMoreMenu || showHistory}
+			<!-- svelte-ignore a11y_click_events_have_key_events -->
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="menu-scrim" onclick={closeMenus}></div>
 		{/if}
 
-		<!-- Model picker dropdown -->
+		<!-- Model picker -->
 		{#if showModelPicker}
-			<div class="model-picker">
+			<div class="k-menu header-menu left" role="menu" aria-label="Model">
+				<div class="k-menu-label">Model</div>
 				{#each AVAILABLE_MODELS as m (m.id)}
 					<button
-						class="model-option"
-						class:active={m.id === selectedModel}
+						type="button"
+						role="menuitemradio"
+						aria-checked={m.id === selectedModel}
+						class="k-menu-item"
 						onclick={() => handleModelChange(m.id)}
 					>
-						{m.label}
+						<span class="flex-1">{m.label}</span>
 						{#if m.id === selectedModel}
-							<Check class="h-3 w-3" />
+							<Check class="h-3.5 w-3.5 text-[var(--color-accent)]" />
 						{/if}
 					</button>
 				{/each}
 			</div>
 		{/if}
 
-		<!-- Search bar -->
-		{#if showSearch}
-			<div class="search-bar">
-				<Search class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
-				<input
-					bind:this={searchInputEl}
-					bind:value={searchQuery}
-					type="text"
-					placeholder="Search conversation..."
-					class="search-input"
-					onkeydown={(e) => { if (e.key === 'Escape') { showSearch = false; searchQuery = ''; } }}
-				/>
-				{#if searchQuery && searchQuery.length >= 2}
-					<span class="search-count">{searchMatchCount} match{searchMatchCount === 1 ? '' : 'es'}</span>
-				{/if}
-				{#if searchQuery}
-					<button class="search-clear" onclick={() => { searchQuery = ''; searchInputEl?.focus(); }}>
-						<X class="h-3 w-3" />
-					</button>
-				{/if}
+		<!-- More menu -->
+		{#if showMoreMenu}
+			<div class="k-menu header-menu" role="menu" aria-label="More options">
+				<button
+					type="button"
+					role="menuitem"
+					class="k-menu-item"
+					disabled={!hasMessages}
+					onclick={() => { showMoreMenu = false; toggleSearch(); }}
+				>
+					<Search class="menu-icon h-4 w-4" />
+					<span class="flex-1">Search conversation</span>
+					<span class="k-kbd">⌘F</span>
+				</button>
+				<button
+					type="button"
+					role="menuitem"
+					class="k-menu-item"
+					disabled={!hasMessages}
+					onclick={() => { showMoreMenu = false; exportConversation(); }}
+				>
+					<Download class="menu-icon h-4 w-4" />
+					<span class="flex-1">Export as markdown</span>
+				</button>
+				<button
+					type="button"
+					role="menuitem"
+					class="k-menu-item"
+					disabled={!hasAssistantMessages || session.thinking || distilling}
+					onclick={() => { showMoreMenu = false; handleDistillAndSave(); }}
+				>
+					<FilePlus class="menu-icon h-4 w-4" />
+					<span class="flex-1">Save conversation as note</span>
+				</button>
+				<div class="k-menu-sep"></div>
+				<button type="button" role="menuitemcheckbox" aria-checked={soundEnabled} class="k-menu-item" onclick={toggleSound}>
+					{#if soundEnabled}
+						<Volume2 class="menu-icon h-4 w-4" />
+					{:else}
+						<VolumeX class="menu-icon h-4 w-4" />
+					{/if}
+					<span class="flex-1">Reply sound</span>
+					{#if soundEnabled}
+						<Check class="h-3.5 w-3.5 text-[var(--color-accent)]" />
+					{/if}
+				</button>
 			</div>
 		{/if}
 
-		<!-- Conversation history dropdown -->
+		<!-- Conversation history -->
 		{#if showHistory}
-			<div class="history-dropdown">
-				<div class="history-header">
-					<span>Recent conversations</span>
-					<button class="pane-btn" onclick={() => (showHistory = false)}>
-						<X class="h-3 w-3" />
-					</button>
-				</div>
+			<div class="k-menu header-menu history-menu" role="menu" aria-label="Recent conversations">
+				<div class="k-menu-label">Recent conversations</div>
 				{#if historyIndex.length === 0}
 					<div class="history-empty">No conversations yet</div>
 				{:else}
@@ -1252,30 +1313,36 @@
 							<div class="history-item" class:active={conv.id === activeConversationId}>
 								{#if editingTitleId === conv.id}
 									<input
-										class="title-edit-input"
+										class="k-input title-edit-input"
 										bind:value={editingTitleText}
 										onkeydown={handleTitleKeydown}
 										onblur={saveTitle}
+										aria-label="Conversation title"
+										use:autofocus
 									/>
 								{:else}
-									<button class="history-item-btn" onclick={() => switchConversation(conv.id)}>
+									<button type="button" class="history-item-btn" onclick={() => switchConversation(conv.id)}>
 										<span class="history-item-title">{conv.title}</span>
-										<span class="history-item-meta">{conv.messageCount} msg{conv.messageCount === 1 ? '' : 's'} &middot; {relativeTime(conv.updatedAt)}</span>
+										<span class="history-item-meta">{conv.messageCount} msg{conv.messageCount === 1 ? '' : 's'} · {relativeTime(conv.updatedAt)}</span>
 									</button>
 									<button
-										class="history-edit-btn"
+										type="button"
+										class="history-item-action"
 										onclick={(e) => { e.stopPropagation(); startEditTitle(conv.id, conv.title); }}
 										title="Rename conversation"
+										aria-label="Rename conversation"
 									>
-										<Pencil class="h-3 w-3" />
+										<Pencil class="h-3.5 w-3.5" />
 									</button>
 								{/if}
 								<button
-									class="history-delete-btn"
+									type="button"
+									class="history-item-action danger"
 									onclick={(e) => { e.stopPropagation(); deleteFromHistory(conv.id); }}
 									title="Delete conversation"
+									aria-label="Delete conversation"
 								>
-									<Trash2 class="h-3 w-3" />
+									<Trash2 class="h-3.5 w-3.5" />
 								</button>
 							</div>
 						{/each}
@@ -1284,233 +1351,261 @@
 			</div>
 		{/if}
 
+		<!-- Search bar -->
+		{#if showSearch}
+			<div class="search-bar">
+				<Search class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)]" />
+				<input
+					bind:this={searchInputEl}
+					bind:value={searchQuery}
+					type="text"
+					placeholder="Search conversation…"
+					aria-label="Search conversation"
+					class="search-input"
+					onkeydown={(e) => { if (e.key === 'Escape') { showSearch = false; searchQuery = ''; } }}
+				/>
+				{#if searchQuery && searchQuery.length >= 2}
+					<span class="search-count">{searchMatchCount} match{searchMatchCount === 1 ? '' : 'es'}</span>
+				{/if}
+				<button
+					type="button"
+					class="k-icon-btn !h-6 !w-6"
+					onclick={() => { if (searchQuery) { searchQuery = ''; searchInputEl?.focus(); } else { showSearch = false; } }}
+					aria-label={searchQuery ? 'Clear search' : 'Close search'}
+				>
+					<X class="h-3.5 w-3.5" />
+				</button>
+			</div>
+		{/if}
+
 		<!-- Saved note notification -->
 		{#if savedNote}
-			<div class="saved-bar">
-				<Check class="h-3.5 w-3.5" />
-				<span class="saved-text">Note created</span>
-				<button class="saved-link" onclick={() => goToNote(savedNote!.id)}>
+			<div class="saved-bar" role="status">
+				<Check class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
+				<span class="saved-text">Saved as note</span>
+				<button type="button" class="k-btn k-btn-ghost k-btn-sm" onclick={() => goToNote(savedNote!.id)}>
 					Open <ExternalLink class="h-3 w-3" />
 				</button>
-				<button class="saved-dismiss" onclick={() => (savedNote = null)}>
-					<X class="h-3 w-3" />
+				<button type="button" class="k-icon-btn !h-6 !w-6" onclick={() => (savedNote = null)} aria-label="Dismiss">
+					<X class="h-3.5 w-3.5" />
 				</button>
 			</div>
 		{/if}
 
 		<!-- Messages -->
-		<div class="messages" bind:this={messagesContainer} onscroll={handleScroll}>
-			{#if session.messages.length === 0 && !session.thinking}
-				<div class="empty">
-					<Bot class="h-8 w-8 opacity-30" />
-					<p>Ask me anything or tell me what to do.</p>
-					<p class="hint">
-						I can search your vault, create notes, add action items,
-						and propose reminders.
-					</p>
-					<div class="starters">
-						{#each STARTERS as starter}
-							<button class="starter-chip" onclick={() => useStarter(starter)}>
-								{starter}
-							</button>
-						{/each}
-					</div>
-				</div>
-			{/if}
-
-			{#each session.messages as msg (msg.id)}
-				{#if msg.role === 'user'}
-					<div class="msg msg-user">
-						<div class="msg-avatar"><User class="h-3.5 w-3.5" /></div>
-						{#if editingMsgId === msg.id}
-							<div class="edit-bubble">
-								<textarea
-									class="edit-textarea"
-									bind:value={editText}
-									onkeydown={(e) => handleEditKeydown(e, msg.id)}
-									rows="2"
-								></textarea>
-								<div class="edit-actions">
-									<button class="edit-btn cancel" onclick={cancelEdit}>Cancel</button>
-									<button class="edit-btn submit" onclick={() => submitEdit(msg.id)}>Re-send</button>
-								</div>
-							</div>
-						{:else}
-							<div class="msg-body msg-body-user-md">
-								{#if searchQuery && searchQuery.length >= 2}
-									{@html highlightMatches(msg.content, searchQuery)}
-								{:else}
-									<MarkdownRenderer content={msg.content} />
-								{/if}
-								{#if msg.images?.length}
-									<div class="msg-images">
-										{#each msg.images as src}
-											<img {src} alt="Attached" class="msg-image-thumb" />
-										{/each}
-									</div>
-								{/if}
-								<div class="msg-time msg-time-user">
-									<button
-										class="edit-msg-btn"
-										onclick={() => startEditMessage(msg)}
-										title="Edit & re-send"
-									>
-										<Pencil class="h-2.5 w-2.5" />
-									</button>
-									{relativeTime(msg.createdAt)}
-								</div>
-							</div>
-						{/if}
-					</div>
-				{:else if msg.role === 'assistant'}
-					{#if msg.toolCalls && msg.toolCalls.length > 0}
-						<div class="msg msg-tool">
-							{#each msg.toolCalls as tc (tc.id)}
-								{@const Icon = toolIcon(tc.name)}
-								{@const isExpanded = expandedTools.has(tc.id)}
-								{@const memLinks = extractMemoryLinks(tc)}
-								<button class="tool-card" class:error={tc.status === 'error'} onclick={() => toggleToolExpand(tc.id)}>
-									<div class="tool-header">
-										{#if isExpanded}
-											<ChevronDown class="h-3 w-3 shrink-0" />
-										{:else}
-											<ChevronRight class="h-3 w-3 shrink-0" />
-										{/if}
-										<Icon class="h-3 w-3 shrink-0" />
-										<span class="tool-label">{toolLabel(tc)}</span>
-										<span class="tool-status">{tc.status}</span>
-									</div>
-									{#if isExpanded && tc.result != null}
-										{#if memLinks.length > 0}
-											<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-											<div class="tool-links" onclick={(e) => e.stopPropagation()}>
-												{#each memLinks as link}
-													<a href="/memory/{link.id}" class="tool-mem-link" onclick={(e) => { e.stopPropagation(); onClose(); goto(`/memory/${link.id}`); }}>
-														{link.title}
-														<ExternalLink class="h-2.5 w-2.5" />
-													</a>
-												{/each}
-											</div>
-										{/if}
-										<pre class="tool-result">{renderToolResult(tc)}</pre>
-									{/if}
+		<div class="messages-wrap">
+			<div class="messages" bind:this={messagesContainer} onscroll={handleScroll}>
+				{#if session.messages.length === 0 && !session.thinking}
+					<div class="empty">
+						<Sparkles class="h-5 w-5 text-[var(--color-text-faint)]" />
+						<p class="empty-title">Ask anything, or tell me what to do</p>
+						<p class="hint">
+							I can search your vault, create notes, add action items, and propose reminders.
+						</p>
+						<div class="starters">
+							{#each STARTERS as starter}
+								<button type="button" class="starter" onclick={() => useStarter(starter)}>
+									{starter}
 								</button>
 							{/each}
 						</div>
-					{/if}
-					{#if msg.content}
-						<div class="msg msg-assistant">
-							<div class="msg-avatar assistant"><Bot class="h-3.5 w-3.5" /></div>
-							<div class="msg-body">
-								{#if searchQuery && searchQuery.length >= 2}
-									{@html highlightMatches(msg.content, searchQuery)}
-								{:else}
-									<MarkdownRenderer content={msg.content} />
-								{/if}
+					</div>
+				{/if}
+
+				{#each session.messages as msg (msg.id)}
+					{#if msg.role === 'user'}
+						<div class="msg msg-user">
+							{#if editingMsgId === msg.id}
+								<div class="edit-box">
+									<textarea
+										class="k-input edit-textarea"
+										bind:value={editText}
+										onkeydown={(e) => handleEditKeydown(e, msg.id)}
+										rows="2"
+										aria-label="Edit message"
+										use:autofocus
+									></textarea>
+									<div class="edit-actions">
+										<button type="button" class="k-btn k-btn-sm k-btn-ghost" onclick={cancelEdit}>Cancel</button>
+										<button type="button" class="k-btn k-btn-sm k-btn-primary" onclick={() => submitEdit(msg.id)}>Re-send</button>
+									</div>
+								</div>
+							{:else}
+								<div class="user-block">
+									{#if searchQuery && searchQuery.length >= 2}
+										{@html highlightMatches(msg.content, searchQuery)}
+									{:else}
+										<MarkdownRenderer content={msg.content} />
+									{/if}
+									{#if msg.images?.length}
+										<div class="msg-images">
+											{#each msg.images as src}
+												<img {src} alt="Attached" class="msg-image-thumb" />
+											{/each}
+										</div>
+									{/if}
+								</div>
+								<div class="msg-footer user">
+									<span class="msg-time">{relativeTime(msg.createdAt)}</span>
+									<div class="msg-actions">
+										<button
+											type="button"
+											class="msg-action-btn"
+											onclick={() => startEditMessage(msg)}
+											title="Edit & re-send"
+											aria-label="Edit and re-send"
+										>
+											<Pencil class="h-3 w-3" />
+										</button>
+									</div>
+								</div>
+							{/if}
+						</div>
+					{:else if msg.role === 'assistant'}
+						{#if msg.toolCalls && msg.toolCalls.length > 0}
+							<div class="msg-tool">
+								{#each msg.toolCalls as tc (tc.id)}
+									{@const Icon = toolIcon(tc.name)}
+									{@const isExpanded = expandedTools.has(tc.id)}
+									{@const memLinks = extractMemoryLinks(tc)}
+									<div class="tool-line" class:error={tc.status === 'error'}>
+										<button
+											type="button"
+											class="tool-header"
+											onclick={() => toggleToolExpand(tc.id)}
+											aria-expanded={isExpanded}
+										>
+											{#if tc.status === 'running'}
+												<Loader2 class="h-3 w-3 shrink-0 animate-spin" />
+											{:else}
+												<Icon class="h-3 w-3 shrink-0" />
+											{/if}
+											<span class="tool-label">{toolLabel(tc)}</span>
+											{#if tc.status === 'error'}
+												<span class="tool-status">failed</span>
+											{/if}
+											{#if isExpanded}
+												<ChevronDown class="tool-chevron h-3 w-3 shrink-0" />
+											{:else}
+												<ChevronRight class="tool-chevron h-3 w-3 shrink-0" />
+											{/if}
+										</button>
+										{#if isExpanded && tc.result != null}
+											<div class="tool-detail">
+												{#if memLinks.length > 0}
+													<div class="tool-links">
+														{#each memLinks as link}
+															<a href="/memory/{link.id}" class="tool-mem-link" onclick={(e) => { e.preventDefault(); onClose(); goto(`/memory/${link.id}`); }}>
+																{link.title}
+																<ExternalLink class="h-2.5 w-2.5" />
+															</a>
+														{/each}
+													</div>
+												{/if}
+												<pre class="tool-result">{renderToolResult(tc)}</pre>
+											</div>
+										{/if}
+									</div>
+								{/each}
+							</div>
+						{/if}
+						{#if msg.content}
+							<div class="msg msg-assistant">
+								<div class="assistant-body">
+									{#if searchQuery && searchQuery.length >= 2}
+										{@html highlightMatches(msg.content, searchQuery)}
+									{:else}
+										<MarkdownRenderer content={msg.content} />
+									{/if}
+								</div>
 								<div class="msg-footer">
 									<span class="msg-time">
 										{relativeTime(msg.createdAt)}
 										{#if session.thinking && session.streamStats && msg.id === session.messages[session.messages.length - 1]?.id}
-											<span class="stream-speed">&middot; {session.streamStats.tokensPerSec} tok/s</span>
+											<span class="stream-speed">· {session.streamStats.tokensPerSec} tok/s</span>
 										{/if}
 									</span>
 									<div class="msg-actions">
-										<button class="msg-action-btn" onclick={() => copyMessage(msg.id, msg.content)} title="Copy">
+										<button type="button" class="msg-action-btn" onclick={() => copyMessage(msg.id, msg.content)} title="Copy" aria-label="Copy message">
 											{#if copiedMsgId === msg.id}
 												<Check class="h-3 w-3" />
 											{:else}
 												<Copy class="h-3 w-3" />
 											{/if}
 										</button>
-										<button class="msg-action-btn" onclick={() => saveMessageAsNote(msg.content)} title="Save as note">
+										<button type="button" class="msg-action-btn" onclick={() => saveMessageAsNote(msg.content)} title="Save as note" aria-label="Save as note">
 											<FilePlus class="h-3 w-3" />
 										</button>
 									</div>
 								</div>
 							</div>
-						</div>
+						{/if}
 					{/if}
-				{/if}
-			{/each}
+				{/each}
 
-			{#if session.thinking && session.thinkingStatus}
-				<div class="msg msg-assistant">
-					<div class="msg-avatar assistant"><Bot class="h-3.5 w-3.5" /></div>
-					<div class="msg-body thinking">
-						<Loader2 class="h-3.5 w-3.5 animate-spin" />
-						<span class="thinking-label">{session.thinkingStatus}</span>
+				{#if session.thinking && session.thinkingStatus}
+					<div class="thinking" role="status">
+						<Loader2 class="h-3 w-3 animate-spin" />
+						<span>{session.thinkingStatus}</span>
 					</div>
-				</div>
-			{/if}
+				{/if}
 
-			{#if session.error}
-				<div class="error-bar">{session.error}</div>
-			{/if}
+				{#if session.error}
+					<div class="error-bar" role="alert">{session.error}</div>
+				{/if}
 
-			<div bind:this={messagesEnd}></div>
+				<div bind:this={messagesEnd}></div>
+			</div>
+
+			<!-- Scroll to bottom -->
+			{#if showScrollBtn}
+				<button type="button" class="scroll-btn" onclick={scrollToBottom} title="Scroll to bottom" aria-label="Scroll to bottom">
+					<ArrowDown class="h-3.5 w-3.5" />
+				</button>
+			{/if}
 		</div>
 
-		<!-- Scroll to bottom fab -->
-		{#if showScrollBtn}
-			<button class="scroll-btn" onclick={scrollToBottom} title="Scroll to bottom">
-				<ArrowDown class="h-4 w-4" />
-			</button>
-		{/if}
-
-		<!-- Input area -->
-		<!-- Autocomplete popup -->
-		{#if ac && acItems.length > 0}
-			<div class="ac-popup">
-				<div class="ac-header">
-					{#if ac.kind === 'wikilink'}Note{:else if ac.kind === 'person'}Person{:else if ac.kind === 'tag'}Tag{:else}Date{/if}
-				</div>
-				{#each acItems as item, i}
-					<button
-						class="ac-item"
-						class:selected={i === acIndex}
-						onmousedown={(e) => { e.preventDefault(); acceptAutocomplete(item.label); }}
-						onmouseenter={() => (acIndex = i)}
-					>
-						<span class="ac-label">{ac.kind === 'tag' ? '#' : ac.kind === 'person' ? '@' : ac.kind === 'date' ? '//' : ''}{item.label}</span>
-						{#if item.detail}
-							<span class="ac-detail">{item.detail}</span>
-						{/if}
-					</button>
-				{/each}
-			</div>
-		{/if}
-
-		<div class="input-area">
-			<!-- Pending image previews -->
-			{#if pendingImages.length > 0}
-				<div class="pending-images">
-					{#each pendingImages as src, i}
-						<div class="pending-img-wrap">
-							<img {src} alt="Pending" class="pending-img" />
-							<button class="pending-img-remove" onclick={() => removePendingImage(i)}>
-								<X class="h-2.5 w-2.5" />
-							</button>
-						</div>
+		<!-- Composer -->
+		<div class="composer-area">
+			<!-- Autocomplete popup -->
+			{#if ac && acItems.length > 0}
+				<div class="k-menu ac-popup" role="listbox">
+					<div class="k-menu-label">
+						{#if ac.kind === 'wikilink'}Notes{:else if ac.kind === 'person'}People{:else if ac.kind === 'tag'}Tags{:else}Dates{/if}
+					</div>
+					{#each acItems as item, i}
+						<button
+							type="button"
+							role="option"
+							aria-selected={i === acIndex}
+							class="k-menu-item ac-item"
+							class:selected={i === acIndex}
+							onmousedown={(e) => { e.preventDefault(); acceptAutocomplete(item.label); }}
+							onmouseenter={() => (acIndex = i)}
+						>
+							<span class="ac-label">{ac.kind === 'tag' ? '#' : ac.kind === 'person' ? '@' : ac.kind === 'date' ? '//' : ''}{item.label}</span>
+							{#if item.detail}
+								<span class="ac-detail">{item.detail}</span>
+							{/if}
+						</button>
 					{/each}
 				</div>
 			{/if}
-			<div class="input-row">
-				<button
-					class="voice-btn"
-					class:recording={voiceRecording}
-					class:transcribing={voiceTranscribing}
-					disabled={session.thinking || distilling || voiceTranscribing}
-					onpointerdown={handleVoiceStart}
-					onpointerup={handleVoiceStop}
-					onpointerleave={() => voiceRecording && handleVoiceStop()}
-					title={voiceRecording ? 'Release to transcribe' : voiceTranscribing ? 'Transcribing...' : 'Hold to dictate'}
-				>
-					{#if voiceTranscribing}
-						<Loader2 class="h-4 w-4 animate-spin" />
-					{:else}
-						<Mic class="h-4 w-4" />
-					{/if}
-				</button>
+
+			<div class="composer" class:disabled={session.thinking || distilling}>
+				<!-- Pending image previews -->
+				{#if pendingImages.length > 0}
+					<div class="pending-images">
+						{#each pendingImages as src, i}
+							<div class="pending-img-wrap">
+								<img {src} alt="Pending" class="pending-img" />
+								<button type="button" class="pending-img-remove" onclick={() => removePendingImage(i)} aria-label="Remove image">
+									<X class="h-2.5 w-2.5" />
+								</button>
+							</div>
+						{/each}
+					</div>
+				{/if}
 				<textarea
 					bind:this={textareaEl}
 					bind:value={input}
@@ -1519,37 +1614,55 @@
 					onpaste={handlePaste}
 					ondrop={handleDrop}
 					ondragover={handleDragOver}
-					placeholder="Ask or instruct..."
+					placeholder={pendingImages.length > 0 ? 'Ask about the image…' : 'Ask or instruct…'}
+					aria-label="Message the agent"
 					disabled={session.thinking || distilling}
 					class="chat-input"
 					rows="1"
 				></textarea>
-				<button
-					class="send-btn"
-					disabled={(!input.trim() && pendingImages.length === 0) || session.thinking || distilling}
-					onclick={handleSend}
-				>
-					<Send class="h-4 w-4" />
-				</button>
+				<div class="composer-toolbar">
+					<button
+						type="button"
+						class="k-icon-btn voice-btn"
+						class:recording={voiceRecording}
+						disabled={session.thinking || distilling || voiceTranscribing}
+						onpointerdown={handleVoiceStart}
+						onpointerup={handleVoiceStop}
+						onpointerleave={() => voiceRecording && handleVoiceStop()}
+						title={voiceRecording ? 'Release to transcribe' : voiceTranscribing ? 'Transcribing…' : 'Hold to dictate'}
+						aria-label={voiceRecording ? 'Release to transcribe' : 'Hold to dictate'}
+					>
+						{#if voiceTranscribing}
+							<Loader2 class="h-4 w-4 animate-spin" />
+						{:else}
+							<Mic class="h-4 w-4" />
+						{/if}
+					</button>
+					<span class="composer-hint">
+						{#if distilling}
+							<Loader2 class="h-3 w-3 animate-spin" /> Saving conversation as note…
+						{:else if voiceRecording}
+							Listening — release to transcribe
+						{:else if !hasSentMessage}
+							<span class="k-kbd">↵</span> send · <span class="k-kbd">⇧↵</span> newline
+						{/if}
+					</span>
+					<button
+						type="button"
+						class="send-btn"
+						disabled={!input.trim() || session.thinking || distilling}
+						onclick={handleSend}
+						title="Send (Enter)"
+						aria-label="Send message"
+					>
+						{#if session.thinking}
+							<Loader2 class="h-3.5 w-3.5 animate-spin" />
+						{:else}
+							<ArrowUp class="h-4 w-4" />
+						{/if}
+					</button>
+				</div>
 			</div>
-			{#if !hasSentMessage}
-				<div class="kbd-hint">Enter to send, Shift+Enter for newline</div>
-			{/if}
-			{#if hasAssistantMessages}
-				<button
-					class="distill-btn"
-					disabled={session.thinking || distilling}
-					onclick={handleDistillAndSave}
-				>
-					{#if distilling}
-						<Loader2 class="h-3.5 w-3.5 animate-spin" />
-						<span>Distilling...</span>
-					{:else}
-						<FilePlus class="h-3.5 w-3.5" />
-						<span>Save conversation as note</span>
-					{/if}
-				</button>
-			{/if}
 		</div>
 	</aside>
 </div>
@@ -1557,27 +1670,31 @@
 <style>
 	/* --- Wrapper --- */
 	.agent-pane-wrapper {
+		position: relative;
 		display: flex;
 		height: 100%;
 		flex-shrink: 0;
 		transition: opacity 0.1s;
 	}
 
+	/* Invisible grab strip straddling the border; accent line on hover/drag */
 	.resize-handle {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		left: -3px;
+		z-index: 31;
 		width: 6px;
-		cursor: col-resize;
 		display: flex;
-		align-items: center;
 		justify-content: center;
-		flex-shrink: 0;
+		cursor: col-resize;
 	}
 
 	.resize-bar {
 		width: 2px;
 		height: 100%;
-		border-radius: 999px;
-		transition: background-color 0.15s;
 		background: transparent;
+		transition: background-color 0.15s;
 	}
 
 	.resize-handle:hover .resize-bar,
@@ -1587,785 +1704,763 @@
 
 	/* --- Pane --- */
 	.agent-pane {
+		position: relative;
+		z-index: 30;
+		display: flex;
 		flex: 1;
+		flex-direction: column;
 		min-width: 0;
 		height: 100%;
-		display: flex;
-		flex-direction: column;
-		background: var(--color-bg);
 		border-left: 1px solid var(--color-border);
-		z-index: 30;
-		animation: slideIn 0.2s ease-out;
-		position: relative;
+		background: var(--color-bg);
+		animation: paneIn 160ms var(--ease-out);
 	}
 
-	@keyframes slideIn {
-		from { transform: translateX(100%); opacity: 0; }
+	@keyframes paneIn {
+		from { transform: translateX(12px); opacity: 0; }
 		to { transform: translateX(0); opacity: 1; }
 	}
 
 	/* --- Header --- */
 	.pane-header {
+		position: relative;
 		display: flex;
+		flex-shrink: 0;
 		justify-content: space-between;
 		align-items: center;
-		padding: 0.625rem 0.875rem;
+		gap: 0.5rem;
+		height: 2.75rem;
+		padding: 0 0.5rem 0 0.875rem;
 		border-bottom: 1px solid var(--color-border);
-		background: var(--color-bg-secondary);
 	}
 
 	.pane-title {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
-		font-size: 0.875rem;
+		gap: 0.25rem;
+		min-width: 0;
+	}
+
+	.pane-name {
+		font-size: 0.8125rem;
 		font-weight: 600;
 		color: var(--color-text);
+	}
+
+	.model-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.1875rem;
+		min-width: 0;
+		height: 1.5rem;
+		padding: 0 0.375rem;
+		border-radius: var(--radius-sm);
+		font-size: 0.75rem;
+		color: var(--color-text-faint);
+		white-space: nowrap;
+	}
+
+	.model-chip:hover,
+	.model-chip.open {
+		background: var(--color-hover);
+		color: var(--color-text-muted);
 	}
 
 	.pane-actions {
 		display: flex;
 		align-items: center;
-		gap: 0.25rem;
+		gap: 0.125rem;
 	}
 
-	.pane-btn {
-		background: none;
-		border: none;
-		padding: 0.375rem;
-		border-radius: 0.375rem;
-		cursor: pointer;
-		color: var(--color-text-muted);
-	}
-
-	.pane-btn:hover {
-		background: var(--color-border);
+	.pane-actions .k-icon-btn.active {
+		background: var(--color-hover);
 		color: var(--color-text);
 	}
 
-	/* --- Token budget bar --- */
+	.confirm-reset {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+	}
+
+	.confirm-label {
+		margin-right: 0.25rem;
+		font-size: 0.75rem;
+		color: var(--color-text-muted);
+		white-space: nowrap;
+	}
+
+	/* --- Token budget hairline --- */
 	.token-bar {
-		height: 2px;
-		background: var(--color-border);
-		flex-shrink: 0;
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: -1px;
+		height: 1px;
+		pointer-events: auto;
 	}
 
 	.token-fill {
 		height: 100%;
 		background: var(--color-accent);
+		opacity: 0.6;
 		transition: width 0.3s;
 	}
 
 	.token-fill.warn {
-		background: #f59e0b;
+		background: #df8e1d;
+		opacity: 0.8;
 	}
 
 	.token-fill.danger {
-		background: #ef4444;
+		background: var(--color-danger);
+		opacity: 1;
 	}
 
-	/* --- Confirm reset --- */
-	.confirm-reset {
-		display: flex;
-		align-items: center;
-		gap: 0.375rem;
-		font-size: 0.6875rem;
+	/* --- Header menus --- */
+	.menu-scrim {
+		position: absolute;
+		inset: 0;
+		z-index: 39;
 	}
 
-	.confirm-label { color: var(--color-text-muted); }
-
-	.confirm-btn {
-		padding: 0.125rem 0.5rem;
-		border-radius: 0.25rem;
-		border: 1px solid var(--color-border);
-		font-size: 0.6875rem;
-		cursor: pointer;
-		background: var(--color-bg);
-		color: var(--color-text-muted);
+	.header-menu {
+		position: absolute;
+		top: 2.625rem;
+		right: 0.5rem;
+		z-index: 40;
+		width: 15rem;
+		max-width: calc(100% - 1rem);
 	}
 
-	.confirm-btn.yes { border-color: var(--color-accent); color: var(--color-accent); }
-	.confirm-btn.yes:hover { background: var(--color-accent); color: white; }
-	.confirm-btn.no:hover { background: var(--color-border); color: var(--color-text); }
-
-	/* --- History dropdown --- */
-	.history-dropdown {
-		border-bottom: 1px solid var(--color-border);
-		background: var(--color-bg-secondary);
-		max-height: 300px;
-		display: flex;
-		flex-direction: column;
-		animation: slideDown 0.15s ease-out;
+	.header-menu.left {
+		left: 0.5rem;
+		right: auto;
 	}
 
-	@keyframes slideDown {
-		from { opacity: 0; transform: translateY(-8px); }
-		to { opacity: 1; transform: translateY(0); }
+	.header-menu :global(.menu-icon) {
+		flex-shrink: 0;
+		color: var(--color-text-faint);
 	}
 
-	.history-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 0.5rem 0.75rem;
-		font-size: 0.6875rem;
-		font-weight: 600;
-		color: var(--color-text-muted);
-		text-transform: uppercase;
-		letter-spacing: 0.03em;
+	.header-menu .k-menu-item:disabled {
+		opacity: 0.45;
+		pointer-events: none;
+	}
+
+	.history-menu {
+		width: 20rem;
 	}
 
 	.history-empty {
-		padding: 1rem;
-		text-align: center;
-		font-size: 0.75rem;
+		padding: 0.75rem 0.5rem;
+		font-size: 0.8125rem;
 		color: var(--color-text-muted);
 	}
 
 	.history-list {
+		max-height: 18rem;
 		overflow-y: auto;
-		padding-bottom: 0.25rem;
+		overscroll-behavior: contain;
 	}
 
 	.history-item {
 		display: flex;
 		align-items: center;
-		padding: 0 0.375rem;
+		gap: 0.125rem;
+		padding-right: 0.25rem;
+		border-radius: var(--radius-sm);
+	}
+
+	.history-item:hover {
+		background: var(--color-hover);
 	}
 
 	.history-item.active {
-		background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+		background: var(--color-active, var(--color-hover));
 	}
 
 	.history-item-btn {
-		flex: 1;
-		min-width: 0;
 		display: flex;
+		flex: 1;
 		flex-direction: column;
-		gap: 0.125rem;
-		padding: 0.375rem;
-		border: none;
-		background: none;
-		cursor: pointer;
+		min-width: 0;
+		padding: 0.3125rem 0.5rem;
 		text-align: left;
-		border-radius: 0.25rem;
-	}
-
-	.history-item-btn:hover {
-		background: var(--color-border);
 	}
 
 	.history-item-title {
-		font-size: 0.75rem;
-		color: var(--color-text);
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+		font-size: 0.8125rem;
+		color: var(--color-text);
 	}
 
 	.history-item-meta {
-		font-size: 0.625rem;
-		color: var(--color-text-muted);
+		font-size: 0.6875rem;
+		color: var(--color-text-faint);
 	}
 
-	.history-delete-btn {
-		padding: 0.25rem;
-		border: none;
-		background: none;
-		border-radius: 0.25rem;
-		cursor: pointer;
-		color: var(--color-text-muted);
+	.history-item-action {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.5rem;
+		height: 1.5rem;
+		flex-shrink: 0;
+		border-radius: var(--radius-sm);
+		color: var(--color-text-faint);
 		opacity: 0;
-		transition: opacity 0.1s;
 	}
 
-	.history-item:hover .history-delete-btn {
+	.history-item:hover .history-item-action,
+	.history-item-action:focus-visible {
 		opacity: 1;
 	}
 
-	.history-delete-btn:hover {
-		color: #ef4444;
+	.history-item-action:hover {
+		background: var(--color-hover);
+		color: var(--color-text);
 	}
 
-	.history-edit-btn {
-		padding: 0.25rem;
-		border: none;
-		background: none;
-		border-radius: 0.25rem;
-		cursor: pointer;
-		color: var(--color-text-muted);
-		opacity: 0;
-		transition: opacity 0.1s;
-	}
-
-	.history-item:hover .history-edit-btn {
-		opacity: 1;
-	}
-
-	.history-edit-btn:hover {
-		color: var(--color-accent);
+	.history-item-action.danger:hover {
+		color: var(--color-danger);
 	}
 
 	.title-edit-input {
 		flex: 1;
-		padding: 0.375rem 0.5rem;
-		border: 1px solid var(--color-accent);
-		border-radius: 0.25rem;
-		background: var(--color-bg);
-		color: var(--color-text);
-		font-size: 0.75rem;
-		outline: none;
-		margin: 0.125rem 0.375rem;
-	}
-
-	/* --- Model picker --- */
-	.model-picker {
-		border-bottom: 1px solid var(--color-border);
-		background: var(--color-bg-secondary);
-		padding: 0.25rem;
-		animation: slideDown 0.15s ease-out;
-	}
-
-	.model-option {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		width: 100%;
-		padding: 0.375rem 0.625rem;
-		border: none;
-		background: none;
-		border-radius: 0.25rem;
-		font-size: 0.75rem;
-		color: var(--color-text-muted);
-		cursor: pointer;
-		text-align: left;
-	}
-
-	.model-option:hover {
-		background: var(--color-border);
-		color: var(--color-text);
-	}
-
-	.model-option.active {
-		color: var(--color-accent);
-		font-weight: 500;
+		height: 1.875rem;
+		margin: 0.125rem 0;
+		font-size: 0.8125rem;
 	}
 
 	/* --- Search bar --- */
 	.search-bar {
 		display: flex;
+		flex-shrink: 0;
 		align-items: center;
 		gap: 0.375rem;
-		padding: 0.375rem 0.75rem;
+		height: 2.25rem;
+		padding: 0 0.5rem 0 0.875rem;
 		border-bottom: 1px solid var(--color-border);
-		background: var(--color-bg-secondary);
-		animation: slideDown 0.15s ease-out;
 	}
 
 	.search-input {
 		flex: 1;
-		padding: 0.25rem 0;
+		min-width: 0;
 		border: none;
 		background: none;
+		font-size: 0.8125rem;
 		color: var(--color-text);
-		font-size: 0.75rem;
 		outline: none;
 	}
 
-	.search-clear {
-		padding: 0.125rem;
-		border: none;
-		background: none;
-		border-radius: 0.25rem;
-		cursor: pointer;
-		color: var(--color-text-muted);
-	}
-
-	.search-clear:hover {
-		color: var(--color-text);
+	.search-input::placeholder {
+		color: var(--color-text-faint);
 	}
 
 	.search-count {
-		font-size: 0.625rem;
-		color: var(--color-text-muted);
+		font-size: 0.6875rem;
+		color: var(--color-text-faint);
 		white-space: nowrap;
 	}
 
 	/* --- Search highlighting --- */
 	:global(.search-highlight) {
-		background: rgba(250, 204, 21, 0.4);
-		color: inherit;
-		padding: 0.0625rem 0.125rem;
+		padding: 0 0.125rem;
 		border-radius: 0.125rem;
-	}
-
-	/* --- Stream speed --- */
-	.stream-speed {
-		color: var(--color-accent);
-		font-weight: 500;
-	}
-
-	/* --- User message markdown --- */
-	.msg-body-user-md :global(.markdown-content) {
-		color: white;
-		font-size: 0.8125rem;
-		line-height: 1.5;
-	}
-
-	.msg-body-user-md :global(.markdown-content p) {
-		margin-bottom: 0.25em;
-	}
-
-	.msg-body-user-md :global(.markdown-content p:last-child) {
-		margin-bottom: 0;
-	}
-
-	.msg-body-user-md :global(.markdown-content a) {
-		color: rgba(255, 255, 255, 0.85);
-		text-decoration: underline;
-	}
-
-	.msg-body-user-md :global(.markdown-content code) {
-		background: rgba(255, 255, 255, 0.15);
-		color: white;
-	}
-
-	.msg-body-user-md :global(.markdown-content pre) {
-		background: rgba(0, 0, 0, 0.2);
-	}
-
-	.msg-body-user-md :global(.markdown-content pre code) {
-		background: none;
+		background: color-mix(in srgb, #df8e1d 30%, transparent);
+		color: inherit;
 	}
 
 	/* --- Saved note bar --- */
 	.saved-bar {
 		display: flex;
+		flex-shrink: 0;
 		align-items: center;
 		gap: 0.375rem;
-		padding: 0.375rem 0.75rem;
-		background: color-mix(in srgb, var(--color-accent) 10%, transparent);
-		border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 25%, transparent);
-		color: var(--color-accent);
-		font-size: 0.75rem;
-		animation: slideDown 0.2s ease-out;
+		margin: 0.5rem 0.75rem 0;
+		padding: 0.1875rem 0.25rem 0.1875rem 0.625rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		background: var(--color-bg);
+		box-shadow: var(--shadow-sm);
+		font-size: 0.8125rem;
+		color: var(--color-text);
+		animation: slideDownFadeIn 150ms var(--ease-out);
 	}
 
-	.saved-text { flex: 1; font-weight: 500; }
-
-	.saved-link {
-		display: flex;
-		align-items: center;
-		gap: 0.25rem;
-		padding: 0.125rem 0.375rem;
-		border-radius: 0.25rem;
-		border: none;
-		background: none;
-		color: var(--color-accent);
-		font-size: 0.6875rem;
-		font-weight: 600;
-		cursor: pointer;
+	.saved-text {
+		flex: 1;
+		min-width: 0;
 	}
-
-	.saved-link:hover {
-		background: color-mix(in srgb, var(--color-accent) 15%, transparent);
-	}
-
-	.saved-dismiss {
-		background: none;
-		border: none;
-		padding: 0.125rem;
-		border-radius: 0.25rem;
-		cursor: pointer;
-		color: var(--color-accent);
-		opacity: 0.6;
-	}
-
-	.saved-dismiss:hover { opacity: 1; }
 
 	/* --- Messages --- */
-	.messages {
-		flex: 1;
-		overflow-y: auto;
-		padding: 0.75rem;
+	.messages-wrap {
+		position: relative;
 		display: flex;
+		flex: 1;
+		min-height: 0;
+	}
+
+	.messages {
+		display: flex;
+		flex: 1;
 		flex-direction: column;
-		gap: 0.625rem;
+		gap: 1rem;
+		padding: 1rem 1rem 1.5rem;
+		overflow-y: auto;
+		overscroll-behavior: contain;
 	}
 
 	/* --- Empty state --- */
 	.empty {
-		margin: auto;
-		text-align: center;
-		color: var(--color-text-muted);
-		font-size: 0.8125rem;
-		padding: 2rem 1rem;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 0.5rem;
+		gap: 0.375rem;
+		margin: auto;
+		padding: 2rem 0.5rem;
+		text-align: center;
+		font-size: 0.8125rem;
+		color: var(--color-text-muted);
+	}
+
+	.empty-title {
+		margin-top: 0.25rem;
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: var(--color-text);
 	}
 
 	.empty .hint {
+		max-width: 17rem;
 		font-size: 0.75rem;
-		opacity: 0.75;
-		max-width: 18rem;
+		color: var(--color-text-faint);
 	}
 
 	.starters {
 		display: flex;
-		flex-wrap: wrap;
-		justify-content: center;
-		gap: 0.375rem;
-		margin-top: 0.5rem;
-		max-width: 20rem;
+		flex-direction: column;
+		align-items: stretch;
+		width: 100%;
+		max-width: 17rem;
+		margin-top: 0.75rem;
 	}
 
-	.starter-chip {
-		padding: 0.25rem 0.625rem;
-		border: 1px solid var(--color-border);
-		border-radius: 999px;
-		background: var(--color-bg);
+	.starter {
+		padding: 0.375rem 0.625rem;
+		border-radius: var(--radius-md);
+		font-size: 0.8125rem;
 		color: var(--color-text-muted);
-		font-size: 0.6875rem;
-		cursor: pointer;
-		transition: border-color 0.15s, color 0.15s;
+		text-align: left;
 	}
 
-	.starter-chip:hover {
-		border-color: var(--color-accent);
-		color: var(--color-accent);
+	.starter:hover,
+	.starter:focus-visible {
+		background: var(--color-hover);
+		color: var(--color-text);
+		outline: none;
 	}
 
-	/* --- Message bubbles --- */
+	/* --- Messages: user = quiet block, assistant = plain text --- */
 	.msg {
 		display: flex;
-		gap: 0.5rem;
-		align-items: flex-start;
+		flex-direction: column;
+		gap: 0.125rem;
+		min-width: 0;
 	}
 
-	.msg-user { flex-direction: row-reverse; }
-
-	.msg-avatar {
-		width: 1.5rem;
-		height: 1.5rem;
-		border-radius: 50%;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex-shrink: 0;
-		background: var(--color-bg-secondary);
-		color: var(--color-text-muted);
-	}
-
-	.msg-avatar.assistant {
-		background: color-mix(in srgb, var(--color-accent) 15%, transparent);
-		color: var(--color-accent);
-	}
-
-	.msg-user .msg-avatar {
-		background: var(--color-accent);
-		color: white;
-	}
-
-	.msg-body {
-		max-width: 85%;
+	.user-block {
 		padding: 0.5rem 0.75rem;
-		border-radius: 0.75rem;
-		font-size: 0.8125rem;
-		line-height: 1.5;
-	}
-
-	.msg-user .msg-body {
-		background: var(--color-accent);
-		color: white;
-		border-bottom-right-radius: 0.25rem;
-		white-space: pre-wrap;
-	}
-
-	.msg-assistant .msg-body {
-		background: var(--color-bg-secondary);
+		border-radius: var(--radius-md);
+		background: var(--color-hover);
+		font-size: 0.875rem;
+		line-height: 1.55;
 		color: var(--color-text);
-		border-bottom-left-radius: 0.25rem;
+		overflow-wrap: anywhere;
 	}
 
-	/* --- User message images --- */
+	.assistant-body {
+		font-size: 0.875rem;
+		line-height: 1.6;
+		color: var(--color-text);
+		overflow-wrap: anywhere;
+	}
+
+	.user-block :global(.markdown-content),
+	.assistant-body :global(.markdown-content) {
+		font-size: inherit;
+		line-height: inherit;
+	}
+
+	.user-block :global(.markdown-content p:last-child),
+	.assistant-body :global(.markdown-content p:last-child) {
+		margin-bottom: 0;
+	}
+
 	.msg-images {
 		display: flex;
+		flex-wrap: wrap;
 		gap: 0.25rem;
 		margin-top: 0.375rem;
-		flex-wrap: wrap;
 	}
 
 	.msg-image-thumb {
 		width: 3rem;
 		height: 3rem;
 		object-fit: cover;
-		border-radius: 0.375rem;
-		border: 1px solid rgba(255, 255, 255, 0.3);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
 	}
 
-	/* --- Timestamps & actions --- */
-	.msg-time {
-		font-size: 0.5625rem;
-		color: var(--color-text-muted);
-		opacity: 0.6;
-	}
-
-	.msg-time-user {
-		display: flex;
-		align-items: center;
-		gap: 0.375rem;
-		justify-content: flex-end;
-		margin-top: 0.25rem;
-		color: rgba(255, 255, 255, 0.6);
-	}
-
-	.edit-msg-btn {
-		background: none;
-		border: none;
-		padding: 0.125rem;
-		border-radius: 0.125rem;
-		cursor: pointer;
-		color: rgba(255, 255, 255, 0.4);
-		opacity: 0;
-		transition: opacity 0.15s;
-	}
-
-	.msg-body:hover .edit-msg-btn {
-		opacity: 1;
-	}
-
-	.edit-msg-btn:hover {
-		color: white;
-	}
-
+	/* --- Timestamps & hover actions --- */
 	.msg-footer {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
-		margin-top: 0.375rem;
+		gap: 0.25rem;
+		min-height: 1.375rem;
+	}
+
+	.msg-footer.user {
+		flex-direction: row-reverse;
+		justify-content: flex-start;
+		padding: 0 0.25rem;
+	}
+
+	.msg-time {
+		font-size: 0.6875rem;
+		color: var(--color-text-faint);
+		opacity: 0;
+		transition: opacity 0.12s;
+	}
+
+	.stream-speed {
+		font-variant-numeric: tabular-nums;
 	}
 
 	.msg-actions {
 		display: flex;
-		gap: 0.25rem;
+		gap: 0.125rem;
 		opacity: 0;
-		transition: opacity 0.15s;
+		transition: opacity 0.12s;
 	}
 
-	.msg-body:hover .msg-actions { opacity: 1; }
+	.msg:hover .msg-actions,
+	.msg:hover .msg-time,
+	.msg-actions:focus-within {
+		opacity: 1;
+	}
+
+	/* Touch screens have no hover: keep the actions reachable */
+	@media (hover: none) {
+		.msg-actions,
+		.msg-time {
+			opacity: 1;
+		}
+	}
 
 	.msg-action-btn {
 		display: flex;
 		align-items: center;
-		padding: 0.125rem 0.25rem;
-		border: none;
-		border-radius: 0.25rem;
-		background: none;
-		color: var(--color-text-muted);
-		cursor: pointer;
-		transition: color 0.15s;
+		justify-content: center;
+		width: 1.375rem;
+		height: 1.375rem;
+		border-radius: var(--radius-sm);
+		color: var(--color-text-faint);
 	}
 
-	.msg-action-btn:hover { color: var(--color-accent); }
+	.msg-action-btn:hover {
+		background: var(--color-hover);
+		color: var(--color-text);
+	}
 
-	/* --- Edit bubble --- */
-	.edit-bubble {
-		max-width: 85%;
+	/* --- Edit box --- */
+	.edit-box {
 		display: flex;
 		flex-direction: column;
 		gap: 0.375rem;
 	}
 
 	.edit-textarea {
-		padding: 0.5rem 0.75rem;
-		border: 1px solid var(--color-accent);
-		border-radius: 0.5rem;
-		background: var(--color-bg);
-		color: var(--color-text);
-		font-size: 0.8125rem;
-		font-family: inherit;
+		min-height: 3.5rem;
+		font-size: 0.875rem;
 		resize: none;
-		outline: none;
-		line-height: 1.5;
 	}
 
 	.edit-actions {
 		display: flex;
-		gap: 0.375rem;
 		justify-content: flex-end;
+		gap: 0.25rem;
 	}
 
-	.edit-btn {
-		padding: 0.25rem 0.625rem;
-		border-radius: 0.375rem;
-		font-size: 0.6875rem;
-		cursor: pointer;
-		border: 1px solid var(--color-border);
-		background: var(--color-bg);
-		color: var(--color-text-muted);
-	}
-
-	.edit-btn.submit {
-		border-color: var(--color-accent);
-		background: var(--color-accent);
-		color: white;
-	}
-
-	.edit-btn.cancel:hover { background: var(--color-border); }
-	.edit-btn.submit:hover { opacity: 0.9; }
-
-	/* --- Tool cards --- */
+	/* --- Tool calls: compact faint status lines --- */
 	.msg-tool {
 		display: flex;
 		flex-direction: column;
-		gap: 0.375rem;
-		padding-left: 2rem;
-	}
-
-	.tool-card {
-		border: 1px solid var(--color-border);
-		border-radius: 0.375rem;
-		padding: 0.375rem 0.625rem;
-		font-size: 0.6875rem;
-		background: var(--color-bg-secondary);
-		cursor: pointer;
-		text-align: left;
-		width: 100%;
-		transition: border-color 0.15s;
-	}
-
-	.tool-card:hover { border-color: var(--color-accent); }
-
-	.tool-card.error {
-		border-color: rgba(239, 68, 68, 0.3);
-		background: rgba(239, 68, 68, 0.05);
+		gap: 0.0625rem;
+		margin: -0.375rem 0;
 	}
 
 	.tool-header {
 		display: flex;
 		align-items: center;
 		gap: 0.375rem;
+		max-width: 100%;
+		padding: 0.125rem 0.25rem;
+		margin-left: -0.25rem;
+		border-radius: var(--radius-sm);
+		font-size: 0.75rem;
+		color: var(--color-text-faint);
+		text-align: left;
+	}
+
+	.tool-header:hover {
 		color: var(--color-text-muted);
+		background: var(--color-hover);
+	}
+
+	.tool-header :global(.tool-chevron) {
+		opacity: 0;
+	}
+
+	.tool-header:hover :global(.tool-chevron),
+	.tool-header[aria-expanded='true'] :global(.tool-chevron) {
+		opacity: 1;
 	}
 
 	.tool-label {
-		flex: 1;
 		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 
+	.tool-line.error .tool-header {
+		color: var(--color-danger);
+	}
+
 	.tool-status {
-		font-size: 0.5625rem;
-		text-transform: uppercase;
-		padding: 0.0625rem 0.25rem;
-		border-radius: 999px;
-		background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-		color: var(--color-accent);
+		flex-shrink: 0;
+		font-size: 0.6875rem;
+	}
+
+	.tool-detail {
+		margin: 0.125rem 0 0.375rem 1.125rem;
+		padding-left: 0.625rem;
+		border-left: 1px solid var(--color-border);
 	}
 
 	.tool-links {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.25rem;
-		margin-top: 0.375rem;
+		margin-bottom: 0.375rem;
 	}
 
 	.tool-mem-link {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25rem;
-		padding: 0.125rem 0.375rem;
-		border-radius: 0.25rem;
-		background: color-mix(in srgb, var(--color-accent) 10%, transparent);
-		color: var(--color-accent);
-		font-size: 0.625rem;
+		padding: 0.0625rem 0.375rem;
+		border-radius: var(--radius-sm);
+		background: var(--color-hover);
+		font-size: 0.75rem;
+		color: var(--color-text);
 		text-decoration: none;
-		cursor: pointer;
 	}
 
 	.tool-mem-link:hover {
-		background: color-mix(in srgb, var(--color-accent) 20%, transparent);
+		background: var(--color-active, var(--color-hover));
+		color: var(--color-accent);
 	}
 
 	.tool-result {
-		margin-top: 0.375rem;
-		padding: 0.375rem 0.5rem;
-		border-radius: 0.25rem;
-		background: var(--color-bg);
-		border: 1px solid var(--color-border);
-		font-size: 0.625rem;
-		font-family: monospace;
+		max-height: 200px;
+		margin: 0;
+		overflow-y: auto;
+		font-family: var(--font-mono, ui-monospace, monospace);
+		font-size: 0.6875rem;
+		line-height: 1.5;
+		color: var(--color-text-muted);
 		white-space: pre-wrap;
 		word-break: break-word;
-		max-height: 200px;
-		overflow-y: auto;
-		color: var(--color-text-muted);
 	}
 
 	/* --- Thinking --- */
 	.thinking {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
-		padding: 0.625rem 0.875rem !important;
-		color: var(--color-text-muted);
-	}
-
-	.thinking-label {
-		font-size: 0.6875rem;
-		font-style: italic;
-	}
-
-	@keyframes bounce {
-		0%, 80%, 100% { transform: translateY(0); }
-		40% { transform: translateY(-6px); }
+		gap: 0.375rem;
+		font-size: 0.75rem;
+		color: var(--color-text-faint);
 	}
 
 	/* --- Error --- */
 	.error-bar {
 		padding: 0.5rem 0.75rem;
-		background: rgba(239, 68, 68, 0.1);
-		border: 1px solid rgba(239, 68, 68, 0.3);
-		border-radius: 0.375rem;
-		color: #ef4444;
-		font-size: 0.75rem;
+		border-radius: var(--radius-md);
+		background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+		font-size: 0.8125rem;
+		color: var(--color-danger);
 	}
 
 	/* --- Scroll to bottom --- */
 	.scroll-btn {
 		position: absolute;
-		bottom: 5.5rem;
+		bottom: 0.75rem;
 		left: 50%;
-		transform: translateX(-50%);
-		width: 2rem;
-		height: 2rem;
-		border-radius: 50%;
-		border: 1px solid var(--color-border);
-		background: var(--color-bg-secondary);
-		color: var(--color-text-muted);
+		z-index: 5;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		cursor: pointer;
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-		transition: color 0.15s, border-color 0.15s;
-		z-index: 5;
+		width: 1.75rem;
+		height: 1.75rem;
+		border: 1px solid var(--color-border);
+		border-radius: 999px;
+		background: var(--color-bg);
+		color: var(--color-text-muted);
+		box-shadow: var(--shadow-md);
+		transform: translateX(-50%);
 	}
 
 	.scroll-btn:hover {
-		border-color: var(--color-accent);
-		color: var(--color-accent);
+		color: var(--color-text);
+		background: var(--color-hover);
+	}
+
+	/* --- Composer --- */
+	.composer-area {
+		position: relative;
+		flex-shrink: 0;
+		padding: 0 0.75rem 0.75rem;
+		padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+	}
+
+	.composer {
+		display: flex;
+		flex-direction: column;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		background: var(--color-bg);
+		box-shadow: var(--shadow-sm);
+		transition:
+			border-color 120ms var(--ease-out),
+			box-shadow 120ms var(--ease-out);
+	}
+
+	.composer:focus-within {
+		border-color: color-mix(in srgb, var(--color-accent) 60%, var(--color-border));
+		box-shadow: 0 0 0 3px var(--color-accent-soft);
+	}
+
+	.composer.disabled {
+		background: var(--color-bg-secondary);
+	}
+
+	.chat-input {
+		width: 100%;
+		max-height: 120px;
+		padding: 0.625rem 0.75rem 0.25rem;
+		border: none;
+		background: transparent;
+		font-family: inherit;
+		font-size: 0.875rem;
+		line-height: 1.5;
+		color: var(--color-text);
+		outline: none;
+		resize: none;
+		overflow-y: auto;
+	}
+
+	.chat-input::placeholder {
+		color: var(--color-text-faint);
+	}
+
+	.chat-input:disabled {
+		cursor: not-allowed;
+	}
+
+	.composer-toolbar {
+		display: flex;
+		align-items: center;
+		gap: 0.375rem;
+		padding: 0.25rem 0.375rem 0.375rem;
+	}
+
+	.composer-hint {
+		display: flex;
+		flex: 1;
+		align-items: center;
+		gap: 0.25rem;
+		min-width: 0;
+		overflow: hidden;
+		white-space: nowrap;
+		font-size: 0.6875rem;
+		color: var(--color-text-faint);
+	}
+
+	@media (hover: none) {
+		.composer-hint .k-kbd {
+			display: none;
+		}
+	}
+
+	.voice-btn {
+		touch-action: none;
+	}
+
+	.voice-btn.recording {
+		background: var(--color-danger);
+		color: #fff;
+		animation: pulse 1.5s infinite;
+	}
+
+	@keyframes pulse {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.7; }
+	}
+
+	.send-btn {
+		display: flex;
+		flex-shrink: 0;
+		align-items: center;
+		justify-content: center;
+		width: 1.75rem;
+		height: 1.75rem;
+		border-radius: var(--radius-md);
+		background: var(--color-accent);
+		color: #fff;
+		transition: background-color 120ms var(--ease-out);
+	}
+
+	:global(:root.dark) .send-btn {
+		color: #1e1e2e;
+	}
+
+	@media (prefers-color-scheme: dark) {
+		:global(:root:not(.light)) .send-btn {
+			color: #1e1e2e;
+		}
+	}
+
+	.send-btn:hover:not(:disabled) {
+		background: var(--color-accent-hover);
+	}
+
+	.send-btn:disabled {
+		background: var(--color-hover);
+		color: var(--color-text-faint);
+		cursor: not-allowed;
 	}
 
 	/* --- Pending images --- */
 	.pending-images {
 		display: flex;
-		gap: 0.375rem;
 		flex-wrap: wrap;
+		gap: 0.375rem;
+		padding: 0.5rem 0.75rem 0;
 	}
 
 	.pending-img-wrap {
@@ -2373,199 +2468,86 @@
 	}
 
 	.pending-img {
-		width: 3.5rem;
-		height: 3.5rem;
+		width: 3rem;
+		height: 3rem;
 		object-fit: cover;
-		border-radius: 0.375rem;
 		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
 	}
 
 	.pending-img-remove {
 		position: absolute;
-		top: -4px;
-		right: -4px;
-		width: 1rem;
-		height: 1rem;
-		border-radius: 50%;
-		border: none;
-		background: #ef4444;
-		color: white;
+		top: -5px;
+		right: -5px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		cursor: pointer;
-		font-size: 0;
-	}
-
-	/* --- Autocomplete popup --- */
-	.ac-popup {
-		border-top: 1px solid var(--color-border);
-		background: var(--color-bg-secondary);
-		max-height: 200px;
-		overflow-y: auto;
-		animation: slideUp2 0.12s ease-out;
-	}
-
-	@keyframes slideUp2 {
-		from { opacity: 0; transform: translateY(4px); }
-		to { opacity: 1; transform: translateY(0); }
-	}
-
-	.ac-header {
-		padding: 0.25rem 0.625rem;
-		font-size: 0.5625rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
+		width: 1rem;
+		height: 1rem;
+		border: 1px solid var(--color-border);
+		border-radius: 50%;
+		background: var(--color-bg);
 		color: var(--color-text-muted);
-		opacity: 0.7;
+		box-shadow: var(--shadow-sm);
+	}
+
+	.pending-img-remove:hover {
+		color: var(--color-danger);
+	}
+
+	/* --- Autocomplete popup (floats above the composer) --- */
+	.ac-popup {
+		position: absolute;
+		left: 0.75rem;
+		right: 0.75rem;
+		bottom: calc(100% - 0.25rem);
+		z-index: 20;
+		max-height: 220px;
+		overflow-y: auto;
 	}
 
 	.ac-item {
-		display: flex;
-		align-items: center;
 		justify-content: space-between;
-		width: 100%;
-		padding: 0.375rem 0.625rem;
-		border: none;
-		background: none;
-		font-size: 0.75rem;
-		color: var(--color-text);
-		cursor: pointer;
-		text-align: left;
 	}
 
-	.ac-item:hover,
 	.ac-item.selected {
-		background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+		background: var(--color-hover);
 	}
 
 	.ac-label {
+		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		min-width: 0;
 	}
 
 	.ac-detail {
-		font-size: 0.625rem;
-		color: var(--color-text-muted);
 		flex-shrink: 0;
 		margin-left: 0.5rem;
+		font-size: 0.6875rem;
+		color: var(--color-text-faint);
 	}
 
-	/* --- Input area --- */
-	.input-area {
-		display: flex;
-		flex-direction: column;
-		gap: 0.375rem;
-		padding: 0.625rem;
-		border-top: 1px solid var(--color-border);
-		background: var(--color-bg-secondary);
-	}
-
-	.input-row {
-		display: flex;
-		gap: 0.375rem;
-		align-items: flex-end;
-	}
-
-	.chat-input {
-		flex: 1;
-		padding: 0.5rem 0.75rem;
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		background: var(--color-bg);
-		color: var(--color-text);
-		font-size: 0.8125rem;
-		font-family: inherit;
-		outline: none;
-		resize: none;
-		line-height: 1.5;
-		max-height: 120px;
-		overflow-y: auto;
-	}
-
-	.chat-input:focus { border-color: var(--color-accent); }
-
-	.send-btn {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 2.25rem;
-		height: 2.25rem;
-		border-radius: 0.5rem;
-		background: var(--color-accent);
-		color: white;
-		border: none;
-		cursor: pointer;
-		flex-shrink: 0;
-		transition: background 0.15s;
-	}
-
-	.send-btn:hover:not(:disabled) { background: var(--color-accent-hover); }
-	.send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-	/* --- Voice button --- */
-	.voice-btn {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 2.25rem;
-		height: 2.25rem;
-		border-radius: 0.5rem;
-		border: 1px solid var(--color-border);
-		background: var(--color-bg);
-		color: var(--color-text-muted);
-		cursor: pointer;
-		flex-shrink: 0;
-		transition: all 0.15s;
-	}
-
-	.voice-btn:hover:not(:disabled) { border-color: var(--color-accent); color: var(--color-accent); }
-	.voice-btn.recording { background: #ef4444; border-color: #ef4444; color: white; animation: pulse 1.5s infinite; }
-	.voice-btn.transcribing { border-color: var(--color-accent); color: var(--color-accent); }
-	.voice-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-	@keyframes pulse {
-		0%, 100% { opacity: 1; }
-		50% { opacity: 0.7; }
-	}
-
-	/* --- Kbd hint --- */
-	.kbd-hint {
-		text-align: center;
-		font-size: 0.625rem;
-		color: var(--color-text-muted);
-		opacity: 0.5;
-	}
-
-	/* --- Distill button --- */
-	.distill-btn {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 0.375rem;
-		padding: 0.375rem 0.75rem;
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		background: var(--color-bg);
-		color: var(--color-text-muted);
-		font-size: 0.75rem;
-		cursor: pointer;
-		transition: border-color 0.15s, color 0.15s;
-	}
-
-	.distill-btn:hover:not(:disabled) { border-color: var(--color-accent); color: var(--color-accent); }
-	.distill-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-	/* --- Mobile --- */
+	/* --- Mobile: full-screen sheet --- */
 	@media (max-width: 768px) {
 		.agent-pane-wrapper {
-			width: 100% !important;
 			position: fixed;
 			inset: 0;
 			z-index: 50;
+			width: 100% !important;
+		}
+
+		.agent-pane {
+			border-left: none;
+		}
+
+		.pane-header {
+			height: calc(2.75rem + env(safe-area-inset-top, 0px));
+			padding-top: env(safe-area-inset-top, 0px);
+		}
+
+		.header-menu {
+			top: calc(2.625rem + env(safe-area-inset-top, 0px));
 		}
 	}
 </style>

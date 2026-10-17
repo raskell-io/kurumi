@@ -10,4 +10,6 @@
 	});
 </script>
 
-<p class="p-4 text-sm text-[var(--color-text-muted)]">Loading today's note…</p>
+<div class="k-page">
+	<p class="text-sm text-[var(--color-text-faint)]">Loading today's note…</p>
+</div>

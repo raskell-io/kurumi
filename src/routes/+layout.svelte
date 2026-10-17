@@ -1089,7 +1089,9 @@
 			{/if}
 
 			<FocusTimer />
-			<div class="flex-1" class:overflow-hidden={!isReadMode} class:overflow-auto={isReadMode}>
+			<!-- Pages that manage their own scrolling (notes, graph, canvas) are
+			     h-full and never overflow this; everything else scrolls here. -->
+			<div class="min-h-0 flex-1 overflow-y-auto overscroll-contain">
 				{@render children()}
 			</div>
 		</main>

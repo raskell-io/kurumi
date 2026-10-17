@@ -2,7 +2,7 @@
 	import { gitSyncState, clearGitConflicts, type MemoryConflict } from '$lib/git';
 	import { updateMemoryObject } from '$lib/db';
 	import { sync } from '$lib/sync';
-	import { AlertTriangle, X, Check, ArrowLeft, ArrowRight } from 'lucide-svelte';
+	import { X, Check, ChevronLeft, ChevronRight } from 'lucide-svelte';
 
 	interface Props {
 		onClose?: () => void;
@@ -48,40 +48,67 @@
 		// Let the user come back later: close without resolving.
 		onClose?.();
 	}
+
+	// Move focus into the dialog on open (no default choice: picking a side
+	// overwrites the other, so Enter shouldn't do it by accident).
+	let panelRef: HTMLDivElement | undefined = $state();
+	$effect(() => {
+		panelRef?.focus();
+	});
+
+	function handleKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape' && current) {
+			e.preventDefault();
+			skip();
+		}
+	}
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 {#if current}
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-	<div class="backdrop" onclick={skip} role="dialog" aria-modal="true" tabindex="-1">
-		<div class="modal" onclick={(e) => e.stopPropagation()} role="document">
+	<div
+		class="k-dialog-backdrop conflict-backdrop"
+		onclick={skip}
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="git-conflict-title"
+		tabindex="-1"
+	>
+		<div
+			class="k-dialog modal"
+			bind:this={panelRef}
+			onclick={(e) => e.stopPropagation()}
+			role="document"
+			tabindex="-1"
+		>
 			<div class="header">
-				<div class="title">
-					<AlertTriangle class="h-5 w-5 text-yellow-500" />
-					<h3>Sync conflict {currentIndex + 1} of {remaining}</h3>
+				<div class="min-w-0">
+					<h2 id="git-conflict-title">
+						Sync conflict
+						{#if remaining > 1}<span class="count">{currentIndex + 1} of {remaining}</span>{/if}
+					</h2>
+					<p class="intro">
+						<strong>{current.title}</strong> changed on this device and on the remote since the
+						last sync. Keep one version — the other is overwritten.
+					</p>
 				</div>
-				<button class="close" onclick={skip} aria-label="Close">
+				<button type="button" class="k-icon-btn" onclick={skip} aria-label="Close">
 					<X class="h-4 w-4" />
 				</button>
-			</div>
-
-			<div class="intro">
-				<p>
-					<strong>{current.title}</strong> was edited on both this device and
-					another since the last sync. Pick which version to keep — the other
-					will be overwritten.
-				</p>
 			</div>
 
 			<div class="diff">
 				<div class="side">
 					<div class="side-header">
-						<span class="label">Local</span>
+						<span class="label">This device</span>
 						<span class="time">{formatTime(current.localUpdatedAt)}</span>
 					</div>
 					<pre class="body">{current.localBody || '(empty)'}</pre>
-					<button class="accept-btn" onclick={acceptLocal}>
-						<Check class="h-4 w-4" />
+					<button type="button" class="k-btn" onclick={acceptLocal}>
+						<Check class="h-3.5 w-3.5" />
 						Keep local
 					</button>
 				</div>
@@ -91,103 +118,110 @@
 						<span class="time">{formatTime(current.remoteUpdatedAt)}</span>
 					</div>
 					<pre class="body">{current.remoteBody || '(empty)'}</pre>
-					<button class="accept-btn" onclick={acceptRemote}>
-						<Check class="h-4 w-4" />
+					<button type="button" class="k-btn" onclick={acceptRemote}>
+						<Check class="h-3.5 w-3.5" />
 						Keep remote
 					</button>
 				</div>
 			</div>
 
-			{#if conflicts.length > 1}
-				<div class="nav">
-					<button
-						class="nav-btn"
-						disabled={currentIndex === 0}
-						onclick={() => currentIndex--}
-					>
-						<ArrowLeft class="h-4 w-4" />
-						Previous
-					</button>
-					<span class="progress">{currentIndex + 1} / {conflicts.length}</span>
-					<button
-						class="nav-btn"
-						disabled={currentIndex === conflicts.length - 1}
-						onclick={() => currentIndex++}
-					>
-						Next
-						<ArrowRight class="h-4 w-4" />
-					</button>
-				</div>
-			{/if}
+			<div class="footer">
+				{#if conflicts.length > 1}
+					<div class="flex items-center gap-1">
+						<button
+							type="button"
+							class="k-icon-btn"
+							disabled={currentIndex === 0}
+							onclick={() => currentIndex--}
+							aria-label="Previous conflict"
+						>
+							<ChevronLeft class="h-4 w-4" />
+						</button>
+						<span class="progress">{currentIndex + 1} / {conflicts.length}</span>
+						<button
+							type="button"
+							class="k-icon-btn"
+							disabled={currentIndex === conflicts.length - 1}
+							onclick={() => currentIndex++}
+							aria-label="Next conflict"
+						>
+							<ChevronRight class="h-4 w-4" />
+						</button>
+					</div>
+				{:else}
+					<span></span>
+				{/if}
+				<button type="button" class="k-btn k-btn-ghost" onclick={skip}>Decide later</button>
+			</div>
 		</div>
 	</div>
 {/if}
 
 <style>
-	.backdrop {
-		position: fixed;
-		inset: 0;
-		background: rgba(0, 0, 0, 0.6);
-		display: flex;
-		align-items: center;
-		justify-content: center;
+	.conflict-backdrop {
 		z-index: 200;
-		padding: 1rem;
+	}
+
+	@media (min-width: 768px) {
+		.conflict-backdrop {
+			align-items: center;
+			padding-top: 1rem;
+		}
 	}
 
 	.modal {
-		background: var(--color-bg);
-		border: 1px solid var(--color-border);
-		border-radius: 0.75rem;
-		max-width: 960px;
-		width: 100%;
-		max-height: 90vh;
 		display: flex;
 		flex-direction: column;
-		box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+		max-width: 60rem;
+		max-height: 90vh;
+		overflow: hidden;
+	}
+
+	.modal:focus {
+		outline: none;
 	}
 
 	.header {
 		display: flex;
 		justify-content: space-between;
-		align-items: center;
-		padding: 1rem 1.25rem;
+		align-items: flex-start;
+		gap: 0.75rem;
+		padding: 0.875rem 0.75rem 0.875rem 1rem;
 		border-bottom: 1px solid var(--color-border);
 	}
 
-	.title {
+	.header h2 {
 		display: flex;
-		align-items: center;
-		gap: 0.625rem;
-	}
-
-	.title h3 {
-		font-size: 1.125rem;
+		align-items: baseline;
+		gap: 0.5rem;
+		font-size: 0.875rem;
 		font-weight: 600;
 		color: var(--color-text);
 	}
 
-	.close {
-		background: none;
-		border: none;
-		padding: 0.25rem;
-		cursor: pointer;
-		color: var(--color-text-muted);
+	.count {
+		font-size: 0.75rem;
+		font-weight: 400;
+		color: var(--color-text-faint);
 	}
 
 	.intro {
-		padding: 0.875rem 1.25rem;
-		border-bottom: 1px solid var(--color-border);
-		color: var(--color-text);
-		font-size: 0.875rem;
+		margin-top: 0.25rem;
+		font-size: 0.8125rem;
 		line-height: 1.5;
+		color: var(--color-text-muted);
+	}
+
+	.intro strong {
+		font-weight: 500;
+		color: var(--color-text);
 	}
 
 	.diff {
 		display: grid;
 		grid-template-columns: 1fr 1fr;
 		gap: 1rem;
-		padding: 1.25rem;
+		padding: 1rem;
 		overflow: auto;
 	}
 
@@ -200,105 +234,61 @@
 	.side {
 		display: flex;
 		flex-direction: column;
-		gap: 0.625rem;
-		background: var(--color-bg-secondary);
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		padding: 0.875rem;
+		gap: 0.5rem;
+		min-width: 0;
 	}
 
 	.side-header {
 		display: flex;
 		justify-content: space-between;
-		align-items: center;
+		align-items: baseline;
 		gap: 0.5rem;
+		padding: 0 0.125rem;
 	}
 
 	.label {
 		font-size: 0.75rem;
 		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--color-accent);
+		color: var(--color-text);
 	}
 
 	.time {
 		font-size: 0.75rem;
-		color: var(--color-text-muted);
+		color: var(--color-text-faint);
 	}
 
 	.body {
 		flex: 1;
 		min-height: 12rem;
 		max-height: 24rem;
+		margin: 0;
 		overflow: auto;
-		background: var(--color-bg);
-		border: 1px solid var(--color-border);
-		border-radius: 0.375rem;
 		padding: 0.75rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		background: var(--color-bg-secondary);
 		color: var(--color-text);
-		font-family: ui-monospace, monospace;
+		font-family: var(--font-mono, ui-monospace, monospace);
 		font-size: 0.8125rem;
 		line-height: 1.5;
 		white-space: pre-wrap;
 		word-wrap: break-word;
-		margin: 0;
 	}
 
-	.accept-btn {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		gap: 0.375rem;
-		padding: 0.5rem 1rem;
-		background: var(--color-accent);
-		color: white;
-		border: none;
-		border-radius: 0.375rem;
-		font-size: 0.875rem;
-		font-weight: 500;
-		cursor: pointer;
-		transition: background 0.15s;
-	}
-
-	.accept-btn:hover {
-		background: var(--color-accent-hover);
-	}
-
-	.nav {
+	.footer {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
 		gap: 0.75rem;
-		padding: 0.875rem 1.25rem;
+		padding: 0.625rem 0.75rem;
 		border-top: 1px solid var(--color-border);
 	}
 
-	.nav-btn {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
-		padding: 0.4375rem 0.875rem;
-		background: transparent;
-		border: 1px solid var(--color-border);
-		border-radius: 0.375rem;
-		color: var(--color-text);
-		font-size: 0.8125rem;
-		cursor: pointer;
-		transition: background 0.15s;
-	}
-
-	.nav-btn:hover:not(:disabled) {
-		background: var(--color-bg-secondary);
-	}
-
-	.nav-btn:disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
-	}
-
 	.progress {
-		color: var(--color-text-muted);
+		min-width: 2.5rem;
+		text-align: center;
 		font-size: 0.75rem;
+		color: var(--color-text-faint);
+		font-variant-numeric: tabular-nums;
 	}
 </style>

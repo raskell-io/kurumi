@@ -50,6 +50,19 @@
 		);
 	});
 
+	// Keep the cursor in range as the filter narrows
+	$effect(() => {
+		void searchQuery;
+		selectedIndex = 0;
+	});
+
+	// Keep the keyboard-selected row in view
+	let listRef: HTMLDivElement | undefined = $state();
+	$effect(() => {
+		const el = listRef?.querySelector(`[data-index="${selectedIndex}"]`);
+		el?.scrollIntoView({ block: 'nearest' });
+	});
+
 	// Focus search input when opened
 	$effect(() => {
 		if (open && searchInput) {
@@ -156,89 +169,89 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
-		class="fixed inset-0 z-50 flex items-start justify-center bg-black/40 backdrop-blur-[2px] pt-[15vh]"
+		class="k-dialog-backdrop"
 		onclick={handleBackdropClick}
 		role="dialog"
 		aria-modal="true"
+		aria-label={showTitlePrompt ? 'Name the new note' : 'New note from template'}
 		tabindex="-1"
 	>
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div
-			class="w-full max-w-lg rounded-xl bg-[var(--color-bg)] shadow-2xl"
-			onclick={(e) => e.stopPropagation()}
-		>
+		<div class="k-dialog flex !max-w-lg flex-col !overflow-hidden" onclick={(e) => e.stopPropagation()}>
 			{#if showTitlePrompt && selectedTemplate}
 				<!-- Title prompt -->
-				<div class="p-4">
-					<div class="mb-4 flex items-center justify-between">
-						<h2 class="text-lg font-semibold text-[var(--color-text)]">Enter note title</h2>
-						<button
-							onclick={() => {
-								showTitlePrompt = false;
-								selectedTemplate = null;
-							}}
-							class="rounded p-1 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
-						>
-							<X class="h-5 w-5" />
-						</button>
-					</div>
-					<p class="mb-3 text-sm text-[var(--color-text-muted)]">
-						The template "{selectedTemplate.name}" uses a title variable.
+				<div class="flex items-center justify-between gap-2 px-4 pt-3.5 pb-1">
+					<h2 class="text-sm font-semibold text-[var(--color-text)]">Name your note</h2>
+					<button
+						type="button"
+						onclick={() => {
+							showTitlePrompt = false;
+							selectedTemplate = null;
+						}}
+						class="k-icon-btn"
+						aria-label="Back to templates"
+					>
+						<X class="h-4 w-4" />
+					</button>
+				</div>
+				<div class="px-4 pb-4">
+					<p class="mb-3 text-xs text-[var(--color-text-muted)]">
+						“{selectedTemplate.name}” uses the note title in its body.
 					</p>
 					<input
 						bind:this={titleInput}
 						type="text"
 						bind:value={noteTitle}
 						placeholder="Note title"
-						class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:border-[var(--color-accent)] focus:outline-none"
+						aria-label="Note title"
+						class="k-input"
 					/>
-					<div class="mt-4 flex justify-end gap-2">
-						<button
-							onclick={() => {
-								showTitlePrompt = false;
-								selectedTemplate = null;
-							}}
-							class="rounded-lg px-3 py-2 text-sm text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-hover)]"
-						>
-							Cancel
-						</button>
-						<button
-							onclick={handleTitleSubmit}
-							disabled={!noteTitle.trim()}
-							class="rounded-lg bg-[var(--color-accent)] px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-[var(--color-accent-hover)] disabled:cursor-not-allowed disabled:opacity-50"
-						>
-							Create Note
-						</button>
-					</div>
+				</div>
+				<div class="flex justify-end gap-2 border-t border-[var(--color-border)] px-4 py-3">
+					<button
+						type="button"
+						onclick={() => {
+							showTitlePrompt = false;
+							selectedTemplate = null;
+						}}
+						class="k-btn k-btn-ghost"
+					>
+						Back
+					</button>
+					<button
+						type="button"
+						onclick={handleTitleSubmit}
+						disabled={!noteTitle.trim()}
+						class="k-btn k-btn-primary"
+					>
+						Create note
+					</button>
 				</div>
 			{:else}
 				<!-- Template picker -->
-				<div class="border-b border-[var(--color-border)] p-3">
-					<div class="flex items-center gap-2">
-						<Search class="h-5 w-5 text-[var(--color-text-muted)]" />
-						<input
-							bind:this={searchInput}
-							type="text"
-							bind:value={searchQuery}
-							placeholder="Search templates..."
-							class="flex-1 bg-transparent text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:outline-none"
-						/>
-						<button
-							onclick={onClose}
-							class="rounded p-1 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
-						>
-							<X class="h-5 w-5" />
-						</button>
-					</div>
+				<div class="flex items-center gap-3 border-b border-[var(--color-border)] px-4">
+					<Search class="h-4 w-4 shrink-0 text-[var(--color-text-faint)]" />
+					<input
+						bind:this={searchInput}
+						type="text"
+						bind:value={searchQuery}
+						placeholder="Search templates…"
+						aria-label="Search templates"
+						class="picker-input h-12 flex-1 bg-transparent text-[0.9375rem] text-[var(--color-text)] placeholder-[var(--color-text-faint)]"
+					/>
+					<button type="button" onclick={onClose} class="k-icon-btn" aria-label="Close">
+						<X class="h-4 w-4" />
+					</button>
 				</div>
 
-				<div class="max-h-80 overflow-y-auto p-2">
+				<div class="max-h-80 overflow-y-auto overscroll-contain p-1.5" bind:this={listRef}>
 					{#if filteredTemplates.length === 0}
-						<div class="p-4 text-center text-sm text-[var(--color-text-muted)]">
+						<div class="px-4 py-8 text-center text-sm text-[var(--color-text-muted)]">
 							{#if templatesData.length === 0}
 								No templates yet. <a
 									href="/templates"
+									onclick={onClose}
 									class="text-[var(--color-accent)] hover:underline">Create one</a
 								>
 							{:else}
@@ -248,39 +261,48 @@
 					{:else}
 						{#each filteredTemplates as template, i (template.id)}
 							<button
+								type="button"
+								data-index={i}
 								onclick={() => handleTemplateSelect(template)}
-								class="flex w-full items-start gap-3 rounded-lg p-3 text-left transition-colors {i ===
-								selectedIndex
-									? 'bg-[var(--color-accent)]/10'
-									: 'hover:bg-[var(--color-bg-secondary)]'}"
+								onmousemove={() => { if (selectedIndex !== i) selectedIndex = i; }}
+								class="flex w-full items-center gap-3 rounded-[var(--radius-md)] px-2.5 py-2 text-left"
+								class:bg-[var(--color-hover)]={i === selectedIndex}
 							>
-								<FileText
-									class="mt-0.5 h-5 w-5 flex-shrink-0 {i === selectedIndex
-										? 'text-[var(--color-accent)]'
-										: 'text-[var(--color-text-muted)]'}"
-								/>
+								<FileText class="h-4 w-4 shrink-0 text-[var(--color-text-faint)]" />
 								<div class="min-w-0 flex-1">
-									<div class="font-medium text-[var(--color-text)]">{template.name}</div>
+									<div class="truncate text-sm text-[var(--color-text)]">{template.name}</div>
 									{#if template.description}
-										<div class="truncate text-sm text-[var(--color-text-muted)]">
+										<div class="truncate text-xs text-[var(--color-text-faint)]">
 											{template.description}
 										</div>
 									{/if}
 								</div>
+								{#if i === selectedIndex}
+									<span class="k-kbd hidden shrink-0 md:inline-flex">↵</span>
+								{/if}
 							</button>
 						{/each}
 					{/if}
 				</div>
 
 				<div
-					class="border-t border-[var(--color-border)] px-3 py-2 text-xs text-[var(--color-text-muted)]"
+					class="hidden items-center gap-4 border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-text-faint)] md:flex"
 				>
-					<span class="mr-3"><kbd class="rounded bg-[var(--color-border)] px-1">↑↓</kbd> Navigate</span
-					>
-					<span class="mr-3"><kbd class="rounded bg-[var(--color-border)] px-1">↵</kbd> Select</span>
-					<span><kbd class="rounded bg-[var(--color-border)] px-1">Esc</kbd> Close</span>
+					<span class="flex items-center gap-1.5"><span class="k-kbd">↑</span><span class="k-kbd">↓</span> navigate</span>
+					<span class="flex items-center gap-1.5"><span class="k-kbd">↵</span> select</span>
+					<span class="flex items-center gap-1.5"><span class="k-kbd">esc</span> close</span>
 				</div>
 			{/if}
 		</div>
 	</div>
 {/if}
+
+<style>
+	.picker-input,
+	.picker-input:focus,
+	.picker-input:focus-visible {
+		border: none;
+		outline: none;
+		box-shadow: none;
+	}
+</style>

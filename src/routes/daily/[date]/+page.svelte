@@ -16,4 +16,6 @@
 	});
 </script>
 
-<p class="p-4 text-sm text-[var(--color-text-muted)]">Opening daily note…</p>
+<div class="k-page">
+	<p class="text-sm text-[var(--color-text-faint)]">Opening daily note…</p>
+</div>

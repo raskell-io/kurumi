@@ -91,6 +91,16 @@
 		editingEventId = null;
 	}
 
+	function handleEditKeydown(e: KeyboardEvent, eventId: string) {
+		if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
+			e.preventDefault();
+			saveEdits(eventId);
+		} else if (e.key === 'Escape') {
+			e.preventDefault();
+			cancelEditing();
+		}
+	}
+
 	// Get first event for display
 	let primaryEvent = $derived(dateInfo.events[0] || null);
 	let eventTitle = $derived(primaryEvent?.title || '');
@@ -99,10 +109,8 @@
 </script>
 
 <li class="event-card" class:expanded>
-	<button class="card-header" onclick={onToggle}>
-		<div class="date-icon">
-			<Calendar class="h-4 w-4" />
-		</div>
+	<button class="card-header" onclick={onToggle} aria-expanded={expanded}>
+		<Calendar class="h-4 w-4 shrink-0 text-[var(--color-text-faint)]" />
 		<div class="date-info">
 			{#if showDate}
 				<span class="date-text">{formatDate(dateInfo.date)}</span>
@@ -111,13 +119,13 @@
 				<span class="event-title">{eventTitle}</span>
 			{/if}
 			{#if eventTime}
-				<span class="event-time">
+				<span class="event-meta-inline">
 					<Clock class="h-3 w-3" />
 					{eventTime}
 				</span>
 			{/if}
 			{#if eventLocation}
-				<span class="event-location">
+				<span class="event-meta-inline">
 					<MapPin class="h-3 w-3" />
 					{eventLocation}
 				</span>
@@ -130,61 +138,69 @@
 			>{dateInfo.mentioningMemories.length}
 			{dateInfo.mentioningMemories.length === 1 ? 'note' : 'notes'}</span
 		>
-		<ChevronRight class="chevron {expanded ? 'rotated' : ''}" />
+		<ChevronRight class="chevron h-4 w-4 shrink-0 text-[var(--color-text-faint)] {expanded ? 'expanded' : ''}" />
 	</button>
 
 	{#if expanded}
 		<div class="card-content">
 			<!-- Events Section -->
 			{#if dateInfo.events.length > 0}
-				<div class="events-section">
-					<h4>Events</h4>
+				<div class="content-section">
+					<h4 class="content-label">Events</h4>
 					{#each dateInfo.events as event (event.id)}
 						<div class="event-detail">
 							{#if editingEventId === event.id}
 								<!-- Edit Mode -->
-								<div class="edit-form">
+								<!-- svelte-ignore a11y_no_static_element_interactions -->
+								<div class="edit-form" onkeydown={(e) => handleEditKeydown(e, event.id)}>
 									<input
 										type="text"
 										placeholder="Event title"
 										bind:value={editTitle}
-										class="edit-input"
+										class="k-input"
+										aria-label="Event title"
 									/>
 									<div class="edit-row">
-										<Clock class="field-icon" />
+										<Clock class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)]" />
 										<input
 											type="text"
 											placeholder="Time (e.g., 14:00)"
 											bind:value={editTime}
-											class="edit-input"
+											class="k-input"
+											aria-label="Time"
 										/>
 									</div>
 									<div class="edit-row">
-										<MapPin class="field-icon" />
+										<MapPin class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)]" />
 										<input
 											type="text"
 											placeholder="Location"
 											bind:value={editLocation}
-											class="edit-input"
+											class="k-input"
+											aria-label="Location"
 										/>
 									</div>
 									<div class="edit-actions">
-										<button class="save-btn" onclick={() => saveEdits(event.id)}>Save</button>
-										<button class="cancel-btn" onclick={cancelEditing}>Cancel</button>
+										<button class="k-btn k-btn-sm k-btn-primary" onclick={() => saveEdits(event.id)}>Save</button>
+										<button class="k-btn k-btn-sm k-btn-ghost" onclick={cancelEditing}>Cancel</button>
 									</div>
 								</div>
 							{:else}
 								<!-- View Mode -->
 								<div class="event-header">
-									<span class="event-detail-title">{event.title || 'Untitled Event'}</span>
-									<button class="edit-btn" onclick={() => startEditing(event)}>
+									<span class="event-detail-title">{event.title || 'Untitled event'}</span>
+									<button
+										class="k-icon-btn"
+										onclick={() => startEditing(event)}
+										aria-label="Edit event"
+										title="Edit event"
+									>
 										<Pencil class="h-3.5 w-3.5" />
-										Edit
 									</button>
 								</div>
 								{#if event.time}
 									<div class="event-meta">
-										<Clock class="h-3.5 w-3.5" />
+										<Clock class="h-3.5 w-3.5 shrink-0" />
 										<span
 											>{event.time}{event.duration
 												? ` (${event.duration})`
@@ -194,13 +210,13 @@
 								{/if}
 								{#if event.location}
 									<div class="event-meta">
-										<MapPin class="h-3.5 w-3.5" />
+										<MapPin class="h-3.5 w-3.5 shrink-0" />
 										<span>{event.location}</span>
 									</div>
 								{/if}
 								{#if event.attendees && event.attendees.length > 0}
 									<div class="event-meta">
-										<Users class="h-3.5 w-3.5" />
+										<Users class="h-3.5 w-3.5 shrink-0" />
 										<span>{event.attendees.join(', ')}</span>
 									</div>
 								{/if}
@@ -209,27 +225,29 @@
 					{/each}
 				</div>
 			{:else}
-				<div class="no-events">
-					<p>No events for this date</p>
-					<button class="create-event-btn" onclick={createEventHandler}>
-						<Plus class="h-4 w-4" />
-						Create Event
+				<div class="content-section no-events">
+					<span>No events for this date</span>
+					<button class="k-btn k-btn-sm" onclick={createEventHandler}>
+						<Plus class="h-3.5 w-3.5" />
+						Add event
 					</button>
 				</div>
 			{/if}
 
 			<!-- Notes Section -->
 			{#if dateInfo.mentioningMemories.length > 0}
-				<div class="notes-section">
-					<h4>Related Notes</h4>
+				<div class="content-section">
+					<h4 class="content-label">Related notes</h4>
 					<ul class="notes-list">
 						{#each dateInfo.mentioningMemories as memory (memory.id)}
 							<li>
-								<button class="note-item" onclick={() => openNote(memory.id)}>
-									<NotebookText class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
+								<button class="k-row note-item" onclick={() => openNote(memory.id)}>
+									<NotebookText class="h-4 w-4 shrink-0 text-[var(--color-text-faint)]" />
 									<div class="note-info">
 										<span class="note-title">{memory.title || 'Untitled'}</span>
-										<span class="note-preview">{getPreview(memory.bodyMarkdown)}</span>
+										{#if getPreview(memory.bodyMarkdown)}
+											<span class="note-preview">{getPreview(memory.bodyMarkdown)}</span>
+										{/if}
 									</div>
 								</button>
 							</li>
@@ -243,47 +261,28 @@
 
 <style>
 	.event-card {
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		margin-bottom: 0.5rem;
-		overflow: hidden;
-		transition: all 0.15s ease;
-	}
-
-	.event-card:hover {
-		border-color: var(--color-accent);
+		border-radius: var(--radius-md);
 	}
 
 	.event-card.expanded {
-		border-color: var(--color-accent);
+		background: var(--color-hover);
 	}
 
 	.card-header {
 		display: flex;
 		align-items: center;
-		gap: 0.75rem;
+		gap: 0.625rem;
 		width: 100%;
-		padding: 0.75rem 1rem;
-		background: transparent;
-		border: none;
-		cursor: pointer;
+		min-height: 2.25rem;
+		padding: 0.375rem 0.625rem;
+		border-radius: var(--radius-md);
+		font-size: 0.875rem;
 		text-align: left;
+		cursor: pointer;
 	}
 
 	.card-header:hover {
-		background: var(--color-bg-secondary);
-	}
-
-	.date-icon {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 2rem;
-		height: 2rem;
-		border-radius: 0.5rem;
-		background: rgba(59, 130, 246, 0.15);
-		color: #3b82f6;
-		flex-shrink: 0;
+		background: var(--color-hover);
 	}
 
 	.date-info {
@@ -291,150 +290,105 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.5rem;
+		gap: 0.125rem 0.625rem;
 		min-width: 0;
 	}
 
 	.date-text {
 		font-weight: 500;
 		color: var(--color-text);
+		white-space: nowrap;
 	}
 
 	.event-title {
-		font-weight: 500;
-		color: var(--color-text);
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		color: var(--color-text-muted);
 	}
 
-	.event-time,
-	.event-location {
+	.event-meta-inline {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25rem;
 		font-size: 0.75rem;
-		color: var(--color-text-muted);
+		color: var(--color-text-faint);
 	}
 
 	.relative-date {
+		flex-shrink: 0;
 		font-size: 0.75rem;
-		color: var(--color-accent);
-		font-weight: 500;
+		color: var(--color-ref-date);
 	}
 
 	.note-count {
+		flex-shrink: 0;
 		font-size: 0.75rem;
-		color: var(--color-text-muted);
-		background: var(--color-bg-secondary);
-		padding: 0.25rem 0.5rem;
-		border-radius: 1rem;
+		font-variant-numeric: tabular-nums;
+		color: var(--color-text-faint);
 	}
 
+	/* Indented under the header text (icon 1rem + gap) */
 	.card-content {
-		border-top: 1px solid var(--color-border);
-		background: var(--color-bg-secondary);
+		padding: 0.25rem 0.625rem 0.625rem 2.25rem;
 	}
 
-	.events-section {
-		padding: 1rem;
-		border-bottom: 1px solid var(--color-border);
+	.content-section + .content-section {
+		margin-top: 0.75rem;
 	}
 
-	.events-section h4,
-	.notes-section h4 {
+	.content-label {
+		margin-bottom: 0.25rem;
 		font-size: 0.75rem;
 		font-weight: 600;
-		color: var(--color-text-muted);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		margin-bottom: 0.75rem;
+		color: var(--color-text-faint);
 	}
 
-	.event-detail {
-		padding: 0.75rem;
-		background: var(--color-bg);
-		border-radius: 0.375rem;
-		margin-bottom: 0.5rem;
-	}
-
-	.event-detail:last-child {
-		margin-bottom: 0;
+	.event-detail + .event-detail {
+		margin-top: 0.5rem;
+		padding-top: 0.5rem;
+		border-top: 1px solid var(--color-border);
 	}
 
 	.event-header {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		margin-bottom: 0.5rem;
+		gap: 0.5rem;
 	}
 
 	.event-detail-title {
+		min-width: 0;
+		font-size: 0.875rem;
 		font-weight: 500;
 		color: var(--color-text);
-	}
-
-	.edit-btn {
-		display: flex;
-		align-items: center;
-		gap: 0.25rem;
-		padding: 0.25rem 0.5rem;
-		font-size: 0.75rem;
-		color: var(--color-text-muted);
-		background: transparent;
-		border: 1px solid var(--color-border);
-		border-radius: 0.25rem;
-		cursor: pointer;
-		transition: all 0.1s;
-	}
-
-	.edit-btn:hover {
-		color: var(--color-accent);
-		border-color: var(--color-accent);
 	}
 
 	.event-meta {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		font-size: 0.875rem;
+		margin-top: 0.25rem;
+		font-size: 0.8125rem;
 		color: var(--color-text-muted);
-		margin-top: 0.375rem;
 	}
 
 	.no-events {
-		padding: 1rem;
-		text-align: center;
-		border-bottom: 1px solid var(--color-border);
-	}
-
-	.no-events p {
-		font-size: 0.875rem;
-		color: var(--color-text-muted);
-		margin-bottom: 0.75rem;
-	}
-
-	.create-event-btn {
-		display: inline-flex;
+		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.375rem;
-		padding: 0.5rem 1rem;
-		font-size: 0.875rem;
-		font-weight: 500;
-		color: white;
-		background: var(--color-accent);
-		border: none;
-		border-radius: 0.375rem;
-		cursor: pointer;
-		transition: all 0.1s;
+		justify-content: space-between;
+		gap: 0.5rem;
+		font-size: 0.8125rem;
+		color: var(--color-text-muted);
 	}
 
-	.create-event-btn:hover {
-		background: var(--color-accent-hover);
-	}
-
-	/* Edit form styles */
 	.edit-form {
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
+		padding-top: 0.25rem;
 	}
 
 	.edit-row {
@@ -443,83 +397,26 @@
 		gap: 0.5rem;
 	}
 
-	.edit-input {
-		flex: 1;
-		padding: 0.5rem;
-		font-size: 0.875rem;
-		color: var(--color-text);
-		background: var(--color-bg-secondary);
-		border: 1px solid var(--color-border);
-		border-radius: 0.375rem;
-		outline: none;
-	}
-
-	.edit-input:focus {
-		border-color: var(--color-accent);
-	}
-
 	.edit-actions {
 		display: flex;
-		gap: 0.5rem;
-		margin-top: 0.5rem;
-	}
-
-	.save-btn {
-		padding: 0.5rem 1rem;
-		font-size: 0.875rem;
-		font-weight: 500;
-		color: white;
-		background: var(--color-accent);
-		border: none;
-		border-radius: 0.375rem;
-		cursor: pointer;
-	}
-
-	.save-btn:hover {
-		background: var(--color-accent-hover);
-	}
-
-	.cancel-btn {
-		padding: 0.5rem 1rem;
-		font-size: 0.875rem;
-		font-weight: 500;
-		color: var(--color-text);
-		background: transparent;
-		border: 1px solid var(--color-border);
-		border-radius: 0.375rem;
-		cursor: pointer;
-	}
-
-	.cancel-btn:hover {
-		border-color: var(--color-text-muted);
-	}
-
-	.notes-section {
-		padding: 0.75rem 1rem;
+		gap: 0.25rem;
 	}
 
 	.notes-list {
 		list-style: none;
 		padding: 0;
-		margin: 0;
+		margin: 0 0 0 -0.625rem;
 	}
 
 	.note-item {
-		display: flex;
-		align-items: flex-start;
-		gap: 0.5rem;
 		width: 100%;
-		padding: 0.5rem;
-		background: transparent;
-		border: none;
-		border-radius: 0.375rem;
-		cursor: pointer;
+		align-items: flex-start;
 		text-align: left;
-		transition: background 0.1s;
+		cursor: pointer;
 	}
 
-	.note-item:hover {
-		background: var(--color-bg);
+	.note-item :global(svg) {
+		margin-top: 0.125rem;
 	}
 
 	.note-info {
@@ -530,7 +427,6 @@
 	}
 
 	.note-title {
-		font-size: 0.875rem;
 		font-weight: 500;
 		color: var(--color-text);
 	}

@@ -6,7 +6,7 @@
 		getMemoryObjectsByDate,
 		getMemoryObjectsByTag
 	} from '$lib/db';
-	import { X, User, Calendar, Hash, Mail, Phone, Building, Briefcase, MapPin, Clock, Users, NotebookText } from 'lucide-svelte';
+	import { X, User, Calendar, Hash, Mail, Phone, Building, Briefcase, MapPin, Clock, Users, NotebookText, ArrowRight } from 'lucide-svelte';
 
 	interface Props {
 		type: 'person' | 'date' | 'tag';
@@ -28,10 +28,19 @@
 		return [];
 	});
 
-	// Position the popup within viewport
+	// Position the popup just below the click, kept inside the viewport
+	// (flips above the click when there isn't room below).
+	const POPUP_WIDTH = 288;
+	const POPUP_MAX_HEIGHT = 384;
+	const MARGIN = 8;
+
 	let popupStyle = $derived.by(() => {
-		const x = Math.min(position.x, window.innerWidth - 320);
-		const y = Math.min(position.y, window.innerHeight - 400);
+		const x = Math.max(MARGIN, Math.min(position.x - 16, window.innerWidth - POPUP_WIDTH - MARGIN));
+		const below = position.y + 12;
+		const y =
+			below + POPUP_MAX_HEIGHT <= window.innerHeight - MARGIN
+				? below
+				: Math.max(MARGIN, position.y - POPUP_MAX_HEIGHT - 12);
 		return `left: ${x}px; top: ${y}px;`;
 	});
 
@@ -52,7 +61,9 @@
 	}
 
 	function formatDate(dateStr: string): string {
-		const date = new Date(dateStr);
+		// Parse as local midnight; a bare YYYY-MM-DD is UTC and shows the
+		// previous day in timezones west of Greenwich.
+		const date = new Date(dateStr + 'T00:00:00');
 		return date.toLocaleDateString('en-US', {
 			weekday: 'long',
 			year: 'numeric',
@@ -62,93 +73,100 @@
 	}
 </script>
 
-<svelte:window on:keydown={(e) => e.key === 'Escape' && onClose()} />
+<svelte:window onkeydown={(e) => e.key === 'Escape' && onClose()} />
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <div class="popup-backdrop" onclick={onClose}></div>
 
-<div class="ref-popup" style={popupStyle}>
+<div
+	class="ref-popup"
+	style="{popupStyle} --ref: var(--color-ref-{type});"
+	role="dialog"
+	aria-label={type === 'person' ? `@${value}` : type === 'date' ? formatDate(value) : `#${value}`}
+>
 	<div class="popup-header">
-		{#if type === 'person'}
-			<User class="header-icon person" />
-			<span class="header-title">@{value}</span>
-		{:else if type === 'date'}
-			<Calendar class="header-icon date" />
-			<span class="header-title">{formatDate(value)}</span>
-		{:else}
-			<Hash class="header-icon tag" />
-			<span class="header-title">#{value}</span>
-		{/if}
-		<button class="close-btn" onclick={onClose}>
-			<X class="h-4 w-4" />
+		<span class="header-icon">
+			{#if type === 'person'}
+				<User class="h-3.5 w-3.5" />
+			{:else if type === 'date'}
+				<Calendar class="h-3.5 w-3.5" />
+			{:else}
+				<Hash class="h-3.5 w-3.5" />
+			{/if}
+		</span>
+		<span class="header-title">
+			{#if type === 'person'}@{value}{:else if type === 'date'}{formatDate(value)}{:else}#{value}{/if}
+		</span>
+		<button class="k-icon-btn" onclick={onClose} aria-label="Close" title="Close">
+			<X class="h-3.5 w-3.5" />
 		</button>
 	</div>
 
 	<div class="popup-content">
 		{#if type === 'person' && person}
-			<div class="metadata-section">
-				{#if person.title}
-					<div class="metadata-row">
-						<Briefcase class="meta-icon" />
-						<span>{person.title}</span>
-					</div>
-				{/if}
-				{#if person.company}
-					<div class="metadata-row">
-						<Building class="meta-icon" />
-						<span>{person.company}</span>
-					</div>
-				{/if}
-				{#if person.email}
-					<div class="metadata-row">
-						<Mail class="meta-icon" />
-						<a href="mailto:{person.email}">{person.email}</a>
-					</div>
-				{/if}
-				{#if person.phone}
-					<div class="metadata-row">
-						<Phone class="meta-icon" />
-						<a href="tel:{person.phone}">{person.phone}</a>
-					</div>
-				{/if}
-				{#if person.customFields}
-					{#each Object.entries(person.customFields) as [key, val]}
+			{#if person.title || person.company || person.email || person.phone || (person.customFields && Object.keys(person.customFields).length > 0)}
+				<div class="metadata-section">
+					{#if person.title}
 						<div class="metadata-row">
-							<span class="custom-key">{key}:</span>
-							<span>{val}</span>
+							<Briefcase class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)]" />
+							<span>{person.title}</span>
 						</div>
-					{/each}
-				{/if}
-			</div>
+					{/if}
+					{#if person.company}
+						<div class="metadata-row">
+							<Building class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)]" />
+							<span>{person.company}</span>
+						</div>
+					{/if}
+					{#if person.email}
+						<div class="metadata-row">
+							<Mail class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)]" />
+							<a href="mailto:{person.email}">{person.email}</a>
+						</div>
+					{/if}
+					{#if person.phone}
+						<div class="metadata-row">
+							<Phone class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)]" />
+							<a href="tel:{person.phone}">{person.phone}</a>
+						</div>
+					{/if}
+					{#if person.customFields}
+						{#each Object.entries(person.customFields) as [key, val] (key)}
+							<div class="metadata-row">
+								<span class="custom-key">{key}</span>
+								<span>{val}</span>
+							</div>
+						{/each}
+					{/if}
+				</div>
+			{/if}
 		{:else if type === 'person'}
-			<div class="no-profile">
-				<p>No profile created yet</p>
-			</div>
+			<p class="empty-note">No profile created yet</p>
 		{/if}
 
 		{#if type === 'date' && events.length > 0}
 			<div class="metadata-section">
-				{#each events as event}
-					<div class="event-card">
+				{#each events as event, i (i)}
+					<div class="event">
 						{#if event.title}
 							<div class="event-title">{event.title}</div>
 						{/if}
 						{#if event.time}
 							<div class="metadata-row">
-								<Clock class="meta-icon" />
+								<Clock class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)]" />
 								<span>{event.time}{event.duration ? ` (${event.duration})` : ''}</span>
 							</div>
 						{/if}
 						{#if event.location}
 							<div class="metadata-row">
-								<MapPin class="meta-icon" />
+								<MapPin class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)]" />
 								<span>{event.location}</span>
 							</div>
 						{/if}
 						{#if event.attendees && event.attendees.length > 0}
 							<div class="metadata-row">
-								<Users class="meta-icon" />
+								<Users class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)]" />
 								<span>{event.attendees.join(', ')}</span>
 							</div>
 						{/if}
@@ -156,31 +174,26 @@
 				{/each}
 			</div>
 		{:else if type === 'date'}
-			<div class="no-profile">
-				<p>No events on this date</p>
-			</div>
+			<p class="empty-note">No events on this date</p>
 		{/if}
 
 		{#if relatedNotes.length > 0}
-			<div class="notes-section">
-				<div class="section-title">
-					<NotebookText class="h-4 w-4" />
-					<span>{relatedNotes.length} {relatedNotes.length === 1 ? 'note' : 'notes'}</span>
-				</div>
-				<div class="notes-list">
-					{#each relatedNotes.slice(0, 5) as note}
-						<button class="note-item" onclick={() => handleNoteClick(note.id)}>
-							{note.title || 'Untitled'}
-						</button>
-					{/each}
-				</div>
+			<div class="k-menu-label">
+				{relatedNotes.length} {relatedNotes.length === 1 ? 'note' : 'notes'}
 			</div>
+			{#each relatedNotes.slice(0, 5) as note (note.id)}
+				<button class="k-menu-item" onclick={() => handleNoteClick(note.id)}>
+					<NotebookText class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)]" />
+					<span class="truncate">{note.title || 'Untitled'}</span>
+				</button>
+			{/each}
 		{/if}
 	</div>
 
 	<div class="popup-footer">
-		<button class="view-all-btn" onclick={handleViewAll}>
-			View all details
+		<button class="k-menu-item view-all" onclick={handleViewAll}>
+			<span class="flex-1">View all</span>
+			<ArrowRight class="h-3.5 w-3.5" />
 		</button>
 	</div>
 </div>
@@ -192,86 +205,68 @@
 		z-index: 999;
 	}
 
+	/* Popover surface, same family as .k-menu */
 	.ref-popup {
 		position: fixed;
 		z-index: 1000;
-		width: 300px;
-		max-height: 400px;
-		background: var(--color-bg);
-		border: 1px solid var(--color-border);
-		border-radius: 0.75rem;
-		box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
 		display: flex;
 		flex-direction: column;
+		width: 18rem;
+		max-width: calc(100vw - 1rem);
+		max-height: 24rem;
 		overflow: hidden;
-		animation: popupIn 0.15s ease-out;
-	}
-
-	@keyframes popupIn {
-		from {
-			opacity: 0;
-			transform: scale(0.95);
-		}
-		to {
-			opacity: 1;
-			transform: scale(1);
-		}
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		background: var(--color-bg);
+		box-shadow: var(--shadow-lg);
+		font-family: var(--font-sans);
+		animation: slideDownFadeIn 120ms var(--ease-out);
 	}
 
 	.popup-header {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		padding: 0.75rem 1rem;
-		border-bottom: 1px solid var(--color-border);
-		background: var(--color-bg-secondary);
+		padding: 0.5rem 0.375rem 0.375rem 0.75rem;
+	}
+
+	.header-icon {
+		display: flex;
+		color: var(--ref);
 	}
 
 	.header-title {
 		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		font-size: 0.875rem;
 		font-weight: 600;
 		color: var(--color-text);
-		overflow: hidden;
-		text-overflow: ellipsis;
 		white-space: nowrap;
-	}
-
-	.close-btn {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		padding: 0.25rem;
-		background: transparent;
-		border: none;
-		border-radius: 0.25rem;
-		color: var(--color-text-muted);
-		cursor: pointer;
-	}
-
-	.close-btn:hover {
-		background: var(--color-border);
-		color: var(--color-text);
+		text-overflow: ellipsis;
 	}
 
 	.popup-content {
 		flex: 1;
 		overflow-y: auto;
-		padding: 0.75rem 1rem;
+		padding: 0 0.25rem 0.25rem;
 	}
 
 	.metadata-section {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
-		margin-bottom: 1rem;
+		gap: 0.375rem;
+		padding: 0.25rem 0.5rem 0.5rem;
 	}
 
 	.metadata-row {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		font-size: 0.875rem;
+		min-width: 0;
+		font-size: 0.8125rem;
 		color: var(--color-text);
+		overflow-wrap: anywhere;
 	}
 
 	.metadata-row a {
@@ -284,94 +279,38 @@
 	}
 
 	.custom-key {
-		color: var(--color-text-muted);
+		color: var(--color-text-faint);
 		text-transform: capitalize;
 	}
 
-	.no-profile {
-		text-align: center;
-		padding: 1rem;
-		color: var(--color-text-muted);
-		font-size: 0.875rem;
+	.empty-note {
+		padding: 0.25rem 0.5rem 0.5rem;
+		font-size: 0.8125rem;
+		color: var(--color-text-faint);
 	}
 
-	.event-card {
-		padding: 0.75rem;
-		background: var(--color-bg-secondary);
-		border-radius: 0.5rem;
-		margin-bottom: 0.5rem;
+	.event + .event {
+		padding-top: 0.5rem;
+		border-top: 1px solid var(--color-border);
 	}
 
 	.event-title {
+		margin-bottom: 0.25rem;
+		font-size: 0.8125rem;
 		font-weight: 600;
 		color: var(--color-text);
-		margin-bottom: 0.5rem;
-	}
-
-	.notes-section {
-		border-top: 1px solid var(--color-border);
-		padding-top: 0.75rem;
-	}
-
-	.section-title {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		font-size: 0.75rem;
-		font-weight: 600;
-		color: var(--color-text-muted);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		margin-bottom: 0.5rem;
-	}
-
-	.notes-list {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-	}
-
-	.note-item {
-		display: block;
-		width: 100%;
-		text-align: left;
-		padding: 0.5rem 0.75rem;
-		background: var(--color-bg-secondary);
-		border: none;
-		border-radius: 0.375rem;
-		font-size: 0.875rem;
-		color: var(--color-text);
-		cursor: pointer;
-		transition: background 0.15s;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.note-item:hover {
-		background: var(--color-border);
 	}
 
 	.popup-footer {
-		padding: 0.75rem 1rem;
+		padding: 0.25rem;
 		border-top: 1px solid var(--color-border);
-		background: var(--color-bg-secondary);
 	}
 
-	.view-all-btn {
-		width: 100%;
-		padding: 0.5rem;
-		background: var(--color-accent);
-		border: none;
-		border-radius: 0.375rem;
-		color: white;
-		font-size: 0.875rem;
-		font-weight: 500;
-		cursor: pointer;
-		transition: background 0.15s;
+	.view-all {
+		color: var(--color-text-muted);
 	}
 
-	.view-all-btn:hover {
-		background: var(--color-accent-hover);
+	.view-all:hover {
+		color: var(--color-text);
 	}
 </style>

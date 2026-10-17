@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { autofocus } from '$lib/actions/autofocus';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { currentRoutePath } from '$lib/hash-router';
@@ -964,8 +965,7 @@
 		<div class="tree-row bg-[var(--color-hover)]">
 			<span class="tree-chevron"></span>
 			<Folder class="tree-icon text-[var(--color-text-muted)]" />
-			<!-- svelte-ignore a11y_autofocus -->
-			<input
+						<input
 				type="text"
 				bind:value={newFolderName}
 				onkeydown={(e) => {
@@ -975,7 +975,7 @@
 				onblur={submitNewFolder}
 				placeholder="Folder name"
 				class="w-full bg-transparent text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-faint)]"
-				autofocus
+				use:autofocus
 			/>
 		</div>
 	{/if}
@@ -1039,8 +1039,7 @@
 						<Folder class="tree-icon text-[var(--color-text-muted)]" />
 					{/if}
 					{#if renamingFolder === folder.id}
-						<!-- svelte-ignore a11y_autofocus -->
-						<input
+												<input
 							type="text"
 							bind:value={renameValue}
 							onkeydown={(e) => {
@@ -1049,7 +1048,7 @@
 							}}
 							onblur={submitRename}
 							class="min-w-0 flex-1 bg-transparent text-[var(--color-text)] outline-none"
-							autofocus
+							use:autofocus
 							onclick={(e) => e.stopPropagation()}
 						/>
 					{:else}
@@ -1092,8 +1091,7 @@
 						<div class="tree-row bg-[var(--color-hover)]">
 							<span class="tree-chevron"></span>
 							<Folder class="tree-icon text-[var(--color-text-muted)]" />
-							<!-- svelte-ignore a11y_autofocus -->
-							<input
+														<input
 								type="text"
 								bind:value={newFolderName}
 								onkeydown={(e) => {
@@ -1103,7 +1101,7 @@
 								onblur={submitNewFolder}
 								placeholder="Folder name"
 								class="w-full bg-transparent text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-faint)]"
-								autofocus
+								use:autofocus
 							/>
 						</div>
 					{/if}
@@ -1153,8 +1151,7 @@
 				<span class="tree-chevron" aria-hidden="true"></span>
 				<NotebookText class="tree-icon" />
 				{#if renamingNote === memory.id}
-					<!-- svelte-ignore a11y_autofocus -->
-					<input
+										<input
 						type="text"
 						bind:value={renameValue}
 						onkeydown={(e) => {
@@ -1164,7 +1161,7 @@
 						onblur={submitNoteRename}
 						onclick={(e) => e.preventDefault()}
 						class="min-w-0 flex-1 bg-transparent text-[var(--color-text)] outline-none"
-						autofocus
+						use:autofocus
 					/>
 				{:else}
 					<!-- svelte-ignore a11y_no_static_element_interactions -->

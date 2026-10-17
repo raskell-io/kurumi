@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { autofocus } from '$lib/actions/autofocus';
 	import { templates, addTemplate, updateTemplate, deleteTemplate, addStarterTemplates, type Template } from '$lib/db';
 	import { Plus, FileText, Pencil, Trash2, X, Info, Sparkles } from 'lucide-svelte';
 
@@ -22,6 +23,14 @@
 	// Delete confirmation
 	let showDeleteConfirm = $state(false);
 	let templateToDelete = $state<Template | null>(null);
+
+	let editorEl: HTMLFormElement | undefined = $state();
+	const modKey = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
+
+	// Bring the inline editor into view when it opens (e.g. editing a row far down the list)
+	$effect(() => {
+		if (showEditor && editorEl) editorEl.scrollIntoView({ block: 'nearest' });
+	});
 
 	function openNewTemplate() {
 		editingTemplate = null;
@@ -96,239 +105,217 @@
 	];
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} />
 
-<div class="flex h-full flex-col">
-	<!-- Header -->
-	<header
-		class="flex items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-3 md:px-6"
-	>
-		<h1 class="text-lg font-semibold text-[var(--color-text)]">Templates</h1>
-		<button
-			onclick={openNewTemplate}
-			class="flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-[var(--color-accent-hover)]"
-		>
-			<Plus class="h-4 w-4" />
-			New Template
-		</button>
+<svelte:head>
+	<title>Templates - Kurumi</title>
+</svelte:head>
+
+<div class="k-page">
+	<header class="k-page-header">
+		<div class="min-w-0">
+			<h1 class="k-page-title">Templates</h1>
+			<p class="k-page-subtitle">Reusable starting points for new notes.</p>
+		</div>
+		{#if templatesData.length > 0 && !showEditor}
+			<button onclick={openNewTemplate} class="k-btn k-btn-primary shrink-0">
+				<Plus class="h-4 w-4" />
+				New template
+			</button>
+		{/if}
 	</header>
 
-	<!-- Content -->
-	<div class="flex-1 overflow-y-auto bg-[var(--color-bg)] p-4 md:p-6">
-		{#if templatesData.length === 0}
-			<!-- Empty state -->
-			<div class="flex h-full items-center justify-center">
-				<div class="text-center">
-					<FileText class="mx-auto mb-4 h-16 w-16 text-[var(--color-text-muted)]" />
-					<p class="text-lg text-[var(--color-text-muted)]">No templates yet</p>
-					<p class="mt-2 text-sm text-[var(--color-text-muted)]">
-						Create templates to quickly start new notes with predefined content
-					</p>
-					<div class="mt-4 flex flex-col items-center gap-2 sm:flex-row sm:justify-center">
-						<button
-							onclick={addStarterTemplates}
-							class="flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[var(--color-accent-hover)]"
-						>
-							<Sparkles class="h-4 w-4" />
-							Add starter templates
-						</button>
-						<button
-							onclick={openNewTemplate}
-							class="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-bg-secondary)]"
-						>
-							Create from scratch
-						</button>
-					</div>
-				</div>
-			</div>
-		{:else}
-			<!-- Template grid -->
-			<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-				{#each templatesData as template (template.id)}
-					<div
-						class="group rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4 transition-colors hover:border-[var(--color-accent)]"
-					>
-						<div class="mb-2 flex items-start justify-between">
-							<div class="flex items-center gap-2">
-								<FileText class="h-5 w-5 text-[var(--color-accent)]" />
-								<h3 class="font-medium text-[var(--color-text)]">{template.name}</h3>
-							</div>
-							<div class="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-								<button
-									onclick={() => openEditTemplate(template)}
-									class="rounded p-1 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
-									title="Edit template"
-								>
-									<Pencil class="h-4 w-4" />
-								</button>
-								<button
-									onclick={() => confirmDelete(template)}
-									class="rounded p-1 text-[var(--color-text-muted)] transition-colors hover:bg-red-500/10 hover:text-red-500"
-									title="Delete template"
-								>
-									<Trash2 class="h-4 w-4" />
-								</button>
-							</div>
-						</div>
-						{#if template.description}
-							<p class="mb-2 text-sm text-[var(--color-text-muted)]">{template.description}</p>
-						{/if}
-						<pre
-							class="max-h-24 overflow-hidden text-ellipsis rounded bg-[var(--color-bg)] p-2 text-xs text-[var(--color-text-muted)]">{template.content.slice(0, 200)}{template.content.length > 200 ? '...' : ''}</pre>
-					</div>
-				{/each}
-			</div>
-		{/if}
-	</div>
-</div>
-
-<!-- Template Editor Modal -->
-{#if showEditor}
-	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4"
-		onclick={closeEditor}
-		onkeydown={(e) => e.key === 'Escape' && closeEditor()}
-		role="dialog"
-		aria-modal="true"
-		tabindex="-1"
-	>
-		<!-- svelte-ignore a11y_click_events_have_key_events -->
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div
-			class="w-full max-w-2xl rounded-xl bg-[var(--color-bg)] p-6 shadow-2xl"
-			onclick={(e) => e.stopPropagation()}
+	{#if showEditor}
+		<!-- Inline template editor (Cmd/Ctrl+Enter saves) -->
+		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+		<form
+			bind:this={editorEl}
+			class="k-card mb-8 p-4 md:p-5"
+			aria-labelledby="template-editor-title"
+			onsubmit={(e) => {
+				e.preventDefault();
+				saveTemplate();
+			}}
+			onkeydown={(e) => {
+				if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+					e.preventDefault();
+					saveTemplate();
+				}
+			}}
 		>
 			<div class="mb-4 flex items-center justify-between">
-				<h2 class="text-lg font-semibold text-[var(--color-text)]">
-					{editingTemplate ? 'Edit Template' : 'New Template'}
+				<h2 id="template-editor-title" class="text-sm font-semibold text-[var(--color-text)]">
+					{editingTemplate ? 'Edit template' : 'New template'}
 				</h2>
-				<button
-					onclick={closeEditor}
-					class="rounded p-1 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
-				>
-					<X class="h-5 w-5" />
+				<button type="button" onclick={closeEditor} class="k-icon-btn" aria-label="Close editor">
+					<X class="h-4 w-4" />
 				</button>
 			</div>
 
 			<div class="space-y-4">
-				<!-- Name -->
-				<div>
-					<label for="template-name" class="mb-1 block text-sm font-medium text-[var(--color-text)]"
-						>Name</label
-					>
-					<input
-						id="template-name"
-						type="text"
-						bind:value={templateName}
-						placeholder="e.g., Meeting Notes"
-						class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:border-[var(--color-accent)] focus:outline-none"
-					/>
+				<div class="grid gap-4 sm:grid-cols-2">
+					<div>
+						<label for="template-name" class="k-label">Name</label>
+						<input
+							id="template-name"
+							type="text"
+							bind:value={templateName}
+							placeholder="e.g., Meeting Notes"
+							class="k-input"
+							use:autofocus
+						/>
+					</div>
+					<div>
+						<label for="template-description" class="k-label">
+							Description <span class="font-normal text-[var(--color-text-faint)]">(optional)</span>
+						</label>
+						<input
+							id="template-description"
+							type="text"
+							bind:value={templateDescription}
+							placeholder="Brief description"
+							class="k-input"
+						/>
+					</div>
 				</div>
 
-				<!-- Description -->
 				<div>
-					<label
-						for="template-description"
-						class="mb-1 block text-sm font-medium text-[var(--color-text)]">Description (optional)</label
-					>
-					<input
-						id="template-description"
-						type="text"
-						bind:value={templateDescription}
-						placeholder="Brief description of this template"
-						class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:border-[var(--color-accent)] focus:outline-none"
-					/>
-				</div>
-
-				<!-- Content -->
-				<div>
-					<label
-						for="template-content"
-						class="mb-1 block text-sm font-medium text-[var(--color-text)]">Content</label
-					>
+					<label for="template-content" class="k-label">Content</label>
 					<textarea
 						id="template-content"
 						bind:value={templateContent}
 						placeholder={'# {title}\n\n**Date:** {date}\n\n## Notes\n\n'}
 						rows="10"
-						class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 font-mono text-sm text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:border-[var(--color-accent)] focus:outline-none"
+						class="k-input font-mono !text-[0.8125rem]"
 					></textarea>
 				</div>
 
-				<!-- Variables hint -->
-				<div
-					class="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3"
-				>
-					<div class="mb-2 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-						<Info class="h-4 w-4" />
-						Available Variables
-					</div>
-					<div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+				<details class="group text-xs">
+					<summary class="flex cursor-pointer select-none items-center gap-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-text)]">
+						<Info class="h-3.5 w-3.5" />
+						Available variables
+					</summary>
+					<dl class="mt-2 grid gap-x-4 gap-y-1 sm:grid-cols-2">
 						{#each variables as v}
-							<div>
-								<code class="text-[var(--color-accent)]">{v.name}</code>
-								<span class="text-[var(--color-text-muted)]"> - {v.desc}</span>
+							<div class="flex gap-2">
+								<dt><code class="text-[var(--color-accent)]">{v.name}</code></dt>
+								<dd class="text-[var(--color-text-muted)]">{v.desc}</dd>
 							</div>
 						{/each}
-					</div>
+					</dl>
+				</details>
+			</div>
+
+			<div class="mt-5 flex items-center justify-end gap-2">
+				<span class="mr-auto text-xs text-[var(--color-text-faint)] max-sm:hidden">
+					<kbd class="k-kbd">{modKey}↵</kbd> to save
+				</span>
+				<button type="button" onclick={closeEditor} class="k-btn k-btn-ghost">Cancel</button>
+				<button type="submit" disabled={!templateName.trim()} class="k-btn k-btn-primary">
+					{editingTemplate ? 'Save' : 'Create template'}
+				</button>
+			</div>
+		</form>
+	{/if}
+
+	{#if templatesData.length === 0}
+		{#if !showEditor}
+			<div class="k-empty">
+				<FileText />
+				<p class="k-empty-title">No templates yet</p>
+				<p>Start new notes from predefined content.</p>
+				<div class="mt-2 flex flex-col items-center gap-2 sm:flex-row">
+					<button onclick={addStarterTemplates} class="k-btn k-btn-primary">
+						<Sparkles class="h-4 w-4" />
+						Add starter templates
+					</button>
+					<button onclick={openNewTemplate} class="k-btn k-btn-ghost">Create from scratch</button>
 				</div>
 			</div>
-
-			<div class="mt-6 flex justify-end gap-3">
-				<button
-					onclick={closeEditor}
-					class="rounded-lg px-4 py-2 text-sm font-medium text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-hover)]"
+		{/if}
+	{:else}
+		<ul>
+			{#each templatesData as template (template.id)}
+				<li
+					class="k-row group !items-start py-2"
+					class:selected={editingTemplate?.id === template.id}
 				>
-					Cancel
-				</button>
-				<button
-					onclick={saveTemplate}
-					disabled={!templateName.trim()}
-					class="rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[var(--color-accent-hover)] disabled:cursor-not-allowed disabled:opacity-50"
-				>
-					{editingTemplate ? 'Save Changes' : 'Create Template'}
-				</button>
-			</div>
-		</div>
-	</div>
-{/if}
+					<FileText class="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-text-faint)]" />
+					<button
+						type="button"
+						onclick={() => openEditTemplate(template)}
+						class="min-w-0 flex-1 text-left"
+					>
+						<span class="block truncate font-medium">{template.name}</span>
+						<span class="block truncate text-xs text-[var(--color-text-faint)]">
+							{template.description || template.content.split('\n').find((l) => l.trim()) || 'Empty template'}
+						</span>
+					</button>
+					<div class="row-actions flex shrink-0 items-center gap-0.5">
+						<button
+							onclick={() => openEditTemplate(template)}
+							class="k-icon-btn"
+							title="Edit template"
+							aria-label="Edit {template.name}"
+						>
+							<Pencil class="h-4 w-4" />
+						</button>
+						<button
+							onclick={() => confirmDelete(template)}
+							class="k-icon-btn hover:!text-[var(--color-danger)]"
+							title="Delete template"
+							aria-label="Delete {template.name}"
+						>
+							<Trash2 class="h-4 w-4" />
+						</button>
+					</div>
+				</li>
+			{/each}
+		</ul>
+	{/if}
+</div>
 
-<!-- Delete Confirmation Modal -->
+<!-- Delete Confirmation Modal (hard delete, no undo) -->
 {#if showDeleteConfirm && templateToDelete}
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4"
+		class="k-dialog-backdrop"
 		onclick={() => (showDeleteConfirm = false)}
 		onkeydown={(e) => e.key === 'Escape' && (showDeleteConfirm = false)}
 		role="dialog"
 		aria-modal="true"
+		aria-labelledby="template-delete-title"
 		tabindex="-1"
 	>
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div
-			class="w-full max-w-sm rounded-xl bg-[var(--color-bg)] p-6 shadow-2xl"
-			onclick={(e) => e.stopPropagation()}
-		>
-			<h2 class="mb-2 text-lg font-semibold text-[var(--color-text)]">Delete Template?</h2>
-			<p class="mb-4 text-sm text-[var(--color-text-muted)]">
-				Are you sure you want to delete "{templateToDelete.name}"? This action cannot be undone.
+		<div class="k-dialog !max-w-sm p-5" onclick={(e) => e.stopPropagation()}>
+			<h2 id="template-delete-title" class="text-base font-semibold text-[var(--color-text)]">Delete template?</h2>
+			<p class="mt-2 text-sm text-[var(--color-text-muted)]">
+				"{templateToDelete.name}" will be deleted. This can't be undone.
 			</p>
-			<div class="flex justify-end gap-3">
-				<button
-					onclick={() => (showDeleteConfirm = false)}
-					class="rounded-lg px-4 py-2 text-sm font-medium text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-hover)]"
-				>
-					Cancel
-				</button>
-				<button
-					onclick={handleDelete}
-					class="rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-600"
-				>
-					Delete
-				</button>
+			<div class="mt-5 flex justify-end gap-2">
+				<button onclick={() => (showDeleteConfirm = false)} class="k-btn k-btn-ghost">Cancel</button>
+				<button onclick={handleDelete} class="k-btn k-btn-danger" use:autofocus>Delete</button>
 			</div>
 		</div>
 	</div>
 {/if}
+
+<style>
+	/* Row actions reveal on hover/focus; always visible on touch */
+	.row-actions {
+		opacity: 0;
+	}
+
+	:global(.k-row:hover) > .row-actions,
+	.row-actions:focus-within {
+		opacity: 1;
+	}
+
+	@media (hover: none) {
+		.row-actions {
+			opacity: 1;
+		}
+	}
+</style>

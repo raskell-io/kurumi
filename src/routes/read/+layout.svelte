@@ -15,6 +15,8 @@
 		min-height: 100%;
 		background: var(--color-bg);
 		max-width: 100%;
-		overflow-x: hidden;
+		/* clip, not hidden: hidden would make this a scroll container and
+		   break the sticky top bar and the article's scroll tracking */
+		overflow-x: clip;
 	}
 </style>

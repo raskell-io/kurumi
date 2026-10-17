@@ -5,7 +5,8 @@
 	 * previews it and offers a Restore (applied as a normal forward edit).
 	 */
 	import { getMemoryHistory, restoreMemoryVersion, type MemoryVersion } from '$lib/db';
-	import { History, X, RotateCcw } from 'lucide-svelte';
+	import { X, RotateCcw } from 'lucide-svelte';
+	import { onMount } from 'svelte';
 
 	interface Props {
 		memoryId: string;
@@ -19,7 +20,35 @@
 	let versions = $derived<MemoryVersion[]>(getMemoryHistory(memoryId));
 	let selectedIndex = $state(0);
 	let selected = $derived<MemoryVersion | null>(versions[selectedIndex] ?? null);
-	let confirmingRestore = $state(false);
+	let listRef: HTMLUListElement | undefined = $state();
+
+	function focusEntry(i: number) {
+		const el = listRef?.querySelector<HTMLButtonElement>(`[data-index="${i}"]`);
+		el?.focus();
+		el?.scrollIntoView({ block: 'nearest' });
+	}
+
+	function select(i: number) {
+		if (versions.length === 0) return;
+		selectedIndex = Math.max(0, Math.min(versions.length - 1, i));
+		focusEntry(selectedIndex);
+	}
+
+	function handleKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			onClose?.();
+		} else if (e.key === 'ArrowDown' || e.key === 'j') {
+			e.preventDefault();
+			select(selectedIndex + 1);
+		} else if (e.key === 'ArrowUp' || e.key === 'k') {
+			e.preventDefault();
+			select(selectedIndex - 1);
+		}
+	}
+
+	// Land keyboard focus on the version list so arrows work immediately
+	onMount(() => focusEntry(0));
 
 	function relativeTime(ts: number): string {
 		if (!ts) return 'unknown time';
@@ -50,16 +79,22 @@
 	}
 </script>
 
+<svelte:window onkeydown={handleKeydown} />
+
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<div class="backdrop" onclick={() => onClose?.()} role="dialog" aria-modal="true" tabindex="-1">
-	<div class="modal" onclick={(e) => e.stopPropagation()} role="document">
+<div
+	class="k-dialog-backdrop history-backdrop"
+	onclick={() => onClose?.()}
+	role="dialog"
+	aria-modal="true"
+	aria-labelledby="version-history-title"
+	tabindex="-1"
+>
+	<div class="k-dialog modal" onclick={(e) => e.stopPropagation()} role="document">
 		<div class="header">
-			<div class="title">
-				<History class="h-5 w-5 text-[var(--color-accent)]" />
-				<h3>Version history</h3>
-			</div>
-			<button class="close" onclick={() => onClose?.()} aria-label="Close">
+			<h2 id="version-history-title">Version history</h2>
+			<button type="button" class="k-icon-btn" onclick={() => onClose?.()} aria-label="Close">
 				<X class="h-4 w-4" />
 			</button>
 		</div>
@@ -68,22 +103,22 @@
 			<div class="empty">No edit history recorded for this note yet.</div>
 		{:else}
 			<div class="layout">
-				<ul class="list">
+				<ul class="list" bind:this={listRef} aria-label="Versions">
 					{#each versions as version, i (version.hash || version.index)}
 						<li>
 							<button
-								class="entry"
-								class:active={i === selectedIndex}
-								onclick={() => {
-									selectedIndex = i;
-									confirmingRestore = false;
-								}}
+								type="button"
+								class="k-row entry"
+								class:focused={i === selectedIndex}
+								data-index={i}
+								aria-current={i === selectedIndex}
+								onclick={() => (selectedIndex = i)}
 							>
-								<span class="entry-time">
-									{relativeTime(version.time)}
-									{#if i === 0}<span class="badge">current</span>{/if}
-								</span>
 								<span class="entry-title">{version.title || 'Untitled'}</span>
+								<span class="entry-time">
+									{#if i === 0}<span class="k-badge k-badge-accent">Current</span>{/if}
+									<span title={fullTime(version.time)}>{relativeTime(version.time)}</span>
+								</span>
 							</button>
 						</li>
 					{/each}
@@ -91,242 +126,207 @@
 
 				<div class="preview">
 					{#if selected}
-						<div class="preview-header">
-							<div>
-								<div class="preview-title">{selected.title || 'Untitled'}</div>
-								<div class="preview-meta">{fullTime(selected.time)}</div>
-							</div>
-							{#if selectedIndex !== 0}
-								{#if confirmingRestore}
-									<div class="confirm">
-										<span>Restore this version?</span>
-										<button class="restore-btn" onclick={doRestore}>
-											<RotateCcw class="h-4 w-4" /> Confirm
-										</button>
-										<button class="ghost-btn" onclick={() => (confirmingRestore = false)}>
-											Cancel
-										</button>
-									</div>
-								{:else}
-									<button class="restore-btn" onclick={() => (confirmingRestore = true)}>
-										<RotateCcw class="h-4 w-4" /> Restore
-									</button>
-								{/if}
-							{:else}
-								<span class="current-note">This is the current version</span>
-							{/if}
+						<div class="preview-title">{selected.title || 'Untitled'}</div>
+						<div class="preview-meta">
+							{fullTime(selected.time)}
+							{#each selected.tags as tag}<span class="tag">#{tag}</span>{/each}
 						</div>
-						{#if selected.tags.length > 0}
-							<div class="tags">
-								{#each selected.tags as tag}<span class="tag">#{tag}</span>{/each}
-							</div>
-						{/if}
 						<pre class="body">{selected.bodyMarkdown || '(empty)'}</pre>
 					{/if}
 				</div>
 			</div>
 		{/if}
+
+		<div class="footer">
+			<span class="hint">
+				{#if versions.length > 0 && selectedIndex === 0}
+					This is the current version
+				{:else if versions.length > 0}
+					Restoring adds a new edit — nothing is lost
+				{/if}
+			</span>
+			<div class="actions">
+				<button type="button" class="k-btn k-btn-ghost" onclick={() => onClose?.()}>Close</button>
+				{#if versions.length > 0}
+					<button
+						type="button"
+						class="k-btn k-btn-primary"
+						onclick={doRestore}
+						disabled={selectedIndex === 0}
+					>
+						<RotateCcw class="h-3.5 w-3.5" /> Restore
+					</button>
+				{/if}
+			</div>
+		</div>
 	</div>
 </div>
 
 <style>
-	.backdrop {
-		position: fixed;
-		inset: 0;
-		background: rgba(0, 0, 0, 0.6);
-		display: flex;
-		align-items: center;
-		justify-content: center;
+	.history-backdrop {
 		z-index: 200;
-		padding: 1rem;
 	}
+
+	@media (min-width: 768px) {
+		.history-backdrop {
+			align-items: center;
+			padding-top: 1rem;
+		}
+	}
+
 	.modal {
-		background: var(--color-bg);
-		border: 1px solid var(--color-border);
-		border-radius: 0.75rem;
-		max-width: 900px;
-		width: 100%;
-		max-height: 90vh;
 		display: flex;
 		flex-direction: column;
-		box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+		max-width: 56rem;
+		max-height: 88vh;
+		overflow: hidden;
 	}
+
 	.header {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		padding: 1rem 1.25rem;
+		gap: 0.5rem;
+		padding: 0.75rem 0.75rem 0.75rem 1rem;
 		border-bottom: 1px solid var(--color-border);
 	}
-	.title {
-		display: flex;
-		align-items: center;
-		gap: 0.625rem;
-	}
-	.title h3 {
-		font-size: 1.125rem;
+
+	.header h2 {
+		font-size: 0.875rem;
 		font-weight: 600;
 		color: var(--color-text);
 	}
-	.close {
-		background: none;
-		border: none;
-		padding: 0.25rem;
-		cursor: pointer;
-		color: var(--color-text-muted);
-	}
+
 	.empty {
 		padding: 2.5rem 1.25rem;
 		text-align: center;
 		color: var(--color-text-muted);
 		font-size: 0.875rem;
 	}
+
 	.layout {
 		display: grid;
-		grid-template-columns: 16rem 1fr;
-		gap: 0;
-		overflow: hidden;
+		grid-template-columns: 15rem 1fr;
+		flex: 1;
 		min-height: 20rem;
+		overflow: hidden;
 	}
-	@media (max-width: 640px) {
-		.layout {
-			grid-template-columns: 1fr;
-		}
-	}
+
 	.list {
 		list-style: none;
 		margin: 0;
-		padding: 0.5rem;
+		padding: 0.375rem;
 		overflow-y: auto;
-		max-height: 70vh;
+		overscroll-behavior: contain;
 		border-right: 1px solid var(--color-border);
 	}
+
 	.entry {
-		display: flex;
 		flex-direction: column;
-		gap: 0.125rem;
+		align-items: stretch;
+		gap: 0.0625rem;
 		width: 100%;
 		text-align: left;
-		padding: 0.5rem 0.625rem;
-		background: transparent;
-		border: none;
-		border-radius: 0.375rem;
-		cursor: pointer;
-		color: var(--color-text);
 	}
-	.entry:hover {
-		background: var(--color-bg-secondary);
+
+	.entry:focus-visible {
+		outline: none;
 	}
-	.entry.active {
-		background: var(--color-bg-secondary);
-		outline: 1px solid var(--color-accent);
+
+	.entry-title {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 0.8125rem;
 	}
+
 	.entry-time {
 		display: flex;
 		align-items: center;
 		gap: 0.375rem;
 		font-size: 0.75rem;
-		color: var(--color-text-muted);
+		color: var(--color-text-faint);
 	}
-	.badge {
+
+	.entry-time .k-badge {
+		height: 1rem;
 		font-size: 0.625rem;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		color: var(--color-accent);
-		border: 1px solid var(--color-accent);
-		border-radius: 0.25rem;
-		padding: 0 0.25rem;
 	}
-	.entry-title {
-		font-size: 0.8125rem;
-		font-weight: 500;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
+
 	.preview {
 		display: flex;
 		flex-direction: column;
+		min-width: 0;
 		padding: 1rem 1.25rem;
 		overflow: hidden;
 	}
-	.preview-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: flex-start;
-		gap: 0.75rem;
-		margin-bottom: 0.75rem;
-	}
+
 	.preview-title {
 		font-size: 1rem;
 		font-weight: 600;
 		color: var(--color-text);
 	}
+
 	.preview-meta {
-		font-size: 0.75rem;
-		color: var(--color-text-muted);
-		margin-top: 0.125rem;
-	}
-	.current-note {
-		font-size: 0.75rem;
-		color: var(--color-text-muted);
-	}
-	.confirm {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		font-size: 0.8125rem;
-		color: var(--color-text);
-	}
-	.restore-btn {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
-		padding: 0.4375rem 0.75rem;
-		background: var(--color-accent);
-		color: white;
-		border: none;
-		border-radius: 0.375rem;
-		font-size: 0.8125rem;
-		font-weight: 500;
-		cursor: pointer;
-	}
-	.restore-btn:hover {
-		background: var(--color-accent-hover);
-	}
-	.ghost-btn {
-		padding: 0.4375rem 0.625rem;
-		background: transparent;
-		border: 1px solid var(--color-border);
-		border-radius: 0.375rem;
-		color: var(--color-text);
-		font-size: 0.8125rem;
-		cursor: pointer;
-	}
-	.tags {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.375rem;
-		margin-bottom: 0.5rem;
-	}
-	.tag {
+		gap: 0.25rem 0.5rem;
+		margin: 0.125rem 0 0.75rem;
 		font-size: 0.75rem;
-		color: var(--color-accent);
+		color: var(--color-text-faint);
 	}
+
+	.tag {
+		color: var(--color-ref-tag, var(--color-accent));
+	}
+
 	.body {
 		flex: 1;
+		margin: 0;
 		overflow: auto;
-		max-height: 60vh;
-		background: var(--color-bg-secondary);
-		border: 1px solid var(--color-border);
-		border-radius: 0.375rem;
-		padding: 0.75rem;
 		color: var(--color-text);
-		font-family: ui-monospace, monospace;
+		font-family: var(--font-mono, ui-monospace, monospace);
 		font-size: 0.8125rem;
-		line-height: 1.5;
+		line-height: 1.6;
 		white-space: pre-wrap;
 		word-wrap: break-word;
-		margin: 0;
+	}
+
+	.footer {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		padding: 0.625rem 0.75rem 0.625rem 1rem;
+		border-top: 1px solid var(--color-border);
+	}
+
+	.hint {
+		min-width: 0;
+		font-size: 0.75rem;
+		color: var(--color-text-faint);
+	}
+
+	.actions {
+		display: flex;
+		flex-shrink: 0;
+		gap: 0.5rem;
+	}
+
+	@media (max-width: 640px) {
+		.layout {
+			grid-template-columns: 1fr;
+			grid-template-rows: auto 1fr;
+		}
+
+		.list {
+			max-height: 28vh;
+			border-right: none;
+			border-bottom: 1px solid var(--color-border);
+		}
+
+		.hint {
+			display: none;
+		}
 	}
 </style>

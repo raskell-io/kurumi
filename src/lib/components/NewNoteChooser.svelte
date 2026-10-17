@@ -10,12 +10,11 @@
 	import { showNewNoteSnackbar } from '$lib/stores/snackbar';
 	import {
 		FileText,
-		Plus,
 		X,
 		Calendar,
 		Users,
 		FolderKanban,
-		Settings,
+		Settings2,
 		Sparkles
 	} from 'lucide-svelte';
 
@@ -45,7 +44,7 @@
 			.filter((l) => l.trim())
 			.slice(0, 3)
 			.map((l) => l.replace(/\{(\w+)\}/g, '·'));
-		return lines.join('\n');
+		return lines.join(' — ');
 	}
 
 	function handleBlankNote() {
@@ -85,6 +84,12 @@
 		goto('/templates');
 	}
 
+	// Blank note is the primary choice: focus it so Enter creates one
+	let blankRef: HTMLButtonElement | undefined = $state();
+	$effect(() => {
+		blankRef?.focus();
+	});
+
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape') {
 			e.preventDefault();
@@ -97,52 +102,49 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<div class="backdrop" onclick={onClose} role="dialog" aria-modal="true" tabindex="-1">
-	<div class="chooser" onclick={(e) => e.stopPropagation()} role="document">
+<div
+	class="k-dialog-backdrop"
+	onclick={onClose}
+	role="dialog"
+	aria-modal="true"
+	aria-labelledby="new-note-title"
+	tabindex="-1"
+>
+	<div class="k-dialog chooser" onclick={(e) => e.stopPropagation()} role="document">
 		<div class="chooser-header">
-			<h2>New note</h2>
-			<button class="close-btn" onclick={onClose} aria-label="Close">
+			<h2 id="new-note-title">New note</h2>
+			<button type="button" class="k-icon-btn" onclick={onClose} aria-label="Close">
 				<X class="h-4 w-4" />
 			</button>
 		</div>
 
 		<div class="chooser-body">
-			<!-- Blank note card -->
-			<button class="template-card blank" onclick={handleBlankNote}>
-				<div class="card-icon">
-					<FileText class="h-6 w-6" />
-				</div>
-				<div class="card-info">
-					<span class="card-name">Blank note</span>
-					<span class="card-desc">Start from scratch</span>
-				</div>
+			<button type="button" class="k-row option" bind:this={blankRef} onclick={handleBlankNote}>
+				<FileText class="option-icon h-4 w-4" />
+				<span class="option-info">
+					<span class="option-name">Blank note</span>
+					<span class="option-desc">Start from scratch</span>
+				</span>
 			</button>
 
-			<!-- Template cards -->
+			{#if userTemplates.length > 0}
+				<div class="k-menu-label">Templates</div>
+			{/if}
 			{#each userTemplates as template (template.id)}
 				{@const Icon = templateIcon(template.name)}
-				<button
-					class="template-card"
-					onclick={() => handleTemplateSelect(template)}
-				>
-					<div class="card-icon">
-						<Icon class="h-6 w-6" />
-					</div>
-					<div class="card-info">
-						<span class="card-name">{template.name}</span>
-						{#if template.description}
-							<span class="card-desc">{template.description}</span>
-						{:else}
-							<span class="card-preview">{templatePreview(template.content)}</span>
-						{/if}
-					</div>
+				<button type="button" class="k-row option" onclick={() => handleTemplateSelect(template)}>
+					<Icon class="option-icon h-4 w-4" />
+					<span class="option-info">
+						<span class="option-name">{template.name}</span>
+						<span class="option-desc">{template.description || templatePreview(template.content)}</span>
+					</span>
 				</button>
 			{/each}
 		</div>
 
 		<div class="chooser-footer">
-			<button class="manage-btn" onclick={handleManageTemplates}>
-				<Settings class="h-3.5 w-3.5" />
+			<button type="button" class="k-btn k-btn-ghost k-btn-sm" onclick={handleManageTemplates}>
+				<Settings2 class="h-3.5 w-3.5" />
 				Manage templates
 			</button>
 		</div>
@@ -150,178 +152,68 @@
 </div>
 
 <style>
-	.backdrop {
-		position: fixed;
-		inset: 0;
-		background: rgba(0, 0, 0, 0.5);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		z-index: 100;
-		padding: 1rem;
-		animation: fade-in 0.12s ease-out;
-	}
-
-	@keyframes fade-in {
-		from { opacity: 0; }
-		to { opacity: 1; }
-	}
-
 	.chooser {
-		background: var(--color-bg);
-		border: 1px solid var(--color-border);
-		border-radius: 0.75rem;
-		max-width: 520px;
-		width: 100%;
-		max-height: 80vh;
 		display: flex;
 		flex-direction: column;
-		box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-		animation: slide-up 0.15s ease-out;
-	}
-
-	@keyframes slide-up {
-		from { opacity: 0; transform: translateY(10px); }
-		to { opacity: 1; transform: translateY(0); }
+		max-width: 30rem;
+		overflow: hidden;
 	}
 
 	.chooser-header {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		padding: 1rem 1.25rem;
-		border-bottom: 1px solid var(--color-border);
+		padding: 0.625rem 0.625rem 0.25rem 1rem;
 	}
 
 	.chooser-header h2 {
-		font-size: 1.125rem;
-		font-weight: 600;
-		color: var(--color-text);
-	}
-
-	.close-btn {
-		background: none;
-		border: none;
-		padding: 0.375rem;
-		border-radius: 0.375rem;
-		cursor: pointer;
-		color: var(--color-text-muted);
-	}
-
-	.close-btn:hover {
-		background: var(--color-bg-secondary);
-		color: var(--color-text);
-	}
-
-	.chooser-body {
-		padding: 0.75rem;
-		overflow-y: auto;
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-		gap: 0.5rem;
-	}
-
-	.template-card {
-		display: flex;
-		align-items: flex-start;
-		gap: 0.75rem;
-		padding: 0.875rem;
-		background: var(--color-bg-secondary);
-		border: 1px solid var(--color-border);
-		border-radius: 0.625rem;
-		cursor: pointer;
-		text-align: left;
-		transition: all 0.12s;
-	}
-
-	.template-card:hover {
-		border-color: var(--color-accent);
-		background: color-mix(in srgb, var(--color-accent) 5%, var(--color-bg-secondary));
-	}
-
-	.template-card.blank {
-		border-style: dashed;
-	}
-
-	.template-card.blank:hover {
-		border-style: solid;
-	}
-
-	.card-icon {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 2.5rem;
-		height: 2.5rem;
-		flex-shrink: 0;
-		border-radius: 0.5rem;
-		background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-		color: var(--color-accent);
-	}
-
-	.template-card.blank .card-icon {
-		background: var(--color-bg);
-		color: var(--color-text-muted);
-	}
-
-	.card-info {
-		flex: 1;
-		min-width: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.125rem;
-	}
-
-	.card-name {
 		font-size: 0.875rem;
 		font-weight: 600;
 		color: var(--color-text);
 	}
 
-	.card-desc {
-		font-size: 0.75rem;
-		color: var(--color-text-muted);
-		line-height: 1.35;
+	.chooser-body {
+		flex: 1;
+		overflow-y: auto;
+		padding: 0.25rem 0.375rem 0.5rem;
 	}
 
-	.card-preview {
-		font-size: 0.6875rem;
-		color: var(--color-text-muted);
-		font-family: ui-monospace, monospace;
-		white-space: pre-line;
-		line-height: 1.3;
-		max-height: 2.6em;
-		overflow: hidden;
+	.option {
+		width: 100%;
+		text-align: left;
 	}
 
-	.chooser-footer {
+	.option:focus-visible {
+		outline: none;
+		background: var(--color-hover);
+	}
+
+	.option :global(.option-icon) {
+		flex-shrink: 0;
+		color: var(--color-text-faint);
+	}
+
+	.option-info {
 		display: flex;
-		justify-content: center;
-		padding: 0.75rem 1.25rem;
-		border-top: 1px solid var(--color-border);
+		flex-direction: column;
+		min-width: 0;
 	}
 
-	.manage-btn {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
-		background: none;
-		border: none;
-		padding: 0.375rem 0.75rem;
-		border-radius: 0.375rem;
-		color: var(--color-text-muted);
-		font-size: 0.75rem;
-		cursor: pointer;
-	}
-
-	.manage-btn:hover {
-		background: var(--color-bg-secondary);
+	.option-name {
+		font-size: 0.875rem;
 		color: var(--color-text);
 	}
 
-	@media (max-width: 480px) {
-		.chooser-body {
-			grid-template-columns: 1fr;
-		}
+	.option-desc {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 0.75rem;
+		color: var(--color-text-faint);
+	}
+
+	.chooser-footer {
+		padding: 0.375rem 0.5rem;
+		border-top: 1px solid var(--color-border);
 	}
 </style>

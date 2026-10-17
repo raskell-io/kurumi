@@ -11,8 +11,6 @@
 	import {
 		Calendar,
 		CheckSquare,
-		Mic,
-		Users as UsersIcon,
 		Bell,
 		Sparkles,
 		AlertCircle,
@@ -166,447 +164,310 @@
 	<title>Review - Kurumi</title>
 </svelte:head>
 
-<main class="review-page">
-	<header class="page-header">
-		<div class="header-icon">
-			<Calendar class="h-8 w-8" />
-		</div>
-		<h1>Weekly review</h1>
-		<div class="week-nav">
-			<button onclick={() => weekOffset--} class="nav-btn" aria-label="Previous week">
-				<ChevronLeft class="h-4 w-4" />
-			</button>
-			<span class="week-label">{rangeLabel}</span>
-			<button
-				onclick={() => weekOffset++}
-				disabled={weekOffset >= 0}
-				class="nav-btn"
-				aria-label="Next week"
-			>
-				<ChevronRight class="h-4 w-4" />
-			</button>
-		</div>
-	</header>
+<div class="h-full overflow-y-auto">
+	<main class="k-page">
+		<header class="k-page-header review-header">
+			<div class="min-w-0">
+				<h1 class="k-page-title">Weekly review</h1>
+				<p class="k-page-subtitle">
+					{rangeLabel}{weekOffset === 0 ? ' · this week' : ''}
+				</p>
+			</div>
+			<div class="week-nav">
+				{#if weekOffset < 0}
+					<button onclick={() => (weekOffset = 0)} class="k-btn k-btn-sm">This week</button>
+				{/if}
+				<button
+					onclick={() => weekOffset--}
+					class="k-icon-btn"
+					aria-label="Previous week"
+					title="Previous week"
+				>
+					<ChevronLeft class="h-4 w-4" />
+				</button>
+				<button
+					onclick={() => weekOffset++}
+					disabled={weekOffset >= 0}
+					class="k-icon-btn"
+					aria-label="Next week"
+					title="Next week"
+				>
+					<ChevronRight class="h-4 w-4" />
+				</button>
+			</div>
+		</header>
 
-	<section class="stats-grid">
-		<div class="stat">
-			<UsersIcon class="h-6 w-6 shrink-0 text-[var(--color-accent)]" />
-			<div class="stat-body">
+		<section class="stats" aria-label="Week at a glance">
+			<div class="stat">
 				<div class="stat-value">{meetingsThisWeek.length}</div>
 				<div class="stat-label">Meetings</div>
 			</div>
-		</div>
-		<div class="stat">
-			<Mic class="h-6 w-6 shrink-0 text-[var(--color-accent)]" />
-			<div class="stat-body">
+			<div class="stat">
 				<div class="stat-value">{voiceMemosThisWeek.length}</div>
 				<div class="stat-label">Voice memos</div>
 			</div>
-		</div>
-		<div class="stat">
-			<Sparkles class="h-6 w-6 shrink-0 text-[var(--color-accent)]" />
-			<div class="stat-body">
+			<div class="stat">
 				<div class="stat-value">{notesThisWeek.length}</div>
 				<div class="stat-label">Notes</div>
 			</div>
-		</div>
-		<div class="stat">
-			<CheckSquare class="h-6 w-6 shrink-0 text-[var(--color-accent)]" />
-			<div class="stat-body">
-				<div class="stat-value">{actionsCompletedThisWeek.length}</div>
-				<div class="stat-label">
-					Completed
-					<span class="stat-sub">of {actionsCreatedThisWeek.length} new</span>
+			<div class="stat">
+				<div class="stat-value">
+					{actionsCompletedThisWeek.length}<span class="stat-of">/{actionsCreatedThisWeek.length}</span>
 				</div>
+				<div class="stat-label">Actions done / new</div>
 			</div>
-		</div>
-	</section>
-
-	{#if overdueActions.length > 0 || pendingProposalsCount > 0}
-		<section class="alerts">
-			{#if overdueActions.length > 0}
-				<a href="/actions" class="alert alert-warn">
-					<AlertCircle class="h-4 w-4" />
-					<span>
-						<strong>{overdueActions.length}</strong> action item{overdueActions.length === 1 ? '' : 's'}
-						overdue
-					</span>
-					<span class="alert-cta">Review →</span>
-				</a>
-			{/if}
-			{#if pendingProposalsCount > 0}
-				<a href="/proposals" class="alert">
-					<Bell class="h-4 w-4" />
-					<span>
-						<strong>{pendingProposalsCount}</strong> reminder proposal{pendingProposalsCount === 1 ? '' : 's'}
-						waiting for review
-					</span>
-					<span class="alert-cta">Review →</span>
-				</a>
-			{/if}
 		</section>
-	{/if}
 
-	{#if aiAvailable}
-		<section class="summary-section">
-			<div class="summary-header">
-				<h2 class="section-title">
-					<Sparkles class="h-4 w-4" />
-					AI summary of the week
-				</h2>
-				<button
-					onclick={generateSummary}
-					disabled={summarizing}
-					class="generate-btn"
-				>
-					{#if summarizing}
-						Generating…
+		{#if overdueActions.length > 0 || pendingProposalsCount > 0}
+			<section class="alerts">
+				{#if overdueActions.length > 0}
+					<a href="/actions" class="k-row">
+						<AlertCircle class="h-4 w-4 shrink-0 text-[var(--color-danger)]" />
+						<span class="flex-1 min-w-0">
+							{overdueActions.length} action item{overdueActions.length === 1 ? '' : 's'} overdue
+						</span>
+						<span class="row-cta">Review <ChevronRight class="h-3.5 w-3.5" /></span>
+					</a>
+				{/if}
+				{#if pendingProposalsCount > 0}
+					<a href="/proposals" class="k-row">
+						<Bell class="h-4 w-4 shrink-0 text-[var(--color-text-faint)]" />
+						<span class="flex-1 min-w-0">
+							{pendingProposalsCount} reminder proposal{pendingProposalsCount === 1 ? '' : 's'}
+							waiting for review
+						</span>
+						<span class="row-cta">Review <ChevronRight class="h-3.5 w-3.5" /></span>
+					</a>
+				{/if}
+			</section>
+		{/if}
+
+		{#if aiAvailable}
+			<section>
+				<div class="section-head">
+					<h2 class="k-section-title">
+						<Sparkles class="h-3.5 w-3.5" />
+						Summary
+					</h2>
+					<button onclick={generateSummary} disabled={summarizing} class="k-btn k-btn-sm k-btn-ghost">
+						{#if summarizing}
+							Generating…
+						{:else if summary}
+							Regenerate
+						{:else}
+							Generate
+						{/if}
+					</button>
+				</div>
+				<div class="section-body">
+					{#if summaryError}
+						<p class="summary-error">{summaryError}</p>
 					{:else if summary}
-						Regenerate
+						<div class="summary-body">
+							<MarkdownRenderer content={summary} />
+						</div>
+					{:else if summarizing}
+						<p class="summary-placeholder">Writing a recap of this week…</p>
 					{:else}
-						Generate
+						<p class="summary-placeholder">
+							Generate a short natural-language recap of this week's meetings, memos, and
+							action items.
+						</p>
 					{/if}
-				</button>
-			</div>
-			{#if summaryError}
-				<div class="summary-error">{summaryError}</div>
-			{:else if summary}
-				<div class="summary-body">
-					<MarkdownRenderer content={summary} />
 				</div>
-			{:else if !summarizing}
-				<p class="summary-placeholder">
-					Click Generate to get a natural-language recap of this week's
-					meetings, memos, and action items.
-				</p>
-			{/if}
-		</section>
-	{/if}
+			</section>
+		{/if}
 
-	{#if meetingsThisWeek.length > 0}
-		<section class="memory-section">
-			<h2 class="section-title">
-				<UsersIcon class="h-4 w-4" />
-				Meetings
-			</h2>
-			<ul class="memory-list">
-				{#each meetingsThisWeek as memory (memory.id)}
-					<li>
-						<a href="/memory/{memory.id}" class="memory-card">
-							<div class="memory-title">{memory.title || 'Untitled'}</div>
-							{#if memory.summaryShort}
-								<div class="memory-summary">{memory.summaryShort}</div>
-							{/if}
-							<div class="memory-date">
-								{new Date(memory.createdAt).toLocaleDateString()}
-							</div>
-						</a>
-					</li>
-				{/each}
-			</ul>
-		</section>
-	{/if}
+		{#if meetingsThisWeek.length > 0}
+			<section>
+				<h2 class="k-section-title">Meetings</h2>
+				<ul class="row-list">
+					{#each meetingsThisWeek as memory (memory.id)}
+						<li>
+							<a href="/memory/{memory.id}" class="k-row meeting-row">
+								<div class="min-w-0 flex-1">
+									<div class="truncate font-medium">{memory.title || 'Untitled'}</div>
+									{#if memory.summaryShort}
+										<div class="meeting-summary">{memory.summaryShort}</div>
+									{/if}
+								</div>
+								<span class="row-date">
+									{new Date(memory.createdAt).toLocaleDateString('en-US', {
+										weekday: 'short',
+										month: 'short',
+										day: 'numeric'
+									})}
+								</span>
+							</a>
+						</li>
+					{/each}
+				</ul>
+			</section>
+		{/if}
 
-	{#if actionsCompletedThisWeek.length > 0}
-		<section class="memory-section">
-			<h2 class="section-title">
-				<CheckSquare class="h-4 w-4" />
-				Completed this week
-			</h2>
-			<ul class="simple-list">
-				{#each actionsCompletedThisWeek as item (item.id)}
-					<li class="completed-item">
-						<CheckSquare class="h-4 w-4 text-[var(--color-accent)]" />
-						<span class="completed-text">{item.text}</span>
-					</li>
-				{/each}
-			</ul>
-		</section>
-	{/if}
+		{#if actionsCompletedThisWeek.length > 0}
+			<section>
+				<h2 class="k-section-title">Completed this week</h2>
+				<ul class="row-list">
+					{#each actionsCompletedThisWeek as item (item.id)}
+						<li class="k-row completed-row">
+							<CheckSquare class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
+							<span class="completed-text">{item.text}</span>
+						</li>
+					{/each}
+				</ul>
+			</section>
+		{/if}
 
-	{#if newMemories.length === 0 && actionsCompletedThisWeek.length === 0}
-		<div class="empty-state">
-			<p>No activity in this week.</p>
-		</div>
-	{/if}
-</main>
+		{#if newMemories.length === 0 && actionsCompletedThisWeek.length === 0}
+			<div class="k-empty">
+				<Calendar />
+				<div class="k-empty-title">A quiet week</div>
+				<p>Nothing was captured or completed between {rangeLabel}.</p>
+			</div>
+		{/if}
+	</main>
+</div>
 
 <style>
-	.review-page {
-		max-width: 900px;
-		margin: 0 auto;
-		padding: 2rem 1.5rem 4rem;
-	}
-
-	.page-header {
-		text-align: center;
-		margin-bottom: 2rem;
-	}
-
-	.header-icon {
-		display: inline-flex;
-		padding: 1rem;
-		background: color-mix(in srgb, var(--color-accent) 15%, transparent);
-		color: var(--color-accent);
-		border-radius: 1rem;
-		margin-bottom: 0.75rem;
-	}
-
-	.page-header h1 {
-		font-size: 2rem;
-		font-weight: 700;
-		color: var(--color-text);
-		margin-bottom: 0.75rem;
+	.review-header {
+		flex-wrap: wrap;
 	}
 
 	.week-nav {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.75rem;
-	}
-
-	.nav-btn {
-		background: transparent;
-		border: 1px solid var(--color-border);
-		padding: 0.375rem 0.5rem;
-		border-radius: 0.375rem;
-		cursor: pointer;
-		color: var(--color-text-muted);
-		transition: all 0.15s;
-	}
-
-	.nav-btn:hover:not(:disabled) {
-		background: var(--color-bg-secondary);
-		color: var(--color-text);
-	}
-
-	.nav-btn:disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
-	}
-
-	.week-label {
-		font-size: 0.875rem;
-		color: var(--color-text);
-		font-weight: 500;
-	}
-
-	.stats-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-		gap: 0.75rem;
-		margin-bottom: 1.5rem;
-	}
-
-	.stat {
 		display: flex;
 		align-items: center;
-		gap: 0.875rem;
-		padding: 1rem;
-		background: var(--color-bg-secondary);
-		border: 1px solid var(--color-border);
-		border-radius: 0.75rem;
+		gap: 0.125rem;
 	}
 
-	.stat-body {
-		min-width: 0;
+	.week-nav .k-btn {
+		margin-right: 0.25rem;
+	}
+
+	/* Quiet row of numbers between two hairlines */
+	.stats {
+		display: grid;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		gap: 1rem;
+		padding: 1rem 0.25rem;
+		border-top: 1px solid var(--color-border);
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	@media (max-width: 480px) {
+		.stats {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
 	}
 
 	.stat-value {
-		font-size: 1.75rem;
-		font-weight: 700;
+		font-size: 1.5rem;
+		font-weight: 600;
+		line-height: 1.1;
+		letter-spacing: -0.01em;
+		font-variant-numeric: tabular-nums;
 		color: var(--color-text);
-		line-height: 1;
+	}
+
+	.stat-of {
+		font-size: 1rem;
+		font-weight: 400;
+		color: var(--color-text-faint);
 	}
 
 	.stat-label {
+		margin-top: 0.25rem;
 		font-size: 0.75rem;
 		color: var(--color-text-muted);
-		margin-top: 0.25rem;
-	}
-
-	.stat-sub {
-		display: block;
-		opacity: 0.75;
 	}
 
 	.alerts {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
-		margin-bottom: 1.5rem;
+		margin-top: 1rem;
 	}
 
-	.alert {
+	.row-cta {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.125rem;
+		flex-shrink: 0;
+		font-size: 0.75rem;
+		color: var(--color-text-faint);
+	}
+
+	.section-head {
 		display: flex;
 		align-items: center;
-		gap: 0.75rem;
-		padding: 0.75rem 1rem;
-		background: var(--color-bg-secondary);
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		font-size: 0.875rem;
-		color: var(--color-text);
-		text-decoration: none;
-		transition: border-color 0.15s;
-	}
-
-	.alert:hover {
-		border-color: var(--color-accent);
-	}
-
-	.alert.alert-warn {
-		border-color: rgba(239, 68, 68, 0.3);
-		color: #ef4444;
-	}
-
-	.alert-cta {
-		margin-left: auto;
-		font-size: 0.75rem;
-		color: var(--color-text-muted);
-	}
-
-	.section-title {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		font-size: 0.75rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--color-text-muted);
-		margin-bottom: 0.75rem;
-	}
-
-	.summary-section {
-		margin-bottom: 2rem;
-		padding: 1.25rem;
-		background: color-mix(in srgb, var(--color-accent) 5%, var(--color-bg-secondary));
-		border: 1px solid color-mix(in srgb, var(--color-accent) 30%, var(--color-border));
-		border-radius: 0.75rem;
-	}
-
-	.summary-header {
-		display: flex;
 		justify-content: space-between;
-		align-items: center;
 		gap: 1rem;
-		margin-bottom: 0.75rem;
+		margin-top: 1.75rem;
+		margin-bottom: 0.25rem;
 	}
 
-	.summary-header .section-title {
-		margin-bottom: 0;
+	.section-head .k-section-title {
+		margin: 0;
 	}
 
-	.generate-btn {
-		padding: 0.375rem 0.875rem;
-		background: var(--color-accent);
-		color: white;
-		border: none;
-		border-radius: 0.375rem;
-		font-size: 0.8125rem;
-		font-weight: 500;
-		cursor: pointer;
-		transition: background 0.15s;
-	}
-
-	.generate-btn:hover:not(:disabled) {
-		background: var(--color-accent-hover);
-	}
-
-	.generate-btn:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
+	.section-body {
+		padding: 0 0.25rem;
 	}
 
 	.summary-body {
 		color: var(--color-text);
 		font-size: 0.875rem;
-		line-height: 1.6;
+		line-height: 1.65;
 	}
 
 	.summary-placeholder {
-		color: var(--color-text-muted);
 		font-size: 0.875rem;
+		color: var(--color-text-faint);
 	}
 
 	.summary-error {
-		color: #ef4444;
 		font-size: 0.875rem;
+		color: var(--color-danger);
 	}
 
-	.memory-section {
-		margin-bottom: 2rem;
-	}
-
-	.memory-list {
-		list-style: none;
-		padding: 0;
-		margin: 0;
+	.row-list {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		list-style: none;
+		margin: 0;
+		padding: 0;
 	}
 
-	.memory-card {
-		display: block;
-		padding: 0.875rem 1rem;
-		background: var(--color-bg-secondary);
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		text-decoration: none;
-		transition: border-color 0.15s;
+	.meeting-row {
+		align-items: flex-start;
 	}
 
-	.memory-card:hover {
-		border-color: var(--color-accent);
-	}
-
-	.memory-title {
-		font-weight: 500;
-		color: var(--color-text);
-		margin-bottom: 0.25rem;
-	}
-
-	.memory-summary {
-		font-size: 0.875rem;
-		color: var(--color-text-muted);
+	.meeting-summary {
+		margin-top: 0.125rem;
+		font-size: 0.8125rem;
 		line-height: 1.5;
-		margin-bottom: 0.25rem;
-	}
-
-	.memory-date {
-		font-size: 0.75rem;
 		color: var(--color-text-muted);
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
 	}
 
-	.simple-list {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.375rem;
+	.row-date {
+		flex-shrink: 0;
+		padding-top: 0.125rem;
+		font-size: 0.75rem;
+		color: var(--color-text-faint);
 	}
 
-	.completed-item {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.5rem 0.75rem;
-		background: var(--color-bg-secondary);
-		border-radius: 0.375rem;
+	.completed-row:hover {
+		background: none;
 	}
 
 	.completed-text {
-		font-size: 0.875rem;
+		min-width: 0;
 		color: var(--color-text-muted);
 		text-decoration: line-through;
-	}
-
-	.empty-state {
-		text-align: center;
-		padding: 4rem 2rem;
-		color: var(--color-text-muted);
+		text-decoration-color: var(--color-text-faint);
 	}
 </style>

@@ -1,16 +1,7 @@
 <script lang="ts">
-	import { memoryObjects, getAllPeople, getAllTags } from '$lib/db';
+	import { memoryObjects, getAllPeople, getAllTags, todayIso } from '$lib/db';
 	import type { MemoryObject } from '$lib/db/types';
-	import { goto } from '$app/navigation';
-	import {
-		Clock,
-		FileText,
-		Mic,
-		Users,
-		Filter,
-		X,
-		ChevronDown
-	} from 'lucide-svelte';
+	import { Clock, FileText, Mic, Users, ListFilter, X } from 'lucide-svelte';
 
 	// Filters
 	let typeFilter = $state<string | null>(null);
@@ -20,6 +11,28 @@
 
 	let people = $derived(getAllPeople());
 	let tags = $derived(getAllTags());
+
+	// Local-time YYYY-MM-DD (toISOString() is UTC and split days at the
+	// wrong hour for anyone outside Greenwich).
+	function localIso(dt: Date): string {
+		const m = String(dt.getMonth() + 1).padStart(2, '0');
+		const d = String(dt.getDate()).padStart(2, '0');
+		return `${dt.getFullYear()}-${m}-${d}`;
+	}
+
+	function dayLabel(d: Date, iso: string): string {
+		const today = todayIso();
+		const y = new Date();
+		y.setDate(y.getDate() - 1);
+		if (iso === today) return 'Today';
+		if (iso === localIso(y)) return 'Yesterday';
+		return d.toLocaleDateString('en-US', {
+			weekday: 'long',
+			month: 'long',
+			day: 'numeric',
+			year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric'
+		});
+	}
 
 	// Filter and group memories by day
 	let grouped = $derived.by(() => {
@@ -36,19 +49,17 @@
 
 		for (const m of filtered) {
 			const d = new Date(m.createdAt);
-			const iso = d.toISOString().slice(0, 10);
+			const iso = localIso(d);
 			if (iso !== currentDate) {
 				currentDate = iso;
-				groups.push({
-					date: iso,
-					label: d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }),
-					items: []
-				});
+				groups.push({ date: iso, label: dayLabel(d, iso), items: [] });
 			}
 			groups[groups.length - 1].items.push(m);
 		}
 		return groups;
 	});
+
+	let totalShown = $derived(grouped.reduce((n, g) => n + g.items.length, 0));
 
 	let activeFilters = $derived(
 		[typeFilter, personFilter, tagFilter].filter(Boolean).length
@@ -68,349 +79,220 @@
 		}
 	}
 
-	function typeColor(type: string): string {
-		switch (type) {
-			case 'meeting': return '#34d399';
-			case 'voice-memo': return '#a78bfa';
-			default: return 'var(--color-accent)';
-		}
-	}
-
 	function formatTime(ts: number): string {
 		return new Date(ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 	}
 </script>
 
-<div class="tl-page">
-	<header class="tl-header">
-		<div class="tl-title">
-			<Clock class="h-5 w-5" />
-			<h1>Timeline</h1>
-		</div>
-		<div class="tl-controls">
-			{#if activeFilters > 0}
-				<button class="clear-btn" onclick={clearFilters}>
-					<X class="h-3 w-3" /> Clear
-				</button>
-			{/if}
-			<button class="filter-toggle" onclick={() => (showFilters = !showFilters)}>
-				<Filter class="h-4 w-4" />
+<svelte:head>
+	<title>Timeline - Kurumi</title>
+</svelte:head>
+
+<div class="h-full overflow-y-auto">
+	<div class="k-page">
+		<header class="k-page-header">
+			<div class="min-w-0">
+				<h1 class="k-page-title">Timeline</h1>
+				<p class="k-page-subtitle">
+					{totalShown} {totalShown === 1 ? 'memory' : 'memories'}{activeFilters > 0 ? ' matching filters' : ''}
+				</p>
+			</div>
+			<div class="tl-controls">
 				{#if activeFilters > 0}
-					<span class="filter-badge">{activeFilters}</span>
+					<button class="k-btn k-btn-sm k-btn-ghost" onclick={clearFilters}>
+						<X class="h-3.5 w-3.5" /> Clear
+					</button>
 				{/if}
-			</button>
-		</div>
-	</header>
+				<button
+					class="k-btn k-btn-sm"
+					class:filters-open={showFilters}
+					onclick={() => (showFilters = !showFilters)}
+					aria-expanded={showFilters}
+					aria-controls="tl-filters"
+				>
+					<ListFilter class="h-3.5 w-3.5" />
+					Filter
+					{#if activeFilters > 0}
+						<span class="k-badge k-badge-accent">{activeFilters}</span>
+					{/if}
+				</button>
+			</div>
+		</header>
 
-	{#if showFilters}
-		<div class="tl-filters">
-			<div class="filter-group">
-				<label class="filter-label" for="tl-type-filter">Type</label>
-				<select id="tl-type-filter" class="filter-select" bind:value={typeFilter}>
-					<option value={null}>All types</option>
-					<option value="note">Notes</option>
-					<option value="voice-memo">Voice memos</option>
-					<option value="meeting">Meetings</option>
-				</select>
-			</div>
-			<div class="filter-group">
-				<label class="filter-label" for="tl-person-filter">Person</label>
-				<select id="tl-person-filter" class="filter-select" bind:value={personFilter}>
-					<option value={null}>All people</option>
-					{#each people.slice(0, 30) as p}
-						<option value={p.name}>{p.name} ({p.count})</option>
-					{/each}
-				</select>
-			</div>
-			<div class="filter-group">
-				<label class="filter-label" for="tl-tag-filter">Tag</label>
-				<select id="tl-tag-filter" class="filter-select" bind:value={tagFilter}>
-					<option value={null}>All tags</option>
-					{#each tags.slice(0, 30) as t}
-						<option value={t.tag}>#{t.tag} ({t.count})</option>
-					{/each}
-				</select>
-			</div>
-		</div>
-	{/if}
-
-	{#if grouped.length === 0}
-		<div class="tl-empty">
-			<Clock class="h-10 w-10 opacity-20" />
-			<p>No memories found{activeFilters > 0 ? ' with these filters' : ''}.</p>
-		</div>
-	{:else}
-		<div class="tl-track">
-			{#each grouped as group}
-				<div class="tl-day">
-					<div class="tl-day-label">{group.label}</div>
-					{#each group.items as m}
-						{@const Icon = typeIcon(m.type)}
-						<button class="tl-item" onclick={() => goto(`/memory/${m.id}`)}>
-							<div class="tl-dot" style="background: {typeColor(m.type)}"></div>
-							<div class="tl-line"></div>
-							<div class="tl-card">
-								<div class="tl-card-header">
-									<Icon class="h-3.5 w-3.5" style="color: {typeColor(m.type)}" />
-									<span class="tl-card-title">{m.title || 'Untitled'}</span>
-									<span class="tl-card-time">{formatTime(m.createdAt)}</span>
-								</div>
-								{#if m.summaryShort}
-									<p class="tl-card-summary">{m.summaryShort}</p>
-								{:else if m.bodyMarkdown}
-									<p class="tl-card-summary">{m.bodyMarkdown.slice(0, 120)}{m.bodyMarkdown.length > 120 ? '...' : ''}</p>
-								{/if}
-								{#if (m.tags?.length ?? 0) > 0 || (m.participants?.length ?? 0) > 0}
-									<div class="tl-card-meta">
-										{#each (m.participants ?? []).slice(0, 3) as p}
-											<span class="meta-badge person">@{p}</span>
-										{/each}
-										{#each (m.tags ?? []).slice(0, 3) as t}
-											<span class="meta-badge tag">#{t}</span>
-										{/each}
-									</div>
-								{/if}
-							</div>
-						</button>
-					{/each}
+		{#if showFilters}
+			<div class="tl-filters" id="tl-filters">
+				<div class="filter-group">
+					<label class="k-label" for="tl-type-filter">Type</label>
+					<select id="tl-type-filter" class="k-input" bind:value={typeFilter}>
+						<option value={null}>All types</option>
+						<option value="note">Notes</option>
+						<option value="voice-memo">Voice memos</option>
+						<option value="meeting">Meetings</option>
+					</select>
 				</div>
+				<div class="filter-group">
+					<label class="k-label" for="tl-person-filter">Person</label>
+					<select id="tl-person-filter" class="k-input" bind:value={personFilter}>
+						<option value={null}>All people</option>
+						{#each people.slice(0, 30) as p}
+							<option value={p.name}>{p.name} ({p.count})</option>
+						{/each}
+					</select>
+				</div>
+				<div class="filter-group">
+					<label class="k-label" for="tl-tag-filter">Tag</label>
+					<select id="tl-tag-filter" class="k-input" bind:value={tagFilter}>
+						<option value={null}>All tags</option>
+						{#each tags.slice(0, 30) as t}
+							<option value={t.tag}>#{t.tag} ({t.count})</option>
+						{/each}
+					</select>
+				</div>
+			</div>
+		{/if}
+
+		{#if grouped.length === 0}
+			<div class="k-empty">
+				<Clock />
+				{#if activeFilters > 0}
+					<div class="k-empty-title">No matches</div>
+					<p>No memories match these filters.</p>
+					<button class="k-btn" onclick={clearFilters}>Clear filters</button>
+				{:else}
+					<div class="k-empty-title">Nothing here yet</div>
+					<p>Notes, voice memos and meetings will appear here as you capture them.</p>
+				{/if}
+			</div>
+		{:else}
+			{#each grouped as group (group.date)}
+				<section class="tl-day">
+					<h2 class="tl-day-label">{group.label}</h2>
+					<ul class="tl-list">
+						{#each group.items as m (m.id)}
+							{@const Icon = typeIcon(m.type)}
+							<li>
+								<a class="k-row tl-row" href="/memory/{m.id}">
+									<Icon class="tl-icon h-4 w-4 shrink-0" />
+									<div class="min-w-0 flex-1">
+										<div class="tl-title">{m.title || 'Untitled'}</div>
+										{#if m.summaryShort}
+											<p class="tl-summary">{m.summaryShort}</p>
+										{:else if m.bodyMarkdown}
+											<p class="tl-summary">{m.bodyMarkdown.slice(0, 120)}{m.bodyMarkdown.length > 120 ? '…' : ''}</p>
+										{/if}
+										{#if (m.tags?.length ?? 0) > 0 || (m.participants?.length ?? 0) > 0}
+											<div class="tl-meta">
+												{#each (m.participants ?? []).slice(0, 3) as p}
+													<span class="ref-person">@{p}</span>
+												{/each}
+												{#each (m.tags ?? []).slice(0, 3) as t}
+													<span class="ref-tag">#{t}</span>
+												{/each}
+											</div>
+										{/if}
+									</div>
+									<span class="tl-time">{formatTime(m.createdAt)}</span>
+								</a>
+							</li>
+						{/each}
+					</ul>
+				</section>
 			{/each}
-		</div>
-	{/if}
+		{/if}
+	</div>
 </div>
 
 <style>
-	.tl-page {
-		max-width: 640px;
-		margin: 0 auto;
-		padding: 1.5rem 1rem;
-	}
-
-	.tl-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 1rem;
-	}
-
-	.tl-title {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		color: var(--color-text);
-	}
-
-	.tl-title h1 {
-		font-size: 1.25rem;
-		font-weight: 700;
-		margin: 0;
-	}
-
 	.tl-controls {
 		display: flex;
 		align-items: center;
-		gap: 0.375rem;
-	}
-
-	.filter-toggle {
-		position: relative;
-		padding: 0.375rem;
-		border: 1px solid var(--color-border);
-		border-radius: 0.375rem;
-		background: var(--color-bg);
-		color: var(--color-text-muted);
-		cursor: pointer;
-	}
-
-	.filter-toggle:hover { color: var(--color-text); }
-
-	.filter-badge {
-		position: absolute;
-		top: -4px;
-		right: -4px;
-		width: 0.875rem;
-		height: 0.875rem;
-		border-radius: 50%;
-		background: var(--color-accent);
-		color: white;
-		font-size: 0.5rem;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.clear-btn {
-		display: flex;
-		align-items: center;
 		gap: 0.25rem;
-		padding: 0.25rem 0.5rem;
-		border: none;
-		border-radius: 0.25rem;
-		background: none;
-		color: var(--color-accent);
-		font-size: 0.6875rem;
-		cursor: pointer;
+		flex-shrink: 0;
+	}
+
+	.filters-open {
+		background: var(--color-active);
 	}
 
 	.tl-filters {
-		display: flex;
-		gap: 0.5rem;
-		margin-bottom: 1rem;
-		flex-wrap: wrap;
-	}
-
-	.filter-group {
-		flex: 1;
-		min-width: 120px;
-	}
-
-	.filter-label {
-		display: block;
-		font-size: 0.625rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		color: var(--color-text-muted);
-		margin-bottom: 0.25rem;
-	}
-
-	.filter-select {
-		width: 100%;
-		padding: 0.375rem 0.5rem;
-		border: 1px solid var(--color-border);
-		border-radius: 0.375rem;
-		background: var(--color-bg);
-		color: var(--color-text);
-		font-size: 0.75rem;
-	}
-
-	.tl-empty {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
 		gap: 0.75rem;
-		padding: 4rem 1rem;
-		text-align: center;
-		color: var(--color-text-muted);
+		margin-bottom: 1.5rem;
 	}
 
-	.tl-track {
-		display: flex;
-		flex-direction: column;
-		gap: 1.5rem;
+	.tl-day + .tl-day {
+		margin-top: 1rem;
 	}
 
+	/* Date label sticks to the top of the scroll area while its day is in view */
 	.tl-day-label {
+		position: sticky;
+		top: 0;
+		z-index: 1;
+		padding: 0.5rem 0.625rem 0.375rem;
+		background: var(--color-bg);
 		font-size: 0.75rem;
 		font-weight: 600;
-		color: var(--color-text-muted);
-		margin-bottom: 0.5rem;
-		padding-left: 1.5rem;
+		color: var(--color-text-faint);
 	}
 
-	.tl-item {
-		display: flex;
-		align-items: stretch;
-		gap: 0;
-		position: relative;
+	.tl-list {
+		list-style: none;
+		margin: 0;
 		padding: 0;
-		border: none;
-		background: none;
-		cursor: pointer;
-		text-align: left;
-		width: 100%;
 	}
 
-	.tl-dot {
-		width: 0.625rem;
-		height: 0.625rem;
-		border-radius: 50%;
-		flex-shrink: 0;
-		margin-top: 0.75rem;
-		z-index: 1;
+	.tl-row {
+		align-items: flex-start;
 	}
 
-	.tl-line {
-		position: absolute;
-		left: 0.25rem;
-		top: 1.375rem;
-		bottom: -0.75rem;
-		width: 2px;
-		background: var(--color-border);
+	.tl-row :global(.tl-icon) {
+		margin-top: 0.125rem;
+		color: var(--color-text-faint);
 	}
 
-	.tl-item:last-child .tl-line {
-		display: none;
-	}
-
-	.tl-card {
-		flex: 1;
-		margin-left: 0.75rem;
-		padding: 0.5rem 0.75rem;
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		background: var(--color-bg);
-		transition: border-color 0.15s;
-		margin-bottom: 0.375rem;
-	}
-
-	.tl-item:hover .tl-card {
-		border-color: var(--color-accent);
-	}
-
-	.tl-card-header {
-		display: flex;
-		align-items: center;
-		gap: 0.375rem;
-	}
-
-	.tl-card-title {
-		flex: 1;
-		font-size: 0.8125rem;
-		font-weight: 500;
-		color: var(--color-text);
+	.tl-title {
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+		font-weight: 500;
 	}
 
-	.tl-card-time {
-		font-size: 0.625rem;
+	.tl-summary {
+		margin-top: 0.125rem;
+		font-size: 0.8125rem;
+		line-height: 1.45;
 		color: var(--color-text-muted);
-		flex-shrink: 0;
-	}
-
-	.tl-card-summary {
-		font-size: 0.75rem;
-		color: var(--color-text-muted);
-		margin-top: 0.25rem;
-		line-height: 1.4;
 		display: -webkit-box;
 		-webkit-line-clamp: 2;
 		line-clamp: 2;
 		-webkit-box-orient: vertical;
 		overflow: hidden;
+		overflow-wrap: anywhere;
 	}
 
-	.tl-card-meta {
+	.tl-meta {
 		display: flex;
-		gap: 0.25rem;
-		margin-top: 0.375rem;
 		flex-wrap: wrap;
+		gap: 0.125rem 0.5rem;
+		margin-top: 0.25rem;
+		font-size: 0.75rem;
 	}
 
-	.meta-badge {
-		font-size: 0.5625rem;
-		padding: 0.0625rem 0.375rem;
-		border-radius: 999px;
+	.ref-person {
+		color: var(--color-ref-person);
 	}
 
-	.meta-badge.person {
-		background: rgba(166, 227, 161, 0.15);
-		color: #a6e3a1;
+	.ref-tag {
+		color: var(--color-ref-tag);
 	}
 
-	.meta-badge.tag {
-		background: rgba(250, 179, 135, 0.15);
-		color: #fab387;
+	.tl-time {
+		flex-shrink: 0;
+		padding-top: 0.125rem;
+		font-size: 0.75rem;
+		font-variant-numeric: tabular-nums;
+		color: var(--color-text-faint);
 	}
 </style>

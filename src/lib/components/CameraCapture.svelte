@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { processAndStoreImage } from '$lib/utils/image';
-	import { Camera, X, SwitchCamera, CircleDot } from 'lucide-svelte';
+	import { X, SwitchCamera, Loader2 } from 'lucide-svelte';
 	import { onDestroy } from 'svelte';
 
 	interface Props {
@@ -111,8 +111,28 @@
 		}
 	}
 
+	function close() {
+		stopStream();
+		onClose();
+	}
+
+	// Focus the shutter once the stream is live so Space/Enter shoots
+	let shutterRef: HTMLButtonElement | undefined = $state();
+	$effect(() => {
+		if (capturing) shutterRef?.focus();
+	});
+
+	function handleKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape' && !processing) {
+			e.preventDefault();
+			close();
+		}
+	}
+
 	onDestroy(() => stopStream());
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 <!-- Hidden mobile camera input -->
 <input
@@ -128,19 +148,24 @@
 	<!-- Desktop webcam modal -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-	<div class="backdrop" onclick={onClose} role="dialog" aria-modal="true" tabindex="-1">
-		<div class="camera-modal" onclick={(e) => e.stopPropagation()} role="document">
+	<div
+		class="k-dialog-backdrop camera-backdrop"
+		onclick={close}
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="camera-title"
+		tabindex="-1"
+	>
+		<div class="k-dialog camera-modal" onclick={(e) => e.stopPropagation()} role="document">
 			<div class="camera-header">
-				<h3>Take a photo</h3>
-				<button class="close-btn" onclick={() => { stopStream(); onClose(); }} aria-label="Close">
+				<h2 id="camera-title">Take a photo</h2>
+				<button type="button" class="k-icon-btn" onclick={close} aria-label="Close">
 					<X class="h-4 w-4" />
 				</button>
 			</div>
 
 			{#if error}
-				<div class="error">
-					{error}
-				</div>
+				<div class="error" role="alert">{error}</div>
 			{/if}
 
 			<div class="video-container">
@@ -156,92 +181,81 @@
 
 				{#if processing}
 					<div class="processing-overlay">
-						<div class="spinner"></div>
-						<span>Converting to AVIF...</span>
+						<Loader2 class="h-5 w-5 animate-spin" />
+						<span>Converting to AVIF…</span>
 					</div>
 				{/if}
 			</div>
 
 			<div class="controls">
-				<button class="control-btn" onclick={switchCamera} title="Switch camera">
-					<SwitchCamera class="h-5 w-5" />
+				<button type="button" class="k-icon-btn" onclick={switchCamera} title="Switch camera" aria-label="Switch camera">
+					<SwitchCamera class="h-4 w-4" />
 				</button>
 				<button
+					type="button"
+					bind:this={shutterRef}
 					class="shutter-btn"
 					onclick={takeSnapshot}
 					disabled={!capturing || processing}
 					aria-label="Take photo"
 				>
-					<CircleDot class="h-8 w-8" />
+					<span class="shutter-inner"></span>
 				</button>
-				<div class="control-spacer"></div>
+				<button type="button" class="k-btn k-btn-ghost k-btn-sm" onclick={close}>Cancel</button>
 			</div>
 		</div>
 	</div>
-{:else if processing}
-	<!-- Mobile processing overlay -->
-	<div class="backdrop" role="status">
-		<div class="processing-card">
-			<div class="spinner"></div>
-			<span>Converting to AVIF...</span>
+{:else if processing || error}
+	<!-- Mobile: processing / error card after the native camera returns -->
+	<div class="k-dialog-backdrop camera-backdrop" role={error ? 'alertdialog' : 'status'} aria-modal={error ? 'true' : undefined}>
+		<div class="k-dialog processing-card">
+			{#if error}
+				<span class="text-[var(--color-danger)]">{error}</span>
+				<button type="button" class="k-btn" onclick={close}>Close</button>
+			{:else}
+				<Loader2 class="h-5 w-5 animate-spin text-[var(--color-accent)]" />
+				<span>Converting to AVIF…</span>
+			{/if}
 		</div>
 	</div>
 {/if}
 
 <style>
-	.backdrop {
-		position: fixed;
-		inset: 0;
-		background: rgba(0, 0, 0, 0.8);
-		display: flex;
-		align-items: center;
-		justify-content: center;
+	.camera-backdrop {
 		z-index: 200;
-		padding: 1rem;
+	}
+
+	@media (min-width: 768px) {
+		.camera-backdrop {
+			align-items: center;
+			padding-top: 1rem;
+		}
 	}
 
 	.camera-modal {
-		background: var(--color-bg);
-		border: 1px solid var(--color-border);
-		border-radius: 0.75rem;
-		max-width: 640px;
-		width: 100%;
+		max-width: 40rem;
+		max-height: 90vh;
 		overflow: hidden;
-		box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
 	}
 
 	.camera-header {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		padding: 0.75rem 1rem;
-		border-bottom: 1px solid var(--color-border);
+		padding: 0.625rem 0.625rem 0.625rem 1rem;
 	}
 
-	.camera-header h3 {
-		font-size: 1rem;
+	.camera-header h2 {
+		font-size: 0.875rem;
 		font-weight: 600;
 		color: var(--color-text);
 	}
 
-	.close-btn {
-		background: none;
-		border: none;
-		padding: 0.375rem;
-		border-radius: 0.375rem;
-		cursor: pointer;
-		color: var(--color-text-muted);
-	}
-
-	.close-btn:hover {
-		background: var(--color-bg-secondary);
-	}
-
 	.error {
-		padding: 0.75rem 1rem;
-		background: rgba(239, 68, 68, 0.1);
-		color: #ef4444;
-		font-size: 0.875rem;
+		padding: 0.5rem 1rem;
+		background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+		color: var(--color-danger);
+		font-size: 0.8125rem;
 	}
 
 	.video-container {
@@ -263,60 +277,58 @@
 	.processing-overlay {
 		position: absolute;
 		inset: 0;
-		background: rgba(0, 0, 0, 0.7);
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
 		gap: 0.75rem;
+		background: rgb(0 0 0 / 0.6);
 		color: white;
-		font-size: 0.875rem;
+		font-size: 0.8125rem;
 	}
 
 	.controls {
-		display: flex;
+		display: grid;
+		grid-template-columns: 1fr auto 1fr;
 		align-items: center;
-		justify-content: space-between;
-		padding: 1rem;
-		background: var(--color-bg-secondary);
+		padding: 0.75rem 1rem;
 	}
 
-	.control-btn {
-		background: none;
-		border: 1px solid var(--color-border);
-		padding: 0.5rem;
-		border-radius: 50%;
-		cursor: pointer;
-		color: var(--color-text-muted);
-		transition: all 0.15s;
+	.controls > :last-child {
+		justify-self: end;
 	}
 
-	.control-btn:hover {
-		background: var(--color-border);
-		color: var(--color-text);
-	}
-
-	.control-spacer {
-		width: 2.5rem;
-	}
-
+	/* Classic camera shutter: ring + solid disc */
 	.shutter-btn {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 3.5rem;
-		height: 3.5rem;
+		width: 3.25rem;
+		height: 3.25rem;
+		border: 2px solid var(--color-text-muted);
 		border-radius: 50%;
-		background: white;
-		border: 3px solid var(--color-accent);
 		cursor: pointer;
-		color: var(--color-accent);
-		transition: all 0.15s;
 	}
 
-	.shutter-btn:hover:not(:disabled) {
+	.shutter-inner {
+		width: 2.5rem;
+		height: 2.5rem;
+		border-radius: 50%;
+		background: var(--color-text);
+		transition: transform 100ms var(--ease-out);
+	}
+
+	.shutter-btn:hover:not(:disabled) .shutter-inner {
 		background: var(--color-accent);
-		color: white;
+	}
+
+	.shutter-btn:active:not(:disabled) .shutter-inner {
+		transform: scale(0.92);
+	}
+
+	.shutter-btn:focus-visible {
+		outline: none;
+		box-shadow: 0 0 0 3px var(--color-accent-soft);
 	}
 
 	.shutter-btn:disabled {
@@ -329,23 +341,10 @@
 		flex-direction: column;
 		align-items: center;
 		gap: 0.75rem;
-		padding: 2rem;
-		background: var(--color-bg);
-		border-radius: 0.75rem;
+		max-width: 20rem;
+		padding: 1.5rem;
+		text-align: center;
 		color: var(--color-text);
 		font-size: 0.875rem;
-	}
-
-	.spinner {
-		width: 1.5rem;
-		height: 1.5rem;
-		border: 2px solid var(--color-accent);
-		border-top-color: transparent;
-		border-radius: 50%;
-		animation: spin 0.8s linear infinite;
-	}
-
-	@keyframes spin {
-		to { transform: rotate(360deg); }
 	}
 </style>

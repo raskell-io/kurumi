@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { search, parseSearchQuery, filterMemories, hasAnyFilter } from '$lib/search';
 	import { memoryObjects, getFolder, todayIso, type MemoryObject } from '$lib/db';
-	import { FileText, Calendar, Mic, Users, Folder } from 'lucide-svelte';
+	import { FileText, Mic, Users, Search } from 'lucide-svelte';
 
 	interface Props {
 		/** Raw content inside the ```kurumi code block. Lines are parsed
@@ -150,37 +150,42 @@
 
 <div class="dataview" role="region" aria-label="Live query results">
 	<div class="dv-header">
-		<span class="dv-badge">{sorted.length} result{sorted.length === 1 ? '' : 's'}</span>
-		<code class="dv-query">{config.query || '(all memories)'}</code>
+		<Search class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)]" />
+		<code class="dv-query" title={config.query || 'All memories'}>{config.query || 'All memories'}</code>
+		<span class="dv-count">{sorted.length} result{sorted.length === 1 ? '' : 's'}</span>
 	</div>
 
-	{#if config.view === 'table'}
-		<table class="dv-table">
-			<thead>
-				<tr>
-					<th>Title</th>
-					<th>Type</th>
-					<th>Updated</th>
-					<th>Tags</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each sorted as memory (memory.id)}
+	{#if sorted.length === 0}
+		<p class="dv-empty">No memories match this query.</p>
+	{:else if config.view === 'table'}
+		<div class="dv-table-wrap">
+			<table class="dv-table">
+				<thead>
 					<tr>
-						<td><a href="/memory/{memory.id}" class="dv-link">{memory.title || 'Untitled'}</a></td>
-						<td class="dv-type">{memory.type}</td>
-						<td class="dv-date">{formatDate(memory.updatedAt)}</td>
-						<td class="dv-tags">{memory.tags.slice(0, 3).map((t) => '#' + t).join(' ')}</td>
+						<th>Title</th>
+						<th>Type</th>
+						<th>Updated</th>
+						<th>Tags</th>
 					</tr>
-				{/each}
-			</tbody>
-		</table>
+				</thead>
+				<tbody>
+					{#each sorted as memory (memory.id)}
+						<tr>
+							<td><a href="/memory/{memory.id}" class="dv-link">{memory.title || 'Untitled'}</a></td>
+							<td class="dv-muted capitalize">{memory.type}</td>
+							<td class="dv-muted whitespace-nowrap tabular-nums">{formatDate(memory.updatedAt)}</td>
+							<td class="dv-muted">{memory.tags.slice(0, 3).map((t) => '#' + t).join(' ')}</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
 	{:else if config.view === 'board' && config.group}
 		<div class="dv-board">
 			{#each [...boardGroups.entries()] as [groupName, items] (groupName)}
 				<div class="dv-column">
 					<div class="dv-column-header">
-						{groupName}
+						<span class="truncate">{groupName}</span>
 						<span class="dv-column-count">{items.length}</span>
 					</div>
 					{#each items as memory (memory.id)}
@@ -201,7 +206,7 @@
 				{@const Icon = typeIcon(memory.type)}
 				<li>
 					<a href="/memory/{memory.id}" class="dv-list-item">
-						<Icon class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
+						<Icon class="h-4 w-4 shrink-0 text-[var(--color-text-faint)]" />
 						<span class="dv-list-title">{memory.title || 'Untitled'}</span>
 						<span class="dv-list-date">{formatDate(memory.updatedAt)}</span>
 					</a>
@@ -212,56 +217,79 @@
 </div>
 
 <style>
+	/* Rendered inside the editor, so typography is reset explicitly to
+	   the UI font rather than inheriting the editor's prose styles. */
 	.dataview {
 		margin: 1rem 0;
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
 		overflow: hidden;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		background: var(--color-bg);
+		font-family: var(--font-sans);
 		font-size: 0.8125rem;
+		line-height: 1.45;
 	}
 
 	.dv-header {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		padding: 0.5rem 0.75rem;
-		background: var(--color-bg-secondary);
+		padding: 0.4375rem 0.75rem;
 		border-bottom: 1px solid var(--color-border);
-	}
-
-	.dv-badge {
-		padding: 0.125rem 0.5rem;
-		background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-		color: var(--color-accent);
-		border-radius: 999px;
-		font-size: 0.6875rem;
-		font-weight: 500;
+		background: var(--color-bg-secondary);
 	}
 
 	.dv-query {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		padding: 0;
+		background: none;
+		font-family: var(--font-mono);
+		font-size: 0.75rem;
 		color: var(--color-text-muted);
-		font-size: 0.6875rem;
+	}
+
+	.dv-count {
+		flex-shrink: 0;
+		font-size: 0.75rem;
+		font-variant-numeric: tabular-nums;
+		color: var(--color-text-faint);
+	}
+
+	.dv-empty {
+		margin: 0;
+		padding: 1.25rem 0.75rem;
+		text-align: center;
+		color: var(--color-text-muted);
 	}
 
 	/* List view */
 	.dv-list {
-		list-style: none;
-		padding: 0;
 		margin: 0;
+		padding: 0.25rem;
+		list-style: none;
+	}
+
+	.dv-list li {
+		margin: 0;
+		padding: 0;
 	}
 
 	.dv-list-item {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		padding: 0.4375rem 0.75rem;
-		text-decoration: none;
+		padding: 0.375rem 0.5rem;
+		border-radius: var(--radius-md);
 		color: var(--color-text);
-		transition: background 0.1s;
+		text-decoration: none;
 	}
 
 	.dv-list-item:hover {
-		background: var(--color-bg-secondary);
+		background: var(--color-hover);
 	}
 
 	.dv-list-title {
@@ -273,126 +301,130 @@
 	}
 
 	.dv-list-date {
-		color: var(--color-text-muted);
 		flex-shrink: 0;
-		font-size: 0.6875rem;
+		font-size: 0.75rem;
+		font-variant-numeric: tabular-nums;
+		color: var(--color-text-faint);
 	}
 
 	/* Table view */
+	.dv-table-wrap {
+		overflow-x: auto;
+	}
+
 	.dv-table {
 		width: 100%;
+		margin: 0;
 		border-collapse: collapse;
 	}
 
 	.dv-table th {
-		text-align: left;
 		padding: 0.375rem 0.75rem;
-		background: var(--color-bg-secondary);
+		border: none;
 		border-bottom: 1px solid var(--color-border);
-		font-weight: 600;
+		background: var(--color-bg-secondary);
+		font-size: 0.75rem;
+		font-weight: 500;
 		color: var(--color-text-muted);
-		font-size: 0.6875rem;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
+		text-align: left;
+		white-space: nowrap;
 	}
 
 	.dv-table td {
 		padding: 0.375rem 0.75rem;
+		border: none;
 		border-bottom: 1px solid var(--color-border);
 		color: var(--color-text);
 	}
 
-	.dv-table tr:last-child td {
+	.dv-table tbody tr:last-child td {
 		border-bottom: none;
 	}
 
+	.dv-table tbody tr:hover td {
+		background: var(--color-hover);
+	}
+
 	.dv-link {
-		color: var(--color-accent);
+		font-weight: 500;
+		color: var(--color-text);
 		text-decoration: none;
 	}
 
 	.dv-link:hover {
 		text-decoration: underline;
+		text-decoration-color: var(--color-text-faint);
+		text-underline-offset: 2px;
 	}
 
-	.dv-type {
+	.dv-muted {
 		color: var(--color-text-muted);
-		text-transform: capitalize;
-	}
-
-	.dv-date {
-		color: var(--color-text-muted);
-	}
-
-	.dv-tags {
-		color: var(--color-text-muted);
-		font-family: ui-monospace, monospace;
-		font-size: 0.6875rem;
 	}
 
 	/* Board view */
 	.dv-board {
 		display: flex;
-		gap: 0.75rem;
-		padding: 0.75rem;
+		gap: 0.5rem;
+		min-height: 10rem;
+		padding: 0.5rem;
 		overflow-x: auto;
-		min-height: 12rem;
 	}
 
 	.dv-column {
-		flex: 0 0 220px;
-		background: var(--color-bg-secondary);
-		border-radius: 0.5rem;
 		display: flex;
+		flex: 0 0 13.5rem;
 		flex-direction: column;
+		gap: 0.375rem;
+		padding: 0.375rem;
+		border-radius: var(--radius-md);
+		background: var(--color-bg-secondary);
 	}
 
 	.dv-column-header {
 		display: flex;
-		justify-content: space-between;
 		align-items: center;
-		padding: 0.5rem 0.625rem;
+		justify-content: space-between;
+		gap: 0.5rem;
+		padding: 0.125rem 0.25rem 0.25rem;
+		font-size: 0.75rem;
 		font-weight: 600;
-		color: var(--color-text);
-		border-bottom: 1px solid var(--color-border);
+		color: var(--color-text-muted);
 	}
 
 	.dv-column-count {
-		font-size: 0.6875rem;
-		color: var(--color-text-muted);
-		padding: 0.125rem 0.375rem;
-		background: var(--color-bg);
-		border-radius: 999px;
+		flex-shrink: 0;
+		font-weight: 500;
+		font-variant-numeric: tabular-nums;
+		color: var(--color-text-faint);
 	}
 
 	.dv-card {
 		display: block;
-		margin: 0.375rem;
-		padding: 0.5rem 0.625rem;
-		background: var(--color-bg);
+		padding: 0.4375rem 0.625rem;
 		border: 1px solid var(--color-border);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-sm);
+		background: var(--color-bg);
+		box-shadow: var(--shadow-sm);
 		text-decoration: none;
-		transition: border-color 0.1s;
 	}
 
 	.dv-card:hover {
-		border-color: var(--color-accent);
+		border-color: color-mix(in srgb, var(--color-text) 18%, var(--color-border));
 	}
 
 	.dv-card-title {
 		display: block;
+		font-size: 0.8125rem;
 		font-weight: 500;
-		color: var(--color-text);
-		font-size: 0.75rem;
 		line-height: 1.3;
+		color: var(--color-text);
 	}
 
 	.dv-card-summary {
 		display: block;
 		margin-top: 0.25rem;
+		font-size: 0.75rem;
+		line-height: 1.35;
 		color: var(--color-text-muted);
-		font-size: 0.6875rem;
-		line-height: 1.3;
 	}
 </style>

@@ -1,10 +1,7 @@
 <script lang="ts">
-	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { search } from '$lib/search';
-	import { currentVault } from '$lib/db';
-	import { getIconById } from '$lib/icons/vault-icons';
-	import { Search, NotebookText, Pencil, PenSquare } from 'lucide-svelte';
+	import { ArrowLeft, BookOpen, Search, NotebookText, Pencil, PenSquare } from 'lucide-svelte';
 
 	interface Props {
 		noteId?: string;
@@ -57,7 +54,7 @@
 		// Delay to allow click on results
 		setTimeout(() => {
 			searchOpen = false;
-		}, 200);
+		}, 150);
 	}
 
 	function openSearch() {
@@ -65,371 +62,247 @@
 		setTimeout(() => searchInputRef?.focus(), 0);
 	}
 
-	// Global keyboard shortcut
+	// "/" focuses the read-mode search. (Cmd+K belongs to the global
+	// command palette; grabbing it here stole focus from the palette.)
 	function handleGlobalKeydown(e: KeyboardEvent) {
-		if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-			e.preventDefault();
-			openSearch();
-		}
+		if (!showSearch || e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+		const target = e.target as HTMLElement;
+		if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+		e.preventDefault();
+		openSearch();
 	}
+
+	function goBack() {
+		history.back();
+	}
+
+	// The last crumb (or the note title) is the current location
+	let current = $derived(title ?? breadcrumbs.at(-1)?.label);
+	let trail = $derived(title !== undefined ? breadcrumbs : breadcrumbs.slice(0, -1));
 </script>
 
-<svelte:window on:keydown={handleGlobalKeydown} />
+<svelte:window onkeydown={handleGlobalKeydown} />
 
-<nav class="read-nav">
-	<div class="nav-content">
-		<!-- Logo/Home -->
-		<a href="/" class="nav-logo">
-			<img src="/icon-192.avif" alt="Kurumi" class="logo-icon" />
-			<span class="logo-text">
-				{#if $currentVault?.icon}
-					{@const vaultIcon = getIconById($currentVault.icon)}
-					{#if vaultIcon}
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							class="vault-icon"
-							viewBox="0 0 20 20"
-							fill="currentColor"
-						>
-							<path fill-rule="evenodd" d={vaultIcon.path} clip-rule="evenodd" />
-						</svg>
-					{/if}
-				{/if}
-				{$currentVault?.name || 'Kurumi'}
-			</span>
+<nav class="read-nav" aria-label="Read mode">
+	<button class="k-icon-btn" onclick={goBack} title="Back" aria-label="Back">
+		<ArrowLeft class="h-4 w-4" />
+	</button>
+
+	<div class="crumbs">
+		<a href="/read" class="crumb crumb-root" title="All notes">
+			<BookOpen class="h-3.5 w-3.5 shrink-0" />
+			<span>Read</span>
 		</a>
-
-		<!-- Read Mode Badge -->
-		<span class="read-mode-badge">Read mode</span>
-
-		<!-- Breadcrumbs -->
-		{#if breadcrumbs.length > 0}
-			<div class="breadcrumbs">
-				<span class="breadcrumb-sep">/</span>
-				{#each breadcrumbs as crumb, i}
-					<a href={crumb.href} class="breadcrumb">{crumb.label}</a>
-					{#if i < breadcrumbs.length - 1}
-						<span class="breadcrumb-sep">/</span>
-					{/if}
-				{/each}
-			</div>
+		{#each trail as crumb (crumb.href)}
+			<span class="crumb-sep">/</span>
+			<a href={crumb.href} class="crumb">{crumb.label}</a>
+		{/each}
+		{#if current}
+			<span class="crumb-sep">/</span>
+			<span class="crumb crumb-current" aria-current="page">{current || 'Untitled'}</span>
 		{/if}
+	</div>
 
-		<!-- Spacer -->
-		<div class="nav-spacer"></div>
+	{#if showSearch}
+		<div class="search-container">
+			<Search class="search-icon h-3.5 w-3.5" />
+			<input
+				bind:this={searchInputRef}
+				bind:value={searchQuery}
+				type="text"
+				placeholder="Search notes"
+				aria-label="Search notes"
+				class="search-input"
+				onfocus={handleSearchFocus}
+				onblur={handleSearchBlur}
+				onkeydown={handleSearchKeydown}
+			/>
+			<kbd class="k-kbd search-kbd">/</kbd>
 
-		<!-- Search -->
-		{#if showSearch}
-			<div class="search-container">
-				<div class="search-wrapper">
-					<Search class="search-icon" />
-					<input
-						bind:this={searchInputRef}
-						bind:value={searchQuery}
-						type="text"
-						placeholder="Search..."
-						class="search-input"
-						onfocus={handleSearchFocus}
-						onblur={handleSearchBlur}
-						onkeydown={handleSearchKeydown}
-					/>
-					<kbd class="search-kbd">
-						{navigator?.platform?.includes('Mac') ? '⌘' : 'Ctrl'}K
-					</kbd>
+			{#if searchOpen && searchResults.length > 0}
+				<div class="k-menu search-results" role="listbox">
+					{#each searchResults as result, i (result.id)}
+						<a
+							href="/read/{result.id}"
+							class="k-menu-item"
+							class:selected={i === selectedIndex}
+							role="option"
+							aria-selected={i === selectedIndex}
+							onclick={() => { searchOpen = false; searchQuery = ''; }}
+						>
+							<NotebookText class="h-4 w-4 shrink-0 text-[var(--color-text-faint)]" />
+							<span class="truncate">{result.title || 'Untitled'}</span>
+						</a>
+					{/each}
 				</div>
-
-				{#if searchOpen && searchResults.length > 0}
-					<div class="search-results">
-						{#each searchResults as result, i}
-							<a
-								href="/read/{result.id}"
-								class="search-result"
-								class:selected={i === selectedIndex}
-								onclick={() => { searchOpen = false; searchQuery = ''; }}
-							>
-								<NotebookText class="result-icon" />
-								{result.title || 'Untitled'}
-							</a>
-						{/each}
-					</div>
-				{/if}
-			</div>
-		{/if}
-
-		<!-- Actions -->
-		<div class="nav-actions">
-			<!-- Edit link: show note-specific when viewing a note, general when not -->
-			{#if noteId}
-				<a href="/memory/{noteId}" class="nav-btn edit-btn" title="Edit this note">
-					<Pencil class="h-5 w-5" />
-					<span class="btn-text">Edit</span>
-				</a>
-			{:else}
-				<a href="/?sidebar=open" class="nav-btn" title="Back to editor">
-					<PenSquare class="h-5 w-5" />
-				</a>
 			{/if}
 		</div>
-	</div>
+	{/if}
+
+	<!-- Edit link: note-specific when viewing a note, general when not -->
+	{#if noteId}
+		<a href="/memory/{noteId}" class="k-btn k-btn-sm edit-btn" title="Edit this note">
+			<Pencil class="h-3.5 w-3.5" />
+			Edit
+		</a>
+	{:else}
+		<a href="/?sidebar=open" class="k-icon-btn" title="Back to editor" aria-label="Back to editor">
+			<PenSquare class="h-4 w-4" />
+		</a>
+	{/if}
 </nav>
 
 <style>
 	.read-nav {
 		position: sticky;
 		top: 0;
-		z-index: 100;
-		background: var(--color-bg);
-		border-bottom: 1px solid var(--color-border);
-		backdrop-filter: blur(8px);
-		max-width: 100vw;
-		overflow-x: hidden;
-	}
-
-	.nav-content {
-		display: flex;
-		align-items: center;
-		gap: 1rem;
-		max-width: 1200px;
-		margin: 0 auto;
-		padding: 0.75rem 1rem;
-		box-sizing: border-box;
-	}
-
-	.nav-logo {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		text-decoration: none;
-		color: var(--color-text);
-		font-weight: 600;
-		flex-shrink: 0;
-	}
-
-	.logo-icon {
-		width: 2.25rem;
-		height: 2.25rem;
-		border-radius: 6px;
-	}
-
-	.logo-text {
-		font-size: 1.125rem;
+		z-index: 30;
 		display: flex;
 		align-items: center;
 		gap: 0.375rem;
+		height: 2.75rem;
+		padding: 0 0.75rem;
+		background: color-mix(in srgb, var(--color-bg) 88%, transparent);
+		backdrop-filter: blur(8px);
+		-webkit-backdrop-filter: blur(8px);
 	}
 
-	.vault-icon {
-		width: 1rem;
-		height: 1rem;
-		color: var(--color-accent);
+	@media (min-width: 768px) {
+		.read-nav {
+			padding: 0 1rem;
+		}
 	}
 
-	.read-mode-badge {
-		font-size: 0.75rem;
-		font-weight: 500;
-		color: var(--color-text-muted);
-		background: var(--color-bg-secondary);
-		padding: 0.25rem 0.5rem;
-		border-radius: 0.25rem;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-	}
-
-	.breadcrumbs {
+	.crumbs {
 		display: flex;
+		flex: 1;
 		align-items: center;
-		gap: 0.5rem;
-		font-size: 0.875rem;
+		gap: 0.125rem;
+		min-width: 0;
+		font-size: 0.8125rem;
 		color: var(--color-text-muted);
-		overflow: hidden;
 	}
 
-	.breadcrumb {
-		color: var(--color-text-muted);
+	.crumb {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3125rem;
+		min-width: 0;
+		max-width: 12rem;
+		padding: 0.125rem 0.25rem;
+		border-radius: var(--radius-sm);
+		overflow: hidden;
+		color: inherit;
 		text-decoration: none;
 		white-space: nowrap;
-		overflow: hidden;
 		text-overflow: ellipsis;
 	}
 
-	.breadcrumb:hover {
-		color: var(--color-accent);
+	a.crumb:hover {
+		background: var(--color-hover);
+		color: var(--color-text);
 	}
 
-	.breadcrumb-sep {
-		color: var(--color-border);
+	.crumb-root {
 		flex-shrink: 0;
 	}
 
-	.nav-spacer {
-		flex: 1;
+	.crumb-current {
+		display: block;
+		flex: 0 1 auto;
+		max-width: none;
+		color: var(--color-text);
+	}
+
+	.crumb-sep {
+		flex-shrink: 0;
+		color: var(--color-text-faint);
 	}
 
 	.search-container {
 		position: relative;
-		width: 100%;
-		max-width: 320px;
-	}
-
-	.search-wrapper {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
-		padding: 0.5rem 0.75rem;
-		background: var(--color-bg-secondary);
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		transition: border-color 0.15s;
-	}
-
-	.search-wrapper:focus-within {
-		border-color: var(--color-accent);
-	}
-
-	.search-input {
-		flex: 1;
-		background: transparent;
-		border: none;
-		outline: none;
-		font-size: 0.875rem;
-		color: var(--color-text);
+		width: 15rem;
+		flex-shrink: 1;
 		min-width: 0;
 	}
 
+	.search-container :global(.search-icon) {
+		position: absolute;
+		left: 0.5rem;
+		color: var(--color-text-faint);
+		pointer-events: none;
+	}
+
+	.search-input {
+		width: 100%;
+		height: 1.75rem;
+		padding: 0 1.75rem 0 1.75rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		background: var(--color-bg);
+		font-size: 0.8125rem;
+		color: var(--color-text);
+		outline: none;
+	}
+
 	.search-input::placeholder {
-		color: var(--color-text-muted);
+		color: var(--color-text-faint);
+	}
+
+	.search-input:focus {
+		border-color: color-mix(in srgb, var(--color-accent) 60%, var(--color-border));
+		box-shadow: 0 0 0 3px var(--color-accent-soft);
 	}
 
 	.search-kbd {
-		font-size: 0.75rem;
-		color: var(--color-text-muted);
-		background: var(--color-bg);
-		padding: 0.125rem 0.375rem;
-		border-radius: 0.25rem;
-		flex-shrink: 0;
+		position: absolute;
+		right: 0.375rem;
+		pointer-events: none;
+	}
+
+	.search-input:focus ~ .search-kbd {
+		display: none;
 	}
 
 	.search-results {
 		position: absolute;
-		top: 100%;
-		left: 0;
+		top: calc(100% + 0.25rem);
 		right: 0;
-		margin-top: 0.25rem;
-		background: var(--color-bg);
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-		overflow: hidden;
+		left: 0;
+		z-index: 40;
 	}
 
-	.search-result {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.625rem 0.75rem;
-		color: var(--color-text);
-		text-decoration: none;
-		font-size: 0.875rem;
-		transition: background 0.1s;
-	}
-
-	.search-result:hover,
-	.search-result.selected {
-		background: var(--color-bg-secondary);
-	}
-
-	.nav-actions {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		flex-shrink: 0;
-		margin-left: auto;
-	}
-
-	.nav-btn {
-		display: flex;
-		align-items: center;
-		gap: 0.375rem;
-		padding: 0.5rem;
-		background: transparent;
-		border: none;
-		border-radius: 0.5rem;
-		color: var(--color-text-muted);
-		cursor: pointer;
-		transition: all 0.15s;
+	.search-results .k-menu-item {
 		text-decoration: none;
 	}
 
-	.nav-btn:hover {
-		background: var(--color-bg-secondary);
-		color: var(--color-text);
+	.search-results .k-menu-item.selected {
+		background: var(--color-hover);
 	}
 
 	.edit-btn {
-		background: linear-gradient(135deg, #89b4fa, #cba6f7, #f5c2e7);
-		color: #1e1e2e;
-		padding: 0.5rem 0.75rem;
-		justify-content: center;
-		box-shadow: 0 4px 12px -2px rgba(203, 166, 247, 0.4);
-		font-weight: 500;
+		flex-shrink: 0;
+		text-decoration: none;
 	}
 
-	.edit-btn:hover {
-		background: linear-gradient(135deg, #74c7ec, #b4befe, #f5c2e7);
-		color: #1e1e2e;
-		box-shadow: 0 6px 16px -2px rgba(203, 166, 247, 0.5);
-	}
-
-	.btn-text {
-		font-size: 0.875rem;
-		font-weight: 500;
-	}
-
-	@media (max-width: 768px) {
-		.nav-content {
-			padding: 0.5rem 0.75rem;
-			gap: 0.5rem;
-		}
-
-		.logo-text {
+	@media (max-width: 640px) {
+		/* On phones keep only root + current location */
+		.crumbs a.crumb:not(.crumb-root),
+		.crumbs a.crumb:not(.crumb-root) + .crumb-sep {
 			display: none;
 		}
 
-		.breadcrumbs {
-			display: none;
-		}
-
-		.nav-spacer {
+		.crumb-root span {
 			display: none;
 		}
 
 		.search-container {
-			max-width: none;
-			flex: 1;
-			min-width: 0;
-		}
-
-		.search-wrapper {
-			padding: 0.375rem 0.5rem;
+			width: 9rem;
 		}
 
 		.search-kbd {
-			display: none;
-		}
-
-		.nav-actions {
-			gap: 0.25rem;
-		}
-
-		.nav-btn {
-			padding: 0.375rem;
-		}
-
-		.edit-btn {
-			padding: 0.375rem 0.5rem;
-		}
-
-		.btn-text {
 			display: none;
 		}
 	}

@@ -13,7 +13,7 @@
 	import { get } from 'svelte/store';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
-	import { Tag, User, Calendar, Link, ChevronRight, ChevronDown, ExternalLink, Globe } from 'lucide-svelte';
+	import { Tag, User, Calendar, Link, ChevronRight, ExternalLink, Globe } from 'lucide-svelte';
 	import PersonCard from '$lib/components/PersonCard.svelte';
 	import AgendaView from '$lib/components/AgendaView.svelte';
 	import ExportMenu from '$lib/components/ExportMenu.svelte';
@@ -23,6 +23,13 @@
 	// Get initial values from URL params
 	let initialTab = ($page.url.searchParams.get('tab') as TabType) || 'tags';
 	let initialItem = $page.url.searchParams.get('item');
+
+	const tabs: { id: TabType; label: string; icon: typeof Tag }[] = [
+		{ id: 'tags', label: 'Tags', icon: Tag },
+		{ id: 'people', label: 'People', icon: User },
+		{ id: 'dates', label: 'Dates', icon: Calendar },
+		{ id: 'links', label: 'Links', icon: Link }
+	];
 
 	let activeTab = $state<TabType>(initialTab);
 	let expandedItem = $state<string | null>(initialItem);
@@ -95,6 +102,24 @@
 		}
 	});
 
+	function tabCount(tab: TabType): number {
+		switch (tab) {
+			case 'tags':
+				return allTags.length;
+			case 'people':
+				return allPeople.length;
+			case 'dates':
+				return allDates.length;
+			case 'links':
+				return allLinks.length;
+		}
+	}
+
+	function selectTab(tab: TabType) {
+		activeTab = tab;
+		expandedItem = null;
+	}
+
 	function toggleExpand(item: string) {
 		expandedItem = expandedItem === item ? null : item;
 	}
@@ -116,71 +141,32 @@
 	<title>References - Kurumi</title>
 </svelte:head>
 
-<div class="references-page">
-	<header class="page-header">
-		<h1>References</h1>
-		<p class="subtitle">Browse tags, people, dates, and links across your notes</p>
+<div class="k-page">
+	<header class="k-page-header">
+		<div class="min-w-0">
+			<h1 class="k-page-title">References</h1>
+			<p class="k-page-subtitle">Browse tags, people, dates, and links across your notes</p>
+		</div>
 	</header>
 
-	<div class="tabs-container">
-		<div class="tabs">
-			<button
-				class="tab"
-				class:active={activeTab === 'tags'}
-				onclick={() => {
-					activeTab = 'tags';
-					expandedItem = null;
-				}}
-			>
-				<Tag class="h-4 w-4" />
-				Tags
-				<span class="count">{allTags.length}</span>
-			</button>
-			<button
-				class="tab"
-				class:active={activeTab === 'people'}
-				onclick={() => {
-					activeTab = 'people';
-					expandedItem = null;
-				}}
-			>
-				<User class="h-4 w-4" />
-				People
-				<span class="count">{allPeople.length}</span>
-			</button>
-			<button
-				class="tab"
-				class:active={activeTab === 'dates'}
-				onclick={() => {
-					activeTab = 'dates';
-					expandedItem = null;
-				}}
-			>
-				<Calendar class="h-4 w-4" />
-				Dates
-				<span class="count">{allDates.length}</span>
-			</button>
-			<button
-				class="tab"
-				class:active={activeTab === 'links'}
-				onclick={() => {
-					activeTab = 'links';
-					expandedItem = null;
-				}}
-			>
-				<Link class="h-4 w-4" />
-				Links
-				<span class="count">{allLinks.length}</span>
-			</button>
+	<div class="toolbar">
+		<div class="k-segmented tabs" role="group" aria-label="Reference type">
+			{#each tabs as tab (tab.id)}
+				<button aria-pressed={activeTab === tab.id} onclick={() => selectTab(tab.id)}>
+					<tab.icon class="h-3.5 w-3.5" />
+					{tab.label}
+					<span class="tab-count">{tabCount(tab.id)}</span>
+				</button>
+			{/each}
 		</div>
 
-		<!-- Export button -->
+		<!-- Manage + export -->
 		<div class="tab-actions">
 			{#if activeTab === 'tags'}
-				<a href="/tags" class="manage-link">Manage / merge</a>
+				<a href="/tags" class="k-btn k-btn-ghost k-btn-sm">Manage</a>
 				<ExportMenu type="tags" tags={allTags} />
 			{:else if activeTab === 'people'}
-				<a href="/people" class="manage-link">Manage / merge</a>
+				<a href="/people" class="k-btn k-btn-ghost k-btn-sm">Manage</a>
 				<ExportMenu type="people" people={allPeople} />
 			{:else if activeTab === 'dates'}
 				<ExportMenu type="dates" dates={allDates} />
@@ -194,28 +180,26 @@
 		<!-- Tags Tab -->
 		{#if activeTab === 'tags'}
 			{#if allTags.length === 0}
-				<div class="empty-state">
-					<Tag class="h-12 w-12" />
-					<h3>No tags yet</h3>
-					<p>Use #tag in your notes to create tags</p>
+				<div class="k-empty">
+					<Tag />
+					<p class="k-empty-title">No tags yet</p>
+					<p>Use #tag in your notes to create tags.</p>
 				</div>
 			{:else}
 				<ul class="items-list">
 					{#each allTags as tag (tag.tag)}
-						<li class="item" class:expanded={expandedItem === tag.tag}>
-							<button class="item-header" onclick={() => toggleExpand(tag.tag)}>
-								<div class="item-icon tag-icon">
-									<Tag class="h-4 w-4" />
-								</div>
-								<span class="item-name">#{tag.tag}</span>
+						{@const isOpen = expandedItem === tag.tag}
+						<li>
+							<button class="k-row item-header" class:open={isOpen} onclick={() => toggleExpand(tag.tag)} aria-expanded={isOpen}>
+								<ChevronRight class="chevron h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)] {isOpen ? 'expanded' : ''}" />
+								<span class="item-name"><span class="tag-hash">#</span>{tag.tag}</span>
 								<span class="item-count">{tag.count} {tag.count === 1 ? 'note' : 'notes'}</span>
-								<ChevronRight class="chevron {expandedItem === tag.tag ? 'rotated' : ''}" />
 							</button>
-							{#if expandedItem === tag.tag}
+							{#if isOpen}
 								<ul class="notes-list">
 									{#each expandedMemories as memory (memory.id)}
 										<li>
-											<button class="note-item" onclick={() => openMemory(memory.id)}>
+											<button class="k-row note-item" onclick={() => openMemory(memory.id)}>
 												<span class="note-title">{memory.title || 'Untitled'}</span>
 												<span class="note-preview">{getPreview(memory)}</span>
 											</button>
@@ -231,10 +215,10 @@
 			<!-- People Tab - Using PersonCard -->
 		{:else if activeTab === 'people'}
 			{#if allPeople.length === 0}
-				<div class="empty-state">
-					<User class="h-12 w-12" />
-					<h3>No people yet</h3>
-					<p>Use @Full Name in your notes to mention people</p>
+				<div class="k-empty">
+					<User />
+					<p class="k-empty-title">No people yet</p>
+					<p>Use @Full Name in your notes to mention people.</p>
 				</div>
 			{:else}
 				<ul class="items-list">
@@ -255,46 +239,50 @@
 			<!-- Links Tab -->
 		{:else if activeTab === 'links'}
 			{#if allLinks.length === 0}
-				<div class="empty-state">
-					<Link class="h-12 w-12" />
-					<h3>No links yet</h3>
-					<p>Add URLs in your notes to track external links</p>
+				<div class="k-empty">
+					<Link />
+					<p class="k-empty-title">No links yet</p>
+					<p>Add URLs in your notes to track external links.</p>
 				</div>
 			{:else}
-				<div class="links-by-domain">
+				<ul class="items-list">
 					{#each linksByDomain as domainGroup (domainGroup.domain)}
-						<div class="domain-group">
-							<button class="domain-header" onclick={() => toggleDomain(domainGroup.domain)}>
-								<Globe class="domain-icon" />
-								<span class="domain-name">{domainGroup.domain}</span>
-								<span class="domain-count">{domainGroup.links.length} {domainGroup.links.length === 1 ? 'link' : 'links'}</span>
-								<ChevronDown class="domain-chevron {expandedDomains.has(domainGroup.domain) ? 'rotated' : ''}" />
+						{@const domainOpen = expandedDomains.has(domainGroup.domain)}
+						<li>
+							<button class="k-row item-header" class:open={domainOpen} onclick={() => toggleDomain(domainGroup.domain)} aria-expanded={domainOpen}>
+								<ChevronRight class="chevron h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)] {domainOpen ? 'expanded' : ''}" />
+								<Globe class="h-4 w-4 shrink-0 text-[var(--color-text-faint)]" />
+								<span class="item-name">{domainGroup.domain}</span>
+								<span class="item-count">{domainGroup.links.length} {domainGroup.links.length === 1 ? 'link' : 'links'}</span>
 							</button>
-							{#if expandedDomains.has(domainGroup.domain)}
-								<ul class="domain-links">
+							{#if domainOpen}
+								<ul class="nested">
 									{#each domainGroup.links as link (link.url)}
-										<li class="link-item" class:expanded={expandedItem === link.url}>
-											<button class="link-header" onclick={() => toggleExpand(link.url)}>
-												<Link class="link-icon-small" />
-												<span class="link-url-text">{link.url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}</span>
+										{@const linkOpen = expandedItem === link.url}
+										<li>
+											<!-- Toggle and external link are siblings: no <a> inside <button> -->
+											<div class="k-row link-row" class:open={linkOpen}>
+												<button class="link-toggle" onclick={() => toggleExpand(link.url)} aria-expanded={linkOpen}>
+													<ChevronRight class="chevron h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)] {linkOpen ? 'expanded' : ''}" />
+													<span class="link-url-text">{link.url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}</span>
+													<span class="item-count">{link.count}</span>
+												</button>
 												<a
 													href={link.url}
 													target="_blank"
 													rel="noopener noreferrer"
-													class="external-link-btn"
-													onclick={(e) => e.stopPropagation()}
+													class="k-icon-btn external-link"
 													title="Open link"
+													aria-label="Open link"
 												>
 													<ExternalLink class="h-3.5 w-3.5" />
 												</a>
-												<span class="link-note-count">{link.count}</span>
-												<ChevronRight class="link-chevron {expandedItem === link.url ? 'rotated' : ''}" />
-											</button>
-											{#if expandedItem === link.url}
+											</div>
+											{#if linkOpen}
 												<ul class="notes-list">
 													{#each expandedMemories as memory (memory.id)}
 														<li>
-															<button class="note-item" onclick={() => openMemory(memory.id)}>
+															<button class="k-row note-item" onclick={() => openMemory(memory.id)}>
 																<span class="note-title">{memory.title || 'Untitled'}</span>
 																<span class="note-preview">{getPreview(memory)}</span>
 															</button>
@@ -306,52 +294,27 @@
 									{/each}
 								</ul>
 							{/if}
-						</div>
+						</li>
 					{/each}
-				</div>
+				</ul>
 			{/if}
 		{/if}
 	</div>
 </div>
 
 <style>
-	.references-page {
-		max-width: 800px;
-		margin: 0 auto;
-		padding: 2rem;
-	}
-
-	.page-header {
-		margin-bottom: 2rem;
-	}
-
-	.page-header h1 {
-		font-size: 1.75rem;
-		font-weight: 600;
-		color: var(--color-text);
-		margin-bottom: 0.5rem;
-	}
-
-	.subtitle {
-		color: var(--color-text-muted);
-		font-size: 0.875rem;
-	}
-
-	.tabs-container {
+	.toolbar {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
 		justify-content: space-between;
-		gap: 1rem;
-		margin-bottom: 1.5rem;
-		border-bottom: 1px solid var(--color-border);
-		padding-bottom: 0.5rem;
+		gap: 0.5rem;
+		margin-bottom: 1.25rem;
 	}
 
 	.tabs {
-		display: flex;
-		gap: 0.25rem;
+		max-width: 100%;
 		overflow-x: auto;
-		-webkit-overflow-scrolling: touch;
 		scrollbar-width: none;
 	}
 
@@ -359,343 +322,151 @@
 		display: none;
 	}
 
-	.tab-actions {
+	.tabs > button {
+		display: inline-flex;
 		flex-shrink: 0;
-		display: flex;
 		align-items: center;
-		gap: 0.5rem;
-	}
-
-	.manage-link {
-		font-size: 0.8125rem;
-		color: var(--color-text-muted);
-		text-decoration: none;
-		padding: 0.375rem 0.75rem;
-		border: 1px solid var(--color-border);
-		border-radius: 0.375rem;
-		transition: all 0.15s;
-	}
-
-	.manage-link:hover {
-		color: var(--color-accent);
-		border-color: var(--color-accent);
-	}
-
-	.tab {
-		display: flex;
-		align-items: center;
-		justify-content: center;
 		gap: 0.375rem;
-		padding: 0.5rem 0.75rem;
-		background: transparent;
-		border: none;
-		border-radius: 0.5rem;
-		color: var(--color-text-muted);
-		font-size: 0.8125rem;
-		font-weight: 500;
-		cursor: pointer;
-		transition: all 0.15s ease;
 		white-space: nowrap;
-		flex-shrink: 0;
 	}
 
-	.tab:hover {
-		background: var(--color-bg-secondary);
-		color: var(--color-text);
-	}
-
-	.tab.active {
-		background: var(--color-accent);
-		color: white;
-	}
-
-	.tab .count {
-		background: rgba(255, 255, 255, 0.2);
-		padding: 0.125rem 0.375rem;
-		border-radius: 1rem;
+	.tab-count {
 		font-size: 0.6875rem;
-		min-width: 1.25rem;
-		text-align: center;
+		color: var(--color-text-faint);
+		font-variant-numeric: tabular-nums;
 	}
 
-	.tab:not(.active) .count {
-		background: var(--color-bg-secondary);
+	.tab-actions {
+		display: flex;
+		flex-shrink: 0;
+		align-items: center;
+		gap: 0.25rem;
+		margin-left: auto;
+	}
+
+	.tab-actions a {
+		text-decoration: none;
 	}
 
 	.content {
 		min-height: 400px;
 	}
 
-	.empty-state {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		padding: 4rem 2rem;
-		text-align: center;
-		color: var(--color-text-muted);
-	}
-
-	.empty-state h3 {
-		font-size: 1.125rem;
-		font-weight: 600;
-		color: var(--color-text);
-		margin: 1rem 0 0.5rem;
-	}
-
-	.empty-state p {
-		font-size: 0.875rem;
-	}
-
+	/* Rows bleed into the gutter so text aligns with the page title */
 	.items-list {
-		list-style: none;
+		margin: 0 -0.625rem;
 		padding: 0;
-		margin: 0;
-	}
-
-	.item {
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		margin-bottom: 0.5rem;
-		overflow: hidden;
-		transition: all 0.15s ease;
-	}
-
-	.item:hover {
-		border-color: var(--color-accent);
-	}
-
-	.item.expanded {
-		border-color: var(--color-accent);
+		list-style: none;
 	}
 
 	.item-header {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
 		width: 100%;
-		padding: 0.75rem 1rem;
-		background: transparent;
-		border: none;
-		cursor: pointer;
 		text-align: left;
 	}
 
-	.item-header:hover {
-		background: var(--color-bg-secondary);
-	}
-
-	.item-icon {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 2rem;
-		height: 2rem;
-		border-radius: 0.5rem;
-		flex-shrink: 0;
-	}
-
-	.tag-icon {
-		background: rgba(245, 158, 11, 0.15);
-		color: #f59e0b;
-	}
-
-	.external-link-btn {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		padding: 0.375rem;
-		border-radius: 0.375rem;
-		color: var(--color-text-muted);
-		transition: all 0.15s ease;
-	}
-
-	.external-link-btn:hover {
-		background: var(--color-bg-secondary);
-		color: var(--color-accent);
+	.item-header.open,
+	.link-row.open {
+		background: var(--color-hover);
 	}
 
 	.item-name {
 		flex: 1;
+		min-width: 0;
+		overflow: hidden;
 		font-weight: 500;
-		color: var(--color-text);
+		white-space: nowrap;
+		text-overflow: ellipsis;
+	}
+
+	.tag-hash {
+		margin-right: 0.0625rem;
+		color: var(--color-ref-tag);
 	}
 
 	.item-count {
+		flex-shrink: 0;
 		font-size: 0.75rem;
-		color: var(--color-text-muted);
-		background: var(--color-bg-secondary);
-		padding: 0.25rem 0.5rem;
-		border-radius: 1rem;
+		color: var(--color-text-faint);
+		font-variant-numeric: tabular-nums;
 	}
 
+	/* Second level (links within a domain, notes within an item) */
+	.nested,
 	.notes-list {
+		margin: 0.125rem 0 0.5rem 1.375rem;
+		padding: 0 0 0 0.375rem;
+		border-left: 1px solid var(--color-border);
 		list-style: none;
-		padding: 0;
-		margin: 0;
-		border-top: 1px solid var(--color-border);
-		background: var(--color-bg-secondary);
-	}
-
-	.notes-list li {
-		border-bottom: 1px solid var(--color-border);
-	}
-
-	.notes-list li:last-child {
-		border-bottom: none;
 	}
 
 	.note-item {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
 		width: 100%;
-		padding: 0.75rem 1rem 0.75rem 3.5rem;
-		background: transparent;
-		border: none;
-		cursor: pointer;
 		text-align: left;
-		transition: background 0.1s;
-	}
-
-	.note-item:hover {
-		background: var(--color-bg);
 	}
 
 	.note-title {
+		flex-shrink: 0;
+		max-width: 55%;
+		overflow: hidden;
 		font-weight: 500;
-		color: var(--color-text);
+		white-space: nowrap;
+		text-overflow: ellipsis;
 	}
 
 	.note-preview {
-		font-size: 0.75rem;
-		color: var(--color-text-muted);
-		line-height: 1.4;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	/* Links grouped by domain */
-	.links-by-domain {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-
-	.domain-group {
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		overflow: hidden;
-	}
-
-	.domain-header {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-		width: 100%;
-		padding: 0.75rem 1rem;
-		background: var(--color-bg);
-		border: none;
-		cursor: pointer;
-		text-align: left;
-		transition: background 0.1s;
-	}
-
-	.domain-header:hover {
-		background: var(--color-bg-secondary);
-	}
-
-	.domain-name {
 		flex: 1;
-		font-weight: 600;
-		color: var(--color-text);
-	}
-
-	.domain-count {
+		min-width: 0;
+		overflow: hidden;
 		font-size: 0.75rem;
-		color: var(--color-text-muted);
-		background: var(--color-bg-secondary);
-		padding: 0.25rem 0.5rem;
-		border-radius: 1rem;
+		color: var(--color-text-faint);
+		white-space: nowrap;
+		text-overflow: ellipsis;
 	}
 
-	.domain-links {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-		border-top: 1px solid var(--color-border);
-		background: var(--color-bg-secondary);
+	.link-row {
+		gap: 0.25rem;
+		padding-right: 0.25rem;
 	}
 
-	.link-item {
-		border-bottom: 1px solid var(--color-border);
-	}
-
-	.link-item:last-child {
-		border-bottom: none;
-	}
-
-	.link-header {
+	.link-toggle {
 		display: flex;
+		flex: 1;
 		align-items: center;
-		gap: 0.5rem;
-		width: 100%;
-		padding: 0.625rem 1rem;
-		background: transparent;
-		border: none;
-		cursor: pointer;
+		gap: 0.625rem;
+		min-width: 0;
 		text-align: left;
-		transition: background 0.1s;
-	}
-
-	.link-header:hover {
-		background: var(--color-bg);
 	}
 
 	.link-url-text {
 		flex: 1;
-		font-size: 0.875rem;
-		color: var(--color-text);
+		min-width: 0;
 		overflow: hidden;
-		text-overflow: ellipsis;
 		white-space: nowrap;
+		text-overflow: ellipsis;
 	}
 
-	.link-note-count {
-		font-size: 0.75rem;
-		color: var(--color-text-muted);
-		background: var(--color-bg);
-		padding: 0.125rem 0.375rem;
-		border-radius: 0.25rem;
-		min-width: 1.25rem;
-		text-align: center;
-	}
-
-	.link-item .notes-list {
-		padding-left: 1.5rem;
-	}
-
-	.link-item .note-item {
-		padding-left: 2rem;
+	.external-link {
+		color: var(--color-text-faint);
 	}
 
 	@media (max-width: 640px) {
-		.references-page {
-			padding: 1rem;
-		}
-
-		.tabs-container {
+		.toolbar {
 			flex-direction: column;
 			align-items: stretch;
 		}
 
-		.tabs {
-			overflow-x: auto;
+		.tab-actions {
+			margin-left: 0;
+			justify-content: flex-end;
 		}
 
-		.tab-actions {
-			align-self: flex-end;
+		.note-preview {
+			display: none;
+		}
+
+		.note-title {
+			flex: 1;
+			max-width: none;
 		}
 	}
 </style>

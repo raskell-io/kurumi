@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { autofocus } from '$lib/actions/autofocus';
 	import { vaults, currentVault, currentVaultId, setCurrentVault, addVault, updateVault, deleteVault } from '$lib/db';
 	import { goto } from '$app/navigation';
 	import { vaultIcons, searchIcons, getIconById, type VaultIcon } from '$lib/icons/vault-icons';
@@ -199,63 +200,55 @@
 
 	<!-- Dropdown Menu -->
 	{#if showDropdown}
-		<div
-			class="animate-dropdown absolute left-0 top-full z-50 mt-1 min-w-[220px] overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] shadow-[var(--shadow-lg)]"
-		>
-			<div class="max-h-[300px] overflow-y-auto py-1">
+		<div class="k-menu absolute left-0 top-full z-50 mt-1 w-60" role="menu">
+			<div class="k-menu-label">Vaults</div>
+			<div class="max-h-[300px] overflow-y-auto">
 				{#each $vaults as vault (vault.id)}
 					{@const vaultIcon = vault.icon ? getIconById(vault.icon) : null}
-					<div
-						class="group flex w-full items-center gap-2 px-3 py-2 transition-colors hover:bg-[var(--color-hover)]"
-						class:bg-[var(--color-accent)]={vault.id === $currentVaultId}
-						class:text-white={vault.id === $currentVaultId}
-					>
+					{@const isCurrent = vault.id === $currentVaultId}
+					<div class="group k-menu-item !p-0" class:vault-current={isCurrent}>
 						<button
 							onclick={() => selectVault(vault.id)}
-							class="flex flex-1 items-center gap-2 text-left"
+							class="flex min-w-0 flex-1 items-center gap-2 py-1.5 pl-2 text-left"
+							role="menuitemradio"
+							aria-checked={isCurrent}
 						>
 							{#if vaultIcon}
 								<svg
 									xmlns="http://www.w3.org/2000/svg"
-									class="h-5 w-5 shrink-0"
-									class:text-[var(--color-accent)]={vault.id !== $currentVaultId}
+									class="h-4 w-4 shrink-0 {isCurrent ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]'}"
 									viewBox="0 0 20 20"
 									fill="currentColor"
 								>
 									<path fill-rule="evenodd" d={vaultIcon.path} clip-rule="evenodd" />
 								</svg>
 							{:else}
-								<Archive
-									class="h-5 w-5 shrink-0 {vault.id !== $currentVaultId ? 'text-[var(--color-text-muted)]' : ''}"
-								/>
+								<Archive class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
 							{/if}
 							<span class="flex-1 truncate">{vault.name}</span>
 						</button>
 						<button
 							onclick={(e) => openEditModal(vault, e)}
-							class="rounded p-1 transition-opacity {vault.id === $currentVaultId ? 'hover:bg-white/20' : 'opacity-0 group-hover:opacity-100 hover:bg-[var(--color-hover)]'}"
+							class="k-icon-btn !h-6 !w-6 opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
 							title="Edit vault"
+							aria-label="Edit vault {vault.name}"
 						>
-							<Pencil
-								class="h-3.5 w-3.5 {vault.id !== $currentVaultId ? 'text-[var(--color-text-muted)]' : ''}"
-							/>
+							<Pencil class="h-3.5 w-3.5" />
 						</button>
-						{#if vault.id === $currentVaultId}
-							<Check class="h-4 w-4 shrink-0" />
-						{/if}
+						<span class="flex w-6 shrink-0 justify-center pr-1">
+							{#if isCurrent}
+								<Check class="h-4 w-4 text-[var(--color-accent)]" />
+							{/if}
+						</span>
 					</div>
 				{/each}
 			</div>
 
-			<div class="border-t border-[var(--color-border)] py-1">
-				<button
-					onclick={openCreateModal}
-					class="flex w-full items-center gap-2 px-3 py-2 text-left text-[var(--color-accent)] transition-colors hover:bg-[var(--color-hover)]"
-				>
-					<Plus class="h-5 w-5" />
-					<span>Create Vault</span>
-				</button>
-			</div>
+			<div class="k-menu-sep"></div>
+			<button onclick={openCreateModal} class="k-menu-item text-[var(--color-text-muted)]" role="menuitem">
+				<Plus class="h-4 w-4" />
+				<span>New vault</span>
+			</button>
 		</div>
 	{/if}
 </div>
@@ -264,54 +257,53 @@
 {#if showCreateModal || showEditModal}
 	<div
 		use:portal
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4"
+		class="k-dialog-backdrop"
 		onclick={closeModals}
 		onkeydown={(e) => e.key === 'Escape' && closeModals()}
 		role="dialog"
 		aria-modal="true"
+		aria-labelledby="vault-dialog-title"
 		tabindex="-1"
 	>
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 		<div
-			class="w-full max-w-md rounded-xl bg-[var(--color-bg)] p-6 shadow-2xl"
+			class="k-dialog !overflow-visible p-5"
 			onclick={(e) => e.stopPropagation()}
 			onkeydown={(e) => e.stopPropagation()}
 			role="document"
 		>
-			<h2 class="mb-4 text-xl font-semibold text-[var(--color-text)]">
-				{showEditModal ? 'Edit Vault' : 'Create New Vault'}
+			<h2 id="vault-dialog-title" class="mb-4 text-base font-semibold text-[var(--color-text)]">
+				{showEditModal ? 'Edit vault' : 'New vault'}
 			</h2>
 
 			<div class="space-y-4">
 				<div>
-					<label for="vault-name" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
-						Vault Name
-					</label>
+					<label for="vault-name" class="k-label">Name</label>
 					<input
 						id="vault-name"
 						type="text"
 						bind:value={formName}
 						placeholder="My Vault"
-						class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-[var(--color-text)] placeholder-[var(--color-text-muted)] outline-none focus:border-[var(--color-accent)]"
+						class="k-input"
+						use:autofocus
 						onkeydown={(e) => e.key === 'Enter' && !showIconPicker && (showEditModal ? handleUpdateVault() : handleCreateVault())}
 					/>
 				</div>
 
 				<div>
-					<span class="mb-1 block text-sm font-medium text-[var(--color-text)]">
-						Icon (optional)
-					</span>
+					<span class="k-label">Icon <span class="font-normal text-[var(--color-text-faint)]">(optional)</span></span>
 					<div class="relative" bind:this={iconPickerRef}>
 						<button
 							type="button"
 							onclick={() => (showIconPicker = !showIconPicker)}
-							class="flex w-full items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-left transition-colors hover:border-[var(--color-accent)]"
+							class="k-input flex items-center gap-2 text-left hover:bg-[var(--color-hover)]"
+							aria-expanded={showIconPicker}
 						>
 							{#if selectedIcon}
 								<svg
 									xmlns="http://www.w3.org/2000/svg"
-									class="h-5 w-5 text-[var(--color-accent)]"
+									class="h-4 w-4 text-[var(--color-accent)]"
 									viewBox="0 0 20 20"
 									fill="currentColor"
 								>
@@ -323,61 +315,58 @@
 								<span
 									role="button"
 									tabindex="0"
+									aria-label="Clear icon"
 									onclick={(e) => {
 										e.stopPropagation();
 										clearIcon();
 									}}
 									class="rounded p-0.5 text-[var(--color-text-muted)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
 								>
-									<X class="h-4 w-4" />
+									<X class="h-3.5 w-3.5" />
 								</span>
 							{:else}
-								<Archive class="h-5 w-5 text-[var(--color-text-muted)]" />
-								<span class="flex-1 text-[var(--color-text-muted)]">Choose an icon...</span>
+								<Archive class="h-4 w-4 text-[var(--color-text-faint)]" />
+								<span class="flex-1 text-[var(--color-text-faint)]">Choose an icon…</span>
 							{/if}
 							<ChevronDown
-								class="h-4 w-4 text-[var(--color-text-muted)] transition-transform {showIconPicker ? 'rotate-180' : ''}"
+								class="h-4 w-4 text-[var(--color-text-faint)] transition-transform {showIconPicker ? 'rotate-180' : ''}"
 							/>
 						</button>
 
 						{#if showIconPicker}
-							<div
-								class="absolute left-0 right-0 top-full z-10 mt-1 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] shadow-lg"
-							>
+							<div class="k-menu absolute left-0 right-0 top-full z-10 mt-1 !p-0">
 								<!-- Search Input -->
-								<div class="border-b border-[var(--color-border)] p-2">
-									<div class="flex items-center gap-2 rounded-md bg-[var(--color-bg-secondary)] px-2 py-1.5">
-										<Search class="h-4 w-4 text-[var(--color-text-muted)]" />
-										<input
-											type="text"
-											bind:value={iconSearchQuery}
-											placeholder="Search icons..."
-											class="flex-1 bg-transparent text-sm text-[var(--color-text)] placeholder-[var(--color-text-muted)] outline-none"
-										/>
-									</div>
+								<div class="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-2">
+									<Search class="h-4 w-4 text-[var(--color-text-faint)]" />
+									<input
+										type="text"
+										bind:value={iconSearchQuery}
+										placeholder="Search icons…"
+										aria-label="Search icons"
+										class="flex-1 bg-transparent text-sm text-[var(--color-text)] placeholder-[var(--color-text-faint)] outline-none"
+									/>
 								</div>
 
 								<!-- Icon Grid -->
-								<div class="max-h-[200px] overflow-y-auto p-2">
+								<div class="max-h-[200px] overflow-y-auto p-1.5">
 									{#if filteredIcons.length === 0}
 										<div class="py-4 text-center text-sm text-[var(--color-text-muted)]">
 											No icons found
 										</div>
 									{:else}
-										<div class="grid grid-cols-6 gap-1">
+										<div class="grid grid-cols-6 gap-0.5">
 											{#each filteredIcons as icon (icon.id)}
 												<button
 													type="button"
 													onclick={() => selectIcon(icon.id)}
-													class="flex flex-col items-center gap-1 rounded-lg p-2 transition-colors hover:bg-[var(--color-hover)]"
-													class:bg-[var(--color-accent)]={formIconId === icon.id}
-													class:text-white={formIconId === icon.id}
+													class="flex items-center justify-center rounded-md p-2 hover:bg-[var(--color-hover)] {formIconId === icon.id ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]'}"
 													title={icon.name}
+													aria-label={icon.name}
+													aria-pressed={formIconId === icon.id}
 												>
 													<svg
 														xmlns="http://www.w3.org/2000/svg"
-														class="h-5 w-5"
-														class:text-[var(--color-text)]={formIconId !== icon.id}
+														class="h-4 w-4"
 														viewBox="0 0 20 20"
 														fill="currentColor"
 													>
@@ -396,56 +385,51 @@
 
 			{#if showEditModal && editingVault}
 				<!-- Danger Zone -->
-				<div class="mt-6 border-t border-[var(--color-border)] pt-6">
+				<div class="mt-5 border-t border-[var(--color-border)] pt-4">
 					{#if !showDeleteConfirm}
-						<button
-							onclick={() => (showDeleteConfirm = true)}
-							class="flex items-center gap-2 text-sm text-red-500 transition-colors hover:text-red-600"
-						>
-							<Trash2 class="h-4 w-4" />
-							Delete this vault
+						<button onclick={() => (showDeleteConfirm = true)} class="k-btn k-btn-ghost k-btn-sm !text-[var(--color-danger)]">
+							<Trash2 class="h-3.5 w-3.5" />
+							Delete this vault…
 						</button>
 					{:else}
-						<div class="rounded-lg border border-red-500/30 bg-red-500/10 p-4">
-							<div class="mb-3 flex items-start gap-2">
-								<AlertTriangle class="mt-0.5 h-5 w-5 shrink-0 text-red-500" />
-								<div>
-									<p class="font-medium text-red-500">Delete Vault</p>
-									<p class="mt-1 text-sm text-[var(--color-text-muted)]">
-										This action cannot be undone. Type <strong class="text-[var(--color-text)]">{editingVault.name}</strong> to confirm.
-									</p>
-								</div>
+						<div class="space-y-3">
+							<div class="flex items-start gap-2">
+								<AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-danger)]" />
+								<p class="text-sm text-[var(--color-text-muted)]">
+									This permanently deletes the vault and can't be undone. Type <strong class="font-medium text-[var(--color-text)]">{editingVault.name}</strong> to confirm.
+								</p>
 							</div>
 
 							<input
 								type="text"
 								bind:value={deleteConfirmName}
-								placeholder="Type vault name to confirm"
-								class="mb-3 w-full rounded-lg border border-red-500/30 bg-[var(--color-bg)] px-3 py-2 text-[var(--color-text)] placeholder-[var(--color-text-muted)] outline-none focus:border-red-500"
+								placeholder="Vault name"
+								aria-label="Type vault name to confirm"
+								class="k-input"
 								onkeydown={(e) => e.key === 'Enter' && handleDeleteVault()}
 							/>
 
 							{#if deleteError}
-								<p class="mb-3 text-sm text-red-500">{deleteError}</p>
+								<p class="text-xs text-[var(--color-danger)]">{deleteError}</p>
 							{/if}
 
-							<div class="flex gap-2">
+							<div class="flex justify-end gap-2">
 								<button
 									onclick={() => {
 										showDeleteConfirm = false;
 										deleteConfirmName = '';
 										deleteError = null;
 									}}
-									class="rounded-lg px-3 py-1.5 text-sm text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-hover)]"
+									class="k-btn k-btn-ghost k-btn-sm"
 								>
 									Cancel
 								</button>
 								<button
 									onclick={handleDeleteVault}
 									disabled={deleteConfirmName.trim() !== editingVault.name}
-									class="rounded-lg bg-red-500 px-3 py-1.5 text-sm text-white transition-colors hover:bg-red-600 disabled:opacity-50"
+									class="k-btn k-btn-danger k-btn-sm"
 								>
-									Delete Vault
+									Delete vault
 								</button>
 							</div>
 						</div>
@@ -453,21 +437,22 @@
 				</div>
 			{/if}
 
-			<div class="mt-6 flex justify-end gap-3">
-				<button
-					onclick={closeModals}
-					class="rounded-lg px-4 py-2 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-hover)]"
-				>
-					Cancel
-				</button>
+			<div class="mt-5 flex justify-end gap-2">
+				<button onclick={closeModals} class="k-btn k-btn-ghost">Cancel</button>
 				<button
 					onclick={showEditModal ? handleUpdateVault : handleCreateVault}
 					disabled={!formName.trim()}
-					class="rounded-lg bg-[var(--color-accent)] px-4 py-2 text-white transition-colors hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
+					class="k-btn k-btn-primary"
 				>
-					{showEditModal ? 'Save Changes' : 'Create Vault'}
+					{showEditModal ? 'Save' : 'Create vault'}
 				</button>
 			</div>
 		</div>
 	</div>
 {/if}
+
+<style>
+	.vault-current {
+		background: var(--color-active);
+	}
+</style>

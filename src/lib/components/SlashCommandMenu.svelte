@@ -21,7 +21,13 @@
 		Info,
 		AlertTriangle,
 		Lightbulb,
-		Database
+		Database,
+		Highlighter,
+		Camera,
+		Image,
+		ChevronRight,
+		FileText,
+		Sigma
 	} from 'lucide-svelte';
 
 	interface Props {
@@ -48,6 +54,35 @@
 		'alert-triangle': AlertTriangle,
 		lightbulb: Lightbulb,
 		database: Database
+	};
+
+	// Some commands share a generic icon name in the registry; give them a
+	// more telling one here.
+	const idIconMap: Record<string, typeof Heading> = {
+		highlight: Highlighter,
+		camera: Camera,
+		image: Image,
+		toggle: ChevronRight,
+		'memory-embed': FileText,
+		'math-block': Sigma,
+		'math-inline': Sigma
+	};
+
+	// Markdown shortcuts that produce the same block, shown as quiet hints
+	const shortcutHints: Record<string, string> = {
+		heading1: '#',
+		heading2: '##',
+		heading3: '###',
+		'bullet-list': '-',
+		'numbered-list': '1.',
+		checkbox: '[]',
+		quote: '>',
+		divider: '---',
+		'code-block': '```',
+		mention: '@',
+		tag: '#tag',
+		wikilink: '[[',
+		date: '//'
 	};
 
 	let selectedIndex = $state(0);
@@ -147,24 +182,27 @@
 	});
 </script>
 
-<div class="slash-menu" bind:this={menuRef} {style}>
+<div class="slash-menu k-menu" bind:this={menuRef} {style} role="listbox" aria-label="Insert block">
 	{#if flatList.length === 0}
 		<div class="empty">No matching commands</div>
 	{:else}
 		{#each groups as group}
-			<div class="group-label">{group.category}</div>
-			{#each group.commands as cmd, i}
+			<div class="k-menu-label">{group.category}</div>
+			{#each group.commands as cmd}
 				{@const globalIndex = flatList.indexOf(cmd)}
+				{@const Icon = idIconMap[cmd.id] ?? iconMap[cmd.icon]}
 				<button
-					class="cmd"
+					type="button"
+					class="k-menu-item cmd"
 					class:selected={globalIndex === selectedIndex}
+					role="option"
+					aria-selected={globalIndex === selectedIndex}
 					data-index={globalIndex}
 					onclick={() => handleClick(cmd)}
 					onmouseenter={() => (selectedIndex = globalIndex)}
 				>
 					<span class="cmd-icon">
-						{#if iconMap[cmd.icon]}
-							{@const Icon = iconMap[cmd.icon]}
+						{#if Icon}
 							<Icon class="h-4 w-4" />
 						{/if}
 					</span>
@@ -172,6 +210,9 @@
 						<span class="cmd-label">{cmd.label}</span>
 						<span class="cmd-desc">{cmd.description}</span>
 					</span>
+					{#if shortcutHints[cmd.id]}
+						<span class="cmd-hint">{shortcutHints[cmd.id]}</span>
+					{/if}
 				</button>
 			{/each}
 		{/each}
@@ -182,97 +223,63 @@
 	.slash-menu {
 		position: fixed;
 		z-index: 100;
-		width: 260px;
+		width: 272px;
 		max-height: 340px;
 		overflow-y: auto;
-		background: var(--color-bg);
-		border: 1px solid var(--color-border);
-		border-radius: 0.625rem;
-		box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
-		padding: 0.375rem;
-		animation: fade-in 0.12s ease-out;
-	}
-
-	@keyframes fade-in {
-		from {
-			opacity: 0;
-			transform: translateY(4px);
-		}
-		to {
-			opacity: 1;
-			transform: translateY(0);
-		}
+		overscroll-behavior: contain;
 	}
 
 	.empty {
-		padding: 1rem;
+		padding: 0.75rem;
 		text-align: center;
 		color: var(--color-text-muted);
 		font-size: 0.8125rem;
 	}
 
-	.group-label {
-		padding: 0.375rem 0.625rem 0.25rem;
-		font-size: 0.6875rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		color: var(--color-text-muted);
-	}
-
-	.cmd {
-		display: flex;
-		align-items: center;
-		gap: 0.625rem;
-		width: 100%;
-		padding: 0.4375rem 0.625rem;
-		border: none;
-		border-radius: 0.375rem;
-		background: transparent;
-		cursor: pointer;
-		text-align: left;
-		transition: background 0.08s;
-	}
-
-	.cmd:hover,
+	/* Keyboard selection mirrors hover */
 	.cmd.selected {
-		background: var(--color-bg-secondary);
+		background: var(--color-hover);
 	}
 
 	.cmd-icon {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 1.75rem;
-		height: 1.75rem;
+		width: 1.25rem;
 		flex-shrink: 0;
-		border-radius: 0.375rem;
-		background: var(--color-bg-secondary);
-		color: var(--color-text-muted);
+		color: var(--color-text-faint);
 	}
 
 	.cmd.selected .cmd-icon {
-		background: color-mix(in srgb, var(--color-accent) 15%, transparent);
-		color: var(--color-accent);
+		color: var(--color-text-muted);
 	}
 
 	.cmd-body {
 		display: flex;
+		flex: 1;
 		flex-direction: column;
 		min-width: 0;
 	}
 
 	.cmd-label {
 		font-size: 0.8125rem;
-		font-weight: 500;
 		color: var(--color-text);
-		line-height: 1.2;
+		line-height: 1.25;
 	}
 
 	.cmd-desc {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 		font-size: 0.6875rem;
-		color: var(--color-text-muted);
-		line-height: 1.2;
-		margin-top: 0.125rem;
+		color: var(--color-text-faint);
+		line-height: 1.25;
+	}
+
+	.cmd-hint {
+		flex-shrink: 0;
+		font-family: var(--font-mono, ui-monospace, monospace);
+		font-size: 0.6875rem;
+		color: var(--color-text-faint);
 	}
 </style>

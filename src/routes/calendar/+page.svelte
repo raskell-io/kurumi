@@ -1,23 +1,13 @@
 <script lang="ts">
-	import { memoryObjects, actionItems } from '$lib/db';
+	import { memoryObjects, actionItems, todayIso } from '$lib/db';
 	import { goto } from '$app/navigation';
-	import {
-		ChevronLeft,
-		ChevronRight,
-		Calendar,
-		FileText,
-		Mic,
-		Users,
-		CheckSquare
-	} from 'lucide-svelte';
+	import { ChevronLeft, ChevronRight } from 'lucide-svelte';
 
 	let viewDate = $state(new Date());
 
 	let year = $derived(viewDate.getFullYear());
 	let month = $derived(viewDate.getMonth());
-	let monthLabel = $derived(
-		viewDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-	);
+	let monthName = $derived(viewDate.toLocaleDateString('en-US', { month: 'long' }));
 
 	const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -32,6 +22,14 @@
 		actionsDue: number;
 	}
 
+	// Local-time YYYY-MM-DD. toISOString() is UTC, which shifted every cell
+	// (and every memory's day) by one for users east/west of Greenwich.
+	function localIso(dt: Date): string {
+		const m = String(dt.getMonth() + 1).padStart(2, '0');
+		const d = String(dt.getDate()).padStart(2, '0');
+		return `${dt.getFullYear()}-${m}-${d}`;
+	}
+
 	let grid = $derived.by((): DayCell[] => {
 		const firstDay = new Date(year, month, 1);
 		// Monday = 0 in our grid
@@ -41,13 +39,13 @@
 		const daysInMonth = new Date(year, month + 1, 0).getDate();
 		const daysInPrev = new Date(year, month, 0).getDate();
 
-		const todayIso = new Date().toISOString().slice(0, 10);
+		const today = todayIso();
 
 		// Pre-compute memory counts by date
 		const memCounts = new Map<string, { notes: number; voiceMemos: number; meetings: number }>();
 		for (const m of $memoryObjects) {
 			if (m.deletedAt) continue;
-			const d = new Date(m.createdAt).toISOString().slice(0, 10);
+			const d = localIso(new Date(m.createdAt));
 			const existing = memCounts.get(d) || { notes: 0, voiceMemos: 0, meetings: 0 };
 			if (m.type === 'note') existing.notes++;
 			else if (m.type === 'voice-memo') existing.voiceMemos++;
@@ -64,53 +62,34 @@
 		}
 
 		const cells: DayCell[] = [];
-
-		// Previous month trailing days
-		for (let i = startDow - 1; i >= 0; i--) {
-			const d = daysInPrev - i;
-			const dt = new Date(year, month - 1, d);
-			const iso = dt.toISOString().slice(0, 10);
+		const push = (dt: Date, isCurrentMonth: boolean) => {
+			const iso = localIso(dt);
 			const mc = memCounts.get(iso) || { notes: 0, voiceMemos: 0, meetings: 0 };
 			cells.push({
-				date: d,
+				date: dt.getDate(),
 				iso,
-				isCurrentMonth: false,
-				isToday: iso === todayIso,
+				isCurrentMonth,
+				isToday: iso === today,
 				...mc,
 				actionsDue: actionCounts.get(iso) || 0
 			});
+		};
+
+		// Previous month trailing days
+		for (let i = startDow - 1; i >= 0; i--) {
+			push(new Date(year, month - 1, daysInPrev - i), false);
 		}
 
 		// Current month days
 		for (let d = 1; d <= daysInMonth; d++) {
-			const dt = new Date(year, month, d);
-			const iso = dt.toISOString().slice(0, 10);
-			const mc = memCounts.get(iso) || { notes: 0, voiceMemos: 0, meetings: 0 };
-			cells.push({
-				date: d,
-				iso,
-				isCurrentMonth: true,
-				isToday: iso === todayIso,
-				...mc,
-				actionsDue: actionCounts.get(iso) || 0
-			});
+			push(new Date(year, month, d), true);
 		}
 
-		// Next month leading days (fill to complete 6 rows max)
+		// Next month leading days (complete the last week)
 		const remaining = 7 - (cells.length % 7);
 		if (remaining < 7) {
 			for (let d = 1; d <= remaining; d++) {
-				const dt = new Date(year, month + 1, d);
-				const iso = dt.toISOString().slice(0, 10);
-				const mc = memCounts.get(iso) || { notes: 0, voiceMemos: 0, meetings: 0 };
-				cells.push({
-					date: d,
-					iso,
-					isCurrentMonth: false,
-					isToday: iso === todayIso,
-					...mc,
-					actionsDue: actionCounts.get(iso) || 0
-				});
+				push(new Date(year, month + 1, d), false);
 			}
 		}
 
@@ -133,211 +112,284 @@
 		goto(`/daily/${iso}`);
 	}
 
-	function hasActivity(cell: DayCell): boolean {
-		return cell.notes > 0 || cell.voiceMemos > 0 || cell.meetings > 0 || cell.actionsDue > 0;
+	function plural(n: number, word: string): string {
+		return `${n} ${word}${n === 1 ? '' : 's'}`;
+	}
+
+	function cellLabel(cell: DayCell): string {
+		const date = new Date(cell.iso + 'T00:00:00').toLocaleDateString('en-US', {
+			weekday: 'long',
+			month: 'long',
+			day: 'numeric'
+		});
+		const parts = [date];
+		if (cell.notes) parts.push(plural(cell.notes, 'note'));
+		if (cell.voiceMemos) parts.push(plural(cell.voiceMemos, 'voice memo'));
+		if (cell.meetings) parts.push(plural(cell.meetings, 'meeting'));
+		if (cell.actionsDue) parts.push(`${plural(cell.actionsDue, 'action')} due`);
+		return parts.join(', ');
 	}
 </script>
 
-<div class="cal-page">
-	<header class="cal-header">
-		<div class="cal-title">
-			<Calendar class="h-5 w-5" />
-			<h1>{monthLabel}</h1>
-		</div>
-		<div class="cal-nav">
-			<button class="nav-btn" onclick={goToday}>Today</button>
-			<button class="nav-btn icon" onclick={prevMonth}>
-				<ChevronLeft class="h-4 w-4" />
-			</button>
-			<button class="nav-btn icon" onclick={nextMonth}>
-				<ChevronRight class="h-4 w-4" />
-			</button>
-		</div>
-	</header>
+<svelte:head>
+	<title>Calendar - Kurumi</title>
+</svelte:head>
 
-	<div class="cal-grid">
-		<!-- Day headers -->
-		{#each DAYS as day}
-			<div class="cal-day-header">{day}</div>
-		{/each}
+<div class="h-full overflow-y-auto">
+	<div class="k-page k-page-wide">
+		<header class="k-page-header cal-header">
+			<h1 class="k-page-title">
+				{monthName} <span class="cal-year">{year}</span>
+			</h1>
+			<div class="cal-nav">
+				<button class="k-btn k-btn-sm" onclick={goToday}>Today</button>
+				<button class="k-icon-btn" onclick={prevMonth} aria-label="Previous month" title="Previous month">
+					<ChevronLeft class="h-4 w-4" />
+				</button>
+				<button class="k-icon-btn" onclick={nextMonth} aria-label="Next month" title="Next month">
+					<ChevronRight class="h-4 w-4" />
+				</button>
+			</div>
+		</header>
 
-		<!-- Day cells -->
-		{#each grid as cell}
-			<button
-				class="cal-cell"
-				class:other-month={!cell.isCurrentMonth}
-				class:today={cell.isToday}
-				class:has-activity={hasActivity(cell)}
-				onclick={() => openDay(cell.iso)}
-			>
-				<span class="cell-date">{cell.date}</span>
-				{#if hasActivity(cell)}
-					<div class="cell-dots">
-						{#if cell.notes > 0}
-							<span class="dot dot-note" title="{cell.notes} note{cell.notes === 1 ? '' : 's'}"></span>
+		<div class="cal-weekdays" aria-hidden="true">
+			{#each DAYS as day}
+				<div>{day}</div>
+			{/each}
+		</div>
+
+		<div class="cal-grid">
+			{#each grid as cell (cell.iso)}
+				<button
+					class="cal-cell"
+					class:other-month={!cell.isCurrentMonth}
+					class:today={cell.isToday}
+					onclick={() => openDay(cell.iso)}
+					aria-label={cellLabel(cell)}
+					aria-current={cell.isToday ? 'date' : undefined}
+				>
+					<span class="cell-date">{cell.date}</span>
+					<span class="cell-pills">
+						{#if cell.meetings > 0}
+							<span class="pill">
+								<span class="pill-dot"></span>
+								<span class="pill-label">{plural(cell.meetings, 'meeting')}</span>
+							</span>
 						{/if}
 						{#if cell.voiceMemos > 0}
-							<span class="dot dot-voice" title="{cell.voiceMemos} voice memo{cell.voiceMemos === 1 ? '' : 's'}"></span>
+							<span class="pill">
+								<span class="pill-dot"></span>
+								<span class="pill-label">{plural(cell.voiceMemos, 'memo')}</span>
+							</span>
 						{/if}
-						{#if cell.meetings > 0}
-							<span class="dot dot-meeting" title="{cell.meetings} meeting{cell.meetings === 1 ? '' : 's'}"></span>
+						{#if cell.notes > 0}
+							<span class="pill">
+								<span class="pill-dot"></span>
+								<span class="pill-label">{plural(cell.notes, 'note')}</span>
+							</span>
 						{/if}
 						{#if cell.actionsDue > 0}
-							<span class="dot dot-action" title="{cell.actionsDue} action{cell.actionsDue === 1 ? '' : 's'} due"></span>
+							<span class="pill pill-due">
+								<span class="pill-dot"></span>
+								<span class="pill-label">{cell.actionsDue} due</span>
+							</span>
 						{/if}
-					</div>
-				{/if}
-			</button>
-		{/each}
-	</div>
+					</span>
+				</button>
+			{/each}
+		</div>
 
-	<div class="cal-legend">
-		<span class="legend-item"><span class="dot dot-note"></span> Notes</span>
-		<span class="legend-item"><span class="dot dot-voice"></span> Voice</span>
-		<span class="legend-item"><span class="dot dot-meeting"></span> Meetings</span>
-		<span class="legend-item"><span class="dot dot-action"></span> Actions due</span>
+		<div class="cal-legend">
+			<span class="legend-item"><span class="pill-dot"></span> Notes, memos &amp; meetings</span>
+			<span class="legend-item pill-due"><span class="pill-dot"></span> Actions due</span>
+		</div>
 	</div>
 </div>
 
 <style>
-	.cal-page {
-		max-width: 640px;
-		margin: 0 auto;
-		padding: 1.5rem 1rem;
-	}
-
 	.cal-header {
-		display: flex;
-		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 1rem;
+		margin-bottom: 1.25rem;
 	}
 
-	.cal-title {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		color: var(--color-text);
-	}
-
-	.cal-title h1 {
-		font-size: 1.25rem;
-		font-weight: 700;
-		margin: 0;
+	.cal-year {
+		font-weight: 400;
+		color: var(--color-text-faint);
 	}
 
 	.cal-nav {
 		display: flex;
-		gap: 0.25rem;
+		align-items: center;
+		gap: 0.125rem;
 	}
 
-	.nav-btn {
-		padding: 0.375rem 0.75rem;
-		border: 1px solid var(--color-border);
-		border-radius: 0.375rem;
-		background: var(--color-bg);
-		color: var(--color-text-muted);
-		font-size: 0.75rem;
-		cursor: pointer;
+	.cal-nav .k-btn {
+		margin-right: 0.25rem;
 	}
 
-	.nav-btn.icon {
-		padding: 0.375rem;
+	.cal-weekdays {
+		display: grid;
+		grid-template-columns: repeat(7, minmax(0, 1fr));
+		padding-bottom: 0.375rem;
+		font-size: 0.6875rem;
+		font-weight: 500;
+		color: var(--color-text-faint);
 	}
 
-	.nav-btn:hover {
-		background: var(--color-bg-secondary);
-		color: var(--color-text);
+	.cal-weekdays > div {
+		padding: 0 0.5rem;
 	}
 
+	/* Hairline grid: 1px gaps over a border-colored background */
 	.cal-grid {
 		display: grid;
-		grid-template-columns: repeat(7, 1fr);
+		grid-template-columns: repeat(7, minmax(0, 1fr));
 		gap: 1px;
 		background: var(--color-border);
 		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
+		border-radius: var(--radius-lg);
 		overflow: hidden;
-	}
-
-	.cal-day-header {
-		padding: 0.5rem;
-		text-align: center;
-		font-size: 0.6875rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		color: var(--color-text-muted);
-		background: var(--color-bg-secondary);
 	}
 
 	.cal-cell {
 		display: flex;
 		flex-direction: column;
-		align-items: center;
+		align-items: flex-start;
 		gap: 0.25rem;
-		padding: 0.5rem 0.25rem;
-		min-height: 3.5rem;
+		min-width: 0;
+		min-height: 6rem;
+		padding: 0.375rem;
 		background: var(--color-bg);
-		border: none;
+		text-align: left;
 		cursor: pointer;
-		transition: background 0.1s;
 	}
 
 	.cal-cell:hover {
-		background: var(--color-bg-secondary);
+		background: color-mix(in srgb, var(--color-text) 4%, var(--color-bg));
 	}
 
-	.cal-cell.other-month {
-		opacity: 0.35;
-	}
-
-	.cal-cell.today .cell-date {
-		background: var(--color-accent);
-		color: white;
-		border-radius: 50%;
-		width: 1.5rem;
-		height: 1.5rem;
-		display: flex;
-		align-items: center;
-		justify-content: center;
+	.cal-cell:focus-visible {
+		outline-offset: -2px;
 	}
 
 	.cell-date {
-		font-size: 0.8125rem;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 1.5rem;
+		height: 1.5rem;
+		padding: 0 0.25rem;
+		border-radius: 999px;
+		font-size: 0.75rem;
 		font-weight: 500;
+		font-variant-numeric: tabular-nums;
 		color: var(--color-text);
 	}
 
-	.cell-dots {
-		display: flex;
-		gap: 0.1875rem;
-		flex-wrap: wrap;
-		justify-content: center;
+	.other-month .cell-date {
+		color: var(--color-text-faint);
 	}
 
-	.dot {
+	.other-month .cell-pills {
+		opacity: 0.55;
+	}
+
+	.today .cell-date {
+		background: var(--color-accent);
+		/* bg color reads as white on Latte and as Mocha base on dark accent */
+		color: var(--color-bg);
+		font-weight: 600;
+	}
+
+	.cell-pills {
+		display: flex;
+		flex-direction: column;
+		gap: 0.125rem;
+		width: 100%;
+		min-width: 0;
+	}
+
+	.pill {
+		--pill-color: var(--color-ref-date);
+		display: flex;
+		align-items: center;
+		gap: 0.3125rem;
+		min-width: 0;
+		height: 1.125rem;
+		padding: 0 0.375rem;
+		border-radius: var(--radius-sm);
+		background: color-mix(in srgb, var(--pill-color) 12%, transparent);
+		font-size: 0.6875rem;
+		line-height: 1;
+		color: var(--pill-color);
+	}
+
+	.pill-due {
+		--pill-color: var(--color-ref-tag);
+	}
+
+	.pill-dot {
 		width: 0.375rem;
 		height: 0.375rem;
-		border-radius: 50%;
+		flex-shrink: 0;
+		border-radius: 999px;
+		background: var(--pill-color, var(--color-ref-date));
 	}
 
-	.dot-note { background: var(--color-accent); }
-	.dot-voice { background: #a78bfa; }
-	.dot-meeting { background: #34d399; }
-	.dot-action { background: #f59e0b; }
+	.pill-label {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
 
 	.cal-legend {
 		display: flex;
-		gap: 1rem;
-		justify-content: center;
+		flex-wrap: wrap;
+		gap: 0.25rem 1rem;
 		margin-top: 0.75rem;
-		font-size: 0.6875rem;
-		color: var(--color-text-muted);
+		padding: 0 0.25rem;
+		font-size: 0.75rem;
+		color: var(--color-text-faint);
 	}
 
 	.legend-item {
-		display: flex;
+		display: inline-flex;
 		align-items: center;
-		gap: 0.25rem;
+		gap: 0.375rem;
+	}
+
+	.legend-item.pill-due .pill-dot {
+		background: var(--color-ref-tag);
+	}
+
+	/* Narrow screens: pills collapse to a row of dots under the date */
+	@media (max-width: 640px) {
+		.cal-cell {
+			align-items: center;
+			min-height: 3.5rem;
+			padding: 0.375rem 0.125rem;
+		}
+
+		.cell-pills {
+			flex-direction: row;
+			flex-wrap: wrap;
+			justify-content: center;
+			gap: 0.1875rem;
+		}
+
+		.pill {
+			height: auto;
+			padding: 0;
+			background: none;
+		}
+
+		.pill-label {
+			display: none;
+		}
+
+		.cal-weekdays > div {
+			padding: 0;
+			text-align: center;
+		}
 	}
 </style>

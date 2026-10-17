@@ -42,6 +42,19 @@ habitLogs.subscribe((l) => {
 	}
 });
 
+/** YYYY-MM-DD for the user's local calendar day (not UTC). */
+export function localIsoDate(date: Date = new Date()): string {
+	const y = date.getFullYear();
+	const m = String(date.getMonth() + 1).padStart(2, '0');
+	const d = String(date.getDate()).padStart(2, '0');
+	return `${y}-${m}-${d}`;
+}
+
+function previousIsoDate(iso: string): string {
+	const [y, m, d] = iso.split('-').map(Number);
+	return localIsoDate(new Date(y, m - 1, d - 1));
+}
+
 function genId(): string {
 	return Math.random().toString(36).slice(2, 10);
 }
@@ -49,7 +62,7 @@ function genId(): string {
 export function addHabit(name: string): void {
 	habits.update((h) => [
 		...h,
-		{ id: genId(), name, createdAt: new Date().toISOString().slice(0, 10) }
+		{ id: genId(), name, createdAt: localIsoDate() }
 	]);
 }
 
@@ -75,42 +88,14 @@ export function toggleHabitDay(habitId: string, isoDate: string): void {
 }
 
 export function getStreak(habitId: string, logs: HabitLog): number {
-	const days = logs[habitId] || [];
-	if (days.length === 0) return 0;
-	const sorted = [...days].sort().reverse();
-	const today = new Date().toISOString().slice(0, 10);
-
-	// Count consecutive days ending today or yesterday
+	const done = new Set(logs[habitId] || []);
+	// A streak may end today or, if today isn't checked yet, yesterday.
+	let cursor = localIsoDate();
+	if (!done.has(cursor)) cursor = previousIsoDate(cursor);
 	let streak = 0;
-	let expected = today;
-	for (const day of sorted) {
-		if (day === expected) {
-			streak++;
-			const d = new Date(expected);
-			d.setDate(d.getDate() - 1);
-			expected = d.toISOString().slice(0, 10);
-		} else if (streak === 0 && day === expected) {
-			// Allow starting from yesterday
-			continue;
-		} else {
-			break;
-		}
-	}
-	// If today isn't checked, try starting from yesterday
-	if (streak === 0) {
-		const yesterday = new Date();
-		yesterday.setDate(yesterday.getDate() - 1);
-		expected = yesterday.toISOString().slice(0, 10);
-		for (const day of sorted) {
-			if (day === expected) {
-				streak++;
-				const d = new Date(expected);
-				d.setDate(d.getDate() - 1);
-				expected = d.toISOString().slice(0, 10);
-			} else {
-				break;
-			}
-		}
+	while (done.has(cursor)) {
+		streak++;
+		cursor = previousIsoDate(cursor);
 	}
 	return streak;
 }

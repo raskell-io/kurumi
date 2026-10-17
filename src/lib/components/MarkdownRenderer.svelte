@@ -299,7 +299,17 @@
 		requestAnimationFrame(async () => {
 			try {
 				const { default: mermaid } = await import('mermaid');
-				mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'loose' });
+				// Follow the app theme (manual .dark/.light class, else system)
+				const root = document.documentElement;
+				const isDark =
+					root.classList.contains('dark') ||
+					(!root.classList.contains('light') &&
+						window.matchMedia('(prefers-color-scheme: dark)').matches);
+				mermaid.initialize({
+					startOnLoad: false,
+					theme: isDark ? 'dark' : 'default',
+					securityLevel: 'loose'
+				});
 				for (const block of blocks) {
 					const el = contentDiv?.querySelector(`[data-mermaid-id="${block.id}"]`);
 					if (!el) continue;
@@ -326,238 +336,249 @@
 	{/each}
 </div>
 
+
 <style>
+	/* Base sizing inherits from the host so this renderer stays compact
+	   in chat answers and summaries. The read page scales it up to the
+	   editor's typography via its own wrapper. Rules below mirror
+	   Editor.svelte so reading and writing look the same. */
 	.markdown-content {
-		line-height: 1.8;
-		font-size: 1.0625rem;
+		line-height: 1.65;
 		overflow-wrap: break-word;
 		word-wrap: break-word;
 		max-width: 100%;
 	}
 
+	.markdown-content > :global(:first-child) {
+		margin-top: 0;
+	}
+
+	.markdown-content > :global(:last-child) {
+		margin-bottom: 0;
+	}
+
 	/* Headings */
-	.markdown-content :global(h1) {
-		font-size: 2em;
-		font-weight: 700;
-		margin-top: 1.5em;
-		margin-bottom: 0.5em;
+	.markdown-content :global(:is(h1, h2, h3, h4, h5, h6)) {
 		color: var(--color-text);
-		border-bottom: 1px solid var(--color-border);
-		padding-bottom: 0.3em;
+		line-height: 1.3;
+		letter-spacing: -0.01em;
+	}
+
+	.markdown-content :global(h1) {
+		font-size: 1.75em;
+		font-weight: 700;
+		margin-top: 1.4em;
+		margin-bottom: 0.4em;
 	}
 
 	.markdown-content :global(h2) {
-		font-size: 1.5em;
-		font-weight: 600;
-		margin-top: 1.25em;
-		margin-bottom: 0.4em;
-		color: var(--color-text);
+		font-size: 1.4em;
+		font-weight: 650;
+		margin-top: 1.3em;
+		margin-bottom: 0.35em;
 	}
 
 	.markdown-content :global(h3) {
-		font-size: 1.25em;
+		font-size: 1.18em;
 		font-weight: 600;
-		margin-top: 1em;
+		margin-top: 1.1em;
 		margin-bottom: 0.3em;
-		color: var(--color-text);
 	}
 
-	.markdown-content :global(h4),
-	.markdown-content :global(h5),
-	.markdown-content :global(h6) {
-		font-size: 1.1em;
+	.markdown-content :global(:is(h4, h5, h6)) {
+		font-size: 1em;
 		font-weight: 600;
 		margin-top: 1em;
-		margin-bottom: 0.3em;
-		color: var(--color-text);
+		margin-bottom: 0.25em;
 	}
 
 	/* Paragraphs */
 	.markdown-content :global(p) {
-		margin-bottom: 1em;
+		margin-bottom: 0.6em;
 	}
 
 	/* Links */
 	.markdown-content :global(a) {
 		color: var(--color-accent);
-		text-decoration: none;
+		text-decoration: underline;
+		text-decoration-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
+		text-underline-offset: 0.2em;
+		text-decoration-thickness: 1px;
 	}
 
 	.markdown-content :global(a:hover) {
-		text-decoration: underline;
+		text-decoration-color: var(--color-accent);
 	}
 
-	/* Wikilinks */
+	/* Wikilinks: read as links, not buttons */
 	.markdown-content :global(.wikilink) {
-		background: linear-gradient(
-			135deg,
-			color-mix(in srgb, var(--color-accent) 15%, transparent),
-			color-mix(in srgb, var(--color-accent) 25%, transparent)
-		);
-		color: var(--color-accent);
-		padding: 0.1em 0.4em;
-		border-radius: 4px;
+		border-radius: 3px;
 		font-weight: 500;
-		transition: all 0.15s ease;
-		cursor: pointer;
-		text-decoration: none;
+		transition: background-color 0.12s ease, text-decoration-color 0.12s ease;
 	}
 
 	.markdown-content :global(.wikilink:hover) {
-		background: linear-gradient(
-			135deg,
-			color-mix(in srgb, var(--color-accent) 25%, transparent),
-			color-mix(in srgb, var(--color-accent) 35%, transparent)
-		);
-		text-decoration: underline;
+		background: var(--color-accent-soft);
 	}
 
 	.markdown-content :global(.wikilink-broken) {
-		opacity: 0.6;
-		font-style: italic;
+		color: var(--color-text-muted);
+		text-decoration-style: dashed;
+		text-decoration-color: var(--color-text-faint);
 	}
 
-	/* Date references - Catppuccin Blue */
-	.markdown-content :global(.date-reference) {
+	/* Inline references share one chip shape; each type sets --ref */
+	.markdown-content :global(:is(.date-reference, .person-reference, .tag-reference, .url-reference)) {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25em;
-		background: linear-gradient(135deg, rgba(137, 180, 250, 0.15), rgba(137, 180, 250, 0.25));
-		color: #89b4fa;
-		padding: 0.1em 0.4em;
+		padding: 0.05em 0.4em;
 		border: none;
 		border-radius: 4px;
-		font-weight: 500;
-		font-size: inherit;
+		background: color-mix(in srgb, var(--ref) 12%, transparent);
+		color: var(--ref);
 		font-family: inherit;
-		cursor: pointer;
-		transition: all 0.15s ease;
-	}
-
-	.markdown-content :global(.date-reference:hover) {
-		background: linear-gradient(135deg, rgba(137, 180, 250, 0.25), rgba(137, 180, 250, 0.35));
-	}
-
-	/* Person references - Catppuccin Green */
-	.markdown-content :global(.person-reference) {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.25em;
-		background: linear-gradient(135deg, rgba(166, 227, 161, 0.15), rgba(166, 227, 161, 0.25));
-		color: #a6e3a1;
-		padding: 0.1em 0.4em;
-		border: none;
-		border-radius: 1em;
+		font-size: 0.92em;
 		font-weight: 500;
-		font-size: inherit;
-		font-family: inherit;
-		cursor: pointer;
-		transition: all 0.15s ease;
-	}
-
-	.markdown-content :global(.person-reference:hover) {
-		background: linear-gradient(135deg, rgba(166, 227, 161, 0.25), rgba(166, 227, 161, 0.35));
-	}
-
-	/* Tag references - Catppuccin Peach */
-	.markdown-content :global(.tag-reference) {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.25em;
-		background: linear-gradient(135deg, rgba(250, 179, 135, 0.15), rgba(250, 179, 135, 0.25));
-		color: #fab387;
-		padding: 0.1em 0.4em;
-		border: none;
-		border-radius: 4px;
-		font-weight: 500;
-		font-size: inherit;
-		font-family: inherit;
-		cursor: pointer;
-		transition: all 0.15s ease;
-	}
-
-	.markdown-content :global(.tag-reference:hover) {
-		background: linear-gradient(135deg, rgba(250, 179, 135, 0.25), rgba(250, 179, 135, 0.35));
-	}
-
-	/* URL references - Catppuccin Mauve */
-	.markdown-content :global(.url-reference) {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.25em;
-		background: linear-gradient(135deg, rgba(203, 166, 247, 0.15), rgba(203, 166, 247, 0.25));
-		color: #cba6f7;
-		padding: 0.1em 0.4em;
-		border-radius: 4px;
-		font-weight: 500;
-		word-break: break-all;
-		transition: all 0.15s ease;
-	}
-
-	.markdown-content :global(.url-reference:hover) {
-		background: linear-gradient(135deg, rgba(203, 166, 247, 0.25), rgba(203, 166, 247, 0.35));
+		line-height: 1.5;
 		text-decoration: none;
+		vertical-align: baseline;
+		cursor: pointer;
+		transition: background-color 0.12s ease;
 	}
 
-	/* Code */
+	.markdown-content :global(:is(.date-reference, .person-reference, .tag-reference, .url-reference):hover) {
+		background: color-mix(in srgb, var(--ref) 22%, transparent);
+	}
+
+	.markdown-content :global(:is(.date-reference, .person-reference, .url-reference)::before) {
+		content: '';
+		display: inline-block;
+		width: 0.85em;
+		height: 0.85em;
+		flex-shrink: 0;
+		background-color: currentColor;
+		-webkit-mask-size: contain;
+		mask-size: contain;
+		-webkit-mask-repeat: no-repeat;
+		mask-repeat: no-repeat;
+		opacity: 0.8;
+	}
+
+	.markdown-content :global(.date-reference) {
+		--ref: var(--color-ref-date);
+	}
+
+	.markdown-content :global(.date-reference::before) {
+		-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath fill-rule='evenodd' d='M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z' clip-rule='evenodd'/%3E%3C/svg%3E");
+		mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath fill-rule='evenodd' d='M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z' clip-rule='evenodd'/%3E%3C/svg%3E");
+	}
+
+	.markdown-content :global(.person-reference) {
+		--ref: var(--color-ref-person);
+		border-radius: 1em;
+	}
+
+	.markdown-content :global(.person-reference::before) {
+		-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath fill-rule='evenodd' d='M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z' clip-rule='evenodd'/%3E%3C/svg%3E");
+		mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath fill-rule='evenodd' d='M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z' clip-rule='evenodd'/%3E%3C/svg%3E");
+	}
+
+	.markdown-content :global(.tag-reference) {
+		--ref: var(--color-ref-tag);
+	}
+
+	.markdown-content :global(.url-reference) {
+		--ref: var(--color-ref-url);
+		word-break: break-all;
+	}
+
+	.markdown-content :global(.url-reference::before) {
+		-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath fill-rule='evenodd' d='M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z' clip-rule='evenodd'/%3E%3C/svg%3E");
+		mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath fill-rule='evenodd' d='M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z' clip-rule='evenodd'/%3E%3C/svg%3E");
+	}
+
+	/* Inline code */
 	.markdown-content :global(code) {
-		background: var(--color-bg-secondary);
-		padding: 0.2em 0.4em;
+		padding: 0.15em 0.35em;
 		border-radius: 4px;
-		font-family: 'SF Mono', 'Fira Code', monospace;
-		font-size: 0.9em;
+		background: var(--color-hover);
+		color: var(--color-text);
+		font-family: var(--font-mono);
+		font-size: 0.85em;
 	}
 
+	/* Code blocks: one bordered surface with a quiet header */
 	.markdown-content :global(pre) {
-		background: var(--color-bg-secondary);
-		padding: 1em;
-		border-radius: 8px;
+		margin: 1em 0;
+		padding: 0.875em 1em;
+		max-width: 100%;
 		overflow-x: auto;
 		-webkit-overflow-scrolling: touch;
-		margin: 1.5em 0;
-		max-width: 100%;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		background: var(--color-bg-secondary);
+		font-size: 0.95em;
+		line-height: 1.6;
 	}
 
 	.markdown-content :global(pre code) {
-		background: none;
 		padding: 0;
+		background: none;
 	}
 
-	/* Code block wrapper with copy button */
 	.markdown-content :global(.code-block-wrapper) {
-		position: relative;
-		margin: 1.5em 0;
+		margin: 1em 0;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		background: var(--color-bg-secondary);
+		overflow: hidden;
 	}
 
 	.markdown-content :global(.code-block-wrapper pre) {
 		margin: 0;
-		border-top-left-radius: 0;
-		border-top-right-radius: 0;
+		padding-top: 0.25em;
+		border: none;
+		border-radius: 0;
 	}
 
 	.markdown-content :global(.code-block-header) {
 		display: flex;
-		justify-content: space-between;
 		align-items: center;
-		padding: 0.375rem 1rem;
-		background: color-mix(in srgb, var(--color-bg-secondary) 80%, black);
-		border-top-left-radius: 8px;
-		border-top-right-radius: 8px;
+		justify-content: space-between;
+		padding: 0.375rem 0.5rem 0 1rem;
+		font-family: var(--font-sans);
 		font-size: 0.6875rem;
 	}
 
 	.markdown-content :global(.code-block-lang) {
-		color: var(--color-text-muted);
+		color: var(--color-text-faint);
 		text-transform: lowercase;
 	}
 
-	/* ---- Mermaid diagrams ---- */
+	.markdown-content :global(:is(.code-copy-btn, .transcript-copy-btn)) {
+		padding: 0.125rem 0.4375rem;
+		border: none;
+		border-radius: var(--radius-sm);
+		background: transparent;
+		color: var(--color-text-faint);
+		font-family: var(--font-sans);
+		font-size: 0.6875rem;
+		cursor: pointer;
+	}
+
+	.markdown-content :global(:is(.code-copy-btn, .transcript-copy-btn):hover) {
+		background: var(--color-hover);
+		color: var(--color-text);
+	}
+
+	/* Mermaid diagrams */
 	.markdown-content :global(.mermaid-block) {
-		margin: 1.5em 0;
+		margin: 1em 0;
 		padding: 1rem;
-		background: var(--color-bg-secondary);
-		border-radius: 0.5rem;
 		overflow-x: auto;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
 		text-align: center;
 	}
 
@@ -567,46 +588,38 @@
 	}
 
 	.markdown-content :global(.mermaid-fallback) {
-		text-align: left;
 		margin: 0;
-	}
-
-	.markdown-content :global(.code-copy-btn) {
-		padding: 0.125rem 0.5rem;
-		background: var(--color-bg);
-		border: 1px solid var(--color-border);
-		border-radius: 0.25rem;
-		color: var(--color-text-muted);
-		font-size: 0.625rem;
-		cursor: pointer;
-		transition: all 0.15s;
-	}
-
-	.markdown-content :global(.code-copy-btn:hover) {
-		background: var(--color-bg-secondary);
-		color: var(--color-accent);
-		border-color: var(--color-accent);
+		text-align: left;
 	}
 
 	/* Blockquotes */
 	.markdown-content :global(blockquote) {
-		border-left: 4px solid var(--color-accent);
+		margin: 0.75em 0;
 		padding-left: 1em;
-		margin-left: 0;
-		margin-right: 0;
+		border-left: 3px solid var(--color-border);
 		color: var(--color-text-muted);
-		font-style: italic;
+	}
+
+	.markdown-content :global(blockquote > :last-child) {
+		margin-bottom: 0;
+	}
+
+	/* Transcript quotes get a quiet copy action */
+	.markdown-content :global(.transcript-block) {
+		position: relative;
+		padding-right: 3.5rem;
+	}
+
+	.markdown-content :global(.transcript-copy-btn) {
+		position: absolute;
+		top: 0;
+		right: 0;
 	}
 
 	/* Lists */
-	.markdown-content :global(ul),
-	.markdown-content :global(ol) {
+	.markdown-content :global(:is(ul, ol)) {
+		margin-bottom: 0.75em;
 		padding-left: 1.5em;
-		margin-bottom: 1em;
-	}
-
-	.markdown-content :global(li) {
-		margin-bottom: 0.25em;
 	}
 
 	.markdown-content :global(ul) {
@@ -617,39 +630,86 @@
 		list-style-type: decimal;
 	}
 
-	/* Task lists */
-	.markdown-content :global(ul.contains-task-list) {
-		list-style: none;
-		padding-left: 0;
+	.markdown-content :global(li) {
+		margin-bottom: 0.15em;
 	}
 
-	.markdown-content :global(li.task-list-item) {
-		display: flex;
-		align-items: flex-start;
-		gap: 0.5em;
+	.markdown-content :global(li > p) {
+		margin-bottom: 0.15em;
+	}
+
+	.markdown-content :global(li > :is(ul, ol)) {
+		margin-top: 0.15em;
+		margin-bottom: 0;
+	}
+
+	.markdown-content :global(li::marker) {
+		color: var(--color-text-faint);
+	}
+
+	/* Task lists: marked emits <li><input type="checkbox"> without
+	   classes, so detect them structurally. */
+	.markdown-content :global(li:has(> input[type='checkbox'])),
+	.markdown-content :global(li:has(> p:first-child > input[type='checkbox'])) {
+		list-style: none;
+		margin-left: -1.25em;
 	}
 
 	.markdown-content :global(input[type='checkbox']) {
-		margin-top: 0.35em;
-		accent-color: var(--color-accent);
+		appearance: none;
+		-webkit-appearance: none;
+		position: relative;
+		top: -0.075em;
+		width: 1.0625em;
+		height: 1.0625em;
+		margin: 0 0.5em 0 0;
+		border: 1.5px solid var(--color-text-faint);
+		border-radius: 0.25em;
+		background: transparent;
+		vertical-align: middle;
+		cursor: default;
 	}
 
-	/* Tables - wrap in scrollable container on mobile */
+	.markdown-content :global(input[type='checkbox']:checked) {
+		border-color: var(--color-accent);
+		background: var(--color-accent);
+	}
+
+	.markdown-content :global(input[type='checkbox']:checked::after) {
+		content: '';
+		position: absolute;
+		left: 0.3em;
+		top: 0.1em;
+		width: 0.3em;
+		height: 0.55em;
+		border: solid var(--color-bg);
+		border-width: 0 2px 2px 0;
+		transform: rotate(45deg);
+	}
+
+	.markdown-content :global(li:has(> input:checked)),
+	.markdown-content :global(li:has(> p:first-child > input:checked)) {
+		color: var(--color-text-muted);
+		text-decoration: line-through;
+		text-decoration-color: var(--color-text-faint);
+	}
+
+	/* Tables scroll horizontally instead of overflowing on mobile */
 	.markdown-content :global(table) {
-		border-collapse: collapse;
-		width: 100%;
-		margin: 1.5em 0;
 		display: block;
+		max-width: 100%;
+		margin: 1em 0;
 		overflow-x: auto;
 		-webkit-overflow-scrolling: touch;
+		border-collapse: collapse;
+		font-size: 0.95em;
 	}
 
-	.markdown-content :global(th),
-	.markdown-content :global(td) {
+	.markdown-content :global(:is(th, td)) {
+		padding: 0.4em 0.9em;
 		border: 1px solid var(--color-border);
-		padding: 0.5em 1em;
 		text-align: left;
-		white-space: nowrap;
+		vertical-align: top;
 	}
 
 	.markdown-content :global(th) {
@@ -657,21 +717,26 @@
 		font-weight: 600;
 	}
 
-	/* Horizontal rule */
+	/* Rules, media */
 	.markdown-content :global(hr) {
+		margin: 1.75em 0;
 		border: none;
-		border-top: 2px solid var(--color-border);
-		margin: 2em 0;
+		border-top: 1px solid var(--color-border);
 	}
 
-	/* Images */
 	.markdown-content :global(img) {
 		max-width: 100%;
-		border-radius: 8px;
 		margin: 1em 0;
+		border-radius: var(--radius-md);
 	}
 
-	/* Strong and emphasis */
+	.markdown-content :global(audio) {
+		width: 100%;
+		max-width: 100%;
+		margin: 0.5em 0;
+	}
+
+	/* Inline marks */
 	.markdown-content :global(strong) {
 		font-weight: 600;
 	}
@@ -680,262 +745,191 @@
 		font-style: italic;
 	}
 
-	/* Strikethrough */
 	.markdown-content :global(del) {
+		color: var(--color-text-muted);
 		text-decoration: line-through;
+	}
+
+	.markdown-content :global(mark) {
+		padding: 0.05em 0.2em;
+		border-radius: 3px;
+		background: color-mix(in srgb, #df8e1d 22%, transparent);
+		color: inherit;
+	}
+
+	.markdown-content :global(kbd) {
+		display: inline-block;
+		padding: 0.05em 0.35em;
+		border: 1px solid var(--color-border);
+		border-radius: 0.25rem;
+		background: var(--color-bg);
+		font-family: var(--font-sans);
+		font-size: 0.8em;
 		color: var(--color-text-muted);
 	}
 
-	/* ---- Callouts (Obsidian-style) ---- */
+	.markdown-content :global(abbr) {
+		text-decoration: underline dotted;
+		cursor: help;
+	}
+
+	/* Callouts (Obsidian-style); each type sets --callout */
 	.markdown-content :global(.callout) {
+		--callout: var(--color-ref-date);
 		margin: 1em 0;
-		padding: 0.875rem 1rem;
-		border-radius: 0.5rem;
-		border-left: 4px solid;
-		font-size: 0.9375rem;
+		padding: 0.75em 1em;
+		border-left: 3px solid var(--callout);
+		border-radius: var(--radius-md);
+		background: color-mix(in srgb, var(--callout) 8%, transparent);
 	}
 
 	.markdown-content :global(.callout-title) {
+		margin-bottom: 0.25em;
 		font-weight: 600;
-		margin-bottom: 0.375rem;
+		color: var(--callout);
 	}
 
-	.markdown-content :global(.callout-body) {
-		line-height: 1.6;
+	.markdown-content :global(:is(.callout-tip, .callout-success)) {
+		--callout: var(--color-ref-person);
 	}
 
-	.markdown-content :global(.callout-info),
-	.markdown-content :global(.callout-note) {
-		background: rgba(59, 130, 246, 0.08);
-		border-color: #3b82f6;
-		color: var(--color-text);
+	.markdown-content :global(.callout-warning) {
+		--callout: #df8e1d;
 	}
 
-	.markdown-content :global(.callout-warning),
 	.markdown-content :global(.callout-danger) {
-		background: rgba(239, 68, 68, 0.08);
-		border-color: #ef4444;
-	}
-
-	.markdown-content :global(.callout-tip),
-	.markdown-content :global(.callout-success) {
-		background: rgba(34, 197, 94, 0.08);
-		border-color: #22c55e;
+		--callout: var(--color-danger);
 	}
 
 	.markdown-content :global(.callout-quote) {
-		background: var(--color-bg-secondary);
-		border-color: var(--color-text-muted);
-		font-style: italic;
+		--callout: var(--color-text-faint);
+		color: var(--color-text-muted);
 	}
 
-	/* ---- Memory embeds ![[title]] ---- */
+	/* Memory embeds ![[title]] */
 	.markdown-content :global(.memory-embed) {
 		margin: 0.75em 0;
 		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
+		border-radius: var(--radius-md);
 		overflow: hidden;
-		transition: border-color 0.15s;
-	}
-
-	.markdown-content :global(.memory-embed:hover) {
-		border-color: var(--color-accent);
 	}
 
 	.markdown-content :global(.embed-link) {
 		display: block;
-		padding: 0.75rem 1rem;
-		text-decoration: none;
+		padding: 0.625em 0.875em;
 		color: var(--color-text);
+		text-decoration: none;
+	}
+
+	.markdown-content :global(.embed-link:hover) {
+		background: var(--color-hover);
 	}
 
 	.markdown-content :global(.embed-link strong) {
 		display: block;
-		color: var(--color-accent);
-		margin-bottom: 0.25rem;
+		margin-bottom: 0.125em;
+		font-weight: 600;
 	}
 
 	.markdown-content :global(.embed-preview) {
 		display: block;
+		font-family: var(--font-sans);
 		font-size: 0.8125rem;
-		color: var(--color-text-muted);
 		line-height: 1.5;
+		color: var(--color-text-muted);
 	}
 
 	.markdown-content :global(.memory-embed-broken) {
-		background: var(--color-bg-secondary);
-		padding: 0.625rem 1rem;
-		color: var(--color-text-muted);
+		padding: 0.625em 0.875em;
+		border-style: dashed;
 		font-size: 0.8125rem;
+		color: var(--color-text-faint);
 	}
 
-	/* ---- LaTeX math ---- */
+	/* LaTeX math (marked, not typeset) */
 	.markdown-content :global(.math-block) {
 		display: block;
-		text-align: center;
-		padding: 0.75rem 1rem;
 		margin: 0.75em 0;
-		background: var(--color-bg-secondary);
-		border-radius: 0.375rem;
-		font-family: ui-monospace, monospace;
-		font-size: 0.9375rem;
+		padding: 0.75em 1em;
 		overflow-x: auto;
+		border-radius: var(--radius-md);
+		background: var(--color-bg-secondary);
+		font-family: var(--font-mono);
+		font-size: 0.9em;
+		text-align: center;
 	}
 
 	.markdown-content :global(.math-inline) {
-		padding: 0.125rem 0.25rem;
-		background: var(--color-bg-secondary);
-		border-radius: 0.25rem;
-		font-family: ui-monospace, monospace;
-		font-size: 0.875em;
+		padding: 0.1em 0.25em;
+		border-radius: 4px;
+		background: var(--color-hover);
+		font-family: var(--font-mono);
+		font-size: 0.85em;
 	}
 
-	/* ---- YouTube / embeds ---- */
+	/* YouTube embeds */
 	.markdown-content :global(.embed-container) {
 		position: relative;
-		padding-bottom: 56.25%; /* 16:9 */
 		height: 0;
-		overflow: hidden;
 		margin: 1em 0;
-		border-radius: 0.5rem;
+		padding-bottom: 56.25%; /* 16:9 */
+		overflow: hidden;
+		border-radius: var(--radius-md);
 	}
 
 	.markdown-content :global(.embed-iframe) {
 		position: absolute;
-		top: 0;
-		left: 0;
+		inset: 0;
 		width: 100%;
 		height: 100%;
-		border-radius: 0.5rem;
 	}
 
-	/* ---- Details / toggles ---- */
+	/* Toggles */
 	.markdown-content :global(details) {
 		margin: 0.75em 0;
 		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
+		border-radius: var(--radius-md);
 		overflow: hidden;
 	}
 
 	.markdown-content :global(details summary) {
-		padding: 0.625rem 1rem;
-		cursor: pointer;
+		padding: 0.5em 0.875em;
+		list-style: none;
 		font-weight: 500;
 		color: var(--color-text);
-		background: var(--color-bg-secondary);
+		cursor: pointer;
 		user-select: none;
-		list-style: none;
+	}
+
+	.markdown-content :global(details summary::-webkit-details-marker) {
+		display: none;
+	}
+
+	.markdown-content :global(details summary:hover) {
+		background: var(--color-hover);
 	}
 
 	.markdown-content :global(details summary::before) {
-		content: '▸ ';
-		font-family: ui-monospace, monospace;
+		content: '';
+		display: inline-block;
+		width: 0.4em;
+		height: 0.4em;
+		margin: 0 0.6em 0.15em 0;
+		border: solid var(--color-text-faint);
+		border-width: 0 1.5px 1.5px 0;
+		transform: rotate(-45deg);
+		transition: transform 0.15s var(--ease-out);
 	}
 
 	.markdown-content :global(details[open] summary::before) {
-		content: '▾ ';
+		transform: rotate(45deg);
 	}
 
-	.markdown-content :global(details > *:not(summary)) {
-		padding: 0 1rem;
+	.markdown-content :global(details > :not(summary)) {
+		padding: 0 0.875em;
 	}
 
-	.markdown-content :global(details > *:last-child) {
-		padding-bottom: 0.75rem;
-	}
-
-	/* ---- Task list (GFM checkboxes) ---- */
-	.markdown-content :global(.task-list-item) {
-		list-style: none;
-		margin-left: -1.25em;
-	}
-
-	.markdown-content :global(.task-list-item input[type="checkbox"]) {
-		margin-right: 0.5em;
-		accent-color: var(--color-accent);
-		width: 1em;
-		height: 1em;
-		vertical-align: middle;
-		cursor: default;
-	}
-
-	/* Checked items get a muted style for the text */
-	.markdown-content :global(.task-list-item:has(input:checked)) {
-		color: var(--color-text-muted);
-		text-decoration: line-through;
-	}
-
-	/* ---- Highlight ==text== ---- */
-	.markdown-content :global(mark) {
-		background: rgba(250, 204, 21, 0.3);
-		color: inherit;
-		padding: 0.0625rem 0.25rem;
-		border-radius: 0.1875rem;
-	}
-
-	/* ---- Horizontal rule ---- */
-	.markdown-content :global(hr) {
-		border: none;
-		border-top: 1px solid var(--color-border);
-		margin: 2em 0;
-	}
-
-	/* ---- Images ---- */
-	.markdown-content :global(img) {
-		max-width: 100%;
-		border-radius: 0.5rem;
-		margin: 0.75em 0;
-	}
-
-	/* ---- Audio embeds ---- */
-	.markdown-content :global(audio) {
-		width: 100%;
-		max-width: 100%;
-		border-radius: 0.5rem;
-		margin: 0.5em 0;
-	}
-
-	/* ---- Transcript block with copy button ---- */
-	.markdown-content :global(.transcript-block) {
-		position: relative;
-		padding-right: 4rem;
-	}
-
-	.markdown-content :global(.transcript-copy-btn) {
-		position: absolute;
-		top: 0.5rem;
-		right: 0.5rem;
-		padding: 0.25rem 0.625rem;
-		background: var(--color-bg);
-		border: 1px solid var(--color-border);
-		border-radius: 0.25rem;
-		color: var(--color-text-muted);
-		font-size: 0.6875rem;
-		cursor: pointer;
-		transition: all 0.15s;
-	}
-
-	.markdown-content :global(.transcript-copy-btn:hover) {
-		background: var(--color-bg-secondary);
-		color: var(--color-accent);
-		border-color: var(--color-accent);
-	}
-
-	/* ---- Keyboard shortcuts ---- */
-	.markdown-content :global(kbd) {
-		display: inline-block;
-		padding: 0.125rem 0.375rem;
-		font-size: 0.8125em;
-		font-family: ui-monospace, monospace;
-		background: var(--color-bg-secondary);
-		border: 1px solid var(--color-border);
-		border-radius: 0.25rem;
-		box-shadow: 0 1px 0 var(--color-border);
-	}
-
-	/* ---- Abbreviation / footnote markers ---- */
-	.markdown-content :global(abbr) {
-		text-decoration: underline dotted;
-		cursor: help;
+	.markdown-content :global(details > :last-child) {
+		padding-bottom: 0.625em;
 	}
 </style>

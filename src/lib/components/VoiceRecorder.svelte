@@ -1,6 +1,10 @@
+<script module lang="ts">
+	export type RecorderState = 'idle' | 'requesting' | 'recording' | 'paused' | 'stopped' | 'error';
+</script>
+
 <script lang="ts">
 	import { Mic, Square, Pause, Play, AlertCircle } from 'lucide-svelte';
-	import { onDestroy } from 'svelte';
+	import { onDestroy, tick } from 'svelte';
 
 	export type AudioSources = 'mic' | 'mic+tab';
 
@@ -8,14 +12,25 @@
 		onComplete: (result: { blob: Blob; mimeType: string; durationMs: number }) => void;
 		onCancel?: () => void;
 		onStart?: () => void;
+		/** Notified whenever the recorder moves between states, so a host
+		 *  modal can avoid dismissing mid-recording. */
+		onStateChange?: (state: RecorderState) => void;
 		audioSources?: AudioSources;
 	}
 
-	let { onComplete, onCancel, onStart, audioSources = 'mic' }: Props = $props();
-
-	type RecorderState = 'idle' | 'requesting' | 'recording' | 'paused' | 'stopped' | 'error';
+	let { onComplete, onCancel, onStart, onStateChange, audioSources = 'mic' }: Props = $props();
 
 	let recorderState = $state<RecorderState>('idle');
+
+	$effect(() => {
+		onStateChange?.(recorderState);
+	});
+
+	// Focus the start button on open so Enter/Space begins recording
+	let startButton: HTMLButtonElement | undefined = $state();
+	$effect(() => {
+		startButton?.focus();
+	});
 	let errorMessage = $state<string | null>(null);
 	let elapsedMs = $state(0);
 
@@ -198,6 +213,8 @@
 			elapsedMs = currentElapsed();
 		}, 250);
 
+		// The canvas only mounts once the recording branch renders
+		await tick();
 		drawWaveform();
 	}
 
@@ -240,6 +257,8 @@
 		const ctx = canvas.getContext('2d');
 		if (!ctx) return;
 
+		// Bars take the canvas's CSS text color (theme-aware danger red)
+		const barColor = getComputedStyle(canvas).color || 'rgb(239, 68, 68)';
 		const bufferLength = analyser.frequencyBinCount;
 		const dataArray = new Uint8Array(bufferLength);
 
@@ -276,7 +295,8 @@
 				const avg = sum / step / 255;
 				const barHeight = Math.max(2, avg * cssHeight);
 				const y = (cssHeight - barHeight) / 2;
-				ctx.fillStyle = isPaused ? 'rgba(239, 68, 68, 0.4)' : 'rgb(239, 68, 68)';
+				ctx.globalAlpha = isPaused ? 0.35 : 1;
+				ctx.fillStyle = barColor;
 				ctx.fillRect(i * (barWidth + gap), y, barWidth, barHeight);
 			}
 		};
@@ -315,22 +335,24 @@
 	});
 </script>
 
-<div class="flex flex-col items-center gap-4 p-6">
+<div class="flex flex-col items-center gap-3 px-6 pt-6 pb-5">
 	{#if recorderState === 'idle'}
 		<button
 			type="button"
+			bind:this={startButton}
 			onclick={startRecording}
-			class="flex h-24 w-24 items-center justify-center rounded-full bg-red-500 text-white shadow-lg transition-transform hover:scale-105 active:scale-95"
+			class="record-btn flex h-16 w-16 items-center justify-center rounded-full text-white"
 			title="Start recording"
+			aria-label="Start recording"
 		>
-			<Mic class="h-10 w-10" />
+			<Mic class="h-7 w-7" />
 		</button>
-		<p class="text-sm text-[var(--color-text-muted)]">Tap to start recording</p>
+		<p class="text-xs text-[var(--color-text-faint)]">Click or press Enter to start recording</p>
 	{:else if recorderState === 'requesting'}
-		<div class="flex h-24 w-24 items-center justify-center rounded-full bg-[var(--color-bg-secondary)]">
-			<div class="h-8 w-8 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent"></div>
+		<div class="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-hover)]">
+			<div class="h-6 w-6 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent"></div>
 		</div>
-		<p class="text-sm text-[var(--color-text-muted)]">
+		<p class="text-xs text-[var(--color-text-muted)]">
 			{audioSources === 'mic+tab'
 				? 'Requesting microphone + tab/window audio…'
 				: 'Requesting microphone…'}
@@ -338,82 +360,79 @@
 	{:else if recorderState === 'recording' || recorderState === 'paused'}
 		<canvas
 			bind:this={waveformCanvas}
-			class="h-16 w-full max-w-sm rounded-lg bg-[var(--color-bg-secondary)]"
+			class="h-12 w-full max-w-sm text-[var(--color-danger)]"
 		></canvas>
 
-		<div class="flex items-center gap-2 text-2xl font-mono text-[var(--color-text)]">
-			{#if recorderState === 'recording'}
-				<span class="h-3 w-3 animate-pulse rounded-full bg-red-500"></span>
-			{:else}
-				<span class="h-3 w-3 rounded-full bg-yellow-500"></span>
-			{/if}
+		<div class="flex items-center gap-2 font-mono text-xl tabular-nums text-[var(--color-text)]">
+			<span
+				class="h-2 w-2 rounded-full bg-[var(--color-danger)]"
+				class:animate-pulse={recorderState === 'recording'}
+				class:opacity-40={recorderState === 'paused'}
+			></span>
 			{formatElapsed(elapsedMs)}
 		</div>
-
-		<div class="flex items-center gap-3">
-			{#if recorderState === 'recording'}
-				<button
-					type="button"
-					onclick={pauseRecording}
-					class="flex h-12 w-12 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text)] transition-transform hover:scale-105 active:scale-95"
-					title="Pause"
-					aria-label="Pause recording"
-				>
-					<Pause class="h-5 w-5" />
-				</button>
-			{:else}
-				<button
-					type="button"
-					onclick={resumeRecording}
-					class="flex h-12 w-12 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text)] transition-transform hover:scale-105 active:scale-95"
-					title="Resume"
-					aria-label="Resume recording"
-				>
-					<Play class="h-5 w-5" />
-				</button>
-			{/if}
-
-			<button
-				type="button"
-				onclick={stopRecording}
-				class="flex h-16 w-16 items-center justify-center rounded-full bg-red-500 text-white shadow-lg ring-4 ring-red-500/30 transition-transform hover:scale-105 active:scale-95"
-				title="Stop"
-				aria-label="Stop recording"
-			>
-				<Square class="h-6 w-6 fill-current" />
-			</button>
-		</div>
-
-		<p class="text-xs text-[var(--color-text-muted)]">
+		<p class="-mt-2 text-xs text-[var(--color-text-faint)]">
 			{recorderState === 'paused' ? 'Paused' : 'Recording…'}
 		</p>
+
+		<div class="mt-1 flex items-center gap-2">
+			{#if recorderState === 'recording'}
+				<button type="button" onclick={pauseRecording} class="k-btn" title="Pause" aria-label="Pause recording">
+					<Pause class="h-3.5 w-3.5" />
+					Pause
+				</button>
+			{:else}
+				<button type="button" onclick={resumeRecording} class="k-btn" title="Resume" aria-label="Resume recording">
+					<Play class="h-3.5 w-3.5" />
+					Resume
+				</button>
+			{/if}
+			<button type="button" onclick={stopRecording} class="k-btn k-btn-primary" title="Stop and save" aria-label="Stop recording">
+				<Square class="h-3 w-3 fill-current" />
+				Stop &amp; save
+			</button>
+		</div>
 	{:else if recorderState === 'stopped'}
 		<p class="text-sm text-[var(--color-text-muted)]">Saving…</p>
 	{:else if recorderState === 'error'}
 		<div class="flex flex-col items-center gap-3 text-center">
-			<AlertCircle class="h-10 w-10 text-red-500" />
+			<AlertCircle class="h-6 w-6 text-[var(--color-danger)]" />
 			<p class="max-w-xs text-sm text-[var(--color-text)]">{errorMessage}</p>
 			<div class="flex gap-2">
+				{#if onCancel}
+					<button type="button" onclick={onCancel} class="k-btn k-btn-ghost">Cancel</button>
+				{/if}
 				<button
 					type="button"
 					onclick={() => {
 						recorderState = 'idle';
 						errorMessage = null;
 					}}
-					class="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]"
+					class="k-btn"
 				>
 					Try again
 				</button>
-				{#if onCancel}
-					<button
-						type="button"
-						onclick={onCancel}
-						class="rounded-lg px-4 py-2 text-sm text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)]"
-					>
-						Cancel
-					</button>
-				{/if}
 			</div>
 		</div>
 	{/if}
 </div>
+
+<style>
+	/* Recording is the one place red is the primary affordance */
+	.record-btn {
+		background: var(--color-danger);
+		box-shadow: var(--shadow-md);
+		transition: filter 120ms var(--ease-out);
+	}
+
+	.record-btn:hover {
+		filter: brightness(1.08);
+	}
+
+	.record-btn:focus-visible {
+		outline: none;
+		box-shadow:
+			var(--shadow-md),
+			0 0 0 4px color-mix(in srgb, var(--color-danger) 25%, transparent);
+	}
+</style>

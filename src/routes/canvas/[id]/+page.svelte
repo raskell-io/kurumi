@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { autofocus } from '$lib/actions/autofocus';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import {
@@ -7,7 +8,7 @@
 		addMemoryObject,
 		type MemoryObject
 	} from '$lib/db';
-	import { Plus, Link2, ZoomIn, ZoomOut, Trash2, Search } from 'lucide-svelte';
+	import { Plus, Link2, ZoomIn, ZoomOut, Search, X, LayoutDashboard } from 'lucide-svelte';
 
 	// Canvas data model: stored as JSON in the canvas memory's bodyMarkdown.
 	interface CanvasNode {
@@ -111,6 +112,9 @@
 
 	function startDragNode(e: PointerEvent, nodeId: string) {
 		e.stopPropagation();
+		// Let the card's buttons and title link receive their click: capturing
+		// the pointer here would retarget the click to the card itself.
+		if ((e.target as HTMLElement).closest('button, a')) return;
 		const node = data.nodes.find((n) => n.id === nodeId);
 		if (!node) return;
 		draggingNodeId = nodeId;
@@ -209,6 +213,24 @@
 		saveCanvas();
 	}
 
+	function handleAddKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter' && addCandidates.length > 0) {
+			e.preventDefault();
+			addNodeFromMemory(addCandidates[0]);
+		}
+	}
+
+	// Escape closes the add panel first, then leaves connect mode.
+	function handleKeydown(e: KeyboardEvent) {
+		if (e.key !== 'Escape') return;
+		if (showAddMenu) {
+			showAddMenu = false;
+			addSearch = '';
+		} else if (drawingEdgeFrom !== null) {
+			drawingEdgeFrom = null;
+		}
+	}
+
 	function removeEdge(edgeId: string) {
 		data = { ...data, edges: data.edges.filter((e) => e.id !== edgeId) };
 		saveCanvas();
@@ -237,57 +259,91 @@
 	<title>{canvasMemory?.title || 'Canvas'} - Kurumi</title>
 </svelte:head>
 
+<svelte:window onkeydown={handleKeydown} />
+
 {#if canvasMemory}
 	<div class="canvas-page">
 		<!-- Toolbar -->
 		<div class="toolbar">
-			<h2 class="toolbar-title">{canvasMemory.title || 'Canvas'}</h2>
-			<div class="toolbar-actions">
-				<button class="tool-btn" onclick={() => (showAddMenu = !showAddMenu)}>
-					<Plus class="h-4 w-4" />
-					Add note
+			<h1 class="min-w-0 flex-1 truncate text-sm font-medium text-[var(--color-text)]">
+				{canvasMemory.title || 'Canvas'}
+			</h1>
+			{#if drawingEdgeFrom !== null}
+				<span class="hidden truncate text-xs text-[var(--color-text-muted)] sm:inline">
+					{drawingEdgeFrom === '__waiting__' ? 'Pick the first card' : 'Pick a card to connect to'}
+					· <kbd class="k-kbd">Esc</kbd> cancel
+				</span>
+			{/if}
+			<div class="flex shrink-0 items-center gap-1">
+				<button
+					class="k-btn k-btn-sm"
+					class:tool-active={showAddMenu}
+					onclick={() => (showAddMenu = !showAddMenu)}
+					aria-expanded={showAddMenu}
+				>
+					<Plus class="h-3.5 w-3.5" />
+					<span class="hidden sm:inline">Add note</span>
 				</button>
 				<button
-					class="tool-btn"
-					class:active={drawingEdgeFrom !== null}
+					class="k-btn k-btn-sm"
+					class:tool-active={drawingEdgeFrom !== null}
 					onclick={() => (drawingEdgeFrom = drawingEdgeFrom ? null : '__waiting__')}
-					title="Click two nodes to connect them"
+					aria-pressed={drawingEdgeFrom !== null}
+					title="Click two cards to connect them"
 				>
-					<Link2 class="h-4 w-4" />
-					Connect
+					<Link2 class="h-3.5 w-3.5" />
+					<span class="hidden sm:inline">Connect</span>
 				</button>
-				<button class="tool-btn" onclick={() => (zoom = Math.min(3, zoom + 0.2))}>
-					<ZoomIn class="h-4 w-4" />
-				</button>
-				<button class="tool-btn" onclick={() => (zoom = Math.max(0.2, zoom - 0.2))}>
+				<span class="mx-1 h-4 w-px bg-[var(--color-border)]" aria-hidden="true"></span>
+				<button
+					class="k-icon-btn"
+					onclick={() => (zoom = Math.max(0.2, zoom - 0.2))}
+					aria-label="Zoom out"
+					title="Zoom out"
+				>
 					<ZoomOut class="h-4 w-4" />
 				</button>
-				<span class="zoom-label">{Math.round(zoom * 100)}%</span>
+				<button
+					class="w-10 text-center text-xs tabular-nums text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+					onclick={() => (zoom = 1)}
+					title="Reset zoom"
+				>
+					{Math.round(zoom * 100)}%
+				</button>
+				<button
+					class="k-icon-btn"
+					onclick={() => (zoom = Math.min(3, zoom + 0.2))}
+					aria-label="Zoom in"
+					title="Zoom in"
+				>
+					<ZoomIn class="h-4 w-4" />
+				</button>
 			</div>
 
 			{#if showAddMenu}
-				<div class="add-panel">
-					<div class="add-search">
-						<Search class="h-3.5 w-3.5 text-[var(--color-text-muted)]" />
-						<!-- svelte-ignore a11y_autofocus -->
-						<input
+				<div class="add-panel k-menu">
+					<div class="relative mb-1">
+						<Search class="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-[var(--color-text-faint)]" />
+												<input
 							type="text"
 							bind:value={addSearch}
-							placeholder="Search memories..."
-							class="add-input"
-							autofocus
+							onkeydown={handleAddKeydown}
+							placeholder="Search memories…"
+							aria-label="Search memories to add"
+							class="k-input !h-8 !pl-8"
+							use:autofocus
 						/>
 					</div>
-					<ul class="add-results">
+					<ul class="max-h-60 overflow-y-auto">
 						{#each addCandidates as memory (memory.id)}
 							<li>
-								<button class="add-result" onclick={() => addNodeFromMemory(memory)}>
-									{memory.title || 'Untitled'}
+								<button class="k-menu-item" onclick={() => addNodeFromMemory(memory)}>
+									<span class="truncate">{memory.title || 'Untitled'}</span>
 								</button>
 							</li>
 						{/each}
 						{#if addCandidates.length === 0}
-							<li class="add-empty">No matching memories</li>
+							<li class="px-2 py-4 text-center text-xs text-[var(--color-text-faint)]">No matching memories</li>
 						{/if}
 					</ul>
 				</div>
@@ -316,13 +372,15 @@
 							<!-- svelte-ignore a11y_click_events_have_key_events -->
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
 							<line
-								x1={fromCenter.x}
-								y1={fromCenter.y}
-								x2={toCenter.x}
-								y2={toCenter.y}
+								x1={fromCenter.x + 10000}
+								y1={fromCenter.y + 10000}
+								x2={toCenter.x + 10000}
+								y2={toCenter.y + 10000}
 								class="edge-line"
 								onclick={() => removeEdge(edge.id)}
-							/>
+							>
+								<title>Click to remove connection</title>
+							</line>
 						{/if}
 					{/each}
 				</svg>
@@ -335,57 +393,71 @@
 						<div
 							class="canvas-node"
 							class:connecting={drawingEdgeFrom !== null}
+							class:connect-source={drawingEdgeFrom === node.id}
 							class:dragging={draggingNodeId === node.id}
 							style="left: {node.x}px; top: {node.y}px; width: {node.width}px;"
 							onpointerdown={(e) => startDragNode(e, node.id)}
 						>
-							<div class="node-header">
+							<div class="flex items-center gap-1 px-3 pt-2">
 								<a href="/memory/{memory.id}" class="node-title">
 									{memory.title || 'Untitled'}
 								</a>
 								<div class="node-actions">
 									{#if drawingEdgeFrom !== null && drawingEdgeFrom !== '__waiting__'}
 										<button
-											class="node-btn connect"
+											class="k-icon-btn !h-6 !w-6 hover:!text-[var(--color-accent)]"
 											onclick={(e) => { e.stopPropagation(); startEdge(node.id); }}
-											title="Connect to this"
+											aria-label={drawingEdgeFrom === node.id ? 'Cancel connection' : 'Connect to this'}
+											title={drawingEdgeFrom === node.id ? 'Cancel connection' : 'Connect to this'}
 										>
-											<Link2 class="h-3 w-3" />
+											<Link2 class="h-3.5 w-3.5" />
 										</button>
 									{:else if drawingEdgeFrom === '__waiting__'}
 										<button
-											class="node-btn connect"
+											class="k-icon-btn !h-6 !w-6 hover:!text-[var(--color-accent)]"
 											onclick={(e) => { e.stopPropagation(); drawingEdgeFrom = node.id; }}
+											aria-label="Start connection from this"
 											title="Start connection from this"
 										>
-											<Link2 class="h-3 w-3" />
+											<Link2 class="h-3.5 w-3.5" />
 										</button>
 									{/if}
 									<button
-										class="node-btn danger"
+										class="k-icon-btn !h-6 !w-6 hover:!text-[var(--color-danger)]"
 										onclick={(e) => { e.stopPropagation(); removeNode(node.id); }}
+										aria-label="Remove from canvas"
 										title="Remove from canvas"
 									>
-										<Trash2 class="h-3 w-3" />
+										<X class="h-3.5 w-3.5" />
 									</button>
 								</div>
 							</div>
 							<div class="node-body">
 								{memoryPreview(memory)}
 							</div>
-							<div class="node-footer">
-								<span class="node-type">{memory.type}</span>
+							<div class="px-3 pb-2 text-[0.6875rem] capitalize text-[var(--color-text-faint)]">
+								{memory.type}
 							</div>
 						</div>
 					{/if}
 				{/each}
 			</div>
+
+			{#if data.nodes.length === 0}
+				<div class="k-empty pointer-events-none absolute inset-0 justify-center">
+					<LayoutDashboard />
+					<p class="k-empty-title">Empty canvas</p>
+					<p>Add notes as cards, then connect them to map out an idea.</p>
+				</div>
+			{/if}
 		</div>
 	</div>
 {:else}
-	<div class="not-found">
-		<h1>Canvas not found</h1>
-		<a href="/">Back to home</a>
+	<div class="k-empty">
+		<LayoutDashboard />
+		<p class="k-empty-title">Canvas not found</p>
+		<p>It may have been deleted or moved to another vault.</p>
+		<a href="/" class="k-btn mt-2">Back to home</a>
 	</div>
 {/if}
 
@@ -393,131 +465,47 @@
 	.canvas-page {
 		display: flex;
 		flex-direction: column;
-		height: 100vh;
+		height: 100%;
 		overflow: hidden;
 	}
 
 	.toolbar {
 		position: relative;
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 0.5rem 1rem;
-		background: var(--color-bg-secondary);
-		border-bottom: 1px solid var(--color-border);
 		z-index: 10;
-	}
-
-	.toolbar-title {
-		font-size: 1rem;
-		font-weight: 600;
-		color: var(--color-text);
-	}
-
-	.toolbar-actions {
 		display: flex;
 		align-items: center;
-		gap: 0.375rem;
-	}
-
-	.tool-btn {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
-		padding: 0.375rem 0.625rem;
+		gap: 0.75rem;
+		height: 2.75rem;
+		padding: 0 0.75rem 0 1rem;
+		border-bottom: 1px solid var(--color-border);
 		background: var(--color-bg);
-		border: 1px solid var(--color-border);
-		border-radius: 0.375rem;
-		color: var(--color-text);
-		font-size: 0.75rem;
-		cursor: pointer;
-		transition: all 0.15s;
 	}
 
-	.tool-btn:hover {
-		border-color: var(--color-accent);
+	.tool-active {
+		border-color: color-mix(in srgb, var(--color-accent) 50%, var(--color-border));
+		background: var(--color-accent-soft);
+		color: var(--color-accent);
 	}
 
-	.tool-btn.active {
-		background: var(--color-accent);
-		border-color: var(--color-accent);
-		color: white;
-	}
-
-	.zoom-label {
-		font-size: 0.6875rem;
-		color: var(--color-text-muted);
-		min-width: 3rem;
-		text-align: center;
+	.tool-active:hover {
+		background: var(--color-accent-soft);
 	}
 
 	.add-panel {
 		position: absolute;
-		top: 100%;
-		right: 1rem;
-		width: 280px;
-		background: var(--color-bg);
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
-		z-index: 20;
-	}
-
-	.add-search {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.5rem 0.75rem;
-		border-bottom: 1px solid var(--color-border);
-	}
-
-	.add-input {
-		flex: 1;
-		background: transparent;
-		border: none;
-		color: var(--color-text);
-		font-size: 0.8125rem;
-		outline: none;
-	}
-
-	.add-results {
-		list-style: none;
-		padding: 0.25rem;
-		margin: 0;
-		max-height: 240px;
-		overflow-y: auto;
-	}
-
-	.add-result {
-		display: block;
-		width: 100%;
-		padding: 0.375rem 0.625rem;
-		background: transparent;
-		border: none;
-		border-radius: 0.25rem;
-		color: var(--color-text);
-		font-size: 0.8125rem;
-		text-align: left;
-		cursor: pointer;
-	}
-
-	.add-result:hover {
-		background: var(--color-bg-secondary);
-	}
-
-	.add-empty {
-		padding: 1rem;
-		text-align: center;
-		color: var(--color-text-muted);
-		font-size: 0.8125rem;
+		top: calc(100% + 0.25rem);
+		right: 0.75rem;
+		width: 18rem;
+		max-width: calc(100vw - 1.5rem);
 	}
 
 	/* Canvas */
 	.canvas-viewport {
+		position: relative;
 		flex: 1;
 		overflow: hidden;
-		background:
-			radial-gradient(circle, var(--color-border) 1px, transparent 1px);
+		background-color: var(--color-bg-secondary);
+		background-image: radial-gradient(circle, var(--color-border) 1px, transparent 1px);
 		background-size: 24px 24px;
 		cursor: grab;
 		touch-action: none;
@@ -541,133 +529,94 @@
 		width: 20000px;
 		height: 20000px;
 		pointer-events: none;
+		overflow: visible;
 	}
 
 	.edge-line {
-		stroke: var(--color-accent);
-		stroke-width: 2;
+		stroke: color-mix(in srgb, var(--color-text) 30%, transparent);
+		stroke-width: 1.5;
 		stroke-linecap: round;
 		pointer-events: stroke;
 		cursor: pointer;
 	}
 
 	.edge-line:hover {
-		stroke-width: 4;
-		stroke: #ef4444;
+		stroke: var(--color-danger);
+		stroke-width: 3;
 	}
 
 	.canvas-node {
 		position: absolute;
-		background: var(--color-bg);
 		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+		border-radius: var(--radius-lg);
+		background: var(--color-bg);
+		box-shadow: var(--shadow-sm);
 		cursor: move;
 		user-select: none;
 		overflow: hidden;
-		transition: box-shadow 0.1s;
 	}
 
 	.canvas-node:hover {
-		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+		box-shadow: var(--shadow-md);
 	}
 
 	.canvas-node.dragging {
-		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
 		z-index: 10;
+		box-shadow: var(--shadow-lg);
 	}
 
 	.canvas-node.connecting {
-		border-color: var(--color-accent);
+		border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
 	}
 
-	.node-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 0.375rem 0.5rem;
-		border-bottom: 1px solid var(--color-border);
-		background: var(--color-bg-secondary);
+	.canvas-node.connect-source {
+		border-color: var(--color-accent);
+		box-shadow: 0 0 0 3px var(--color-accent-soft);
 	}
 
 	.node-title {
-		font-size: 0.75rem;
-		font-weight: 600;
-		color: var(--color-text);
-		text-decoration: none;
+		flex: 1;
+		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		flex: 1;
-		min-width: 0;
+		font-size: 0.8125rem;
+		font-weight: 600;
+		color: var(--color-text);
+		text-decoration: none;
 	}
 
 	.node-title:hover {
-		color: var(--color-accent);
+		text-decoration: underline;
+		text-decoration-color: var(--color-text-faint);
+		text-underline-offset: 2px;
 	}
 
 	.node-actions {
 		display: flex;
-		gap: 0.125rem;
 		flex-shrink: 0;
+		gap: 0.125rem;
+		opacity: 0;
 	}
 
-	.node-btn {
-		background: none;
-		border: none;
-		padding: 0.25rem;
-		border-radius: 0.25rem;
-		cursor: pointer;
-		color: var(--color-text-muted);
+	.canvas-node:hover .node-actions,
+	.canvas-node.connecting .node-actions,
+	.node-actions:focus-within {
+		opacity: 1;
 	}
 
-	.node-btn:hover {
-		background: var(--color-border);
-		color: var(--color-text);
-	}
-
-	.node-btn.danger:hover {
-		background: rgba(239, 68, 68, 0.15);
-		color: #ef4444;
-	}
-
-	.node-btn.connect:hover {
-		background: color-mix(in srgb, var(--color-accent) 15%, transparent);
-		color: var(--color-accent);
+	@media (hover: none) {
+		.node-actions {
+			opacity: 1;
+		}
 	}
 
 	.node-body {
-		padding: 0.375rem 0.5rem;
-		font-size: 0.6875rem;
-		color: var(--color-text-muted);
-		line-height: 1.4;
-		max-height: 4rem;
+		max-height: 4.5rem;
 		overflow: hidden;
-	}
-
-	.node-footer {
-		padding: 0.25rem 0.5rem;
-		border-top: 1px solid var(--color-border);
-	}
-
-	.node-type {
-		font-size: 0.625rem;
+		padding: 0.25rem 0.75rem 0.375rem;
+		font-size: 0.75rem;
+		line-height: 1.45;
 		color: var(--color-text-muted);
-		text-transform: capitalize;
-	}
-
-	.not-found {
-		text-align: center;
-		padding: 4rem 2rem;
-		color: var(--color-text-muted);
-	}
-
-	.not-found h1 {
-		color: var(--color-text);
-		margin-bottom: 1rem;
-	}
-
-	.not-found a {
-		color: var(--color-accent);
 	}
 </style>

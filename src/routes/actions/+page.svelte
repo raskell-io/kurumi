@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { autofocus } from '$lib/actions/autofocus';
 	import {
 		actionItems,
 		memoryObjects,
@@ -8,23 +9,30 @@
 		deleteActionItem,
 		restoreActionItem,
 		completeRecurring,
+		todayIso,
 		type ActionItem,
 		type ActionItemStatus,
 		type Recurrence
 	} from '$lib/db';
 	import { pushUndo } from '$lib/stores/undo';
+	import { goto } from '$app/navigation';
 	import {
-		CheckSquare,
-		Square,
-		Clock,
-		Trash2,
-		ArrowRight,
-		X,
-		Plus,
-		Pencil,
+		ArrowUpRight,
+		CalendarClock,
 		Check,
-		MinusSquare,
-		Repeat
+		Circle,
+		CircleCheck,
+		CircleDot,
+		CircleSlash,
+		Pencil,
+		Play,
+		Plus,
+		Repeat,
+		RotateCcw,
+		Square,
+		SquareCheck,
+		Trash2,
+		X
 	} from 'lucide-svelte';
 	import { onMount } from 'svelte';
 
@@ -35,6 +43,24 @@
 		{ value: 'monthly', label: 'Monthly' },
 		{ value: 'yearly', label: 'Yearly' }
 	];
+
+	// Filter tabs. "Active" (open + in progress) is the default so the
+	// list reads as a to-do list; finished work is one click away.
+	type Filter = 'active' | 'closed' | 'all';
+	const FILTERS: Array<{ value: Filter; label: string }> = [
+		{ value: 'active', label: 'Active' },
+		{ value: 'closed', label: 'Completed' },
+		{ value: 'all', label: 'All' }
+	];
+	let filter = $state<Filter>('active');
+
+	function setFilter(next: Filter) {
+		if (filter === next) return;
+		filter = next;
+		// Selection and cursor refer to rows that may no longer be visible.
+		clearSelection();
+		focusIndex = -1;
+	}
 
 	type Group = { label: string; status: ActionItemStatus; items: ActionItem[] };
 
@@ -49,15 +75,29 @@
 			else if (item.status === 'done') done.push(item);
 			else cancelled.push(item);
 		}
-		return [
+		const all: Group[] = [
 			{ label: 'Open', status: 'open', items: open },
 			{ label: 'In progress', status: 'in_progress', items: inProgress },
 			{ label: 'Done', status: 'done', items: done },
 			{ label: 'Cancelled', status: 'cancelled', items: cancelled }
 		];
+		if (filter === 'active') return all.slice(0, 2);
+		if (filter === 'closed') return all.slice(2);
+		return all;
 	});
 
 	let totalOpen = $derived($actionItems.filter((i) => i.status === 'open').length);
+	let totalInProgress = $derived($actionItems.filter((i) => i.status === 'in_progress').length);
+	let totalClosed = $derived($actionItems.length - totalOpen - totalInProgress);
+	let filterCounts = $derived<Record<Filter, number>>({
+		active: totalOpen + totalInProgress,
+		closed: totalClosed,
+		all: $actionItems.length
+	});
+
+	function isActive(item: ActionItem): boolean {
+		return item.status === 'open' || item.status === 'in_progress';
+	}
 
 	// Flat ordered list matching the rendered groups, used by bulk and
 	// keyboard navigation so "next item" is deterministic.
@@ -92,9 +132,40 @@
 		focusIndex >= 0 && focusIndex < flatOrder.length ? flatOrder[focusIndex].id : null
 	);
 
+	// Keep the keyboard cursor visible while moving through long lists.
+	$effect(() => {
+		if (!focusedId) return;
+		document
+			.querySelector(`[data-row-id="${CSS.escape(focusedId)}"]`)
+			?.scrollIntoView({ block: 'nearest' });
+	});
+
 	// Look up the source memory's title for display.
 	function memoryTitle(id: string): string {
-		return $memoryObjects.find((m) => m.id === id)?.title ?? 'Untitled';
+		return $memoryObjects.find((m) => m.id === id)?.title || 'Untitled';
+	}
+
+	// Human due-date label + tone. Only active items get overdue/today
+	// colouring; a finished item's due date is just history.
+	const today = todayIso();
+
+	function dueInfo(iso: string, active: boolean): { label: string; tone: '' | 'danger' | 'warn' } {
+		const date = new Date(iso + 'T00:00:00');
+		if (Number.isNaN(date.getTime())) return { label: iso, tone: '' };
+		const days = Math.round((date.getTime() - new Date(today + 'T00:00:00').getTime()) / 86_400_000);
+		let label: string;
+		if (days === 0) label = 'Today';
+		else if (days === 1) label = 'Tomorrow';
+		else if (days === -1) label = 'Yesterday';
+		else if (days > 1 && days < 7) label = date.toLocaleDateString(undefined, { weekday: 'short' });
+		else
+			label = date.toLocaleDateString(undefined, {
+				month: 'short',
+				day: 'numeric',
+				year: date.getFullYear() === new Date().getFullYear() ? undefined : 'numeric'
+			});
+		const tone = !active ? '' : days < 0 ? 'danger' : days === 0 ? 'warn' : '';
+		return { label, tone };
 	}
 
 	// --- Status transitions with undo -------------------------------------
@@ -133,6 +204,10 @@
 
 	function cancelItem(item: ActionItem) {
 		changeStatus(item, 'cancelled', 'Cancelled action item');
+	}
+
+	function reopenItem(item: ActionItem) {
+		changeStatus(item, 'open', 'Reopened action item');
 	}
 
 	function remove(item: ActionItem) {
@@ -200,7 +275,9 @@
 	//
 	// Standard j/k (or arrow) moves focus, Space toggles selection, Enter
 	// opens the source memory, e edits, x marks done, Delete deletes.
-	// Handlers no-op when typing in inputs (edit form, create form).
+	// Handlers no-op when typing in form controls (edit form, create
+	// form) and when a modifier is held, so global shortcuts like Cmd+D
+	// or Cmd+K don't also act on the focused row.
 
 	function handlePageKeydown(e: KeyboardEvent) {
 		const target = e.target as HTMLElement | null;
@@ -208,10 +285,14 @@
 		if (
 			target.tagName === 'INPUT' ||
 			target.tagName === 'TEXTAREA' ||
+			target.tagName === 'SELECT' ||
 			target.isContentEditable
 		) {
 			return;
 		}
+		if (e.metaKey || e.ctrlKey || e.altKey) return;
+		// Let a focused button/link handle its own activation keys.
+		if ((e.key === 'Enter' || e.key === ' ') && target.closest('button, a')) return;
 		if (flatOrder.length === 0) return;
 
 		switch (e.key) {
@@ -234,7 +315,8 @@
 				if (!focusedId) return;
 				const current = flatOrder[focusIndex];
 				if (current?.memoryObjectId) {
-					window.location.hash = `#/memory/${current.memoryObjectId}`;
+					e.preventDefault();
+					goto(`/memory/${current.memoryObjectId}`);
 				}
 				break;
 			}
@@ -310,8 +392,9 @@
 		if (!editingId) return;
 		const trimmedText = editText.trim();
 		if (!trimmedText) {
-			// Empty text == delete
-			deleteActionItem(editingId);
+			// Empty text == delete (undoable, like any other delete)
+			const item = $actionItems.find((i) => i.id === editingId);
+			if (item) remove(item);
 		} else {
 			updateActionItem(editingId, {
 				text: trimmedText,
@@ -328,6 +411,7 @@
 			e.preventDefault();
 			saveEdit();
 		} else if (e.key === 'Escape') {
+			e.preventDefault();
 			cancelEdit();
 		}
 	}
@@ -338,6 +422,8 @@
 	let newAssignee = $state('');
 	let newDueDate = $state('');
 	let newRecurrence = $state<Recurrence>('none');
+
+	let createInput: HTMLInputElement | undefined = $state();
 
 	function openCreate() {
 		showCreate = true;
@@ -364,7 +450,10 @@
 			dueDate: newDueDate.trim() || null,
 			recurrence: newRecurrence
 		});
-		cancelCreate();
+		// Stay in the form for rapid capture: clear the text (keep assignee,
+		// due date and recurrence for a batch) and refocus. Escape finishes.
+		newText = '';
+		createInput?.focus();
 	}
 
 	function handleCreateKeydown(e: KeyboardEvent) {
@@ -372,6 +461,7 @@
 			e.preventDefault();
 			submitCreate();
 		} else if (e.key === 'Escape') {
+			e.preventDefault();
 			cancelCreate();
 		}
 	}
@@ -381,151 +471,200 @@
 	<title>Action items - Kurumi</title>
 </svelte:head>
 
-<main class="actions-page">
-	<header class="page-header">
-		<div class="header-row">
-			<div>
-				<h1>Action items</h1>
-				<p class="count">
-					{totalOpen} open
-					{#if $actionItems.length > totalOpen}
-						· {$actionItems.length - totalOpen} completed
-					{/if}
-					<span class="hint">j/k to navigate · Space to select · x done · e edit · d delete</span>
-				</p>
+<div class="k-page">
+	<header class="k-page-header">
+		<div class="min-w-0">
+			<h1 class="k-page-title">Action items</h1>
+			<p class="k-page-subtitle">
+				{totalOpen} open
+				{#if totalInProgress > 0}· {totalInProgress} in progress{/if}
+				{#if totalClosed > 0}· {totalClosed} completed{/if}
+			</p>
+			<div class="k-hints">
+				<span><kbd class="k-kbd">j</kbd> <kbd class="k-kbd">k</kbd> navigate</span>
+				<span><kbd class="k-kbd">Space</kbd> select</span>
+				<span><kbd class="k-kbd">x</kbd> done</span>
+				<span><kbd class="k-kbd">e</kbd> edit</span>
+				<span><kbd class="k-kbd">d</kbd> delete</span>
+				<span><kbd class="k-kbd">↵</kbd> open source</span>
 			</div>
-			{#if !showCreate}
-				<button class="create-btn" onclick={openCreate}>
-					<Plus class="h-4 w-4" />
-					New action item
-				</button>
-			{/if}
 		</div>
+		<button class="k-btn k-btn-primary shrink-0" onclick={openCreate} disabled={showCreate}>
+			<Plus class="h-4 w-4" />
+			New
+		</button>
+	</header>
 
-		{#if selectionSize > 0}
-			<div class="bulk-bar">
-				<button class="bulk-select" onclick={clearSelection} title="Clear selection">
-					<CheckSquare class="h-4 w-4" />
-					{selectionSize} selected
-				</button>
-				<button class="bulk-action" onclick={bulkMarkDone}>
-					<Check class="h-4 w-4" />
-					Mark done
-				</button>
-				<button class="bulk-action" onclick={bulkCancel}>
-					<X class="h-4 w-4" />
-					Cancel
-				</button>
-				<button class="bulk-action danger" onclick={bulkDelete}>
-					<Trash2 class="h-4 w-4" />
-					Delete
-				</button>
+	{#if $actionItems.length > 0}
+		<div class="k-segmented mb-4" role="group" aria-label="Filter">
+			{#each FILTERS as f (f.value)}
 				<button
-					class="bulk-select-all"
+					class="inline-flex items-center gap-1.5"
+					onclick={() => setFilter(f.value)}
+					aria-pressed={filter === f.value}
+				>
+					{f.label}
+					<span class="text-xs tabular-nums text-[var(--color-text-faint)]">{filterCounts[f.value]}</span>
+				</button>
+			{/each}
+		</div>
+	{/if}
+
+	{#if selectionSize > 0}
+		<div class="k-bulk-bar" role="toolbar" aria-label="Bulk actions">
+			<span class="px-2 text-xs font-medium tabular-nums text-[var(--color-text)]">
+				{selectionSize} selected
+			</span>
+			<button class="k-btn k-btn-ghost k-btn-sm" onclick={bulkMarkDone}>
+				<Check class="h-3.5 w-3.5" />
+				Mark done
+			</button>
+			<button class="k-btn k-btn-ghost k-btn-sm" onclick={bulkCancel}>
+				<CircleSlash class="h-3.5 w-3.5" />
+				Cancel
+			</button>
+			<button class="k-btn k-btn-ghost k-btn-danger k-btn-sm" onclick={bulkDelete}>
+				<Trash2 class="h-3.5 w-3.5" />
+				Delete
+			</button>
+			<span class="ml-auto flex items-center gap-1">
+				<button
+					class="k-btn k-btn-ghost k-btn-sm"
 					onclick={selectAll}
 					disabled={selectionSize === flatOrder.length}
 				>
 					Select all
 				</button>
-			</div>
-		{/if}
+				<button class="k-icon-btn" onclick={clearSelection} title="Clear selection (Esc)" aria-label="Clear selection">
+					<X class="h-4 w-4" />
+				</button>
+			</span>
+		</div>
+	{/if}
 
-		{#if showCreate}
-			<div class="create-form">
+	{#if showCreate}
+		<div class="k-card mb-4 p-2 shadow-[var(--shadow-sm)]">
+						<input
+				type="text"
+				bind:this={createInput}
+				bind:value={newText}
+				placeholder="What needs to be done?"
+				onkeydown={handleCreateKeydown}
+				class="k-input border-transparent shadow-none focus:border-transparent focus:shadow-none"
+				aria-label="Action item"
+				use:autofocus
+			/>
+			<div class="form-row">
 				<input
 					type="text"
-					bind:value={newText}
-					placeholder="What needs to be done?"
+					bind:value={newAssignee}
+					placeholder="Assignee"
 					onkeydown={handleCreateKeydown}
-					class="form-input text"
+					class="k-input h-8 text-xs"
+					aria-label="Assignee"
 				/>
-				<div class="form-row">
-					<input
-						type="text"
-						bind:value={newAssignee}
-						placeholder="Assignee (optional)"
-						onkeydown={handleCreateKeydown}
-						class="form-input"
-					/>
-					<input
-						type="date"
-						bind:value={newDueDate}
-						onkeydown={handleCreateKeydown}
-						class="form-input"
-					/>
-					<select bind:value={newRecurrence} class="form-input">
-						{#each RECURRENCE_OPTIONS as opt (opt.value)}
-							<option value={opt.value}>{opt.label}</option>
-						{/each}
-					</select>
-					<button class="form-btn-cancel" onclick={cancelCreate}>Cancel</button>
-					<button class="form-btn-submit" onclick={submitCreate} disabled={!newText.trim()}>
+				<input
+					type="date"
+					bind:value={newDueDate}
+					onkeydown={handleCreateKeydown}
+					class="k-input h-8 text-xs"
+					aria-label="Due date"
+				/>
+				<select bind:value={newRecurrence} onkeydown={handleCreateKeydown} class="k-input h-8 text-xs" aria-label="Repeat">
+					{#each RECURRENCE_OPTIONS as opt (opt.value)}
+						<option value={opt.value}>{opt.label}</option>
+					{/each}
+				</select>
+				<span class="form-buttons">
+					<button class="k-btn k-btn-ghost k-btn-sm" onclick={cancelCreate}>Cancel</button>
+					<button class="k-btn k-btn-primary k-btn-sm" onclick={submitCreate} disabled={!newText.trim()}>
 						Create
 					</button>
-				</div>
+				</span>
 			</div>
-		{/if}
-	</header>
+		</div>
+	{/if}
 
 	{#if $actionItems.length === 0 && !showCreate}
-		<div class="empty-state">
-			<CheckSquare class="h-12 w-12 opacity-50" />
-			<h2>No action items yet</h2>
+		<div class="k-empty">
+			<CircleCheck />
+			<p class="k-empty-title">No action items yet</p>
+			<p>Action items are extracted from meetings, or you can add your own.</p>
+			<button class="k-btn mt-2" onclick={openCreate}>
+				<Plus class="h-4 w-4" />
+				New action item
+			</button>
+		</div>
+	{:else if flatOrder.length === 0 && $actionItems.length > 0}
+		<div class="k-empty">
+			<CircleCheck />
+			<p class="k-empty-title">{filter === 'active' ? 'All caught up' : 'Nothing here'}</p>
 			<p>
-				Action items are extracted automatically from meetings, or you can
-				create your own with the button above.
+				{filter === 'active'
+					? 'Every action item is done or cancelled.'
+					: 'Completed and cancelled items will show up here.'}
 			</p>
 		</div>
 	{:else}
 		{#each groups as group (group.status)}
 			{#if group.items.length > 0}
-				<section class="group">
-					<h2 class="group-title">
+				<section>
+					<h2 class="k-section-title">
 						{group.label}
-						<span class="group-count">{group.items.length}</span>
+						<span class="tabular-nums font-normal">{group.items.length}</span>
 					</h2>
-					<ul class="items">
+					<ul class="items" class:has-selection={selectionSize > 0}>
 						{#each group.items as item (item.id)}
+							{@const due = item.dueDate ? dueInfo(item.dueDate, isActive(item)) : null}
 							<li
-								class="item"
+								class="k-row item"
+								class:closed={!isActive(item)}
 								class:done={item.status === 'done'}
-								class:cancelled={item.status === 'cancelled'}
 								class:editing={editingId === item.id}
 								class:focused={focusedId === item.id}
 								class:selected={isSelected(item.id)}
+								data-row-id={item.id}
 							>
 								<button
 									class="select-box"
 									onclick={() => toggleSelected(item.id)}
 									aria-label={isSelected(item.id) ? 'Deselect' : 'Select'}
+									aria-pressed={isSelected(item.id)}
 								>
 									{#if isSelected(item.id)}
-										<MinusSquare class="h-4 w-4" />
+										<SquareCheck class="h-4 w-4" />
 									{:else}
 										<Square class="h-4 w-4" />
 									{/if}
 								</button>
 								<button
-									class="toggle"
+									class="status"
+									class:status-done={item.status === 'done'}
+									class:status-progress={item.status === 'in_progress'}
 									onclick={() => toggleDone(item)}
+									title={item.status === 'done' ? 'Mark as open' : 'Mark as done (x)'}
 									aria-label={item.status === 'done' ? 'Mark as open' : 'Mark as done'}
 								>
 									{#if item.status === 'done'}
-										<CheckSquare class="h-5 w-5" />
+										<CircleCheck class="h-4 w-4" />
+									{:else if item.status === 'in_progress'}
+										<CircleDot class="h-4 w-4" />
+									{:else if item.status === 'cancelled'}
+										<CircleSlash class="h-4 w-4" />
 									{:else}
-										<Square class="h-5 w-5" />
+										<Circle class="h-4 w-4" />
 									{/if}
 								</button>
 
 								{#if editingId === item.id}
 									<div class="edit-form">
-										<!-- svelte-ignore a11y_autofocus -->
-										<input
+																				<input
 											type="text"
 											bind:value={editText}
 											onkeydown={handleEditKeydown}
-											class="form-input text"
-											autofocus
+											class="k-input h-8"
+											aria-label="Action item"
+											use:autofocus
 										/>
 										<div class="form-row">
 											<input
@@ -533,75 +672,84 @@
 												bind:value={editAssignee}
 												placeholder="Assignee"
 												onkeydown={handleEditKeydown}
-												class="form-input"
+												class="k-input h-8 text-xs"
+												aria-label="Assignee"
 											/>
 											<input
 												type="date"
 												bind:value={editDueDate}
 												onkeydown={handleEditKeydown}
-												class="form-input"
+												class="k-input h-8 text-xs"
+												aria-label="Due date"
 											/>
-											<select bind:value={editRecurrence} class="form-input">
+											<select bind:value={editRecurrence} onkeydown={handleEditKeydown} class="k-input h-8 text-xs" aria-label="Repeat">
 												{#each RECURRENCE_OPTIONS as opt (opt.value)}
 													<option value={opt.value}>{opt.label}</option>
 												{/each}
 											</select>
-											<button class="form-btn-cancel" onclick={cancelEdit}>Cancel</button>
-											<button class="form-btn-submit" onclick={saveEdit}>
-												<Check class="h-4 w-4" />
-												Save
-											</button>
+											<span class="form-buttons">
+												<button class="k-btn k-btn-ghost k-btn-sm" onclick={cancelEdit}>Cancel</button>
+												<button class="k-btn k-btn-primary k-btn-sm" onclick={saveEdit}>Save</button>
+											</span>
 										</div>
 									</div>
 								{:else}
 									<div class="body">
 										<p class="text">{item.text}</p>
-										<div class="meta">
-											{#if item.assignee}
-												<span class="assignee">@{item.assignee}</span>
-											{/if}
-											{#if item.recurrence && item.recurrence !== 'none'}
-												<span class="recurrence"><Repeat class="h-3 w-3" /> {item.recurrence}</span>
-											{/if}
-											{#if item.dueDate}
-												<span class="due"><Clock class="h-3 w-3" /> {item.dueDate}</span>
-											{/if}
-											{#if item.memoryObjectId}
-												<a class="source" href="/memory/{item.memoryObjectId}">
-													from {memoryTitle(item.memoryObjectId)}
-													<ArrowRight class="h-3 w-3" />
-												</a>
-											{:else}
-												<span class="source manual">manual entry</span>
-											{/if}
-										</div>
+										{#if item.assignee || item.memoryObjectId}
+											<div class="meta">
+												{#if item.assignee}
+													<span class="assignee">@{item.assignee}</span>
+												{/if}
+												{#if item.memoryObjectId}
+													<a class="source" href="/memory/{item.memoryObjectId}">
+														<ArrowUpRight class="h-3 w-3 shrink-0" />
+														<span class="truncate">{memoryTitle(item.memoryObjectId)}</span>
+													</a>
+												{/if}
+											</div>
+										{/if}
 									</div>
-								{/if}
 
-								{#if editingId !== item.id}
-									<div class="actions">
-										<button class="action-btn" onclick={() => startEdit(item)} title="Edit">
+									<div class="badges">
+										{#if item.recurrence && item.recurrence !== 'none'}
+											<span class="k-badge capitalize" title="Repeats {item.recurrence}">
+												<Repeat class="h-3 w-3" />
+												{item.recurrence}
+											</span>
+										{/if}
+										{#if due}
+											<span
+												class="k-badge"
+												class:k-badge-danger={due.tone === 'danger'}
+												class:k-badge-warn={due.tone === 'warn'}
+												title="Due {item.dueDate}"
+											>
+												<CalendarClock class="h-3 w-3" />
+												{due.label}
+											</span>
+										{/if}
+									</div>
+
+									<div class="row-actions">
+										<button class="k-icon-btn" onclick={() => startEdit(item)} title="Edit (e)" aria-label="Edit">
 											<Pencil class="h-4 w-4" />
 										</button>
 										{#if item.status === 'open'}
-											<button
-												class="action-btn"
-												onclick={() => startProgress(item)}
-												title="Start"
-											>
-												<Clock class="h-4 w-4" />
+											<button class="k-icon-btn" onclick={() => startProgress(item)} title="Start" aria-label="Mark in progress">
+												<Play class="h-4 w-4" />
 											</button>
 										{/if}
-										{#if item.status !== 'cancelled' && item.status !== 'done'}
-											<button class="action-btn" onclick={() => cancelItem(item)} title="Cancel">
-												<X class="h-4 w-4" />
+										{#if item.status === 'cancelled'}
+											<button class="k-icon-btn" onclick={() => reopenItem(item)} title="Reopen" aria-label="Reopen">
+												<RotateCcw class="h-4 w-4" />
+											</button>
+										{:else if item.status !== 'done'}
+											<button class="k-icon-btn" onclick={() => cancelItem(item)} title="Cancel" aria-label="Cancel">
+												<CircleSlash class="h-4 w-4" />
 											</button>
 										{/if}
-										<button
-											class="action-btn danger"
-											onclick={() => remove(item)}
-											title="Delete"
-										>
+										<button class="k-icon-btn danger" onclick={() => remove(item)} title="Delete (d)" aria-label="Delete">
 											<Trash2 class="h-4 w-4" />
 										</button>
 									</div>
@@ -613,416 +761,191 @@
 			{/if}
 		{/each}
 	{/if}
-</main>
+</div>
 
 <style>
-	.actions-page {
-		max-width: 900px;
-		margin: 0 auto;
-		padding: 2rem 1.5rem 4rem;
-	}
-
-	.page-header {
-		margin-bottom: 2rem;
-	}
-
-	.header-row {
-		display: flex;
-		justify-content: space-between;
-		align-items: flex-start;
-		gap: 1rem;
-		margin-bottom: 0.25rem;
-	}
-
-	.page-header h1 {
-		font-size: 2rem;
-		font-weight: 700;
-		color: var(--color-text);
-		margin-bottom: 0.25rem;
-	}
-
-	.count {
-		font-size: 0.875rem;
-		color: var(--color-text-muted);
-	}
-
-	.hint {
-		display: block;
-		margin-top: 0.25rem;
-		font-size: 0.75rem;
-		opacity: 0.7;
-	}
-
-	.bulk-bar {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.5rem;
-		margin-top: 1rem;
-		padding: 0.625rem 0.875rem;
-		background: color-mix(in srgb, var(--color-accent) 8%, var(--color-bg-secondary));
-		border: 1px solid var(--color-accent);
-		border-radius: 0.625rem;
-	}
-
-	.bulk-select {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
-		padding: 0.375rem 0.625rem;
-		background: var(--color-accent);
-		color: white;
-		border: none;
-		border-radius: 0.375rem;
-		font-size: 0.8125rem;
-		font-weight: 500;
-		cursor: pointer;
-	}
-
-	.bulk-action {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
-		padding: 0.375rem 0.75rem;
-		background: var(--color-bg);
-		color: var(--color-text);
-		border: 1px solid var(--color-border);
-		border-radius: 0.375rem;
-		font-size: 0.8125rem;
-		cursor: pointer;
-		transition: all 0.15s;
-	}
-
-	.bulk-action:hover {
-		border-color: var(--color-accent);
-	}
-
-	.bulk-action.danger:hover {
-		background: rgba(239, 68, 68, 0.15);
-		color: #ef4444;
-		border-color: rgba(239, 68, 68, 0.4);
-	}
-
-	.bulk-select-all {
-		margin-left: auto;
-		background: none;
-		border: none;
-		color: var(--color-text-muted);
-		font-size: 0.75rem;
-		cursor: pointer;
-	}
-
-	.bulk-select-all:hover:not(:disabled) {
-		color: var(--color-text);
-	}
-
-	.bulk-select-all:disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
-	}
-
-	.create-btn {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
-		padding: 0.5rem 0.875rem;
-		background: var(--color-accent);
-		color: white;
-		border: none;
-		border-radius: 0.5rem;
-		font-size: 0.875rem;
-		font-weight: 500;
-		cursor: pointer;
-		transition: background 0.15s;
-	}
-
-	.create-btn:hover {
-		background: var(--color-accent-hover);
-	}
-
-	.create-form,
-	.edit-form {
-		width: 100%;
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-
-	.create-form {
-		margin-top: 1rem;
-		padding: 1rem;
-		background: var(--color-bg-secondary);
-		border: 1px solid var(--color-border);
-		border-radius: 0.75rem;
-	}
-
-	.form-row {
-		display: flex;
-		gap: 0.5rem;
-		flex-wrap: wrap;
-	}
-
-	.form-input {
-		background: var(--color-bg);
-		border: 1px solid var(--color-border);
-		border-radius: 0.375rem;
-		padding: 0.5rem 0.75rem;
-		color: var(--color-text);
-		font-size: 0.875rem;
-		min-width: 0;
-	}
-
-	.form-input:focus {
-		outline: none;
-		border-color: var(--color-accent);
-	}
-
-	.form-input.text {
-		width: 100%;
-	}
-
-	.form-row .form-input {
-		flex: 1;
-	}
-
-	.form-btn-cancel,
-	.form-btn-submit {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.25rem;
-		padding: 0.4375rem 0.875rem;
-		border-radius: 0.375rem;
-		font-size: 0.8125rem;
-		font-weight: 500;
-		cursor: pointer;
-		flex-shrink: 0;
-	}
-
-	.form-btn-cancel {
-		background: transparent;
-		border: 1px solid var(--color-border);
-		color: var(--color-text-muted);
-	}
-
-	.form-btn-cancel:hover {
-		color: var(--color-text);
-	}
-
-	.form-btn-submit {
-		background: var(--color-accent);
-		border: 1px solid var(--color-accent);
-		color: white;
-	}
-
-	.form-btn-submit:hover:not(:disabled) {
-		background: var(--color-accent-hover);
-	}
-
-	.form-btn-submit:disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
-	}
-
-	.empty-state {
-		text-align: center;
-		padding: 4rem 2rem;
-		color: var(--color-text-muted);
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 0.75rem;
-	}
-
-	.empty-state h2 {
-		font-size: 1.25rem;
-		color: var(--color-text);
-		font-weight: 600;
-	}
-
-	.empty-state p {
-		max-width: 32rem;
-	}
-
-	.group {
-		margin-bottom: 2rem;
-	}
-
-	.group-title {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		font-size: 0.75rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--color-text-muted);
-		margin-bottom: 0.75rem;
-	}
-
-	.group-count {
-		background: var(--color-bg-secondary);
-		border-radius: 999px;
-		padding: 0.125rem 0.5rem;
-		font-weight: 500;
-	}
-
 	.items {
-		list-style: none;
-		padding: 0;
-		margin: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: 1px;
 	}
 
 	.item {
-		display: flex;
 		align-items: flex-start;
-		gap: 0.75rem;
-		padding: 0.875rem 1rem;
-		background: var(--color-bg-secondary);
-		border: 1px solid var(--color-border);
-		border-radius: 0.75rem;
-		transition: border-color 0.15s;
-	}
-
-	.item:hover {
-		border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+		gap: 0.5rem;
+		padding-top: 0.4375rem;
+		padding-bottom: 0.4375rem;
+		/* Keep the cursor clear of the sticky bulk bar when scrolling */
+		scroll-margin: 4rem 0 1rem;
 	}
 
 	.item.editing {
-		border-color: var(--color-accent);
+		background: var(--color-hover);
 	}
 
-	.item.focused {
-		box-shadow: 0 0 0 2px var(--color-accent);
-	}
-
-	.item.selected {
-		background: color-mix(in srgb, var(--color-accent) 12%, var(--color-bg-secondary));
-		border-color: var(--color-accent);
-	}
-
-	.item.done .text,
-	.item.cancelled .text {
-		text-decoration: line-through;
-		color: var(--color-text-muted);
+	/* Leading controls: selection checkbox (revealed on hover / when a
+	   selection exists) and the status circle that toggles done. */
+	.select-box,
+	.status {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.25rem;
+		height: 1.375rem;
+		flex-shrink: 0;
+		color: var(--color-text-faint);
 	}
 
 	.select-box {
-		background: none;
-		border: none;
-		padding: 0;
-		cursor: pointer;
-		color: var(--color-text-muted);
-		flex-shrink: 0;
-		margin-top: 0.25rem;
+		margin-left: -0.25rem;
+		opacity: 0;
 	}
 
-	.select-box:hover {
+	.select-box:hover,
+	.status:hover {
 		color: var(--color-accent);
 	}
 
-	.item.selected .select-box {
-		color: var(--color-accent);
+	.item:hover .select-box,
+	.item.focused .select-box,
+	.item.selected .select-box,
+	.has-selection .select-box,
+	.select-box:focus-visible {
+		opacity: 1;
 	}
 
-	.toggle {
-		background: none;
-		border: none;
-		padding: 0;
-		cursor: pointer;
-		color: var(--color-text-muted);
-		flex-shrink: 0;
-		margin-top: 0.125rem;
-	}
-
-	.toggle:hover {
+	.item.selected .select-box,
+	.status-done,
+	.status-progress {
 		color: var(--color-accent);
 	}
 
 	.body {
 		flex: 1;
 		min-width: 0;
+		padding-top: 0.0625rem;
 	}
 
 	.text {
-		color: var(--color-text);
-		margin: 0 0 0.375rem 0;
-		line-height: 1.45;
+		line-height: 1.4;
+		overflow-wrap: anywhere;
+	}
+
+	.item.closed .text {
+		color: var(--color-text-muted);
+	}
+
+	.item.done .text {
+		text-decoration: line-through;
+		text-decoration-color: var(--color-text-faint);
 	}
 
 	.meta {
 		display: flex;
-		flex-wrap: wrap;
+		align-items: center;
 		gap: 0.75rem;
+		min-width: 0;
+		margin-top: 0.125rem;
 		font-size: 0.75rem;
-		color: var(--color-text-muted);
+		color: var(--color-text-faint);
 	}
 
 	.assignee {
-		color: var(--color-accent);
-		font-weight: 500;
-	}
-
-	.recurrence {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.25rem;
-		padding: 0.125rem 0.5rem;
-		background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-		color: var(--color-accent);
-		border-radius: 999px;
-		text-transform: capitalize;
-	}
-
-	.due {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.25rem;
+		flex-shrink: 0;
+		color: var(--color-text-muted);
 	}
 
 	.source {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25rem;
-		color: var(--color-text-muted);
+		min-width: 0;
+		color: inherit;
 		text-decoration: none;
-		opacity: 0.8;
 	}
 
 	.source:hover {
 		color: var(--color-accent);
+	}
+
+	.badges {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+		flex-shrink: 0;
+		padding-top: 0.0625rem;
+	}
+
+	/* Row actions appear on hover / keyboard focus, always on touch. */
+	.row-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.125rem;
+		flex-shrink: 0;
+		margin: -0.1875rem -0.25rem -0.1875rem 0;
+		opacity: 0;
+	}
+
+	.item:hover .row-actions,
+	.item.focused .row-actions,
+	.row-actions:focus-within {
 		opacity: 1;
 	}
 
-	.source.manual {
-		font-style: italic;
+	.row-actions .danger:hover {
+		color: var(--color-danger);
 	}
 
-	.actions {
+	/* Inline create / edit forms */
+	.edit-form {
+		display: flex;
+		flex: 1;
+		min-width: 0;
+		flex-direction: column;
+		gap: 0.375rem;
+	}
+
+	.form-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.375rem;
+	}
+
+	.form-row > .k-input {
+		flex: 1 1 8rem;
+		width: auto;
+		min-width: 0;
+	}
+
+	.form-buttons {
 		display: flex;
 		gap: 0.25rem;
-		flex-shrink: 0;
+		margin-left: auto;
 	}
 
-	.action-btn {
-		background: none;
-		border: none;
-		padding: 0.375rem;
-		border-radius: 0.375rem;
-		cursor: pointer;
-		color: var(--color-text-muted);
-		transition: all 0.15s;
+	@media (hover: none) {
+		.select-box,
+		.row-actions {
+			opacity: 1;
+		}
 	}
 
-	.action-btn:hover {
-		background: var(--color-border);
-		color: var(--color-text);
-	}
+	@media (max-width: 639px) {
+		.item {
+			flex-wrap: wrap;
+		}
 
-	.action-btn.danger:hover {
-		background: rgba(239, 68, 68, 0.15);
-		color: #ef4444;
+		.body {
+			flex-basis: calc(100% - 5rem);
+		}
+
+		.badges {
+			margin-left: 2.5rem;
+		}
+
+		.row-actions {
+			margin-left: auto;
+		}
 	}
 </style>

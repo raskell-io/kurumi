@@ -7,16 +7,8 @@
 		todayIso,
 		type Flashcard
 	} from '$lib/db';
-	import {
-		BookOpen,
-		Plus,
-		Trash2,
-		RotateCcw,
-		Check,
-		X,
-		Brain,
-		ArrowRight
-	} from 'lucide-svelte';
+	import { tick } from 'svelte';
+	import { BookOpen, Plus, Trash2, Check, X, Brain } from 'lucide-svelte';
 
 	// Cards due today or earlier
 	let dueCards = $derived.by(() => {
@@ -60,10 +52,66 @@
 		showAnswer = !showAnswer;
 	}
 
+	const grades = [
+		{ quality: 0, label: 'Again', key: '1', tone: 'again' },
+		{ quality: 3, label: 'Hard', key: '2', tone: 'hard' },
+		{ quality: 4, label: 'Good', key: '3', tone: 'good' },
+		{ quality: 5, label: 'Easy', key: '4', tone: 'easy' }
+	] as const;
+
+	// Review shortcuts: Space/Enter reveal, 1-4 grade, Escape exits.
+	function handleKeydown(e: KeyboardEvent) {
+		if (!reviewing || !currentCard) return;
+		if (e.metaKey || e.ctrlKey || e.altKey) return;
+		const target = e.target as HTMLElement | null;
+		if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+			return;
+		}
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			reviewing = false;
+			return;
+		}
+		if (!showAnswer) {
+			if (e.key === ' ' || e.key === 'Enter') {
+				e.preventDefault();
+				showAnswer = true;
+			}
+			return;
+		}
+		const g = grades.find((x) => x.key === e.key);
+		if (g) {
+			e.preventDefault();
+			grade(g.quality);
+		} else if (e.key === ' ') {
+			// Space flips back to the question
+			e.preventDefault();
+			flipCard();
+		}
+	}
+
 	// Create form
 	let showCreate = $state(false);
 	let newQuestion = $state('');
 	let newAnswer = $state('');
+	let questionInput = $state<HTMLInputElement | null>(null);
+
+	async function toggleCreate() {
+		showCreate = !showCreate;
+		if (showCreate) {
+			await tick();
+			questionInput?.focus();
+		}
+	}
+
+	function handleCreateKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			submitCreate();
+		} else if (e.key === 'Escape') {
+			showCreate = false;
+		}
+	}
 
 	function submitCreate() {
 		const q = newQuestion.trim();
@@ -75,6 +123,7 @@
 		showCreate = false;
 	}
 
+	// Hard delete with no undo path, so this keeps a confirm.
 	function handleDelete(card: Flashcard) {
 		if (confirm(`Delete flashcard?\n"${card.question.slice(0, 60)}"`)) {
 			deleteFlashcard(card.id);
@@ -86,501 +135,260 @@
 	<title>Flashcards - Kurumi</title>
 </svelte:head>
 
-<main class="fc-page">
-	{#if reviewing && currentCard}
-		<!-- Review mode -->
-		<div class="review">
-			<div class="review-header">
-				<span class="review-progress">
-					{currentIndex + 1} / {reviewQueue.length}
-				</span>
-				<button class="review-exit" onclick={() => (reviewing = false)}>
-					<X class="h-4 w-4" />
-					Exit review
-				</button>
-			</div>
+<svelte:window onkeydown={handleKeydown} />
 
-			<!-- svelte-ignore a11y_click_events_have_key_events -->
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div class="card" onclick={flipCard}>
-				<div class="card-label">{showAnswer ? 'Answer' : 'Question'}</div>
-				<div class="card-content">
-					{showAnswer ? currentCard.answer : currentCard.question}
-				</div>
-				{#if !showAnswer}
-					<div class="card-hint">Click to reveal answer</div>
-				{/if}
+{#if reviewing && currentCard}
+	<!-- Review mode: one focused card -->
+	<div class="k-page flex min-h-full flex-col">
+		<div class="mb-4 flex items-center gap-3">
+			<span class="text-xs font-medium tabular-nums text-[var(--color-text-muted)]">
+				{currentIndex + 1} of {reviewQueue.length}
+			</span>
+			<div
+				class="h-1 flex-1 overflow-hidden rounded-full bg-[var(--color-hover)]"
+				role="progressbar"
+				aria-label="Review progress"
+				aria-valuemin={0}
+				aria-valuemax={reviewQueue.length}
+				aria-valuenow={currentIndex}
+			>
+				<div
+					class="h-full rounded-full bg-[var(--color-accent)] transition-[width] duration-200"
+					style="width: {(currentIndex / reviewQueue.length) * 100}%"
+				></div>
 			</div>
-
-			{#if showAnswer}
-				<div class="grade-buttons">
-					<p class="grade-prompt">How well did you recall this?</p>
-					<div class="grade-row">
-						<button class="grade-btn again" onclick={() => grade(0)}>
-							<RotateCcw class="h-4 w-4" />
-							Again
-						</button>
-						<button class="grade-btn hard" onclick={() => grade(3)}>
-							Hard
-						</button>
-						<button class="grade-btn good" onclick={() => grade(4)}>
-							<Check class="h-4 w-4" />
-							Good
-						</button>
-						<button class="grade-btn easy" onclick={() => grade(5)}>
-							<Brain class="h-4 w-4" />
-							Easy
-						</button>
-					</div>
-				</div>
-			{/if}
-		</div>
-	{:else}
-		<!-- Dashboard -->
-		<header class="page-header">
-			<div class="header-icon">
-				<BookOpen class="h-8 w-8" />
-			</div>
-			<h1>Flashcards</h1>
-			<p class="count">
-				{totalCards} card{totalCards === 1 ? '' : 's'} ·
-				{dueCards.length} due today
-			</p>
-		</header>
-
-		<div class="actions-bar">
-			{#if dueCards.length > 0}
-				<button class="start-btn" onclick={startReview}>
-					<Brain class="h-4 w-4" />
-					Review {dueCards.length} due card{dueCards.length === 1 ? '' : 's'}
-				</button>
-			{/if}
-			<button class="create-btn" onclick={() => (showCreate = !showCreate)}>
-				<Plus class="h-4 w-4" />
-				Add card
+			<button class="k-btn k-btn-ghost k-btn-sm" onclick={() => (reviewing = false)}>
+				<X class="h-3.5 w-3.5" />
+				Exit
+				<kbd class="k-kbd hidden sm:inline-flex">Esc</kbd>
 			</button>
 		</div>
 
+		<button
+			type="button"
+			class="study-card k-card"
+			onclick={flipCard}
+			aria-label={showAnswer ? 'Show question' : 'Reveal answer'}
+		>
+			<span class="text-xs font-medium text-[var(--color-text-faint)]">
+				{showAnswer ? 'Answer' : 'Question'}
+			</span>
+			{#if showAnswer}
+				<span class="study-question">{currentCard.question}</span>
+				<span class="h-px w-12 bg-[var(--color-border)]" aria-hidden="true"></span>
+				<span class="study-text">{currentCard.answer}</span>
+			{:else}
+				<span class="study-text">{currentCard.question}</span>
+			{/if}
+		</button>
+
+		<div class="mt-6 flex min-h-[4.5rem] flex-col items-center gap-3">
+			{#if showAnswer}
+				<p class="text-sm text-[var(--color-text-muted)]">How well did you recall it?</p>
+				<div class="grid w-full max-w-md grid-cols-4 gap-2">
+					{#each grades as g (g.quality)}
+						<button class="k-btn grade-btn {g.tone}" onclick={() => grade(g.quality)}>
+							{g.label}
+							<kbd class="k-kbd hidden sm:inline-flex">{g.key}</kbd>
+						</button>
+					{/each}
+				</div>
+			{:else}
+				<button class="k-btn k-btn-primary" onclick={() => (showAnswer = true)}>
+					Show answer
+					<kbd class="k-kbd hidden !border-transparent !bg-transparent !text-current opacity-70 sm:inline-flex">Space</kbd>
+				</button>
+			{/if}
+		</div>
+	</div>
+{:else}
+	<!-- Dashboard -->
+	<div class="k-page">
+		<header class="k-page-header flex-wrap">
+			<div class="min-w-0">
+				<h1 class="k-page-title">Flashcards</h1>
+				<p class="k-page-subtitle">
+					{totalCards} card{totalCards === 1 ? '' : 's'} · {dueCards.length} due today
+				</p>
+			</div>
+			<div class="flex items-center gap-2">
+				<button class="k-btn" onclick={toggleCreate} aria-expanded={showCreate}>
+					<Plus class="h-4 w-4" />
+					Add card
+				</button>
+				{#if dueCards.length > 0}
+					<button class="k-btn k-btn-primary" onclick={startReview}>
+						<Brain class="h-4 w-4" />
+						Review {dueCards.length}
+					</button>
+				{/if}
+			</div>
+		</header>
+
 		{#if showCreate}
-			<div class="create-form">
+			<div class="k-card mb-6 space-y-2 p-3">
 				<input
 					type="text"
+					bind:this={questionInput}
 					bind:value={newQuestion}
+					onkeydown={handleCreateKeydown}
 					placeholder="Question"
-					class="form-input"
+					aria-label="Question"
+					class="k-input"
 				/>
 				<input
 					type="text"
 					bind:value={newAnswer}
+					onkeydown={handleCreateKeydown}
 					placeholder="Answer"
-					class="form-input"
+					aria-label="Answer"
+					class="k-input"
 				/>
-				<div class="form-actions">
-					<button class="btn-cancel" onclick={() => (showCreate = false)}>Cancel</button>
-					<button class="btn-submit" onclick={submitCreate} disabled={!newQuestion.trim() || !newAnswer.trim()}>Create</button>
+				<div class="flex justify-end gap-2 pt-1">
+					<button class="k-btn k-btn-ghost k-btn-sm" onclick={() => (showCreate = false)}>Cancel</button>
+					<button
+						class="k-btn k-btn-primary k-btn-sm"
+						onclick={submitCreate}
+						disabled={!newQuestion.trim() || !newAnswer.trim()}
+					>
+						Create
+					</button>
 				</div>
 			</div>
 		{/if}
 
 		{#if totalCards === 0 && !showCreate}
-			<div class="empty-state">
-				<p>No flashcards yet.</p>
-				<p class="muted">
-					Add Q: and A: lines to any note, then use the Bell button to extract
-					them. Or create cards manually with the button above.
+			<div class="k-empty">
+				<BookOpen />
+				<p class="k-empty-title">No flashcards yet</p>
+				<p class="max-w-sm">
+					Add Q: and A: lines to any note and extract them with the Bell button,
+					or create a card by hand.
 				</p>
+				<button class="k-btn mt-2" onclick={toggleCreate}>
+					<Plus class="h-4 w-4" />
+					Add card
+				</button>
 			</div>
-		{:else if dueCards.length === 0 && !reviewing}
-			<div class="empty-state">
-				<Check class="h-8 w-8 text-[var(--color-accent)]" />
-				<p>All caught up! No cards due for review.</p>
+		{:else if totalCards > 0 && dueCards.length === 0}
+			<div class="mb-2 flex items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-bg-secondary)] px-3 py-2.5 text-sm text-[var(--color-text-muted)]">
+				<Check class="h-4 w-4 shrink-0 text-[var(--color-text-faint)]" />
+				All caught up — nothing due for review.
 			</div>
 		{/if}
 
 		{#if totalCards > 0}
-			<section class="card-list">
-				<h2 class="section-title">All cards</h2>
-				<ul class="cards">
+			<section>
+				<h2 class="k-section-title">All cards</h2>
+				<ul>
 					{#each $flashcards as card (card.id)}
-						<li class="card-row">
-							<div class="card-row-body">
-								<span class="card-q">{card.question}</span>
-								<span class="card-a">{card.answer}</span>
+						{@const due = card.nextReview <= todayIso()}
+						<li class="k-row group items-start">
+							<div class="min-w-0 flex-1 py-0.5">
+								<p class="truncate">{card.question}</p>
+								<p class="truncate text-xs text-[var(--color-text-faint)]">{card.answer}</p>
 							</div>
-							<div class="card-row-meta">
-								<span class="card-next">
-									{card.nextReview <= todayIso() ? 'Due' : card.nextReview}
-								</span>
-								<button class="icon-btn danger" onclick={() => handleDelete(card)} title="Delete">
-									<Trash2 class="h-3.5 w-3.5" />
-								</button>
-							</div>
+							{#if due}
+								<span class="k-badge k-badge-accent mt-0.5">Due</span>
+							{:else}
+								<span class="mt-0.5 text-xs tabular-nums text-[var(--color-text-faint)]">{card.nextReview}</span>
+							{/if}
+							<button
+								class="k-icon-btn row-action hover:!text-[var(--color-danger)]"
+								onclick={() => handleDelete(card)}
+								aria-label="Delete card"
+								title="Delete"
+							>
+								<Trash2 class="h-4 w-4" />
+							</button>
 						</li>
 					{/each}
 				</ul>
 			</section>
 		{/if}
-	{/if}
-</main>
+	</div>
+{/if}
 
 <style>
-	.fc-page {
-		max-width: 700px;
-		margin: 0 auto;
-		padding: 2rem 1.5rem 4rem;
-	}
-
-	.page-header {
-		text-align: center;
-		margin-bottom: 1.5rem;
-	}
-
-	.header-icon {
-		display: inline-flex;
-		padding: 1rem;
-		background: color-mix(in srgb, var(--color-accent) 15%, transparent);
-		color: var(--color-accent);
-		border-radius: 1rem;
-		margin-bottom: 0.75rem;
-	}
-
-	.page-header h1 {
-		font-size: 2rem;
-		font-weight: 700;
-		color: var(--color-text);
-		margin-bottom: 0.25rem;
-	}
-
-	.count {
-		color: var(--color-text-muted);
-		font-size: 0.875rem;
-	}
-
-	.actions-bar {
+	.study-card {
 		display: flex;
-		gap: 0.5rem;
-		justify-content: center;
-		margin-bottom: 1.5rem;
-	}
-
-	.start-btn {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
-		padding: 0.625rem 1.25rem;
-		background: var(--color-accent);
-		color: white;
-		border: none;
-		border-radius: 0.5rem;
-		font-size: 0.875rem;
-		font-weight: 500;
-		cursor: pointer;
-	}
-
-	.start-btn:hover {
-		background: var(--color-accent-hover);
-	}
-
-	.create-btn {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
-		padding: 0.625rem 1rem;
-		background: transparent;
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		color: var(--color-text);
-		font-size: 0.875rem;
-		cursor: pointer;
-	}
-
-	.create-btn:hover {
-		border-color: var(--color-accent);
-	}
-
-	.create-form {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		margin-bottom: 1.5rem;
-		padding: 1rem;
-		background: var(--color-bg-secondary);
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-	}
-
-	.form-input {
-		padding: 0.5rem 0.75rem;
-		background: var(--color-bg);
-		border: 1px solid var(--color-border);
-		border-radius: 0.375rem;
-		color: var(--color-text);
-		font-size: 0.875rem;
-		outline: none;
-	}
-
-	.form-input:focus {
-		border-color: var(--color-accent);
-	}
-
-	.form-actions {
-		display: flex;
-		gap: 0.5rem;
-		justify-content: flex-end;
-	}
-
-	.btn-cancel,
-	.btn-submit {
-		padding: 0.375rem 0.875rem;
-		border-radius: 0.375rem;
-		font-size: 0.8125rem;
-		cursor: pointer;
-	}
-
-	.btn-cancel {
-		background: transparent;
-		border: 1px solid var(--color-border);
-		color: var(--color-text-muted);
-	}
-
-	.btn-submit {
-		background: var(--color-accent);
-		border: 1px solid var(--color-accent);
-		color: white;
-	}
-
-	.btn-submit:disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
-	}
-
-	.empty-state {
-		text-align: center;
-		padding: 3rem 2rem;
-		color: var(--color-text);
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 0.5rem;
-	}
-
-	.empty-state .muted {
-		color: var(--color-text-muted);
-		font-size: 0.8125rem;
-		max-width: 28rem;
-	}
-
-	/* Review mode */
-	.review {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 1.5rem;
-		padding-top: 2rem;
-	}
-
-	.review-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		width: 100%;
-	}
-
-	.review-progress {
-		font-size: 0.875rem;
-		color: var(--color-text-muted);
-		font-weight: 500;
-	}
-
-	.review-exit {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.25rem;
-		background: transparent;
-		border: 1px solid var(--color-border);
-		padding: 0.375rem 0.75rem;
-		border-radius: 0.375rem;
-		color: var(--color-text-muted);
-		font-size: 0.75rem;
-		cursor: pointer;
-	}
-
-	.card {
-		width: 100%;
-		min-height: 14rem;
-		display: flex;
+		flex: 1;
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
-		padding: 2rem;
-		background: var(--color-bg-secondary);
-		border: 2px solid var(--color-border);
-		border-radius: 1rem;
-		cursor: pointer;
-		transition: border-color 0.15s;
+		gap: 1rem;
+		width: 100%;
+		min-height: 18rem;
+		max-height: 32rem;
+		padding: 2.5rem 1.5rem;
 		text-align: center;
+		cursor: pointer;
+		box-shadow: var(--shadow-sm);
 	}
 
-	.card:hover {
-		border-color: var(--color-accent);
+	.study-card:hover {
+		border-color: color-mix(in srgb, var(--color-text) 18%, var(--color-border));
 	}
 
-	.card-label {
-		font-size: 0.6875rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--color-accent);
-		margin-bottom: 1rem;
-	}
-
-	.card-content {
-		font-size: 1.25rem;
-		font-weight: 500;
-		color: var(--color-text);
+	.study-text {
+		max-width: 34rem;
+		font-family: var(--font-editor);
+		font-size: 1.375rem;
 		line-height: 1.5;
-		max-width: 32rem;
+		color: var(--color-text);
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
 	}
 
-	.card-hint {
-		margin-top: 1.5rem;
-		font-size: 0.75rem;
-		color: var(--color-text-muted);
-	}
-
-	.grade-buttons {
-		text-align: center;
-	}
-
-	.grade-prompt {
+	.study-question {
+		max-width: 34rem;
 		font-size: 0.875rem;
 		color: var(--color-text-muted);
-		margin-bottom: 0.75rem;
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
 	}
 
-	.grade-row {
-		display: flex;
-		gap: 0.5rem;
+	@media (min-width: 768px) {
+		.study-text {
+			font-size: 1.625rem;
+		}
 	}
 
 	.grade-btn {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
-		padding: 0.625rem 1rem;
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		background: var(--color-bg-secondary);
-		color: var(--color-text);
-		font-size: 0.875rem;
-		font-weight: 500;
-		cursor: pointer;
-		transition: all 0.15s;
-	}
-
-	.grade-btn:hover {
-		border-color: var(--color-accent);
+		height: 2.5rem;
+		padding: 0 0.5rem;
 	}
 
 	.grade-btn.again {
-		color: #ef4444;
-		border-color: rgba(239, 68, 68, 0.3);
+		color: var(--color-danger);
 	}
 
 	.grade-btn.again:hover {
-		background: rgba(239, 68, 68, 0.1);
-	}
-
-	.grade-btn.easy {
-		color: #22c55e;
-		border-color: rgba(34, 197, 94, 0.3);
-	}
-
-	.grade-btn.easy:hover {
-		background: rgba(34, 197, 94, 0.1);
+		background: color-mix(in srgb, var(--color-danger) 10%, transparent);
 	}
 
 	.grade-btn.good {
+		border-color: color-mix(in srgb, var(--color-accent) 50%, var(--color-border));
 		color: var(--color-accent);
-		border-color: var(--color-accent);
 	}
 
 	.grade-btn.good:hover {
-		background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+		background: var(--color-accent-soft);
 	}
 
-	/* Card list */
-	.section-title {
-		font-size: 0.75rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--color-text-muted);
-		margin-bottom: 0.75rem;
+	/* Row actions appear on hover/focus (always visible on touch) */
+	.row-action {
+		opacity: 0;
 	}
 
-	.cards {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.375rem;
+	.k-row:hover .row-action,
+	.row-action:focus-visible {
+		opacity: 1;
 	}
 
-	.card-row {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		gap: 0.75rem;
-		padding: 0.5rem 0.75rem;
-		background: var(--color-bg-secondary);
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-	}
-
-	.card-row-body {
-		flex: 1;
-		min-width: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.125rem;
-	}
-
-	.card-q {
-		font-size: 0.8125rem;
-		font-weight: 500;
-		color: var(--color-text);
-	}
-
-	.card-a {
-		font-size: 0.75rem;
-		color: var(--color-text-muted);
-	}
-
-	.card-row-meta {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		flex-shrink: 0;
-	}
-
-	.card-next {
-		font-size: 0.6875rem;
-		color: var(--color-text-muted);
-	}
-
-	.icon-btn {
-		background: none;
-		border: none;
-		padding: 0.375rem;
-		border-radius: 0.375rem;
-		cursor: pointer;
-		color: var(--color-text-muted);
-	}
-
-	.icon-btn.danger:hover {
-		background: rgba(239, 68, 68, 0.15);
-		color: #ef4444;
+	@media (hover: none) {
+		.row-action {
+			opacity: 1;
+		}
 	}
 </style>

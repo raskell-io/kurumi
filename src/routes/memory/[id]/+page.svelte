@@ -1055,8 +1055,6 @@
 					/>
 				{/key}
 
-				<!-- Spacer pushes link panels toward the bottom on short notes -->
-				<div class="min-h-12 flex-1"></div>
 
 				{#if backlinks.length > 0 || unlinkedMentions.length > 0 || relatedNotes.length > 0}
 					<div class="mt-8 space-y-1 border-t border-[var(--color-border)] pt-4">

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { autofocus } from '$lib/actions/autofocus';
 	import {
 		trashedMemoryObjects,
 		trashedFolders,
@@ -10,7 +11,7 @@
 		type MemoryObject,
 		type Folder
 	} from '$lib/db';
-	import { Trash2, FolderOpen, FileText, RotateCcw, X, AlertTriangle } from 'lucide-svelte';
+	import { Trash2, FolderOpen, FileText, RotateCcw, X } from 'lucide-svelte';
 
 	// Store subscriptions
 	let memoriesData = $state<MemoryObject[]>([]);
@@ -109,181 +110,122 @@
 	let totalItems = $derived(memoriesData.length + foldersData.length);
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} />
 
-<div class="flex h-full flex-col">
-	<!-- Header -->
-	<header
-		class="flex items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-3 md:px-6"
-	>
-		<div class="flex items-center gap-2">
-			<Trash2 class="h-5 w-5 text-[var(--color-text-muted)]" />
-			<h1 class="text-lg font-semibold text-[var(--color-text)]">Trash</h1>
-			{#if totalItems > 0}
-				<span class="rounded-full bg-[var(--color-border)] px-2 py-0.5 text-xs text-[var(--color-text-muted)]">
-					{totalItems}
-				</span>
-			{/if}
+<svelte:head>
+	<title>Trash - Kurumi</title>
+</svelte:head>
+
+{#snippet trashRow(type: 'note' | 'folder', id: string, label: string, deletedAt: number | null, item: MemoryObject | Folder)}
+	{@const daysLeft = getDaysUntilPermanentDelete(deletedAt)}
+	<li class="k-row group">
+		{#if type === 'folder'}
+			<FolderOpen class="h-4 w-4 shrink-0 text-[var(--color-text-faint)]" />
+		{:else}
+			<FileText class="h-4 w-4 shrink-0 text-[var(--color-text-faint)]" />
+		{/if}
+		<span class="min-w-0 flex-1 truncate">{label || 'Untitled'}</span>
+		<span class="shrink-0 text-xs text-[var(--color-text-faint)] max-sm:hidden">
+			{formatDeletedDate(deletedAt)}
+		</span>
+		<span
+			class="k-badge shrink-0 {daysLeft <= 3 ? 'k-badge-danger' : ''}"
+			title="Permanently deleted in {daysLeft} day{daysLeft === 1 ? '' : 's'}"
+		>
+			{daysLeft}d left
+		</span>
+		<div class="row-actions flex shrink-0 items-center gap-0.5">
+			<button
+				onclick={() => handleRestore(type, id)}
+				class="k-icon-btn"
+				title="Restore {type}"
+				aria-label="Restore {label || 'Untitled'}"
+			>
+				<RotateCcw class="h-4 w-4" />
+			</button>
+			<button
+				onclick={() => confirmDelete(type, item)}
+				class="k-icon-btn hover:!text-[var(--color-danger)]"
+				title="Delete permanently"
+				aria-label="Delete {label || 'Untitled'} permanently"
+			>
+				<X class="h-4 w-4" />
+			</button>
+		</div>
+	</li>
+{/snippet}
+
+<div class="k-page">
+	<header class="k-page-header max-sm:flex-col">
+		<div class="min-w-0">
+			<h1 class="k-page-title">Trash</h1>
+			<p class="k-page-subtitle">
+				{#if totalItems > 0}
+					{totalItems} item{totalItems === 1 ? '' : 's'} · permanently deleted after 30 days
+				{:else}
+					Deleted notes and folders are kept here for 30 days
+				{/if}
+			</p>
 		</div>
 		{#if totalItems > 0}
-			<button
-				onclick={() => (showEmptyConfirm = true)}
-				class="flex items-center gap-2 rounded-lg border border-red-500/30 px-3 py-2 text-sm font-medium text-red-500 transition-colors hover:bg-red-500/10"
-			>
+			<button onclick={() => (showEmptyConfirm = true)} class="k-btn k-btn-danger shrink-0">
 				<Trash2 class="h-4 w-4" />
-				Empty Trash
+				Empty trash
 			</button>
 		{/if}
 	</header>
 
-	<!-- Content -->
-	<div class="flex-1 overflow-y-auto bg-[var(--color-bg)] p-4 md:p-6">
-		{#if totalItems === 0}
-			<!-- Empty state -->
-			<div class="flex h-full items-center justify-center">
-				<div class="text-center">
-					<Trash2 class="mx-auto mb-4 h-16 w-16 text-[var(--color-text-muted)]" />
-					<p class="text-lg text-[var(--color-text-muted)]">Trash is empty</p>
-					<p class="mt-2 text-sm text-[var(--color-text-muted)]">
-						Deleted notes and folders will appear here
-					</p>
-				</div>
-			</div>
-		{:else}
-			<div class="mx-auto max-w-3xl space-y-4">
-				<!-- Info banner -->
-				<div class="flex items-start gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
-					<AlertTriangle class="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-500" />
-					<div class="text-sm text-[var(--color-text-muted)]">
-						Items in trash will be permanently deleted after 30 days. You can restore them at any time before then.
-					</div>
-				</div>
-
-				<!-- Folders section -->
-				{#if foldersData.length > 0}
-					<div>
-						<h2 class="mb-2 text-sm font-medium text-[var(--color-text-muted)]">Folders</h2>
-						<div class="space-y-2">
-							{#each foldersData as folder (folder.id)}
-								<div
-									class="group flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 transition-colors hover:border-[var(--color-accent)]/50"
-								>
-									<div class="flex items-center gap-3">
-										<FolderOpen class="h-5 w-5 text-[var(--color-accent)]" />
-										<div>
-											<div class="font-medium text-[var(--color-text)]">{folder.name}</div>
-											<div class="text-xs text-[var(--color-text-muted)]">
-												Deleted {formatDeletedDate(folder.deletedAt)} · {getDaysUntilPermanentDelete(folder.deletedAt)} days left
-											</div>
-										</div>
-									</div>
-									<div class="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-										<button
-											onclick={() => handleRestore('folder', folder.id)}
-											class="rounded p-2 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-accent)]/10 hover:text-[var(--color-accent)]"
-											title="Restore folder"
-										>
-											<RotateCcw class="h-4 w-4" />
-										</button>
-										<button
-											onclick={() => confirmDelete('folder', folder)}
-											class="rounded p-2 text-[var(--color-text-muted)] transition-colors hover:bg-red-500/10 hover:text-red-500"
-											title="Delete permanently"
-										>
-											<X class="h-4 w-4" />
-										</button>
-									</div>
-								</div>
-							{/each}
-						</div>
-					</div>
-				{/if}
-
-				<!-- Notes section -->
-				{#if memoriesData.length > 0}
-					<div>
-						<h2 class="mb-2 text-sm font-medium text-[var(--color-text-muted)]">Notes</h2>
-						<div class="space-y-2">
-							{#each memoriesData as memory (memory.id)}
-								<div
-									class="group flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 transition-colors hover:border-[var(--color-accent)]/50"
-								>
-									<div class="flex items-center gap-3">
-										<FileText class="h-5 w-5 text-[var(--color-accent)]" />
-										<div>
-											<div class="font-medium text-[var(--color-text)]">{memory.title}</div>
-											<div class="text-xs text-[var(--color-text-muted)]">
-												Deleted {formatDeletedDate(memory.deletedAt)} · {getDaysUntilPermanentDelete(memory.deletedAt)} days left
-											</div>
-										</div>
-									</div>
-									<div class="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-										<button
-											onclick={() => handleRestore('note', memory.id)}
-											class="rounded p-2 text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-accent)]/10 hover:text-[var(--color-accent)]"
-											title="Restore note"
-										>
-											<RotateCcw class="h-4 w-4" />
-										</button>
-										<button
-											onclick={() => confirmDelete('note', memory)}
-											class="rounded p-2 text-[var(--color-text-muted)] transition-colors hover:bg-red-500/10 hover:text-red-500"
-											title="Delete permanently"
-										>
-											<X class="h-4 w-4" />
-										</button>
-									</div>
-								</div>
-							{/each}
-						</div>
-					</div>
-				{/if}
-			</div>
+	{#if totalItems === 0}
+		<div class="k-empty">
+			<Trash2 />
+			<p class="k-empty-title">Trash is empty</p>
+			<p>Deleted notes and folders will appear here.</p>
+		</div>
+	{:else}
+		{#if foldersData.length > 0}
+			<h2 class="k-section-title">Folders</h2>
+			<ul>
+				{#each foldersData as folder (folder.id)}
+					{@render trashRow('folder', folder.id, folder.name, folder.deletedAt, folder)}
+				{/each}
+			</ul>
 		{/if}
-	</div>
+
+		{#if memoriesData.length > 0}
+			<h2 class="k-section-title">Notes</h2>
+			<ul>
+				{#each memoriesData as memory (memory.id)}
+					{@render trashRow('note', memory.id, memory.title, memory.deletedAt, memory)}
+				{/each}
+			</ul>
+		{/if}
+	{/if}
 </div>
 
 <!-- Delete confirmation modal -->
 {#if showDeleteConfirm && itemToDelete}
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4"
+		class="k-dialog-backdrop"
 		onclick={() => (showDeleteConfirm = false)}
 		onkeydown={(e) => e.key === 'Escape' && (showDeleteConfirm = false)}
 		role="dialog"
 		aria-modal="true"
+		aria-labelledby="trash-delete-title"
 		tabindex="-1"
 	>
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div
-			class="w-full max-w-sm rounded-xl bg-[var(--color-bg)] p-6 shadow-2xl"
-			onclick={(e) => e.stopPropagation()}
-		>
-			<div class="mb-4 flex items-center gap-3">
-				<div class="flex h-10 w-10 items-center justify-center rounded-full bg-red-500/10">
-					<AlertTriangle class="h-5 w-5 text-red-500" />
-				</div>
-				<h2 class="text-lg font-semibold text-[var(--color-text)]">Delete Permanently?</h2>
-			</div>
-			<p class="mb-4 text-sm text-[var(--color-text-muted)]">
-				Are you sure you want to permanently delete "{itemToDelete.type === 'note'
+		<div class="k-dialog !max-w-sm p-5" onclick={(e) => e.stopPropagation()}>
+			<h2 id="trash-delete-title" class="text-base font-semibold text-[var(--color-text)]">Delete permanently?</h2>
+			<p class="mt-2 text-sm text-[var(--color-text-muted)]">
+				"{itemToDelete.type === 'note'
 					? (itemToDelete.item as MemoryObject).title
-					: (itemToDelete.item as Folder).name}"? This action cannot be undone.
+					: (itemToDelete.item as Folder).name}" will be deleted forever. This can't be undone.
 			</p>
-			<div class="flex justify-end gap-3">
-				<button
-					onclick={() => (showDeleteConfirm = false)}
-					class="rounded-lg px-4 py-2 text-sm font-medium text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-hover)]"
-				>
-					Cancel
-				</button>
-				<button
-					onclick={handlePermanentDelete}
-					class="rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-600"
-				>
-					Delete Permanently
-				</button>
+			<div class="mt-5 flex justify-end gap-2">
+				<button onclick={() => (showDeleteConfirm = false)} class="k-btn k-btn-ghost">Cancel</button>
+				<button onclick={handlePermanentDelete} class="k-btn k-btn-danger" use:autofocus>Delete forever</button>
 			</div>
 		</div>
 	</div>
@@ -293,44 +235,43 @@
 {#if showEmptyConfirm}
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4"
+		class="k-dialog-backdrop"
 		onclick={() => (showEmptyConfirm = false)}
 		onkeydown={(e) => e.key === 'Escape' && (showEmptyConfirm = false)}
 		role="dialog"
 		aria-modal="true"
+		aria-labelledby="trash-empty-title"
 		tabindex="-1"
 	>
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div
-			class="w-full max-w-sm rounded-xl bg-[var(--color-bg)] p-6 shadow-2xl"
-			onclick={(e) => e.stopPropagation()}
-		>
-			<div class="mb-4 flex items-center gap-3">
-				<div class="flex h-10 w-10 items-center justify-center rounded-full bg-red-500/10">
-					<Trash2 class="h-5 w-5 text-red-500" />
-				</div>
-				<h2 class="text-lg font-semibold text-[var(--color-text)]">Empty Trash?</h2>
-			</div>
-			<p class="mb-4 text-sm text-[var(--color-text-muted)]">
-				Are you sure you want to permanently delete all {totalItems} item{totalItems !== 1
-					? 's'
-					: ''} in the trash? This action cannot be undone.
+		<div class="k-dialog !max-w-sm p-5" onclick={(e) => e.stopPropagation()}>
+			<h2 id="trash-empty-title" class="text-base font-semibold text-[var(--color-text)]">Empty trash?</h2>
+			<p class="mt-2 text-sm text-[var(--color-text-muted)]">
+				All {totalItems} item{totalItems !== 1 ? 's' : ''} in the trash will be deleted forever. This can't be undone.
 			</p>
-			<div class="flex justify-end gap-3">
-				<button
-					onclick={() => (showEmptyConfirm = false)}
-					class="rounded-lg px-4 py-2 text-sm font-medium text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-hover)]"
-				>
-					Cancel
-				</button>
-				<button
-					onclick={handleEmptyTrash}
-					class="rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-600"
-				>
-					Empty Trash
-				</button>
+			<div class="mt-5 flex justify-end gap-2">
+				<button onclick={() => (showEmptyConfirm = false)} class="k-btn k-btn-ghost">Cancel</button>
+				<button onclick={handleEmptyTrash} class="k-btn k-btn-danger" use:autofocus>Empty trash</button>
 			</div>
 		</div>
 	</div>
 {/if}
+
+<style>
+	/* Row actions reveal on hover/focus; always visible on touch */
+	.row-actions {
+		opacity: 0;
+	}
+
+	:global(.k-row:hover) > .row-actions,
+	.row-actions:focus-within {
+		opacity: 1;
+	}
+
+	@media (hover: none) {
+		.row-actions {
+			opacity: 1;
+		}
+	}
+</style>

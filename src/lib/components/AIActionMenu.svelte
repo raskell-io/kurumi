@@ -59,6 +59,26 @@
 		handleAction('translate', language);
 	}
 
+	const loadingLabels: Record<string, string> = {
+		improve: 'Improving…',
+		expand: 'Expanding…',
+		summarize: 'Summarizing…',
+		simplify: 'Simplifying…',
+		translate: 'Translating…'
+	};
+
+	// The editor passes the top of the selection. Sit the toolbar just
+	// above it (centered, clamped to the viewport); flip below when there
+	// is no room at the top.
+	let style = $derived.by(() => {
+		const half = 170;
+		const x = Math.max(half / 2, Math.min(position.x, window.innerWidth - half / 2));
+		if (position.y < 56) {
+			return `left: ${x}px; top: ${position.y + 34}px; transform: translateX(-50%);`;
+		}
+		return `left: ${x}px; top: ${position.y}px; transform: translate(-50%, -100%);`;
+	});
+
 	// Close on escape
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape') {
@@ -69,84 +89,68 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
+<!-- mousedown is swallowed so clicking an action keeps the editor
+     selection intact -->
 <div
 	class="ai-action-menu"
-	style="left: {position.x}px; top: {position.y}px;"
+	{style}
+	role="toolbar"
+	aria-label="AI actions"
+	tabindex="-1"
+	onmousedown={(e) => e.preventDefault()}
 >
 	{#if error}
-		<div class="error-message">
+		<div class="status error" role="alert">
 			<span>{error}</span>
-			<button onclick={() => (error = null)} class="error-close">
-				<X class="h-3 w-3" />
+			<button type="button" onclick={() => (error = null)} class="k-icon-btn !h-6 !w-6" aria-label="Dismiss">
+				<X class="h-3.5 w-3.5" />
 			</button>
 		</div>
 	{:else if isLoading}
-		<div class="loading-state">
-			<Loader2 class="h-4 w-4 animate-spin" />
-			<span>
-				{#if currentAction === 'improve'}Improving...
-				{:else if currentAction === 'expand'}Expanding...
-				{:else if currentAction === 'summarize'}Summarizing...
-				{:else if currentAction === 'simplify'}Simplifying...
-				{:else if currentAction === 'translate'}Translating...
-				{:else}Processing...
-				{/if}
-			</span>
+		<div class="status">
+			<Loader2 class="h-3.5 w-3.5 animate-spin text-[var(--color-accent)]" />
+			<span>{(currentAction && loadingLabels[currentAction]) || 'Processing…'}</span>
 		</div>
 	{:else}
 		<div class="action-buttons">
-			<button
-				onclick={() => handleAction('improve')}
-				class="action-btn"
-				title="Improve clarity and grammar"
-			>
-				<Sparkles class="h-4 w-4" />
-				<span>Improve</span>
+			<span class="lead" aria-hidden="true"><Sparkles class="h-3.5 w-3.5" /></span>
+			<button type="button" onclick={() => handleAction('improve')} class="action-btn" title="Improve clarity and grammar">
+				Improve
 			</button>
-
-			<button
-				onclick={() => handleAction('expand')}
-				class="action-btn"
-				title="Add more detail"
-			>
-				<FileText class="h-4 w-4" />
-				<span>Expand</span>
+			<button type="button" onclick={() => handleAction('expand')} class="action-btn" title="Add more detail">
+				<FileText class="h-3.5 w-3.5" />
+				Expand
 			</button>
-
-			<button
-				onclick={() => handleAction('summarize')}
-				class="action-btn"
-				title="Condense to key points"
-			>
-				<Minimize2 class="h-4 w-4" />
-				<span>Summarize</span>
+			<button type="button" onclick={() => handleAction('summarize')} class="action-btn" title="Condense to key points">
+				<Minimize2 class="h-3.5 w-3.5" />
+				Summarize
 			</button>
-
-			<button
-				onclick={() => handleAction('simplify')}
-				class="action-btn"
-				title="Make easier to understand"
-			>
-				<FileText class="h-4 w-4" />
-				<span>Simplify</span>
+			<button type="button" onclick={() => handleAction('simplify')} class="action-btn" title="Make easier to understand">
+				<FileText class="h-3.5 w-3.5" />
+				Simplify
 			</button>
-
 			<div class="translate-wrapper">
 				<button
+					type="button"
 					onclick={handleTranslateClick}
 					class="action-btn"
+					class:active={showLanguageSelect}
 					title="Translate to another language"
+					aria-expanded={showLanguageSelect}
 				>
-					<Languages class="h-4 w-4" />
-					<span>Translate</span>
+					<Languages class="h-3.5 w-3.5" />
+					Translate
 				</button>
 
 				{#if showLanguageSelect}
-					<div class="language-dropdown">
+					<div class="language-dropdown k-menu" role="menu">
+						<div class="k-menu-label">Translate to</div>
 						{#each languages as language}
 							<button
+								type="button"
+								role="menuitem"
 								onclick={() => handleLanguageSelect(language)}
-								class="language-option"
+								class="k-menu-item"
 							>
 								{language}
 							</button>
@@ -162,43 +166,49 @@
 	.ai-action-menu {
 		position: fixed;
 		z-index: 100;
-		background: var(--color-bg);
+		padding: 0.1875rem;
 		border: 1px solid var(--color-border);
-		border-radius: 0.75rem;
-		box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
-		padding: 0.5rem;
-		transform: translateX(-50%);
+		border-radius: var(--radius-md);
+		background: var(--color-bg);
+		box-shadow: var(--shadow-lg);
+		max-width: calc(100vw - 1rem);
 	}
 
 	.action-buttons {
 		display: flex;
-		gap: 0.25rem;
+		align-items: center;
+		gap: 0.125rem;
 		flex-wrap: wrap;
+	}
+
+	.lead {
+		display: flex;
+		padding: 0 0.25rem 0 0.375rem;
+		color: var(--color-accent);
 	}
 
 	.action-btn {
 		display: flex;
 		align-items: center;
-		gap: 0.375rem;
-		padding: 0.5rem 0.75rem;
-		border-radius: 0.5rem;
+		gap: 0.3125rem;
+		height: 1.75rem;
+		padding: 0 0.5rem;
+		border-radius: var(--radius-sm);
 		font-size: 0.8125rem;
-		font-weight: 500;
 		color: var(--color-text);
-		background: transparent;
-		border: none;
-		cursor: pointer;
-		transition: all 0.15s;
 		white-space: nowrap;
-	}
-
-	.action-btn:hover {
-		background: var(--color-bg-secondary);
-		color: var(--color-accent);
 	}
 
 	.action-btn :global(svg) {
 		flex-shrink: 0;
+		color: var(--color-text-faint);
+	}
+
+	.action-btn:hover,
+	.action-btn:focus-visible,
+	.action-btn.active {
+		background: var(--color-hover);
+		outline: none;
 	}
 
 	.translate-wrapper {
@@ -208,66 +218,25 @@
 	.language-dropdown {
 		position: absolute;
 		top: 100%;
-		left: 50%;
-		transform: translateX(-50%);
-		margin-top: 0.25rem;
-		background: var(--color-bg);
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-		padding: 0.25rem;
-		min-width: 120px;
+		right: 0;
+		margin-top: 0.375rem;
+		min-width: 9rem;
 		z-index: 10;
 	}
 
-	.language-option {
-		display: block;
-		width: 100%;
-		padding: 0.5rem 0.75rem;
-		text-align: left;
-		font-size: 0.8125rem;
-		color: var(--color-text);
-		background: transparent;
-		border: none;
-		border-radius: 0.375rem;
-		cursor: pointer;
-		transition: background 0.15s;
-	}
-
-	.language-option:hover {
-		background: var(--color-bg-secondary);
-	}
-
-	.loading-state {
+	.status {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		padding: 0.5rem 1rem;
-		color: var(--color-accent);
-		font-size: 0.875rem;
-	}
-
-	.error-message {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.5rem 0.75rem;
-		color: #ef4444;
+		min-height: 1.75rem;
+		padding: 0 0.5rem;
 		font-size: 0.8125rem;
-		max-width: 250px;
+		color: var(--color-text-muted);
 	}
 
-	.error-close {
-		padding: 0.25rem;
-		background: transparent;
-		border: none;
-		color: #ef4444;
-		cursor: pointer;
-		border-radius: 0.25rem;
-		flex-shrink: 0;
-	}
-
-	.error-close:hover {
-		background: rgba(239, 68, 68, 0.1);
+	.status.error {
+		max-width: 260px;
+		padding-right: 0.125rem;
+		color: var(--color-danger);
 	}
 </style>

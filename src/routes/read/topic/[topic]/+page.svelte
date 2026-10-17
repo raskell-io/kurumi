@@ -19,91 +19,48 @@
 
 <ReadNav {breadcrumbs} />
 
-<main class="filter-page">
-	<header class="page-header">
-		<div class="header-icon topic-icon">
-			<Hash />
+<div class="k-page">
+	<header class="k-page-header">
+		<div class="min-w-0">
+			<p class="eyebrow"><Hash class="h-3.5 w-3.5" /> Topic</p>
+			<h1 class="k-page-title break-words">{topic}</h1>
+			<p class="k-page-subtitle">
+				{memories.length} memor{memories.length === 1 ? 'y' : 'ies'} on this topic
+			</p>
 		</div>
-		<h1>{topic}</h1>
-		<p class="count">
-			{memories.length} memor{memories.length === 1 ? 'y' : 'ies'} on this topic
-		</p>
 	</header>
 
 	{#if memories.length > 0}
-		<div class="notes-grid">
+		<div class="note-list">
 			{#each memories as memory (memory.id)}
-				<NoteCard memory={memory} />
+				<NoteCard {memory} />
 			{/each}
 		</div>
 	{:else}
-		<div class="empty-state">
-			<p>No memories on this topic.</p>
-			<a href="/read" class="back-link">Back to all notes</a>
+		<div class="k-empty">
+			<Hash />
+			<p class="k-empty-title">No memories on this topic</p>
+			<p>Topics are extracted from your memories as they're processed.</p>
+			<a href="/read" class="k-btn mt-2">All notes</a>
 		</div>
 	{/if}
-</main>
+</div>
 
 <style>
-	.filter-page {
-		max-width: 1000px;
-		margin: 0 auto;
-		padding: 2rem 1.5rem 4rem;
+	.eyebrow {
+		display: flex;
+		align-items: center;
+		gap: 0.375rem;
+		margin-bottom: 0.375rem;
+		font-size: 0.75rem;
+		font-weight: 500;
+		color: var(--color-text-faint);
 	}
 
-	.page-header {
-		text-align: center;
-		margin-bottom: 2rem;
-	}
-
-	.header-icon {
-		width: 4rem;
-		height: 4rem;
-		margin: 0 auto 1rem;
-		padding: 1rem;
-		border-radius: 1rem;
-	}
-
-	.topic-icon {
-		background: color-mix(in srgb, var(--color-accent) 15%, transparent);
-		color: var(--color-accent);
-	}
-
-	.page-header h1 {
-		font-size: 2rem;
-		font-weight: 700;
-		color: var(--color-text);
-		margin-bottom: 0.5rem;
-	}
-
-	.count {
-		color: var(--color-text-muted);
-		font-size: 0.875rem;
-	}
-
-	.notes-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-		gap: 1rem;
-	}
-
-	.empty-state {
-		text-align: center;
-		padding: 4rem 2rem;
-		color: var(--color-text-muted);
-	}
-
-	.back-link {
-		display: inline-block;
-		margin-top: 1rem;
-		padding: 0.75rem 1.5rem;
-		background: var(--color-accent);
-		color: white;
-		text-decoration: none;
-		border-radius: 0.5rem;
-	}
-
-	.back-link:hover {
-		background: var(--color-accent-hover);
+	/* Bleed into the gutter so entry text aligns with the title */
+	.note-list {
+		display: flex;
+		flex-direction: column;
+		margin: 0 -0.75rem;
 	}
 </style>

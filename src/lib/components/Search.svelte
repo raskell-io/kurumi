@@ -13,6 +13,7 @@
 	let results = $state<SearchResult[]>([]);
 	let selectedIndex = $state(0);
 	let inputRef: HTMLInputElement;
+	let listRef = $state<HTMLUListElement | null>(null);
 
 	$effect(() => {
 		results = search(query);
@@ -59,6 +60,12 @@
 		return excerpt;
 	}
 
+	// Keep the keyboard-selected result in view
+	$effect(() => {
+		const el = listRef?.children[selectedIndex] as HTMLElement | undefined;
+		el?.scrollIntoView({ block: 'nearest' });
+	});
+
 	$effect(() => {
 		// Focus input on mount
 		inputRef?.focus();
@@ -66,57 +73,57 @@
 </script>
 
 <div
-	class="fixed inset-0 z-50 flex items-start justify-center bg-black/40 backdrop-blur-[2px] p-4 pt-[15vh]"
+	class="k-dialog-backdrop"
 	onclick={onClose}
 	onkeydown={handleKeydown}
 	role="dialog"
 	aria-modal="true"
+	aria-label="Search notes"
 	tabindex="-1"
 >
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
-		class="w-full max-w-xl overflow-hidden rounded-xl bg-[var(--color-bg)] shadow-2xl"
+		class="k-dialog flex !max-w-xl flex-col !overflow-hidden"
 		onclick={(e) => e.stopPropagation()}
 		onkeydown={(e) => e.stopPropagation()}
 		role="search"
 	>
 		<!-- Search input -->
-		<div class="flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
-			<Search class="h-5 w-5 text-[var(--color-text-muted)]" />
+		<div class="flex items-center gap-3 border-b border-[var(--color-border)] px-4">
+			<Search class="h-4 w-4 shrink-0 text-[var(--color-text-faint)]" />
 			<input
 				bind:this={inputRef}
 				bind:value={query}
 				type="text"
-				placeholder="Search notes..."
-				class="flex-1 bg-transparent text-[var(--color-text)] placeholder-[var(--color-text-muted)] outline-none"
+				placeholder="Search notes…"
+				aria-label="Search notes"
+				class="search-input h-12 flex-1 bg-transparent text-[0.9375rem] text-[var(--color-text)] placeholder-[var(--color-text-faint)]"
 				onkeydown={handleKeydown}
 			/>
-			<kbd
-				class="hidden rounded bg-[var(--color-bg-secondary)] px-2 py-1 text-xs text-[var(--color-text-muted)] md:inline"
-			>
-				ESC
-			</kbd>
+			<span class="k-kbd hidden md:inline-flex">esc</span>
 		</div>
 
 		<!-- Results -->
-		<div class="max-h-[60vh] overflow-y-auto">
+		<div class="max-h-[60vh] overflow-y-auto overscroll-contain">
 			{#if query.trim() && results.length === 0}
-				<div class="px-4 py-8 text-center text-[var(--color-text-muted)]">
-					No notes found for "{query}"
+				<div class="px-4 py-10 text-center text-sm text-[var(--color-text-muted)]">
+					No notes found for “{query}”
 				</div>
 			{:else if results.length > 0}
-				<ul class="py-2">
+				<ul class="p-1.5" bind:this={listRef}>
 					{#each results as result, i}
 						<li>
 							<button
+								type="button"
 								onclick={() => navigateToResult(result)}
-								class="w-full px-4 py-3 text-left transition-colors hover:bg-[var(--color-bg-secondary)]"
-								class:bg-[var(--color-bg-secondary)]={i === selectedIndex}
+								onmousemove={() => { if (selectedIndex !== i) selectedIndex = i; }}
+								class="w-full rounded-[var(--radius-md)] px-2.5 py-2 text-left"
+								class:bg-[var(--color-hover)]={i === selectedIndex}
 							>
-								<div class="font-medium text-[var(--color-text)]">
+								<div class="truncate text-sm font-medium text-[var(--color-text)]">
 									{result.title}
 								</div>
-								<div class="mt-1 truncate text-sm text-[var(--color-text-muted)]">
+								<div class="mt-0.5 truncate text-xs text-[var(--color-text-faint)]">
 									{highlightMatch(result.content)}
 								</div>
 							</button>
@@ -124,7 +131,7 @@
 					{/each}
 				</ul>
 			{:else}
-				<div class="px-4 py-8 text-center text-[var(--color-text-muted)]">
+				<div class="px-4 py-10 text-center text-sm text-[var(--color-text-muted)]">
 					Type to search your notes
 				</div>
 			{/if}
@@ -132,20 +139,23 @@
 
 		<!-- Footer -->
 		<div
-			class="flex items-center justify-between border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-text-muted)]"
+			class="flex items-center justify-between border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-text-faint)]"
 		>
 			<div class="flex items-center gap-4">
-				<span class="hidden items-center gap-1 md:flex">
-					<kbd class="rounded bg-[var(--color-bg-secondary)] px-1.5 py-0.5">↑</kbd>
-					<kbd class="rounded bg-[var(--color-bg-secondary)] px-1.5 py-0.5">↓</kbd>
-					to navigate
-				</span>
-				<span class="hidden items-center gap-1 md:flex">
-					<kbd class="rounded bg-[var(--color-bg-secondary)] px-1.5 py-0.5">↵</kbd>
-					to open
-				</span>
+				<span class="hidden items-center gap-1.5 md:flex"><span class="k-kbd">↑</span><span class="k-kbd">↓</span> navigate</span>
+				<span class="hidden items-center gap-1.5 md:flex"><span class="k-kbd">↵</span> open</span>
 			</div>
 			<span>{results.length} {results.length === 1 ? 'result' : 'results'}</span>
 		</div>
 	</div>
 </div>
+
+<style>
+	.search-input,
+	.search-input:focus,
+	.search-input:focus-visible {
+		border: none;
+		outline: none;
+		box-shadow: none;
+	}
+</style>
