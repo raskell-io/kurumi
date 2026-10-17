@@ -60,15 +60,16 @@ Kurumi (クルミ, "walnut" in Japanese — because it looks like a brain) is a 
 
 | Feature | Description |
 |---------|-------------|
-| **Folders** | Unlimited nesting, drag-and-drop, swipe-delete |
+| **Folders** | Unlimited nesting, drag-and-drop, hover `+`/`⋯` actions, right-click menus (rename, copy `[[link]]`, move), swipe-delete on touch |
 | **Vaults** | Separate workspaces with independent data |
 | **Tags** | Auto-extracted from #hashtags, merge and normalize duplicates |
-| **People** | First-class @mention entities with duplicate detection and merge |
+| **People** | Everyone you @mention is listed; save a person to add details, detect duplicates and merge them |
 | **Topics & Projects** | Extracted entities with dedup workflow |
 | **Smart folders** | Saved query views that auto-populate by type, tag, person, or text |
 | **Canvas** | Spatial workspace — place notes as cards, draw connections |
 | **Database views** | Table and board views with grouping and filtering |
-| **Tab bar** | Recently-opened notes as draggable tabs with stable ordering |
+| **Tab bar** | Recently-opened notes as draggable tabs with stable ordering; middle-click to close |
+| **Undo** | Deletes go to Trash and every destructive action can be undone from the toast or with `Cmd/Ctrl+Z`; blank new notes you never touch are discarded automatically |
 
 ### Recall
 
@@ -79,8 +80,8 @@ Kurumi (クルミ, "walnut" in Japanese — because it looks like a brain) is a 
 | **Ask Kurumi** | Hybrid keyword + semantic retrieval with inline `[n]` citations |
 | **Graph view** | Force-directed visualization of note connections |
 | **Read mode** | Blog-style browsing with folder, tag, date, and person filter routes |
-| **Timeline** | Vertical chronological view of all captures, filterable by type/person/tag |
-| **Calendar** | Month grid with color-coded dots for notes, voice memos, meetings, and due actions |
+| **Timeline** | Date-grouped view of all captures, filterable by type/person/tag |
+| **Calendar** | Month grid showing notes, voice memos, meetings, and due actions per day |
 | **Weekly review** | Stats, AI summary, overdue items, pending proposals |
 | **Linked note suggestions** | Semantic backlinks surfaced on every note |
 
@@ -142,7 +143,8 @@ Kurumi (クルミ, "walnut" in Japanese — because it looks like a brain) is a 
 |---------|-------------|
 | **Milkdown** | WYSIWYG markdown with live preview |
 | **Slash commands** | 20+ built-in: headings, lists, code, callouts, embeds, camera, templates |
-| **Wikilinks** | `[[Note Title]]` with autocomplete and backlink tracking |
+| **Wikilinks** | `[[Note Title]]` with autocomplete, hover previews, and linked/unlinked mention tracking |
+| **Inline autocomplete** | `[[`, `@`, `#`, `//` suggest as you type without taking the cursor out of the text — arrows to pick, `Enter`/`Tab` to accept, `Esc` to dismiss |
 | **Mermaid diagrams** | Fenced `mermaid` code blocks render as interactive SVGs |
 | **DataviewBlocks** | Embedded `kurumi` query blocks with list/table/board views |
 | **Code blocks** | Syntax highlighting with copy button and language label |
@@ -150,6 +152,7 @@ Kurumi (クルミ, "walnut" in Japanese — because it looks like a brain) is a 
 | **Embeds** | `![[Title]]` to embed another note inline |
 | **Math** | LaTeX `$inline$` and `$$block$$` syntax |
 | **Audio embeds** | Inline audio players for voice recordings |
+| **Version history** | Browse and restore earlier versions of any note |
 
 ---
 
@@ -175,6 +178,13 @@ npm run build
 npm run preview
 ```
 
+### Checks
+
+```bash
+npm test                                   # unit tests (Vitest)
+npx svelte-check --tsconfig ./tsconfig.json   # types, a11y, CSS — should report 0 errors and 0 warnings
+```
+
 ---
 
 ## Keyboard Shortcuts
@@ -195,6 +205,24 @@ npm run preview
 | `Cmd/Ctrl + Shift + C` | Calendar |
 | `Cmd/Ctrl + Shift + V` | Voice assistant push-to-talk |
 | `Cmd/Ctrl + Shift + F` | Toggle focus mode |
+| `Cmd/Ctrl + \` | Collapse / expand sidebar |
+| `Escape` | Close the open menu, dialog, or sidebar |
+
+`Cmd/Ctrl + K`, `Cmd/Ctrl + N`, and `Cmd/Ctrl + \` also work while you're typing in a note.
+
+On list pages (actions, proposals, drafts, inbox, people, tags, topics):
+
+| Key | Action |
+|-----|--------|
+| `j` / `k` (or `↓` / `↑`) | Move between items |
+| `Enter` | Open the item (or its source note) |
+| `Space` | Select for bulk actions (actions, proposals, drafts) |
+| `x` | Mark done (actions) |
+| `a` / `r` / `s` | Approve / reject / snooze (proposals); `r` also rejects drafts |
+| `e` / `c` | Edit (actions) / copy (drafts) |
+| `d` | Delete (undoable) |
+
+In read mode, `/` focuses the filter; in flashcard review, `Space` reveals and `1`–`4` grade.
 
 ---
 

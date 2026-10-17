@@ -296,7 +296,14 @@ src/
 | `Cmd/Ctrl + Shift + R` | Read mode |
 | `Cmd/Ctrl + Shift + A` | Action items dashboard |
 | `Cmd/Ctrl + Shift + V` | Voice assistant push-to-talk |
-| `Escape` | Close modal/sidebar |
+| `Cmd/Ctrl + Shift + I` | Inbox |
+| `Cmd/Ctrl + Shift + C` | Calendar |
+| `Cmd/Ctrl + Shift + F` | Toggle focus mode |
+| `Cmd/Ctrl + \` | Collapse / expand sidebar |
+| `Cmd/Ctrl + `` ` | Toggle agent pane |
+| `Escape` | Close menu/modal/sidebar |
+
+`Cmd/Ctrl + K`, `N` and `\` also fire while typing in an input or the editor.
 
 On list pages (`/actions`, `/proposals`, `/drafts`):
 
@@ -311,6 +318,7 @@ On list pages (`/actions`, `/proposals`, `/drafts`):
 | `e` | Edit (actions) |
 | `a` | Approve (proposals) |
 | `r` | Reject (proposals, drafts) |
+| `s` | Snooze (proposals) |
 | `c` | Copy (drafts) |
 | `Escape` | Clear selection / unfocus |
 
