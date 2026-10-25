@@ -1,11 +1,14 @@
 # Kurumi - Personal Knowledge Management
-# https://kurumi.app
+# https://kurumi.raskell.io
 
 User-agent: *
+Content-Signal: search=yes, ai-input=yes, ai-train=yes
 Allow: /
 
 # Sitemap
-Sitemap: https://kurumi.app/sitemap.xml
+Sitemap: https://kurumi.raskell.io/sitemap.xml
 
 # Crawl-delay for polite crawling
 Crawl-delay: 1
+
+# For agents: https://kurumi.raskell.io/llms.txt . Made by Raffael Schneider, https://raskell.io/

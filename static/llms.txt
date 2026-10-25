@@ -1,0 +1,17 @@
+# Kurumi
+
+> A local-first, AI-native second brain that runs in the browser and works offline.
+
+Kurumi (クルミ, "walnut" in Japanese) is a personal knowledge and memory app for people who want to keep notes, voice memos, links, and meetings in one place and find them again later. You write in a Markdown editor with wikilinks, tags, and mentions, and recall notes through backlinks, a graph view, full-text and semantic search, and an AI assistant that cites its sources. It is a progressive web app: there is no account and no server, all data is stored in your browser (IndexedDB) as Automerge CRDT documents, and everything works offline. Sync is optional, through storage you choose (Git, S3-compatible storage such as Cloudflare R2, Azure Blob, WebDAV, or a local folder). AI features run on-device where possible, with remote APIs such as OpenAI as an optional fallback using your own keys. It is free and open source under the MIT licence.
+
+## Links
+
+- [Kurumi](https://kurumi.raskell.io/): the app
+- [Source code](https://github.com/raskell-io/kurumi): GitHub repository
+- [Apps by raskell.io](https://raskell.io/apps/): the Kurumi entry among the author's apps
+- [Raffael Schneider](https://raskell.io/about/): the author
+
+## Optional
+
+- [Local-first architecture](https://github.com/raskell-io/kurumi/blob/main/docs/local-first-architecture.md): how storage and sync work
+- [Cloudflare sync setup](https://github.com/raskell-io/kurumi/blob/main/docs/cloudflare-sync-setup.md): setting up optional sync

@@ -2,10 +2,87 @@
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 		<meta name="apple-mobile-web-app-capable" content="yes" />
 		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 		<meta name="apple-mobile-web-app-title" content="Kurumi" />
+		<meta name="mobile-web-app-capable" content="yes" />
+		<meta name="application-name" content="Kurumi" />
+		<meta name="format-detection" content="telephone=no" />
+		<meta name="theme-color" content="#1e1e2e" />
+
+		<title>Kurumi - Your Second Brain</title>
+		<meta name="description" content="A local-first, AI-native second brain. Capture notes, links, and meetings, then find them again through wikilinks, backlinks, a graph, and search." />
+		<meta name="author" content="Raffael Schneider" />
+		<link rel="canonical" href="https://kurumi.raskell.io/" />
+		<link rel="alternate" type="text/markdown" title="llms.txt" href="/llms.txt" />
+
+		<!-- Open Graph / Twitter -->
+		<meta property="og:type" content="website" />
+		<meta property="og:site_name" content="Kurumi" />
+		<meta property="og:locale" content="en_US" />
+		<meta property="og:url" content="https://kurumi.raskell.io/" />
+		<meta property="og:title" content="Kurumi - Your Second Brain" />
+		<meta property="og:description" content="A local-first, AI-native second brain. Capture notes, links, and meetings, then find them again through wikilinks, backlinks, a graph, and search." />
+		<meta property="og:image" content="https://kurumi.raskell.io/og-image.png" />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta property="og:image:alt" content="Kurumi - Your Second Brain" />
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="twitter:title" content="Kurumi - Your Second Brain" />
+		<meta name="twitter:description" content="A local-first, AI-native second brain. Capture notes, links, and meetings, then find them again through wikilinks, backlinks, a graph, and search." />
+		<meta name="twitter:image" content="https://kurumi.raskell.io/og-image.png" />
+
+		<!-- Favicons -->
+		<link rel="icon" href="/favicon.ico" type="image/x-icon" />
+		<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+		<link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
+
+		<script type="application/ld+json">
+			{
+				"@context": "https://schema.org",
+				"@graph": [
+					{
+						"@type": "SoftwareApplication",
+						"@id": "https://kurumi.raskell.io/#app",
+						"name": "Kurumi",
+						"alternateName": "Kurumi - Your Second Brain",
+						"description": "A local-first, AI-native second brain. Capture notes, links, and meetings, then find them again through wikilinks, backlinks, a graph view, and full-text search. Everything works offline, with optional sync through Automerge CRDTs and no vendor lock-in.",
+						"url": "https://kurumi.raskell.io/",
+						"applicationCategory": "ProductivityApplication",
+						"operatingSystem": "Web browser",
+						"offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+						"isAccessibleForFree": true,
+						"license": "https://opensource.org/licenses/MIT",
+						"codeRepository": "https://github.com/raskell-io/kurumi",
+						"sameAs": ["https://github.com/raskell-io/kurumi", "https://raskell.io/apps/"],
+						"inLanguage": "en",
+						"image": "https://kurumi.raskell.io/og-image.png",
+						"screenshot": "https://kurumi.raskell.io/og-image.png",
+						"featureList": [
+							"Offline-first architecture",
+							"Markdown support",
+							"Wikilinks for connecting notes",
+							"AI-powered text assistance",
+							"Full-text search",
+							"Graph visualization",
+							"Cross-device sync",
+							"PWA installable"
+						],
+						"author": { "@type": "Person", "@id": "https://raskell.io/#person", "name": "Raffael Schneider", "url": "https://raskell.io/" },
+						"creator": { "@type": "Person", "@id": "https://raskell.io/#person", "name": "Raffael Schneider", "url": "https://raskell.io/" }
+					},
+					{
+						"@type": "WebSite",
+						"@id": "https://kurumi.raskell.io/#website",
+						"name": "Kurumi",
+						"url": "https://kurumi.raskell.io/",
+						"inLanguage": "en",
+						"publisher": { "@id": "https://raskell.io/#person" }
+					}
+				]
+			}
+		</script>
 		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 		<link rel="preload" href="/fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin />
 		<script>
@@ -22,6 +99,21 @@
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
+		<!-- Static text for crawlers and readers without JavaScript; removed as soon as scripts run, the app renders below. -->
+		<main id="static-intro" style="max-width: 40rem; margin: 3rem auto; padding: 0 1rem; font-family: system-ui, sans-serif; line-height: 1.5">
+			<h1>Kurumi: a local-first, AI-native second brain</h1>
+			<p>Kurumi is a personal knowledge app. Capture notes, voice memos, links, and meetings, then find them again through wikilinks, backlinks, a graph view, full-text search, and an AI assistant.</p>
+			<p>It runs in your browser, works offline, and installs as an app. There is no account, your data stays on your device, and sync to storage you choose is optional.</p>
+			<p>
+				<a href="https://github.com/raskell-io/kurumi">Source code</a> ·
+				<a href="/llms.txt">llms.txt</a> ·
+				<a href="https://raskell.io/apps/">More apps</a> ·
+				by <a href="https://raskell.io/" rel="author">Raffael Schneider</a>
+			</p>
+		</main>
+		<script>
+			document.getElementById('static-intro').remove();
+		</script>
 		<div style="display: contents">%sveltekit.body%</div>
 	</body>
 </html>

@@ -70,6 +70,9 @@ export default defineConfig({
 				// + notificationclick listeners without disturbing the
 				// auto-generated precache + runtime routes below.
 				importScripts: ['sw-notify.js'],
+				// Discovery files must reach the network as real text files, never
+				// the app shell the navigation fallback would answer with.
+				navigateFallbackDenylist: [/^\/(robots\.txt|sitemap\.xml|llms\.txt)$/],
 				runtimeCaching: [
 					{
 						urlPattern: /^https:\/\/api\.(openai|anthropic)\.com\/.*/i,
