@@ -22,7 +22,17 @@ describe('unescapeKurumiSyntax', () => {
 		expect(unescapeKurumiSyntax(fenced)).toBe('```\n\\[\\[x]] https\\://a.b\n```\n[[y]]');
 	});
 
-	it('keeps escapes that are not Kurumi syntax', () => {
+	it('restores callout markers and embeds', () => {
+		expect(unescapeKurumiSyntax('> \\[!info]\n>\n> Body')).toBe('> [!info]\n>\n> Body');
+		expect(unescapeKurumiSyntax('!\\[\\[Other note]]')).toBe('![[Other note]]');
+	});
+
+	it('blanks empty table cells but keeps real line breaks', () => {
+		expect(unescapeKurumiSyntax('| A | <br />   |\n| - | - |')).toBe('| A |' + ' '.repeat(10) + '|\n| - | - |');
+		expect(unescapeKurumiSyntax('| a<br />b | c |')).toBe('| a<br />b | c |');
+	});
+
+		it('keeps escapes that are not Kurumi syntax', () => {
 		expect(unescapeKurumiSyntax('\\[not a link] and \\*literal\\*')).toBe(
 			'\\[not a link] and \\*literal\\*'
 		);
