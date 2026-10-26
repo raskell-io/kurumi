@@ -26,6 +26,7 @@
 	import { Search, Cloud, CloudOff, Download } from 'lucide-svelte';
 	import { recentNoteIds } from '$lib/stores/workspace';
 	import NoteIcon from './NoteIcon.svelte';
+	import { labsEnabled, LAB_PAGES } from '$lib/stores/labs';
 
 	interface Props {
 		onClose: () => void;
@@ -250,17 +251,6 @@
 			}
 		},
 		{
-			id: 'flashcards',
-			type: 'action',
-			title: 'Flashcards',
-			description: 'Review spaced-repetition cards',
-			icon: 'sparkles',
-			action: () => {
-				goto('/flashcards');
-				onClose();
-			}
-		},
-		{
 			id: 'people',
 			type: 'action',
 			title: 'People',
@@ -369,9 +359,22 @@
 				}
 			}));
 		} else if (q.startsWith('>')) {
-			// Action mode - only show actions
+			// Action mode - only show actions (plus Labs pages when enabled)
 			const actionQuery = q.slice(1).trim();
-			results = actions.filter(
+			const labActions: Command[] = $labsEnabled
+				? LAB_PAGES.map((p) => ({
+						id: `labs:${p.href}`,
+						type: 'action' as const,
+						title: p.label,
+						description: `Labs · ${p.description}`,
+						icon: 'sparkles',
+						action: () => {
+							goto(p.href);
+							onClose();
+						}
+					}))
+				: [];
+			results = [...actions, ...labActions].filter(
 				(a) =>
 					a.title.toLowerCase().includes(actionQuery) ||
 					a.description?.toLowerCase().includes(actionQuery)

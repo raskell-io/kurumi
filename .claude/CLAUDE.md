@@ -86,6 +86,16 @@ that loop:
 Everything lives on one Automerge document. The current schema version
 is **11** (incremented by migrations in `src/lib/db/store.ts`).
 
+Persistence (`saveDoc` in `store.ts`): a full snapshot under
+`kurumi-doc` plus incremental change chunks under `kurumi-doc-changes`
+(`Automerge.saveSince` against explicitly tracked heads; never
+`saveIncremental`, which sync's `Automerge.save` calls would reset).
+Saves are coalesced; chunks fold into a snapshot when idle or past 200.
+A doc that doesn't descend from the persisted heads (restore, adopt
+remote, reset) always gets a fresh snapshot, so old data can't merge
+back in on load. Unreadable stored data is kept under
+`kurumi-doc-unreadable-*` instead of being overwritten.
+
 **MemoryObject** is the unified capture shape — text notes, voice
 memos, meetings, files, references all use it, distinguished by `type`.
 Key fields: `id`, `type`, `title`, `bodyMarkdown`, `rawAudioRef`,
@@ -146,6 +156,19 @@ OpenAI to MMS when the API key is missing.
 ### Capture
 - Typed notes (Milkdown editor, auto-save, wikilinks, tags, @people,
   `//YYYY-MM-DD` events, templates)
+- Editor extras (`src/lib/editor/`): block handle with drag + Turn
+  into / Duplicate / Delete (`blockHandle.ts`, `blocks.ts`; slash
+  commands build real nodes through `blocks.ts` too), find & replace
+  incl. across notes (`findReplace.ts`, `FindBar.svelte`), live
+  `![[embeds]]` (`noteEmbed.ts`), paste a URL onto selected text to
+  link it (`pasteLink.ts`), clickable GFM task checkboxes
+  (`taskToggle.ts`), mobile formatting toolbar (`MobileToolbar.svelte`)
+- Editor plugins register their UI callbacks per editor container
+  (`editor/registry.ts`), so two editors can be open at once
+- Split view: a second note beside the main one (`SplitPane.svelte`,
+  `splitNoteId` in `stores/workspace.ts`); Alt+click a tree row or
+  `[[link]]`. Both panes reload when a note changes elsewhere, unless
+  the user is mid-edit
 - Voice memos with pause/resume, waveform, mic + tab audio
 - Meeting mode: long-form recording with structured summary
 - Upload existing audio/video for transcription
@@ -233,6 +256,20 @@ OpenAI to MMS when the API key is missing.
   `vaultDirNames` in `markdown-export.ts`, shared with the folder mirror)
 - Obsidian vault import
 - Full JSON backup / restore
+
+### Organization
+- Action items: list or Kanban board (Open / In progress / Done, drag
+  or arrows), filters by project (from the source note) and assignee
+- Labs (`stores/labs.ts`, Settings → Labs, off by default): Habits,
+  Flashcards, Timeline, Smart folders. Canvas and database views stay
+  unlinked until they get real data-model support
+
+### Performance notes
+- Embeddings run in a Web Worker (`inference/embed.worker.ts`, wired
+  through `loadPipeline('embed')`); vectors are cached in memory and
+  searches don't wait for a big re-index
+- The MiniSearch index updates incrementally (`syncIndex`)
+- The tree renders 200 notes per folder level with "Show more"
 
 ### Undo (global)
 - 30-entry, 5-minute in-memory undo stack
@@ -323,9 +360,14 @@ src/
 | `Cmd/Ctrl + Shift + F` | Toggle focus mode |
 | `Cmd/Ctrl + \` | Collapse / expand sidebar |
 | `Cmd/Ctrl + `` ` | Toggle agent pane |
+| `Cmd/Ctrl + F` | Find in note |
+| `Cmd/Ctrl + Option/Alt + F` | Find and replace |
 | `Escape` | Close menu/modal/sidebar |
 
-`Cmd/Ctrl + K`, `O`, `P`, `N` and `\` also fire while typing in an input or the editor.
+`Cmd/Ctrl + K`, `O`, `P`, `N`, `F` and `\` also fire while typing in an input or the editor.
+
+App shortcuts are defined in `src/lib/shortcuts.ts` and can be rebound
+per device in Settings → Keyboard shortcuts.
 
 On list pages (`/actions`, `/proposals`, `/drafts`):
 

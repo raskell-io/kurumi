@@ -10,6 +10,7 @@
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state';
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view';
 import { $prose } from '@milkdown/kit/utils';
+import { createRegistry } from './registry';
 
 const datePeopleKey = new PluginKey('date-people');
 
@@ -26,20 +27,18 @@ export interface DateClickHandler {
 	(date: string): void;
 }
 
-let tagClickHandler: TagClickHandler | null = null;
-let personClickHandler: PersonClickHandler | null = null;
-let dateClickHandler: DateClickHandler | null = null;
-
-export function setTagClickHandler(handler: TagClickHandler) {
-	tagClickHandler = handler;
+// Click handlers per editor (see ./registry).
+interface ClickHandlers {
+	tag?: TagClickHandler;
+	person?: PersonClickHandler;
+	date?: DateClickHandler;
 }
+const handlers = createRegistry<ClickHandlers>();
 
-export function setPersonClickHandler(handler: PersonClickHandler) {
-	personClickHandler = handler;
-}
-
-export function setDateClickHandler(handler: DateClickHandler) {
-	dateClickHandler = handler;
+/** Register (or, with null, remove) the handlers for the editor rooted at `root`. */
+export function setReferenceClickHandlers(root: Element, value: ClickHandlers | null) {
+	if (value) handlers.set(root, value);
+	else handlers.delete(root);
 }
 
 // Match //YYYY-MM-DD pattern
@@ -150,6 +149,8 @@ export const datePeoplePlugin = $prose(() => {
 			},
 			handleClick(view, pos, event) {
 				const target = event.target as HTMLElement;
+				const { tag: tagClickHandler, person: personClickHandler, date: dateClickHandler } =
+					handlers.get(view) ?? {};
 
 				// Handle tag clicks
 				if (target.classList.contains('tag-reference')) {

@@ -94,5 +94,10 @@ export default defineConfig({
 	],
 	optimizeDeps: {
 		exclude: ['@automerge/automerge', '@huggingface/transformers']
+	},
+	// ES module workers: the embedding worker (src/lib/inference/
+	// embed.worker.ts) loads transformers.js, which uses dynamic imports.
+	worker: {
+		format: 'es'
 	}
 });

@@ -25,6 +25,7 @@
 		moveFolderToVault,
 		setMemoryFavorite
 	} from '$lib/db';
+	import { openInSplit } from '$lib/stores/workspace';
 	import {
 		ChevronRight,
 		Folder,
@@ -42,7 +43,8 @@
 		MoreHorizontal,
 		Plus,
 		Link2,
-		Star
+		Star,
+		Columns2
 	} from 'lucide-svelte';
 	import { pushUndo } from '$lib/stores/undo';
 
@@ -315,6 +317,14 @@
 		void navigator.clipboard?.writeText(`[[${memory.title || 'Untitled'}]]`);
 	}
 
+	// Open next to the current note (split view). Without a note open,
+	// there's nothing to split, so just open it.
+	function openToSide(noteId: string) {
+		closeContextMenu();
+		if (currentPath.startsWith('/memory/') && currentPath !== `/memory/${noteId}`) openInSplit(noteId);
+		else goto(`/memory/${noteId}`);
+	}
+
 	function handleMoveNoteToRoot() {
 		if (contextMenuNote) {
 			moveMemoryObjectToFolder(contextMenuNote, null);
@@ -323,6 +333,19 @@
 	}
 
 	let currentPath = $derived(currentRoutePath($page.route.id, $page.params, $page.url.pathname));
+
+	// Long note lists render the first NOTE_LIMIT rows plus a "Show more"
+	// row; thousands of rows made the sidebar slow to render. The open note
+	// is always included.
+	const NOTE_LIMIT = 200;
+	let expandedLists = $state(new Set<string>());
+
+	function visibleNotes<T extends { id: string }>(list: T[], key: string): T[] {
+		if (list.length <= NOTE_LIMIT || expandedLists.has(key)) return list;
+		const shown = list.slice(0, NOTE_LIMIT);
+		const active = list.slice(NOTE_LIMIT).find((m) => isNoteActive(m.id));
+		return active ? [...shown, active] : shown;
+	}
 
 	function isNoteActive(noteId: string): boolean {
 		return currentPath === `/memory/${noteId}`;
@@ -1116,9 +1139,10 @@
 					{/each}
 
 					<!-- Memories in this folder (after subfolders) -->
-					{#each folderMemories as memory (memory.id)}
+					{#each visibleNotes(folderMemories, folder.id) as memory (memory.id)}
 						{@render renderNote(memory)}
 					{/each}
+					{@render showMore(folderMemories.length, folder.id)}
 				</div>
 			{/if}
 		</div>
@@ -1138,7 +1162,15 @@
 			</button>
 			<a
 				href="/memory/{memory.id}"
-				onclick={(e) => { handleRowClick(e, 'note', memory.id); if (!(swipeOpenItem?.type === 'note' && swipeOpenItem.id === memory.id)) handleNoteClick(); }}
+				onclick={(e) => {
+					if (e.altKey) {
+						e.preventDefault();
+						openToSide(memory.id);
+						return;
+					}
+					handleRowClick(e, 'note', memory.id);
+					if (!(swipeOpenItem?.type === 'note' && swipeOpenItem.id === memory.id)) handleNoteClick();
+				}}
 				oncontextmenu={(e) => handleNoteContextMenu(e, memory.id)}
 				ontouchstart={(e) => handleSwipeStart(e, { type: 'note', id: memory.id })}
 				ontouchmove={handleSwipeMove}
@@ -1197,10 +1229,23 @@
 	{/each}
 
 	<!-- Root memories (not in any folder) - shown at root level after folders -->
-	{#each rootMemories as memory (memory.id)}
+	{#each visibleNotes(rootMemories, 'root') as memory (memory.id)}
 		{@render renderNote(memory)}
 	{/each}
+	{@render showMore(rootMemories.length, 'root')}
 </div>
+
+{#snippet showMore(total: number, key: string)}
+	{#if total > NOTE_LIMIT && !expandedLists.has(key)}
+		<button
+			class="tree-row w-full text-left text-[var(--color-text-faint)] hover:text-[var(--color-text-muted)]"
+			onclick={() => (expandedLists = new Set([...expandedLists, key]))}
+		>
+			<span class="tree-chevron" aria-hidden="true"></span>
+			<span class="pl-1 text-xs">Show {total - NOTE_LIMIT} more…</span>
+		</button>
+	{/if}
+{/snippet}
 
 <!-- Context Menu for Folders -->
 {#if contextMenuFolder}
@@ -1299,6 +1344,10 @@
 		<button onclick={() => copyNoteLink(contextMenuNote!)} class="k-menu-item">
 			<Link2 class="h-4 w-4" />
 			Copy [[link]]
+		</button>
+		<button onclick={() => openToSide(contextMenuNote!)} class="k-menu-item">
+			<Columns2 class="h-4 w-4" />
+			Open to the side
 		</button>
 		<button
 			onclick={() => {

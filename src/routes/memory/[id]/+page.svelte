@@ -18,6 +18,7 @@
 		setMemoryFavorite
 	} from '$lib/db';
 	import { pushUndo } from '$lib/stores/undo';
+	import { openInSplit } from '$lib/stores/workspace';
 	import { get } from 'svelte/store';
 	import Editor from '$lib/components/Editor.svelte';
 	import InlineTemplateChooser from '$lib/components/InlineTemplateChooser.svelte';
@@ -532,6 +533,22 @@
 		debouncedSave();
 	}
 
+	// Pick up body changes made elsewhere while this note is open (sync
+	// pulls, "replace in all notes", the split pane). Skipped while an edit
+	// of ours is unsaved or the user is mid-typing (Milkdown reports changes
+	// 200ms late), so typing is never overwritten.
+	let lastKeyAt = 0;
+	$effect(() => {
+		const body = memory?.bodyMarkdown;
+		if (body === undefined) return;
+		untrack(() => {
+			if (!memory || memory.id !== initializedForId) return;
+			if (pendingSave || body === content || Date.now() - lastKeyAt < 1500) return;
+			content = body;
+			editorRevision++;
+		});
+	});
+
 	function handleContentChange(markdown: string, changedId?: string) {
 		// Milkdown debounces this callback 200ms, so it can arrive after the
 		// user switched notes. Drop updates tagged for a different note,
@@ -609,10 +626,18 @@
 		goto('/');
 	}
 
-	function handleWikilinkClick(linkTitle: string) {
+	// Alt+click (or "Open to the side" in the preview) opens the link in
+	// the split pane instead.
+	function handleWikilinkClick(linkTitle: string, event?: MouseEvent | { altKey: boolean }) {
 		// Find memory by title (case-insensitive)
 		const all = get(memoryObjects);
 		const target = all.find((m) => m.title.toLowerCase() === linkTitle.toLowerCase());
+
+		if (event?.altKey) {
+			const id = target ? target.id : addMemoryObject(linkTitle, '').id;
+			if (id !== memory?.id) openInSplit(id);
+			return;
+		}
 
 		if (target) {
 			// Navigate to existing memory
@@ -829,7 +854,11 @@
 		{/if}
 
 		<!-- Editor -->
-		<div bind:this={scrollArea} class="flex-1 overflow-y-auto overscroll-contain px-5 pb-6 md:px-12">
+		<div
+			bind:this={scrollArea}
+			onkeydowncapture={() => (lastKeyAt = Date.now())}
+			class="flex-1 overflow-y-auto overscroll-contain px-5 pb-6 md:px-12"
+		>
 			<div class="mx-auto flex min-h-full max-w-[46rem] flex-col pt-6 md:pt-12">
 				<!-- Hover-revealed insert bar (always shown on touch devices) -->
 				<div class="group/title">
@@ -1180,7 +1209,11 @@
 		</div>
 	</div>
 
-	<LinkPreview container={scrollArea} onOpen={handleWikilinkClick} />
+	<LinkPreview
+		container={scrollArea}
+		onOpen={handleWikilinkClick}
+		onOpenSide={(t) => handleWikilinkClick(t, { altKey: true })}
+	/>
 
 	{#if iconPickerAnchor && memory}
 		<IconPicker

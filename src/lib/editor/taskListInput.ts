@@ -2,9 +2,8 @@
  * Task list auto-conversion plugin for Milkdown.
  *
  * Watches for `[ ] `, `[x] `, or `[] ` typed at the start of a line
- * and converts the text to `- [ ] ` / `- [x] ` so Milkdown's GFM
- * plugin picks it up and renders a proper task list item with a
- * checkbox.
+ * and turns the line into a GFM task item (rendered with a checkbox,
+ * saved as `- [ ] `).
  *
  * Without this, the user must type the full `- [ ] ` syntax which
  * doesn't match the Notion/Obsidian muscle memory of just typing
@@ -14,6 +13,7 @@
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state';
 import { $prose } from '@milkdown/kit/utils';
 import type { EditorView } from '@milkdown/kit/prose/view';
+import { turnInto } from './blocks';
 
 const taskListKey = new PluginKey('task-list-auto');
 
@@ -33,28 +33,26 @@ function handleTextInput(view: EditorView, from: number, to: number, text: strin
 	// "[ ]" → unchecked
 	// "[x]" or "[X]" → checked
 	// "[]" → unchecked (shorthand)
-	let replacement: string | null = null;
+	let checked: boolean | null = null;
+	if (textBefore === '[ ]' || textBefore === '[]') checked = false;
+	else if (textBefore === '[x]' || textBefore === '[X]') checked = true;
+	if (checked === null) return false;
 
-	if (textBefore === '[ ]' || textBefore === '[]') {
-		replacement = '- [ ] ';
-	} else if (textBefore === '[x]' || textBefore === '[X]') {
-		replacement = '- [x] ';
-	}
-
-	if (!replacement) return false;
-
-	// Only convert if this is at the very start of the paragraph
-	// (the matched text IS the entire text content so far).
+	// Only at the very start of a plain line: drop the typed "[ ]" and turn
+	// the line into a real task item (the same node `- [ ] ` loads as).
 	const blockStart = from - $pos.parentOffset;
-	const replaceFrom = blockStart;
-	const replaceTo = to; // includes the space the user just typed
-
-	const tr = state.tr.replaceWith(
-		replaceFrom,
-		replaceTo,
-		state.schema.text(replacement)
-	);
-	view.dispatch(tr);
+	view.dispatch(state.tr.delete(blockStart, to));
+	turnInto(view, 'task');
+	if (checked) {
+		const { $from } = view.state.selection;
+		for (let d = $from.depth; d > 0; d--) {
+			const node = $from.node(d);
+			if (node.type.name === 'list_item') {
+				view.dispatch(view.state.tr.setNodeMarkup($from.before(d), undefined, { ...node.attrs, checked: true }));
+				break;
+			}
+		}
+	}
 	return true;
 }
 

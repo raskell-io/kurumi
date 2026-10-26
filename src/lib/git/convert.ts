@@ -23,12 +23,22 @@ export interface GitMetadata {
 	};
 	folders: Record<string, { name: string; parentId: string | null }>;
 	noteIds: Record<string, string>; // path -> memoryId mapping
+	// Per-note fields markdown doesn't carry, keyed by memory id. Only notes
+	// with something to record are listed; the key's presence means the
+	// writer knew about these fields (see GitImportData.noteExtrasKnown).
+	notes?: Record<string, NoteExtras>;
 	people: Record<string, Person>;
 	events: Record<string, Event>;
 	actionItems?: Record<string, ActionItem>;
 	// Mime type for each blob ref written under .kurumi/blobs/, so importers
 	// can reconstruct the Blob with the right type. Keyed by `blob:<id>` ref.
 	blobs?: Record<string, { mimeType: string }>;
+}
+
+export interface NoteExtras {
+	icon?: string; // uploaded image icons only; emoji live in frontmatter
+	favoritedAt?: number;
+	favoriteChangedAt?: number;
 }
 
 export interface MarkdownFile {
@@ -210,9 +220,16 @@ export function createMetadata(
 	}
 
 	const noteIds: Record<string, string> = {};
+	const notes: Record<string, NoteExtras> = {};
 	for (const memory of memories) {
 		const file = noteToMarkdownFile(memory, folders);
 		noteIds[file.path] = memory.id;
+		const extras: NoteExtras = {
+			...(memory.icon?.startsWith('data:') ? { icon: memory.icon } : {}),
+			...(memory.favoritedAt ? { favoritedAt: memory.favoritedAt } : {}),
+			...(memory.favoriteChangedAt ? { favoriteChangedAt: memory.favoriteChangedAt } : {})
+		};
+		if (Object.keys(extras).length > 0) notes[memory.id] = extras;
 	}
 
 	const peopleMap: Record<string, Person> = {};
@@ -240,6 +257,7 @@ export function createMetadata(
 		},
 		folders: foldersMap,
 		noteIds,
+		notes,
 		people: peopleMap,
 		events: eventsMap,
 		actionItems: actionItemsMap,

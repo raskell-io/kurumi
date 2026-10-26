@@ -21,7 +21,7 @@
 	import { storeBlob } from '$lib/db/blob-store';
 	import { initHashRouter, updateHashFromPath, currentRoutePath } from '$lib/hash-router';
 	import { generateDailyDigest } from '$lib/digest';
-	import { initSearch, rebuildIndex } from '$lib/search';
+	import { initSearch, syncIndex } from '$lib/search';
 	import { setupVisibilitySync, teardownVisibilitySync, setupAutoSync, teardownAutoSync, isSyncConfigured } from '$lib/sync';
 	import SyncFab from '$lib/components/SyncFab.svelte';
 	import { gitSyncState } from '$lib/git';
@@ -39,8 +39,13 @@
 		touchTab,
 		touchRecent,
 		closeTab,
-		moveTab
+		moveTab,
+		splitNoteId,
+		closeSplit
 	} from '$lib/stores/workspace';
+	import SplitPane from '$lib/components/SplitPane.svelte';
+	import { labsEnabled, LAB_PAGES } from '$lib/stores/labs';
+	import { matchShortcut, type ShortcutId } from '$lib/shortcuts';
 	import {
 		bootNotifications,
 		stopNotificationLoop,
@@ -82,6 +87,7 @@
 		PanelLeftClose,
 		PanelLeftOpen,
 		Menu,
+		FlaskConical,
 		Sun,
 		Moon,
 		Monitor
@@ -134,6 +140,7 @@
 	}
 	let showTags = $state(false);
 	let showFavorites = $state(true);
+	let showLabs = $state(false);
 	let theme = $state<'light' | 'dark' | 'system'>('system');
 	let sidebarCollapsed = $state(false);
 	let showConflictModal = $state(false);
@@ -220,6 +227,13 @@
 	let editNoteId = $derived.by(() => {
 		const match = currentRoutePath($page.route.id, $page.params, $page.url.pathname).match(/^\/memory\/([a-zA-Z0-9-]+)$/);
 		return match ? match[1] : null;
+	});
+
+	// Split view sits next to a note. Opening the split's note in the main
+	// pane closes the split, so one note is never edited in two places.
+	let showSplit = $derived(!!$splitNoteId && !!editNoteId && !isMobile && !$focusMode);
+	$effect(() => {
+		if ($splitNoteId && $splitNoteId === editNoteId) closeSplit();
 	});
 
 	// Breadcrumb for current memory location
@@ -322,131 +336,94 @@
 		}
 	}
 
-	// Keyboard shortcuts handler
+	// Keyboard shortcuts handler. Bindings come from $lib/shortcuts, where
+	// users can change them (Settings → Keyboard shortcuts).
 	function handleKeydown(e: KeyboardEvent) {
-		// App-level shortcuts that should work even while writing
-		if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
-			if (e.key === '\\') {
-				e.preventDefault();
-				toggleSidebar();
-				return;
-			}
-			if (e.key === 'k') {
-				e.preventDefault();
-				showSearch = !showSearch;
-				return;
-			}
-			// Quick switcher: Cmd+O (Obsidian) / Cmd+P (Notion). Opens the
-			// palette, which lists recently opened notes first.
-			if (e.key === 'o' || e.key === 'p') {
-				e.preventDefault();
-				showSearch = true;
-				return;
-			}
-			if (e.key === 'n') {
-				e.preventDefault();
-				handleNewNote();
-				return;
-			}
-		}
-
-		// Don't trigger other shortcuts when typing in inputs
 		const target = e.target as HTMLElement;
-		if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-			// Allow Escape in inputs
-			if (e.key === 'Escape') {
-				target.blur();
-			}
+		const typing = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+		const shortcut = matchShortcut(e);
+
+		if (shortcut && (!typing || shortcut.inInputs) && runShortcut(shortcut.id)) {
+			e.preventDefault();
 			return;
 		}
 
-		if (e.metaKey || e.ctrlKey) {
-			// Cmd+Z: pop the last undo entry from the global stack
-			if (!e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
-				e.preventDefault();
-				undoLast();
-				return;
-			}
-
-			// Cmd+` (backtick): toggle the agentic chat pane
-			if (e.key === '`') {
-				e.preventDefault();
-				showAgentPane = !showAgentPane;
-				return;
-			}
-
-			// Cmd+Shift shortcuts
-			if (e.shiftKey && e.key === 'r') {
-				e.preventDefault();
-				goto('/read');
-				if (isMobile) sidebarOpen = false;
-				return;
-			}
-			if (e.shiftKey && e.key === 'a') {
-				e.preventDefault();
-				goto('/actions');
-				if (isMobile) sidebarOpen = false;
-				return;
-			}
-			if (e.shiftKey && e.key === 'i') {
-				e.preventDefault();
-				goto('/inbox');
-				if (isMobile) sidebarOpen = false;
-				return;
-			}
-			if (e.shiftKey && e.key === 'c') {
-				e.preventDefault();
-				goto('/calendar');
-				if (isMobile) sidebarOpen = false;
-				return;
-			}
-			if (e.shiftKey && (e.key === 'F' || e.key === 'f')) {
-				e.preventDefault();
-				toggleFocusMode();
-				return;
-			}
-			if (e.shiftKey && (e.key === 'V' || e.key === 'v')) {
-				// Global push-to-talk toggle: hop to home and flip the
-				// voice assistant signal. The home page's Ask Kurumi view
-				// picks it up via a $effect and runs start / stop-and-submit
-				// alternately.
-				e.preventDefault();
-				if (currentPath !== '/') {
-					goto('/');
-				}
-				triggerVoiceAssistant.update((n) => n + 1);
-				if (isMobile) sidebarOpen = false;
-				return;
-			}
-
-			switch (e.key) {
-				case 'd':
-					e.preventDefault();
-					goto('/daily');
-					if (isMobile) sidebarOpen = false;
-					break;
-				case 'g':
-					e.preventDefault();
-					goto('/graph');
-					if (isMobile) sidebarOpen = false;
-					break;
-				case 'r':
-					e.preventDefault();
-					goto('/references');
-					if (isMobile) sidebarOpen = false;
-					break;
-				case ',':
-					e.preventDefault();
-					goto('/settings');
-					if (isMobile) sidebarOpen = false;
-					break;
-			}
-		} else if (e.key === 'Escape') {
-			if (showSearch) {
+		if (e.key === 'Escape') {
+			if (typing) {
+				// Allow Escape in inputs
+				target.blur();
+			} else if (showSearch) {
 				showSearch = false;
 			} else if (sidebarOpen && isMobile) {
 				sidebarOpen = false;
 			}
+		}
+	}
+
+	function go(path: string) {
+		goto(path);
+		if (isMobile) sidebarOpen = false;
+	}
+
+	// Returns false for shortcuts handled elsewhere (find lives in the editor).
+	function runShortcut(id: ShortcutId): boolean {
+		switch (id) {
+			case 'toggleSidebar':
+				toggleSidebar();
+				return true;
+			case 'search':
+				showSearch = !showSearch;
+				return true;
+			case 'quickSwitcher':
+				// Opens the palette, which lists recently opened notes first.
+				showSearch = true;
+				return true;
+			case 'newNote':
+				handleNewNote();
+				return true;
+			case 'undo':
+				undoLast();
+				return true;
+			case 'agentPane':
+				showAgentPane = !showAgentPane;
+				return true;
+			case 'readMode':
+				go('/read');
+				return true;
+			case 'actions':
+				go('/actions');
+				return true;
+			case 'inbox':
+				go('/inbox');
+				return true;
+			case 'calendar':
+				go('/calendar');
+				return true;
+			case 'focusMode':
+				toggleFocusMode();
+				return true;
+			case 'voice':
+				// Global push-to-talk toggle: hop to home and flip the voice
+				// assistant signal. The home page's Ask Kurumi view picks it
+				// up via a $effect and runs start / stop-and-submit alternately.
+				if (currentPath !== '/') goto('/');
+				triggerVoiceAssistant.update((n) => n + 1);
+				if (isMobile) sidebarOpen = false;
+				return true;
+			case 'dailyNote':
+				go('/daily');
+				return true;
+			case 'graph':
+				go('/graph');
+				return true;
+			case 'references':
+				go('/references');
+				return true;
+			case 'settings':
+				go('/settings');
+				return true;
+			default:
+				return false;
 		}
 	}
 
@@ -632,13 +609,11 @@
 		};
 	});
 
-	// Rebuild search index when memories change
+	// Keep the search index in step with the notes (only changed notes are
+	// re-indexed; runs on every edit and on vault switches).
 	$effect(() => {
-		// Track length to trigger rebuild
-		const count = $memoryObjects.length;
-		if (initialized && count >= 0) {
-			rebuildIndex();
-		}
+		void $memoryObjects;
+		if (initialized) syncIndex();
 	});
 
 	async function handleNewNote() {
@@ -840,6 +815,37 @@
 									>
 										<NoteIcon icon={fav.icon} class="nav-icon" />
 										<span class="truncate">{fav.title || 'Untitled'}</span>
+									</a>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/if}
+
+				<!-- Labs (Settings → Labs) -->
+				{#if $labsEnabled}
+					<div class="px-2 pt-3">
+						<button
+							onclick={() => (showLabs = !showLabs)}
+							class="section-label w-full"
+							aria-expanded={showLabs}
+							aria-controls="labs-list"
+						>
+							<ChevronRight class="h-3 w-3 transition-transform {showLabs ? 'rotate-90' : ''}" aria-hidden="true" />
+							Labs
+						</button>
+						{#if showLabs}
+							<div id="labs-list">
+								{#each LAB_PAGES as lab (lab.href)}
+									<a
+										href={lab.href}
+										onclick={handleNoteClick}
+										class="nav-row"
+										class:nav-row-active={isActive(lab.href)}
+										title={lab.description}
+									>
+										<FlaskConical class="nav-icon" />
+										<span class="truncate">{lab.label}</span>
 									</a>
 								{/each}
 							</div>
@@ -1068,6 +1074,10 @@
 				{@render children()}
 			</div>
 		</main>
+
+		{#if showSplit && $splitNoteId}
+			<SplitPane noteId={$splitNoteId} />
+		{/if}
 
 		{#if showAgentPane}
 			<AgentPane onClose={() => (showAgentPane = false)} />

@@ -15,7 +15,7 @@
  * arrays that don't belong in the CRDT.
  */
 
-import { createStore, set, get, del } from 'idb-keyval';
+import { createStore, set, del, entries } from 'idb-keyval';
 import { loadPipeline, getModelStatus } from './inference/local-models';
 import {
 	getLocalInferenceSettings,
@@ -32,6 +32,54 @@ interface StoredEmbedding {
 	contentHash: string;
 	vector: number[];
 	updatedAt: number;
+}
+
+// In-memory copy of every stored vector, loaded with a single IndexedDB
+// read. Searching and the "needs re-embedding?" check used to read each
+// note's vector separately: thousands of sequential reads per query in a
+// large vault.
+let vectorCache: Map<string, StoredEmbedding> | null = null;
+let vectorCacheLoad: Promise<Map<string, StoredEmbedding>> | null = null;
+
+function loadVectors(): Promise<Map<string, StoredEmbedding>> {
+	if (vectorCache) return Promise.resolve(vectorCache);
+	vectorCacheLoad ??= entries<string, StoredEmbedding>(embeddingsStore)
+		.then((rows) => (vectorCache = new Map(rows)))
+		.catch(() => (vectorCache = new Map()))
+		.finally(() => (vectorCacheLoad = null));
+	return vectorCacheLoad;
+}
+
+async function storeVector(stored: StoredEmbedding): Promise<void> {
+	await set(stored.memoryId, stored, embeddingsStore);
+	(await loadVectors()).set(stored.memoryId, stored);
+}
+
+// Embed text + hash per note, recomputed only when the note changes.
+const embedInputs = new Map<string, { updatedAt: number; text: string; hash: string }>();
+
+function embedInput(memory: MemoryObject): { text: string; hash: string } {
+	const cached = embedInputs.get(memory.id);
+	if (cached && cached.updatedAt === memory.updatedAt) return cached;
+	const text = buildEmbedText(memory);
+	const entry = { updatedAt: memory.updatedAt, text, hash: contentHash(text) };
+	embedInputs.set(memory.id, entry);
+	return entry;
+}
+
+/** Notes whose stored vector is missing or stale. */
+function pendingMemories(
+	memories: MemoryObject[],
+	vectors: Map<string, StoredEmbedding>
+): { memory: MemoryObject; text: string; hash: string }[] {
+	const pending = [];
+	for (const memory of memories) {
+		const { text, hash } = embedInput(memory);
+		if (!text.trim()) continue;
+		if (vectors.get(memory.id)?.contentHash === hash) continue;
+		pending.push({ memory, text, hash });
+	}
+	return pending;
 }
 
 /**
@@ -153,45 +201,33 @@ export async function embedTexts(texts: string[]): Promise<(number[] | null)[]> 
  * repeatedly. Best-effort: errors on individual batches are logged but
  * don't abort the whole pass.
  */
-export async function indexAllMemories(): Promise<{
+let indexing: Promise<{ processed: number; skipped: number; errors: number }> | null = null;
+
+export function indexAllMemories(): Promise<{
 	processed: number;
 	skipped: number;
 	errors: number;
 }> {
+	// One pass at a time; concurrent callers share it.
+	indexing ??= runIndexing().finally(() => (indexing = null));
+	return indexing;
+}
+
+async function runIndexing(): Promise<{ processed: number; skipped: number; errors: number }> {
 	const settings = getLocalInferenceSettings();
 	if (!settings.enabled || !settings.embedModelEnabled) {
 		return { processed: 0, skipped: 0, errors: 0 };
 	}
 
 	const memories = svelteGet(memoryObjects);
-	let skipped = 0;
+	const pending = pendingMemories(memories, await loadVectors());
+	const skipped = memories.length - pending.length;
 	let errors = 0;
 
-	// First pass: figure out which memories actually need embedding work.
-	// Skip empty bodies and anything whose stored hash already matches.
-	type Pending = { memory: MemoryObject; text: string; hash: string };
-	const pending: Pending[] = [];
-	for (const memory of memories) {
-		const text = buildEmbedText(memory);
-		if (!text.trim()) {
-			skipped++;
-			continue;
-		}
-		const hash = contentHash(text);
-		try {
-			const existing = await get<StoredEmbedding>(memory.id, embeddingsStore);
-			if (existing && existing.contentHash === hash) {
-				skipped++;
-				continue;
-			}
-		} catch {
-			// fall through to (re)embed
-		}
-		pending.push({ memory, text, hash });
-	}
-
-	// Second pass: embed in batches. transformers.js feature-extraction
-	// accepts an array of texts and returns one vector per input.
+	// Embed in batches. transformers.js feature-extraction accepts an array
+	// of texts and returns one vector per input. Inference runs in a worker
+	// (see local-models.ts); yielding between batches keeps the main thread
+	// free for the IndexedDB writes and anything the user is doing.
 	let processed = 0;
 	for (let i = 0; i < pending.length; i += EMBED_BATCH_SIZE) {
 		const batch = pending.slice(i, i + EMBED_BATCH_SIZE);
@@ -204,13 +240,12 @@ export async function indexAllMemories(): Promise<{
 					errors++;
 					continue;
 				}
-				const stored: StoredEmbedding = {
+				await storeVector({
 					memoryId: item.memory.id,
 					contentHash: item.hash,
 					vector,
 					updatedAt: Date.now()
-				};
-				await set(item.memory.id, stored, embeddingsStore);
+				});
 				processed++;
 			}
 		} catch (err) {
@@ -224,13 +259,12 @@ export async function indexAllMemories(): Promise<{
 						errors++;
 						continue;
 					}
-					const stored: StoredEmbedding = {
+					await storeVector({
 						memoryId: item.memory.id,
 						contentHash: item.hash,
 						vector,
 						updatedAt: Date.now()
-					};
-					await set(item.memory.id, stored, embeddingsStore);
+					});
 					processed++;
 				} catch (innerErr) {
 					console.warn('[embeddings] failed to index memory', item.memory.id, innerErr);
@@ -238,6 +272,7 @@ export async function indexAllMemories(): Promise<{
 				}
 			}
 		}
+		await new Promise((resolve) => setTimeout(resolve, 0));
 	}
 
 	return { processed, skipped, errors };
@@ -255,22 +290,14 @@ export async function embedMemory(memoryId: string): Promise<boolean> {
 	const memory = svelteGet(memoryObjects).find((m) => m.id === memoryId);
 	if (!memory) return false;
 
-	const text = buildEmbedText(memory);
+	const { text, hash } = embedInput(memory);
 	if (!text.trim()) return false;
-	const hash = contentHash(text);
 
 	try {
-		const existing = await get<StoredEmbedding>(memoryId, embeddingsStore);
-		if (existing && existing.contentHash === hash) return true;
+		if ((await loadVectors()).get(memoryId)?.contentHash === hash) return true;
 		const vector = await embedText(text);
 		if (!vector) return false;
-		const stored: StoredEmbedding = {
-			memoryId,
-			contentHash: hash,
-			vector,
-			updatedAt: Date.now()
-		};
-		await set(memoryId, stored, embeddingsStore);
+		await storeVector({ memoryId, contentHash: hash, vector, updatedAt: Date.now() });
 		return true;
 	} catch (err) {
 		console.warn('[embeddings] embedMemory failed', memoryId, err);
@@ -311,20 +338,24 @@ export async function semanticSearch(
 		return [];
 	}
 
-	// Make sure the index is current. This is cheap if everything is already
-	// indexed, since the hash check skips most memories.
-	await indexAllMemories();
+	// Bring the index up to date. A handful of changed notes is quick, so
+	// wait for it; after a big import, answer from what's indexed and let
+	// the rest catch up in the background instead of blocking the search.
+	const memories = svelteGet(memoryObjects);
+	const vectors = await loadVectors();
+	const pending = pendingMemories(memories, vectors).length;
+	if (pending > 0) {
+		const run = indexAllMemories();
+		if (pending <= 32) await run;
+		else void run;
+	}
 
 	const queryVector = await embedText(query);
 	if (!queryVector) return [];
 
 	const hits: SemanticHit[] = [];
-	const memories = svelteGet(memoryObjects);
-	const validIds = new Set(memories.map((m) => m.id));
-
 	for (const memory of memories) {
-		if (!validIds.has(memory.id)) continue;
-		const stored = await get<StoredEmbedding>(memory.id, embeddingsStore);
+		const stored = vectors.get(memory.id);
 		if (!stored) continue;
 		const similarity = cosine(queryVector, stored.vector);
 		hits.push({ memoryId: memory.id, similarity });
@@ -341,6 +372,8 @@ export async function semanticSearch(
 export async function deleteEmbedding(memoryId: string): Promise<void> {
 	try {
 		await del(memoryId, embeddingsStore);
+		vectorCache?.delete(memoryId);
+		embedInputs.delete(memoryId);
 	} catch {
 		// Ignore — best effort
 	}

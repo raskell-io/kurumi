@@ -21,6 +21,8 @@
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state';
 import { $prose } from '@milkdown/kit/utils';
 import type { EditorView } from '@milkdown/kit/prose/view';
+import { turnInto, insertMarkdownBlocks, type BlockKind } from './blocks';
+import { createRegistry } from './registry';
 
 const slashKey = new PluginKey('slash-commands');
 
@@ -50,12 +52,16 @@ export interface SlashCallbacks {
 	onUpdate: (state: SlashState) => void;
 }
 
-let callbacks: SlashCallbacks | null = null;
+// Callbacks per editor (see ./registry); looked up via the view in use.
+const registry = createRegistry<SlashCallbacks>();
+const callbacksFor = () => registry.get(currentView);
 let currentView: EditorView | null = null;
 let isOpen = false;
 
-export function setSlashCallbacks(cb: SlashCallbacks) {
-	callbacks = cb;
+/** Register (or, with null, remove) the callbacks for the editor rooted at `root`. */
+export function setSlashCallbacks(root: Element, cb: SlashCallbacks | null) {
+	if (cb) registry.set(root, cb);
+	else registry.delete(root);
 }
 
 /**
@@ -76,12 +82,12 @@ export function executeSlashCommand(command: SlashCommand) {
 
 	currentView.focus();
 	isOpen = false;
-	callbacks?.onClose();
+	callbacksFor()?.onClose();
 }
 
 export function closeSlashMenu() {
 	isOpen = false;
-	callbacks?.onClose();
+	callbacksFor()?.onClose();
 }
 
 function getCursorCoords(view: EditorView, pos: number): { x: number; y: number } | null {
@@ -138,13 +144,13 @@ export const slashCommandPlugin = $prose(() => {
 					if (nowOpen && state) {
 						if (!wasOpen) {
 							isOpen = true;
-							callbacks?.onOpen(state);
+							callbacksFor()?.onOpen(state);
 						} else {
-							callbacks?.onUpdate(state);
+							callbacksFor()?.onUpdate(state);
 						}
 					} else if (wasOpen && !nowOpen) {
 						isOpen = false;
-						callbacks?.onClose();
+						callbacksFor()?.onClose();
 					}
 				},
 				destroy() {
@@ -165,6 +171,30 @@ export const slashCommandPlugin = $prose(() => {
  * Uses `view.dispatch` to insert raw text that Milkdown's markdown
  * parser will convert to the right node type on the next tick.
  */
+/**
+ * Helper: delete the /query text and convert the current block, keeping
+ * whatever was already typed on the line.
+ */
+function convertBlock(view: EditorView, from: number, to: number, kind: BlockKind): boolean {
+	view.dispatch(view.state.tr.delete(from, to));
+	turnInto(view, kind);
+	return true;
+}
+
+/**
+ * Helper: replace the /query text with real blocks parsed from markdown
+ * (tables, callouts, …). Falls back to inserting the text.
+ */
+function insertBlocks(
+	view: EditorView,
+	from: number,
+	to: number,
+	markdown: string,
+	select: 'first' | 'last' = 'last'
+): boolean {
+	return insertMarkdownBlocks(view, from, to, markdown, select) || replaceWithText(view, from, to, markdown);
+}
+
 function replaceWithText(
 	view: EditorView,
 	from: number,
@@ -184,7 +214,7 @@ export const builtInSlashCommands: SlashCommand[] = [
 		description: 'Large heading',
 		icon: 'heading',
 		category: 'Basic',
-		execute: (view, from, to) => replaceWithText(view, from, to, '# ')
+		execute: (view, from, to) => convertBlock(view, from, to, 'h1')
 	},
 	{
 		id: 'heading2',
@@ -192,7 +222,7 @@ export const builtInSlashCommands: SlashCommand[] = [
 		description: 'Medium heading',
 		icon: 'heading',
 		category: 'Basic',
-		execute: (view, from, to) => replaceWithText(view, from, to, '## ')
+		execute: (view, from, to) => convertBlock(view, from, to, 'h2')
 	},
 	{
 		id: 'heading3',
@@ -200,7 +230,7 @@ export const builtInSlashCommands: SlashCommand[] = [
 		description: 'Small heading',
 		icon: 'heading',
 		category: 'Basic',
-		execute: (view, from, to) => replaceWithText(view, from, to, '### ')
+		execute: (view, from, to) => convertBlock(view, from, to, 'h3')
 	},
 	{
 		id: 'bullet-list',
@@ -208,7 +238,7 @@ export const builtInSlashCommands: SlashCommand[] = [
 		description: 'Unordered list item',
 		icon: 'list',
 		category: 'Basic',
-		execute: (view, from, to) => replaceWithText(view, from, to, '- ')
+		execute: (view, from, to) => convertBlock(view, from, to, 'bullet')
 	},
 	{
 		id: 'numbered-list',
@@ -216,7 +246,7 @@ export const builtInSlashCommands: SlashCommand[] = [
 		description: 'Ordered list item',
 		icon: 'list-ordered',
 		category: 'Basic',
-		execute: (view, from, to) => replaceWithText(view, from, to, '1. ')
+		execute: (view, from, to) => convertBlock(view, from, to, 'ordered')
 	},
 	{
 		id: 'checkbox',
@@ -224,7 +254,7 @@ export const builtInSlashCommands: SlashCommand[] = [
 		description: 'To-do item',
 		icon: 'check-square',
 		category: 'Basic',
-		execute: (view, from, to) => replaceWithText(view, from, to, '- [ ] ')
+		execute: (view, from, to) => convertBlock(view, from, to, 'task')
 	},
 	{
 		id: 'quote',
@@ -232,7 +262,7 @@ export const builtInSlashCommands: SlashCommand[] = [
 		description: 'Block quote',
 		icon: 'quote',
 		category: 'Basic',
-		execute: (view, from, to) => replaceWithText(view, from, to, '> ')
+		execute: (view, from, to) => convertBlock(view, from, to, 'quote')
 	},
 	{
 		id: 'divider',
@@ -240,7 +270,7 @@ export const builtInSlashCommands: SlashCommand[] = [
 		description: 'Horizontal rule',
 		icon: 'minus',
 		category: 'Basic',
-		execute: (view, from, to) => replaceWithText(view, from, to, '\n---\n')
+		execute: (view, from, to) => insertBlocks(view, from, to, '---\n\n')
 	},
 	{
 		id: 'code-block',
@@ -248,7 +278,7 @@ export const builtInSlashCommands: SlashCommand[] = [
 		description: 'Fenced code block',
 		icon: 'code',
 		category: 'Basic',
-		execute: (view, from, to) => replaceWithText(view, from, to, '```\n\n```')
+		execute: (view, from, to) => convertBlock(view, from, to, 'code')
 	},
 
 	// --- Insert references --------------------------------------------------
@@ -291,11 +321,12 @@ export const builtInSlashCommands: SlashCommand[] = [
 		icon: 'table',
 		category: 'Insert',
 		execute: (view, from, to) =>
-			replaceWithText(
+			insertBlocks(
 				view,
 				from,
 				to,
-				'| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n|  |  |  |\n'
+				'| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n|  |  |  |\n',
+				'first'
 			)
 	},
 
@@ -306,7 +337,7 @@ export const builtInSlashCommands: SlashCommand[] = [
 		description: 'Blue information box',
 		icon: 'info',
 		category: 'Insert',
-		execute: (view, from, to) => replaceWithText(view, from, to, '> [!info]\n> ')
+		execute: (view, from, to) => insertBlocks(view, from, to, '> [!info]\n>\n> Write here')
 	},
 	{
 		id: 'callout-warning',
@@ -314,7 +345,7 @@ export const builtInSlashCommands: SlashCommand[] = [
 		description: 'Yellow warning box',
 		icon: 'alert-triangle',
 		category: 'Insert',
-		execute: (view, from, to) => replaceWithText(view, from, to, '> [!warning]\n> ')
+		execute: (view, from, to) => insertBlocks(view, from, to, '> [!warning]\n>\n> Write here')
 	},
 	{
 		id: 'callout-tip',
@@ -322,7 +353,7 @@ export const builtInSlashCommands: SlashCommand[] = [
 		description: 'Green tip box',
 		icon: 'lightbulb',
 		category: 'Insert',
-		execute: (view, from, to) => replaceWithText(view, from, to, '> [!tip]\n> ')
+		execute: (view, from, to) => insertBlocks(view, from, to, '> [!tip]\n>\n> Write here')
 	},
 	{
 		id: 'dataview',
@@ -331,7 +362,7 @@ export const builtInSlashCommands: SlashCommand[] = [
 		icon: 'database',
 		category: 'Insert',
 		execute: (view, from, to) =>
-			replaceWithText(view, from, to, '```kurumi\ntype:note\nview: list\nlimit: 20\n```\n')
+			insertBlocks(view, from, to, '```kurumi\ntype:note\nview: list\nlimit: 20\n```\n')
 	},
 
 	{
@@ -403,7 +434,7 @@ export const builtInSlashCommands: SlashCommand[] = [
 		icon: 'list',
 		category: 'Insert',
 		execute: (view, from, to) =>
-			replaceWithText(
+			insertBlocks(
 				view,
 				from,
 				to,
@@ -424,7 +455,7 @@ export const builtInSlashCommands: SlashCommand[] = [
 		description: 'LaTeX math equation',
 		icon: 'code',
 		category: 'Insert',
-		execute: (view, from, to) => replaceWithText(view, from, to, '$$\nx^2 + y^2 = z^2\n$$\n')
+		execute: (view, from, to) => insertBlocks(view, from, to, '$$\nx^2 + y^2 = z^2\n$$\n')
 	},
 	{
 		id: 'math-inline',

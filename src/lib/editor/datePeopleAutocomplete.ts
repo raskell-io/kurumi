@@ -9,6 +9,7 @@
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state';
 import { $prose } from '@milkdown/kit/utils';
 import type { EditorView } from '@milkdown/kit/prose/view';
+import { createRegistry } from './registry';
 
 const autocompleteKey = new PluginKey('date-people-autocomplete');
 
@@ -28,15 +29,19 @@ export interface AutocompleteCallbacks {
 	onUpdate: (state: AutocompleteState) => void;
 }
 
-let callbacks: AutocompleteCallbacks | null = null;
+// Callbacks per editor (see ./registry); looked up via the view in use.
+const registry = createRegistry<AutocompleteCallbacks>();
+const callbacksFor = () => registry.get(currentView);
 let currentView: EditorView | null = null;
 let activeType: AutocompleteType = null;
 // `from` of a trigger the user dismissed with Escape, so typing on doesn't
 // reopen the popup for that same mention/tag/date.
 let dismissedFrom: number | null = null;
 
-export function setDatePeopleCallbacks(cb: AutocompleteCallbacks) {
-	callbacks = cb;
+/** Register (or, with null, remove) the callbacks for the editor rooted at `root`. */
+export function setDatePeopleCallbacks(root: Element, cb: AutocompleteCallbacks | null) {
+	if (cb) registry.set(root, cb);
+	else registry.delete(root);
 }
 
 /**
@@ -60,7 +65,7 @@ export function insertDate(date: string) {
 	currentView.dispatch(tr);
 	currentView.focus();
 	activeType = null;
-	callbacks?.onClose();
+	callbacksFor()?.onClose();
 }
 
 /**
@@ -84,7 +89,7 @@ export function insertPerson(name: string) {
 	currentView.dispatch(tr);
 	currentView.focus();
 	activeType = null;
-	callbacks?.onClose();
+	callbacksFor()?.onClose();
 }
 
 /**
@@ -108,7 +113,7 @@ export function insertTag(tag: string) {
 	currentView.dispatch(tr);
 	currentView.focus();
 	activeType = null;
-	callbacks?.onClose();
+	callbacksFor()?.onClose();
 }
 
 /**
@@ -120,7 +125,7 @@ export function closeAutocomplete() {
 		dismissedFrom = getAutocompleteState(currentView)?.from ?? null;
 	}
 	activeType = null;
-	callbacks?.onClose();
+	callbacksFor()?.onClose();
 }
 
 /**
@@ -266,13 +271,13 @@ export const datePeopleAutocompletePlugin = $prose(() => {
 					if (isActive && state) {
 						if (!wasActive || activeType !== state.type) {
 							activeType = state.type;
-							callbacks?.onOpen(state);
+							callbacksFor()?.onOpen(state);
 						} else {
-							callbacks?.onUpdate(state);
+							callbacksFor()?.onUpdate(state);
 						}
 					} else if (wasActive && !isActive) {
 						activeType = null;
-						callbacks?.onClose();
+						callbacksFor()?.onClose();
 					}
 				},
 				destroy() {

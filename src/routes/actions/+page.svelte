@@ -15,6 +15,8 @@
 		type Recurrence
 	} from '$lib/db';
 	import { pushUndo } from '$lib/stores/undo';
+	import { dueInfo as dueLabel } from '$lib/utils/due';
+	import ActionBoard from '$lib/components/ActionBoard.svelte';
 	import { goto } from '$app/navigation';
 	import {
 		ArrowUpRight,
@@ -32,7 +34,9 @@
 		Square,
 		SquareCheck,
 		Trash2,
-		X
+		X,
+		List,
+		Columns3
 	} from 'lucide-svelte';
 	import { onMount } from 'svelte';
 
@@ -62,6 +66,49 @@
 		focusIndex = -1;
 	}
 
+	// List or board (Kanban) layout, remembered per device.
+	const VIEW_KEY = 'kurumi-actions-view';
+	let view = $state<'list' | 'board'>('list');
+	onMount(() => {
+		try {
+			if (localStorage.getItem(VIEW_KEY) === 'board') view = 'board';
+		} catch {
+			// Storage unavailable: default to the list.
+		}
+	});
+	function setView(next: 'list' | 'board') {
+		view = next;
+		clearSelection();
+		try {
+			localStorage.setItem(VIEW_KEY, next);
+		} catch {
+			// Not persisted; fine.
+		}
+	}
+
+	// Project / assignee filters. Projects come from the source note.
+	let projectFilter = $state('');
+	let assigneeFilter = $state('');
+	let memoryById = $derived(new Map($memoryObjects.map((m) => [m.id, m])));
+	function itemProjects(item: ActionItem): string[] {
+		return item.memoryObjectId ? (memoryById.get(item.memoryObjectId)?.projects ?? []) : [];
+	}
+	let projectOptions = $derived(
+		[...new Set($actionItems.flatMap((i) => itemProjects(i)))].sort((a, b) => a.localeCompare(b))
+	);
+	let assigneeOptions = $derived(
+		[...new Set($actionItems.flatMap((i) => (i.assignee ? [i.assignee] : [])))].sort((a, b) =>
+			a.localeCompare(b)
+		)
+	);
+	let visibleItems = $derived(
+		$actionItems.filter(
+			(i) =>
+				(!projectFilter || itemProjects(i).includes(projectFilter)) &&
+				(!assigneeFilter || i.assignee === assigneeFilter)
+		)
+	);
+
 	type Group = { label: string; status: ActionItemStatus; items: ActionItem[] };
 
 	let groups = $derived.by<Group[]>(() => {
@@ -69,7 +116,7 @@
 		const inProgress: ActionItem[] = [];
 		const done: ActionItem[] = [];
 		const cancelled: ActionItem[] = [];
-		for (const item of $actionItems) {
+		for (const item of visibleItems) {
 			if (item.status === 'open') open.push(item);
 			else if (item.status === 'in_progress') inProgress.push(item);
 			else if (item.status === 'done') done.push(item);
@@ -149,23 +196,8 @@
 	// colouring; a finished item's due date is just history.
 	const today = todayIso();
 
-	function dueInfo(iso: string, active: boolean): { label: string; tone: '' | 'danger' | 'warn' } {
-		const date = new Date(iso + 'T00:00:00');
-		if (Number.isNaN(date.getTime())) return { label: iso, tone: '' };
-		const days = Math.round((date.getTime() - new Date(today + 'T00:00:00').getTime()) / 86_400_000);
-		let label: string;
-		if (days === 0) label = 'Today';
-		else if (days === 1) label = 'Tomorrow';
-		else if (days === -1) label = 'Yesterday';
-		else if (days > 1 && days < 7) label = date.toLocaleDateString(undefined, { weekday: 'short' });
-		else
-			label = date.toLocaleDateString(undefined, {
-				month: 'short',
-				day: 'numeric',
-				year: date.getFullYear() === new Date().getFullYear() ? undefined : 'numeric'
-			});
-		const tone = !active ? '' : days < 0 ? 'danger' : days === 0 ? 'warn' : '';
-		return { label, tone };
+	function dueInfo(iso: string, active: boolean) {
+		return dueLabel(iso, active, today);
 	}
 
 	// --- Status transitions with undo -------------------------------------
@@ -196,6 +228,14 @@
 		} else {
 			changeStatus(item, 'done', 'Marked done');
 		}
+	}
+
+	// Board drag/arrow moves. Done goes through toggleDone so recurring
+	// items spawn their next occurrence.
+	function moveTo(item: ActionItem, status: ActionItemStatus) {
+		if (status === 'done') toggleDone(item);
+		else if (status === 'in_progress') startProgress(item);
+		else reopenItem(item);
 	}
 
 	function startProgress(item: ActionItem) {
@@ -293,7 +333,7 @@
 		if (e.metaKey || e.ctrlKey || e.altKey) return;
 		// Let a focused button/link handle its own activation keys.
 		if ((e.key === 'Enter' || e.key === ' ') && target.closest('button, a')) return;
-		if (flatOrder.length === 0) return;
+		if (view === 'board' || flatOrder.length === 0) return;
 
 		switch (e.key) {
 			case 'j':
@@ -471,7 +511,7 @@
 	<title>Action items - Kurumi</title>
 </svelte:head>
 
-<div class="k-page">
+<div class="k-page" class:board-page={view === 'board'}>
 	<header class="k-page-header">
 		<div class="min-w-0">
 			<h1 class="k-page-title">Action items</h1>
@@ -480,7 +520,7 @@
 				{#if totalInProgress > 0}· {totalInProgress} in progress{/if}
 				{#if totalClosed > 0}· {totalClosed} completed{/if}
 			</p>
-			<div class="k-hints">
+			<div class="k-hints" class:hidden={view === 'board'}>
 				<span><kbd class="k-kbd">j</kbd> <kbd class="k-kbd">k</kbd> navigate</span>
 				<span><kbd class="k-kbd">Space</kbd> select</span>
 				<span><kbd class="k-kbd">x</kbd> done</span>
@@ -496,17 +536,41 @@
 	</header>
 
 	{#if $actionItems.length > 0}
-		<div class="k-segmented mb-4" role="group" aria-label="Filter">
-			{#each FILTERS as f (f.value)}
-				<button
-					class="inline-flex items-center gap-1.5"
-					onclick={() => setFilter(f.value)}
-					aria-pressed={filter === f.value}
-				>
-					{f.label}
-					<span class="text-xs tabular-nums text-[var(--color-text-faint)]">{filterCounts[f.value]}</span>
+		<div class="mb-4 flex flex-wrap items-center gap-2">
+			<div class="k-segmented" role="group" aria-label="Layout">
+				<button class="inline-flex items-center gap-1.5" onclick={() => setView('list')} aria-pressed={view === 'list'}>
+					<List class="h-3.5 w-3.5" /> List
 				</button>
-			{/each}
+				<button class="inline-flex items-center gap-1.5" onclick={() => setView('board')} aria-pressed={view === 'board'}>
+					<Columns3 class="h-3.5 w-3.5" /> Board
+				</button>
+			</div>
+			{#if view === 'list'}
+				<div class="k-segmented" role="group" aria-label="Filter">
+					{#each FILTERS as f (f.value)}
+						<button
+							class="inline-flex items-center gap-1.5"
+							onclick={() => setFilter(f.value)}
+							aria-pressed={filter === f.value}
+						>
+							{f.label}
+							<span class="text-xs tabular-nums text-[var(--color-text-faint)]">{filterCounts[f.value]}</span>
+						</button>
+					{/each}
+				</div>
+			{/if}
+			{#if projectOptions.length > 0}
+				<select class="k-input !h-8 !w-auto !py-0 text-sm" bind:value={projectFilter} aria-label="Filter by project">
+					<option value="">All projects</option>
+					{#each projectOptions as project (project)}<option value={project}>{project}</option>{/each}
+				</select>
+			{/if}
+			{#if assigneeOptions.length > 0}
+				<select class="k-input !h-8 !w-auto !py-0 text-sm" bind:value={assigneeFilter} aria-label="Filter by assignee">
+					<option value="">Anyone</option>
+					{#each assigneeOptions as person (person)}<option value={person}>{person}</option>{/each}
+				</select>
+			{/if}
 		</div>
 	{/if}
 
@@ -595,6 +659,13 @@
 				New action item
 			</button>
 		</div>
+	{:else if view === 'board'}
+		<ActionBoard
+			items={visibleItems}
+			{memoryTitle}
+			onMove={moveTo}
+			onOpenSource={(id) => goto(`/memory/${id}`)}
+		/>
 	{:else if flatOrder.length === 0 && $actionItems.length > 0}
 		<div class="k-empty">
 			<CircleCheck />
@@ -764,6 +835,11 @@
 </div>
 
 <style>
+	/* The board needs more room than the list's reading width. */
+	.board-page {
+		max-width: 76rem;
+	}
+
 	.items {
 		display: flex;
 		flex-direction: column;

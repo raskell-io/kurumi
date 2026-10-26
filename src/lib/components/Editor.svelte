@@ -18,12 +18,7 @@
 		completeWikilink,
 		closeAutocomplete as dismissWikilinkAutocomplete
 	} from '$lib/editor/wikilinkAutocomplete';
-	import {
-	datePeoplePlugin,
-	setTagClickHandler,
-	setPersonClickHandler,
-	setDateClickHandler
-} from '$lib/editor/datePeople';
+	import { datePeoplePlugin, setReferenceClickHandlers } from '$lib/editor/datePeople';
 	import {
 		datePeopleAutocompletePlugin,
 		setDatePeopleCallbacks,
@@ -38,6 +33,7 @@
 		setSlashCallbacks
 	} from '$lib/editor/slashCommands';
 	import { taskListInputPlugin } from '$lib/editor/taskListInput';
+	import { taskTogglePlugin } from '$lib/editor/taskToggle';
 	import { codeBlockExitPlugin } from '$lib/editor/codeBlockExit';
 	import { audioEmbedPlugin } from '$lib/editor/audioEmbed';
 	import { startCheckboxRenderer } from '$lib/editor/checkboxRenderer';
@@ -50,7 +46,17 @@
 	import SlashCommandMenu from './SlashCommandMenu.svelte';
 	import AIActionMenu from './AIActionMenu.svelte';
 	import { isAIConfigured } from '$lib/ai';
-	import { editorViewCtx } from '@milkdown/kit/core';
+	import { editorViewCtx, parserCtx, remarkStringifyOptionsCtx } from '@milkdown/kit/core';
+	import { registerMarkdownParser } from '$lib/editor/blocks';
+	import { block, configureBlockHandle } from '$lib/editor/blockHandle';
+	import BlockMenu from './BlockMenu.svelte';
+	import FindBar from './FindBar.svelte';
+	import MobileToolbar from './MobileToolbar.svelte';
+	import { matchShortcut } from '$lib/shortcuts';
+	import { findReplacePlugin } from '$lib/editor/findReplace';
+	import { noteEmbedPlugin } from '$lib/editor/noteEmbed';
+	import { pasteLinkPlugin } from '$lib/editor/pasteLink';
+	import type { EditorView } from '@milkdown/kit/prose/view';
 	import { getMarkdown } from '@milkdown/kit/utils';
 
 	interface Props {
@@ -60,6 +66,10 @@
 		placeholder?: string;
 		currentFolderId?: string | null;
 		noteId?: string;
+		// A second editor on screen (split view): ignores page-wide events
+		// meant for the main note (insert image/camera) and only answers
+		// Cmd+F while it has focus.
+		secondary?: boolean;
 	}
 
 	let {
@@ -68,7 +78,8 @@
 		onWikilinkClick,
 		placeholder = 'Start writing...',
 		currentFolderId = null,
-		noteId
+		noteId,
+		secondary = false
 	}: Props = $props();
 
 	/**
@@ -108,6 +119,43 @@
 	let stopCheckboxRenderer: (() => void) | undefined;
 	let handleCameraEvent: () => void;
 	let handleInsertText: (e: Event) => void;
+
+	// Mobile formatting toolbar: touch devices, while the editor has focus.
+	let isTouch = $state(false);
+	let editorFocused = $state(false);
+	let readyEditor = $state.raw<Editor | null>(null);
+
+	function trackFocus() {
+		// focusout fires before focus lands elsewhere; check on the next tick.
+		setTimeout(() => {
+			editorFocused = !!editorContainer?.contains(document.activeElement);
+		}, 0);
+	}
+
+	// Find bar: Cmd+F (find) / Cmd+Option+F (find & replace)
+	let findBar = $state<{ view: EditorView; replace: boolean } | null>(null);
+	let findBarRef: { focusInput: () => void } | undefined = $state();
+
+	function handleFindShortcut(e: KeyboardEvent) {
+		const shortcut = matchShortcut(e)?.id;
+		if ((shortcut !== 'find' && shortcut !== 'findReplace') || !editor) return;
+		// With two editors on screen, the focused one answers; otherwise the main one.
+		const focusedEditor = (document.activeElement as HTMLElement | null)?.closest('.milkdown-editor');
+		if (focusedEditor ? focusedEditor !== editorContainer : secondary) return;
+		e.preventDefault();
+		const replace = shortcut === 'findReplace';
+		if (findBar) {
+			if (replace) findBar.replace = true;
+			findBarRef?.focusInput();
+			return;
+		}
+		editor.action((ctx) => {
+			findBar = { view: ctx.get(editorViewCtx), replace };
+		});
+	}
+
+	// Block handle menu (⋮⋮ click)
+	let blockMenu = $state<{ view: EditorView; blockPos: number; anchor: DOMRect } | null>(null);
 
 	// Slash command state
 	let showSlashMenu = $state(false);
@@ -350,26 +398,24 @@
 	let destroyed = false;
 
 	onMount(async () => {
+		// Plugin callbacks are registered under this editor's container, so
+		// a second editor (split view) doesn't take them over or clear them.
+		const root = editorContainer;
+
 		// Set up wikilink click handler
 		if (onWikilinkClick) {
-			setWikilinkClickHandler(onWikilinkClick);
+			setWikilinkClickHandler(root, onWikilinkClick);
 		}
 
 		// Set up tag/person/date click handlers to navigate to references page
-		setTagClickHandler((tag) => {
-			goto(`/references?tab=tags&item=${encodeURIComponent(tag)}`);
-		});
-
-		setPersonClickHandler((name) => {
-			goto(`/references?tab=people&item=${encodeURIComponent(name)}`);
-		});
-
-		setDateClickHandler((date) => {
-			goto(`/references?tab=dates&item=${encodeURIComponent(date)}`);
+		setReferenceClickHandlers(root, {
+			tag: (tag) => goto(`/references?tab=tags&item=${encodeURIComponent(tag)}`),
+			person: (name) => goto(`/references?tab=people&item=${encodeURIComponent(name)}`),
+			date: (date) => goto(`/references?tab=dates&item=${encodeURIComponent(date)}`)
 		});
 
 		// Set up wikilink autocomplete callbacks
-		setAutocompleteCallbacks({
+		setAutocompleteCallbacks(root, {
 			onOpen: (state) => {
 				if (state.position) {
 					autocompletePosition = state.position;
@@ -389,7 +435,7 @@
 		});
 
 		// Set up date/people/tag autocomplete callbacks
-		setDatePeopleCallbacks({
+		setDatePeopleCallbacks(root, {
 			onOpen: (state) => {
 				if (state.position) {
 					datePeoplePosition = state.position;
@@ -413,7 +459,7 @@
 		});
 
 		// Set up slash command callbacks
-		setSlashCallbacks({
+		setSlashCallbacks(root, {
 			onOpen: (state) => {
 				if (state.position) {
 					slashPosition = state.position;
@@ -453,10 +499,20 @@
 				});
 			})
 			.config(nord)
+			.config((ctx) => {
+				// Write "-" bullets (Obsidian/GitHub style) rather than remark's "*".
+				ctx.update(remarkStringifyOptionsCtx, (options) => ({ ...options, bullet: '-' as const }));
+				configureBlockHandle(ctx, (anchor, blockPos) => {
+					blockMenu = { view: ctx.get(editorViewCtx), blockPos, anchor };
+				});
+			})
 			.use(commonmark)
 			.use(gfm)
 			.use(listener)
 			.use(history)
+			// Before clipboard: ProseMirror asks plugins in order and the
+			// clipboard plugin handles every paste.
+			.use(pasteLinkPlugin)
 			.use(clipboard)
 			.use(wikilinkPlugin)
 			.use(wikilinkAutocompletePlugin)
@@ -464,10 +520,29 @@
 			.use(datePeopleAutocompletePlugin)
 			.use(slashCommandPlugin)
 			.use(taskListInputPlugin)
+			.use(taskTogglePlugin)
 			.use(codeBlockExitPlugin)
 			.use(audioEmbedPlugin)
 			.use(trailingPlugin)
+			.use(block)
+			.use(findReplacePlugin)
+			.use(noteEmbedPlugin)
 			.create();
+
+		// Unmounted while Milkdown was starting (e.g. quick note switch):
+		// tear the editor down instead of wiring it to a detached container.
+		if (destroyed || !editorContainer) {
+			editor.destroy();
+			editor = null;
+			return;
+		}
+
+		editor.action((ctx) => registerMarkdownParser(ctx.get(editorViewCtx), ctx.get(parserCtx)));
+		readyEditor = editor;
+
+		isTouch = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+		editorContainer.addEventListener('focusin', trackFocus);
+		editorContainer.addEventListener('focusout', trackFocus);
 
 		// Add mouseup listener to check for text selection
 		editorContainer.addEventListener('mouseup', checkSelection);
@@ -478,7 +553,7 @@
 
 		// Listen for the /camera slash command's custom event
 		handleCameraEvent = () => { showCamera = true; };
-		window.addEventListener('kurumi-open-camera', handleCameraEvent);
+		if (!secondary) window.addEventListener('kurumi-open-camera', handleCameraEvent);
 
 		// Listen for external text insertion (image/camera buttons in the
 		// memory page fire this to insert into the editor at cursor).
@@ -494,7 +569,7 @@
 				insertTextAtCursor(text);
 			}
 		};
-		window.addEventListener('kurumi-insert-text', handleInsertText);
+		if (!secondary) window.addEventListener('kurumi-insert-text', handleInsertText);
 
 		// Periodically resolve blob: image srcs in the editor's rendered
 		// output. Milkdown renders <img src="blob:..."> which the browser
@@ -574,27 +649,17 @@
 		window.removeEventListener('kurumi-insert-text', handleInsertText);
 		stopCheckboxRenderer?.();
 		editor?.destroy();
-		setWikilinkClickHandler(() => {});
-		setTagClickHandler(() => {});
-		setPersonClickHandler(() => {});
-		setDateClickHandler(() => {});
-		setAutocompleteCallbacks({
-			onOpen: () => {},
-			onClose: () => {},
-			onUpdate: () => {}
-		});
-		setDatePeopleCallbacks({
-			onOpen: () => {},
-			onClose: () => {},
-			onUpdate: () => {}
-		});
-		setSlashCallbacks({
-			onOpen: () => {},
-			onClose: () => {},
-			onUpdate: () => {}
-		});
+		if (editorContainer) {
+			setWikilinkClickHandler(editorContainer, null);
+			setReferenceClickHandlers(editorContainer, null);
+			setAutocompleteCallbacks(editorContainer, null);
+			setDatePeopleCallbacks(editorContainer, null);
+			setSlashCallbacks(editorContainer, null);
+		}
 	});
 </script>
+
+<svelte:window onkeydown={handleFindShortcut} />
 
 <div class="milkdown-wrapper">
 	<div bind:this={editorContainer} class="milkdown-editor" data-placeholder={placeholder}></div>
@@ -653,6 +718,29 @@
 		/>
 	{/if}
 
+	{#if isTouch && editorFocused && readyEditor}
+		<MobileToolbar editor={readyEditor} />
+	{/if}
+
+	{#if findBar}
+		<FindBar
+			bind:this={findBarRef}
+			view={findBar.view}
+			{noteId}
+			bind:showReplace={findBar.replace}
+			onClose={() => (findBar = null)}
+		/>
+	{/if}
+
+	{#if blockMenu}
+		<BlockMenu
+			view={blockMenu.view}
+			blockPos={blockMenu.blockPos}
+			anchor={blockMenu.anchor}
+			onClose={() => (blockMenu = null)}
+		/>
+	{/if}
+
 	{#if showAIMenu}
 		<AIActionMenu
 			position={aiMenuPosition}
@@ -672,6 +760,75 @@
 	.milkdown-editor {
 		height: 100%;
 		min-height: 12rem;
+	}
+
+	/* Find & replace matches (see $lib/editor/findReplace.ts) */
+	.milkdown-editor :global(.find-match) {
+		border-radius: 2px;
+		background: color-mix(in srgb, #f5c542 35%, transparent);
+	}
+
+	.milkdown-editor :global(.find-current) {
+		background: #f5c542;
+		color: #1e1e2e;
+	}
+
+	/* ![[embed]] source line: keep it, but quiet (see $lib/editor/noteEmbed.ts) */
+	.milkdown-editor :global(.note-embed-source) {
+		margin-bottom: 0 !important;
+		font-size: 0.8125em;
+		color: var(--color-text-faint);
+	}
+
+	/* A block selected via its handle */
+	.milkdown-editor :global(.ProseMirror-selectednode) {
+		outline: 2px solid var(--color-accent-soft, rgba(137, 180, 250, 0.35));
+		outline-offset: 2px;
+		border-radius: 4px;
+	}
+
+	/* Block handle (see $lib/editor/blockHandle.ts) */
+	.milkdown-editor :global(.milkdown) {
+		position: relative;
+	}
+
+	.milkdown-editor :global(.kurumi-block-handle) {
+		position: absolute;
+		display: flex;
+		align-items: center;
+		gap: 1px;
+		transition: opacity 120ms ease;
+	}
+
+	.milkdown-editor :global(.kurumi-block-handle[data-show='false']) {
+		opacity: 0;
+		pointer-events: none;
+	}
+
+	.milkdown-editor :global(.bh-btn) {
+		display: flex;
+		height: 1.5rem;
+		width: 1.25rem;
+		align-items: center;
+		justify-content: center;
+		border-radius: 4px;
+		color: var(--color-text-faint);
+	}
+
+	.milkdown-editor :global(.bh-btn:hover) {
+		background: var(--color-hover);
+		color: var(--color-text-muted);
+	}
+
+	.milkdown-editor :global(.bh-grip) {
+		cursor: grab;
+	}
+
+	/* Hide the handle on touch screens: no hover, and dragging fights scrolling. */
+	@media (hover: none) {
+		.milkdown-editor :global(.kurumi-block-handle) {
+			display: none;
+		}
 	}
 
 	/* Override Nord theme for our color scheme */
@@ -1096,6 +1253,53 @@
 	}
 
 	:global(.milkdown .task-list-item:has(input:checked)) {
+		color: var(--color-text-muted);
+		text-decoration: line-through;
+	}
+
+	/* ---- GFM task items (- [ ] / - [x]); clicks handled in taskToggle.ts ---- */
+	:global(.milkdown li[data-item-type='task']) {
+		position: relative;
+		list-style: none;
+		padding-left: 1.6em;
+	}
+
+	:global(.milkdown li[data-item-type='task']::before) {
+		content: '';
+		position: absolute;
+		left: 0.05em;
+		top: 0.3em;
+		width: 1.05em;
+		height: 1.05em;
+		border: 2px solid var(--color-text-muted);
+		border-radius: 0.3em;
+		cursor: pointer;
+		transition: background 0.15s, border-color 0.15s;
+	}
+
+	:global(.milkdown li[data-item-type='task']:hover::before) {
+		border-color: var(--color-accent);
+	}
+
+	:global(.milkdown li[data-item-type='task'][data-checked='true']::before) {
+		background: var(--color-accent);
+		border-color: var(--color-accent);
+	}
+
+	:global(.milkdown li[data-item-type='task'][data-checked='true']::after) {
+		content: '';
+		position: absolute;
+		left: 0.42em;
+		top: 0.45em;
+		width: 0.32em;
+		height: 0.58em;
+		border: solid white;
+		border-width: 0 2.5px 2.5px 0;
+		transform: rotate(45deg);
+		pointer-events: none;
+	}
+
+	:global(.milkdown li[data-item-type='task'][data-checked='true'] > p) {
 		color: var(--color-text-muted);
 		text-decoration: line-through;
 	}

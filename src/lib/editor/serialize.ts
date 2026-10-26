@@ -20,6 +20,8 @@ function unescapeProse(text: string): string {
 			.replace(/\\\[\\\[([^\]\n]+?)\\?\]\\?\]/g, '[[$1]]')
 			// https\://example.com -> https://example.com
 			.replace(/\b([a-zA-Z][a-zA-Z0-9+.-]*)\\:\/\//g, '$1://')
+			// > \[!info] -> > [!info] (callout markers)
+			.replace(/\\\[!(\w+)\\?\]/g, '[!$1]')
 	);
 }
 
@@ -63,6 +65,12 @@ export function unescapeKurumiSyntax(markdown: string): string {
 			continue;
 		}
 		lines[i] = unescapeLine(lines[i]);
+		// Empty table cells hold an empty paragraph, which Milkdown writes as
+		// `<br />` (its preserve-empty-line feature). Blank them, keeping
+		// the column alignment.
+		if (/^\s*\|.*\|\s*$/.test(lines[i])) {
+			lines[i] = lines[i].replace(/(\|\s*)<br \/>(?=\s*\|)/g, '$1      ');
+		}
 	}
 	return lines.join('\n');
 }

@@ -7,6 +7,7 @@
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state';
 import { $prose } from '@milkdown/kit/utils';
 import type { EditorView } from '@milkdown/kit/prose/view';
+import { createRegistry } from './registry';
 
 const autocompleteKey = new PluginKey('wikilink-autocomplete');
 
@@ -24,15 +25,19 @@ export interface AutocompleteCallbacks {
 	onUpdate: (state: AutocompleteState) => void;
 }
 
-let callbacks: AutocompleteCallbacks | null = null;
+// Callbacks per editor (see ./registry); looked up via the view in use.
+const registry = createRegistry<AutocompleteCallbacks>();
+const callbacksFor = () => registry.get(currentView);
 let currentView: EditorView | null = null;
 let isAutocompleteActive = false;
 // `from` of a `[[` the user dismissed with Escape. Keeps the popup closed
 // while they keep typing in that same link; cleared once the context changes.
 let dismissedFrom: number | null = null;
 
-export function setAutocompleteCallbacks(cb: AutocompleteCallbacks) {
-	callbacks = cb;
+/** Register (or, with null, remove) the callbacks for the editor rooted at `root`. */
+export function setAutocompleteCallbacks(root: Element, cb: AutocompleteCallbacks | null) {
+	if (cb) registry.set(root, cb);
+	else registry.delete(root);
 }
 
 export function getEditorView(): EditorView | null {
@@ -61,9 +66,7 @@ export function completeWikilink(noteTitle: string) {
 	currentView.focus();
 	isAutocompleteActive = false;
 
-	if (callbacks) {
-		callbacks.onClose();
-	}
+	callbacksFor()?.onClose();
 }
 
 /**
@@ -75,9 +78,7 @@ export function closeAutocomplete() {
 		dismissedFrom = getAutocompleteState(currentView)?.from ?? null;
 	}
 	isAutocompleteActive = false;
-	if (callbacks) {
-		callbacks.onClose();
-	}
+	callbacksFor()?.onClose();
 }
 
 /**
@@ -164,13 +165,13 @@ export const wikilinkAutocompletePlugin = $prose(() => {
 					if (isActive && autocompleteState) {
 						if (!wasActive) {
 							isAutocompleteActive = true;
-							callbacks?.onOpen(autocompleteState);
+							callbacksFor()?.onOpen(autocompleteState);
 						} else {
-							callbacks?.onUpdate(autocompleteState);
+							callbacksFor()?.onUpdate(autocompleteState);
 						}
 					} else if (wasActive && !isActive) {
 						isAutocompleteActive = false;
-						callbacks?.onClose();
+						callbacksFor()?.onClose();
 					}
 				},
 				destroy() {

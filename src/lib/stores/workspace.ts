@@ -16,6 +16,19 @@ export function toggleFocusMode(): void {
 	focusMode.update((v) => !v);
 }
 
+// --- Split view -------------------------------------------------------------
+
+/** Note shown in the right-hand split pane, next to the main note. */
+export const splitNoteId = writable<string | null>(null);
+
+export function openInSplit(memoryId: string): void {
+	splitNoteId.set(memoryId);
+}
+
+export function closeSplit(): void {
+	splitNoteId.set(null);
+}
+
 // --- Recently opened ------------------------------------------------------
 
 const RECENT_KEY = 'kurumi-recent-notes';

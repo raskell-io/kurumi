@@ -62,8 +62,21 @@ not an option. With the agent:
    Changes the agent pulls in are picked up by Kurumi on its next sync
    (automatic while the app is open, or press **Sync now**).
 
-To run `watch` in the background on macOS, wrap it in a LaunchAgent, or
-just keep it in a terminal tab.
+5. **Optional: start it automatically.** Instead of keeping `watch` in a
+   terminal, install it as a background service that starts at login and
+   restarts if it stops:
+
+   ```bash
+   node agent/kurumi-agent.mjs install-service ~/kurumi-notes             # pull every 5 min
+   node agent/kurumi-agent.mjs install-service ~/kurumi-notes --dry-run   # show what it would do
+   node agent/kurumi-agent.mjs uninstall-service ~/kurumi-notes
+   ```
+
+   On macOS this is a LaunchAgent (`~/Library/LaunchAgents/io.raskell.kurumi-agent.*.plist`,
+   log in `~/Library/Logs/kurumi-agent.*.log`); on Linux a systemd user
+   service (`journalctl --user -u kurumi-agent.*`). It runs as you, so it
+   uses the same git credentials and SSH keys as your terminal. On Windows,
+   run `watch` from Task Scheduler at log-on.
 
 ## What ends up in the repo
 

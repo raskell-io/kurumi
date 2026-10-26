@@ -15,9 +15,10 @@
 	interface Props {
 		container: HTMLElement | undefined;
 		onOpen: (title: string) => void;
+		onOpenSide?: (title: string) => void;
 	}
 
-	let { container, onOpen }: Props = $props();
+	let { container, onOpen, onOpenSide }: Props = $props();
 
 	const OPEN_DELAY_MS = 350;
 	const CLOSE_DELAY_MS = 150;
@@ -149,9 +150,16 @@
 			{:else}
 				<p class="mt-1 text-[0.8125rem] italic text-[var(--color-text-faint)]">Empty note</p>
 			{/if}
-			<button class="open-btn" onclick={() => { const t = linkTitle!; linkTitle = null; onOpen(t); }}>
-				Open note
-			</button>
+			<div class="flex items-center gap-3">
+				<button class="open-btn" onclick={() => { const t = linkTitle!; linkTitle = null; onOpen(t); }}>
+					Open note
+				</button>
+				{#if onOpenSide}
+					<button class="open-btn" onclick={() => { const t = linkTitle!; linkTitle = null; onOpenSide(t); }} title="Alt+click a link does the same">
+						Open to the side
+					</button>
+				{/if}
+			</div>
 		{:else}
 			<div class="flex items-center gap-2 text-sm text-[var(--color-text-muted)]">
 				<FilePlus class="h-4 w-4 text-[var(--color-text-faint)]" />

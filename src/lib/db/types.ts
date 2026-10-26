@@ -209,6 +209,9 @@ export interface MemoryObject {
 	icon?: string;
 	// Set when the note is pinned to Favorites; also its sort key there.
 	favoritedAt?: number;
+	// Last time the note was starred or unstarred. Starring doesn't bump
+	// updatedAt, so git sync merges favorites on this instead.
+	favoriteChangedAt?: number;
 }
 
 export interface MeetingMetadata {

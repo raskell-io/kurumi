@@ -703,14 +703,16 @@ async function syncGitMethod(): Promise<{ success: boolean; error?: string }> {
 			importedFolders: Folder[],
 			importedPeople: Person[],
 			importedEvents: Event[],
-			importedActionItems: ActionItem[]
+			importedActionItems: ActionItem[],
+			noteExtrasKnown: boolean
 		) => {
 			applyGitImport({
 				memories: importedMemories,
 				folders: importedFolders,
 				people: importedPeople,
 				events: importedEvents,
-				actionItems: importedActionItems
+				actionItems: importedActionItems,
+				noteExtrasKnown
 			});
 		};
 

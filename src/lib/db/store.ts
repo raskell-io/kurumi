@@ -1,5 +1,5 @@
 import * as Automerge from '@automerge/automerge';
-import { get, set } from 'idb-keyval';
+import { get, set, setMany } from 'idb-keyval';
 import { writable, derived, type Readable } from 'svelte/store';
 import { deleteBlob, getBlob } from './blob-store';
 import { deleteEmbedding, embedMemory } from '$lib/embeddings';
@@ -40,6 +40,8 @@ import {
 } from './types';
 
 const STORAGE_KEY = 'kurumi-doc';
+// Changes saved since the snapshot under STORAGE_KEY (see saveDoc).
+const CHANGES_KEY = 'kurumi-doc-changes';
 
 // The Automerge document
 let doc: Automerge.Doc<KurumiDocument>;
@@ -289,11 +291,25 @@ export const trashCount: Readable<number> = derived(
 
 // Initialize the database
 export async function initDB(): Promise<void> {
+	let savedData: Uint8Array | undefined;
 	try {
-		const savedData = await get<Uint8Array>(STORAGE_KEY);
+		savedData = await get<Uint8Array>(STORAGE_KEY);
 
 		if (savedData) {
 			doc = Automerge.load<KurumiDocument>(savedData);
+
+			// Apply changes saved incrementally since that snapshot. A chunk
+			// that won't load is skipped rather than failing the whole load.
+			const chunks = (await get<Uint8Array[]>(CHANGES_KEY)) ?? [];
+			for (const chunk of chunks) {
+				try {
+					doc = Automerge.loadIncremental(doc, chunk);
+				} catch (chunkError) {
+					console.error('Skipping unreadable saved change chunk:', chunkError);
+				}
+			}
+			savedChunks = chunks;
+			persistedHeads = Automerge.getHeads(doc);
 
 			// Legacy docs (v1-v5) stored memories under `notes`. Treat the field as
 			// untyped during these older migrations; v5→v6 below relocates it.
@@ -689,6 +705,15 @@ export async function initDB(): Promise<void> {
 		rolloverRecurringActionItems();
 	} catch (error) {
 		console.error('Failed to initialize database:', error);
+		// Keep the unreadable data before starting fresh, so it can still be
+		// recovered by hand instead of being overwritten.
+		if (savedData) {
+			try {
+				await set(`kurumi-doc-unreadable-${Date.now()}`, savedData);
+			} catch {
+				// Best effort.
+			}
+		}
 		// Start fresh if there's a corruption
 		doc = Automerge.from<KurumiDocument>(createEmptyDocument());
 		currentVaultIdStore.set(DEFAULT_VAULT_ID);
@@ -736,9 +761,91 @@ function cleanupOldTrashInternal(): number {
 }
 
 // Save document to IndexedDB
-async function saveDoc(): Promise<void> {
-	const binary = Automerge.save(doc);
-	await set(STORAGE_KEY, binary);
+// Persistence. A full Automerge.save() of a large vault takes ~100ms on
+// the main thread, too slow for every autosave. So the stored form is a
+// snapshot (STORAGE_KEY) plus the changes made since (CHANGES_KEY), each
+// save appending only what's new. When idle, or once enough chunks pile
+// up, the chunks are folded into a fresh snapshot.
+//
+// Saves are coalesced: changes made in the same tick, or while a write is
+// in flight, go out in one more write. The returned promise resolves once
+// a write that includes the state at call time has finished.
+let saving: Promise<void> | null = null;
+let saveDirty = false;
+// Heads of the state that's in IndexedDB, and the chunks stored after it.
+let persistedHeads: Automerge.Heads | null = null;
+let savedChunks: Uint8Array[] = [];
+let compactTimer: ReturnType<typeof setTimeout> | undefined;
+const MAX_CHUNKS = 200;
+const COMPACT_AFTER_IDLE_MS = 20_000;
+
+async function writeSnapshot(current: Automerge.Doc<KurumiDocument>): Promise<void> {
+	// One transaction, so the snapshot and the chunk list never disagree.
+	await setMany([
+		[STORAGE_KEY, Automerge.save(current)],
+		[CHANGES_KEY, []]
+	]);
+	savedChunks = [];
+}
+
+async function writeDocLoop(): Promise<void> {
+	// Let synchronous bursts (imports, bulk edits) finish first.
+	await Promise.resolve();
+	while (saveDirty) {
+		saveDirty = false;
+		const current = doc;
+		// Append only if this doc descends from what's stored. A doc that
+		// was replaced (restore, adopt-remote, reset) gets a fresh snapshot;
+		// appending its changes would merge the old data back in on load.
+		if (persistedHeads && savedChunks.length < MAX_CHUNKS && Automerge.hasHeads(current, persistedHeads)) {
+			const chunk = Automerge.saveSince(current, persistedHeads);
+			if (chunk.length > 0) {
+				const next = [...savedChunks, chunk];
+				await set(CHANGES_KEY, next);
+				savedChunks = next;
+			}
+		} else {
+			await writeSnapshot(current);
+		}
+		persistedHeads = Automerge.getHeads(current);
+	}
+	scheduleCompaction();
+}
+
+function scheduleCompaction(): void {
+	clearTimeout(compactTimer);
+	if (savedChunks.length === 0) return;
+	compactTimer = setTimeout(() => {
+		const run = () => {
+			// Fold chunks into a snapshot, unless a save is running (it will
+			// reschedule this when it's done).
+			if (saving || savedChunks.length === 0) return;
+			// Heads of exactly what the snapshot contains; changes made while
+			// it's being written are saved by the next write.
+			const snapshot = doc;
+			saving = writeSnapshot(snapshot)
+				.then(() => {
+					persistedHeads = Automerge.getHeads(snapshot);
+				})
+				.finally(() => {
+					saving = null;
+				});
+		};
+		if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 10_000 });
+		else run();
+	}, COMPACT_AFTER_IDLE_MS);
+}
+
+function saveDoc(): Promise<void> {
+	saveDirty = true;
+	if (!saving) {
+		saving = writeDocLoop().finally(() => {
+			saving = null;
+		});
+	}
+	// If what's in flight was a compaction (or started before this change),
+	// follow up with a save that includes it.
+	return saving.then(() => (saveDirty ? saveDoc() : undefined));
 }
 
 // Update document with a change function
@@ -1464,8 +1571,10 @@ export function setMemoryFavorite(id: string, favorite: boolean): void {
 	updateDoc((d) => {
 		const memory = d.memoryObjects[id];
 		if (!memory) return;
-		if (favorite) memory.favoritedAt = Date.now();
+		const now = Date.now();
+		if (favorite) memory.favoritedAt = now;
 		else delete memory.favoritedAt;
+		memory.favoriteChangedAt = now;
 	});
 }
 
@@ -3494,6 +3603,10 @@ export interface GitImportData {
 	people: Person[];
 	events: Event[];
 	actionItems: ActionItem[];
+	// The remote's metadata listed per-note extras (image icons, favorites),
+	// so a note without an icon there really has none. Repos written by
+	// older versions don't, and then local image icons are kept.
+	noteExtrasKnown?: boolean;
 }
 
 /**
@@ -3526,11 +3639,18 @@ export function applyGitImport(data: GitImportData): void {
 				// Clear + repopulate so the Automerge array updates in place.
 				while (existing.tags.length > 0) existing.tags.pop();
 				for (const tag of m.tags) existing.tags.push(tag);
-				// Emoji icons round-trip through frontmatter; never clear an
-				// uploaded image icon, which markdown can't carry.
+				// Emoji icons travel in frontmatter, image icons in metadata.
 				if (m.icon) existing.icon = m.icon;
-				else if (existing.icon && !existing.icon.startsWith('data:')) delete existing.icon;
+				else if (existing.icon && (data.noteExtrasKnown || !existing.icon.startsWith('data:'))) {
+					delete existing.icon;
+				}
 				existing.updatedAt = m.updatedAt;
+			}
+			// Favorites: last star/unstar wins, independent of edits.
+			if ((m.favoriteChangedAt ?? 0) > (existing.favoriteChangedAt ?? 0)) {
+				if (m.favoritedAt) existing.favoritedAt = m.favoritedAt;
+				else delete existing.favoritedAt;
+				existing.favoriteChangedAt = m.favoriteChangedAt;
 			}
 		}
 

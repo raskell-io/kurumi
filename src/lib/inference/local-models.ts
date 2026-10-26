@@ -53,6 +53,77 @@ interface ProgressEvent {
 	file?: string;
 }
 
+function handleProgress(key: string, event: ProgressEvent): void {
+	if (event.status === 'progress' && typeof event.progress === 'number') {
+		setStatus(key, {
+			state: 'loading',
+			progress: event.progress,
+			phase: event.file || 'downloading'
+		});
+	} else if (event.status === 'done') {
+		setStatus(key, { state: 'loading', progress: 100, phase: 'initializing' });
+	} else if (event.status === 'ready') {
+		setStatus(key, { state: 'ready' });
+	}
+}
+
+// --- Embedding worker -------------------------------------------------------
+//
+// Embeddings run in a Web Worker (embed.worker.ts): indexing a large vault
+// means thousands of inference calls, which froze the UI on the main
+// thread. loadPipeline('embed') returns a function with the same call
+// shape as a transformers.js feature-extraction pipeline, so callers
+// don't know the difference.
+
+type EmbedReply = { type: 'done' | 'error'; id: number; message?: string; data?: Float32Array; dims?: number[] };
+
+let embedWorker: Worker | null = null;
+let nextCallId = 1;
+const workerCalls = new Map<number, { resolve: (r: EmbedReply) => void; reject: (e: Error) => void }>();
+
+function getEmbedWorker(): Worker {
+	if (embedWorker) return embedWorker;
+	const worker = new Worker(new URL('./embed.worker.ts', import.meta.url), { type: 'module' });
+	worker.onmessage = ({ data }: MessageEvent) => {
+		if (data.type === 'progress') {
+			handleProgress(`embed:${data.model}`, data.event as ProgressEvent);
+			return;
+		}
+		const call = workerCalls.get(data.id);
+		if (!call) return;
+		workerCalls.delete(data.id);
+		if (data.type === 'error') call.reject(new Error(data.message));
+		else call.resolve(data as EmbedReply);
+	};
+	worker.onerror = (event) => {
+		// The worker itself failed (e.g. couldn't load): fail pending calls
+		// and start a fresh worker next time.
+		event.preventDefault();
+		for (const call of workerCalls.values()) call.reject(new Error(event.message || 'Embedding worker failed'));
+		workerCalls.clear();
+		worker.terminate();
+		if (embedWorker === worker) embedWorker = null;
+	};
+	embedWorker = worker;
+	return worker;
+}
+
+function callEmbedWorker(message: Record<string, unknown>): Promise<EmbedReply> {
+	const id = nextCallId++;
+	return new Promise((resolve, reject) => {
+		workerCalls.set(id, { resolve, reject });
+		getEmbedWorker().postMessage({ id, ...message });
+	});
+}
+
+async function loadEmbedPipelineInWorker(model: string, extraOptions: Record<string, unknown>) {
+	await callEmbedWorker({ kind: 'load', model, options: extraOptions });
+	return async (text: string | string[]) => {
+		const reply = await callEmbedWorker({ kind: 'embed', model, texts: Array.isArray(text) ? text : [text] });
+		return { data: reply.data ?? new Float32Array(), dims: reply.dims ?? [] };
+	};
+}
+
 /**
  * Load (or retrieve from cache) the transformers.js pipeline for a given
  * task + model. Updates the localModelStatus store as the download/load
@@ -84,6 +155,17 @@ export async function loadPipeline(
 		setStatus(key, { state: 'loading', progress: 0, phase: 'starting' });
 
 		try {
+			if (task === 'embed' && typeof Worker !== 'undefined') {
+				try {
+					const instance = await loadEmbedPipelineInWorker(model, extraOptions);
+					pipelineCache.set(key, instance);
+					setStatus(key, { state: 'ready' });
+					return instance;
+				} catch (err) {
+					console.warn('[local-models] embedding worker unavailable, using the main thread', err);
+				}
+			}
+
 			// Dynamic import keeps transformers.js out of the initial bundle.
 			const transformers = await import('@huggingface/transformers');
 			const { pipeline } = transformers;
@@ -91,19 +173,7 @@ export async function loadPipeline(
 			const transformersTask = mapTaskToTransformers(task) as Parameters<typeof pipeline>[0];
 			const instance = await pipeline(transformersTask, model, {
 				...extraOptions,
-				progress_callback: (event: ProgressEvent) => {
-					if (event.status === 'progress' && typeof event.progress === 'number') {
-						setStatus(key, {
-							state: 'loading',
-							progress: event.progress,
-							phase: event.file || 'downloading'
-						});
-					} else if (event.status === 'done') {
-						setStatus(key, { state: 'loading', progress: 100, phase: 'initializing' });
-					} else if (event.status === 'ready') {
-						setStatus(key, { state: 'ready' });
-					}
-				}
+				progress_callback: (event: ProgressEvent) => handleProgress(key, event)
 			} as Parameters<typeof pipeline>[2]);
 
 			pipelineCache.set(key, instance);
@@ -148,6 +218,8 @@ export function isPipelineReady(task: LocalTask, model: string): boolean {
 export async function clearLocalModelCache(): Promise<void> {
 	// Drop in-memory pipelines so the next call re-initializes from scratch.
 	pipelineCache.clear();
+	embedWorker?.terminate();
+	embedWorker = null;
 	pendingLoads.clear();
 	localModelStatus.set({});
 

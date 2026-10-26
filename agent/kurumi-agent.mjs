@@ -11,6 +11,8 @@
  *   kurumi-agent init  <dir> [--remote <url>] [--branch main]
  *   kurumi-agent sync  <dir> [--message <msg>]
  *   kurumi-agent watch <dir> [--interval 300] [--debounce 10]
+ *   kurumi-agent install-service   <dir> [--interval 300] [--dry-run]
+ *   kurumi-agent uninstall-service <dir> [--dry-run]
  *
  * Merging: `kurumi-sync.bin` is an Automerge document and is the source of
  * truth, so it gets a merge driver that does a CRDT merge (the same thing
@@ -20,8 +22,9 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, watch, writeFileSync } from 'node:fs';
-import { hostname } from 'node:os';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, watch, writeFileSync } from 'node:fs';
+import { homedir, hostname, platform, userInfo } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -77,6 +80,16 @@ function parseArgs(argv) {
 	return { positional, flags };
 }
 
+// The `node` on PATH (e.g. /opt/homebrew/bin/node) rather than
+// process.execPath, which can be a versioned path that disappears after an
+// upgrade. Used for things that outlive this process (git config, services).
+function stableNode() {
+	for (const dir of (process.env.PATH ?? '').split(':')) {
+		if (dir && existsSync(join(dir, 'node'))) return join(dir, 'node');
+	}
+	return process.execPath;
+}
+
 function shellQuote(value) {
 	return `'${value.replace(/'/g, `'\\''`)}'`;
 }
@@ -94,7 +107,7 @@ function configureRepo(dir) {
 	git(dir, [
 		'config',
 		'merge.kurumi-automerge.driver',
-		`${shellQuote(process.execPath)} ${shellQuote(SELF)} merge-driver %O %A %B`
+		`${shellQuote(stableNode())} ${shellQuote(SELF)} merge-driver %O %A %B`
 	]);
 	git(dir, ['config', 'merge.kurumi-ours.name', 'Kurumi regenerated file (keep local)']);
 	git(dir, ['config', 'merge.kurumi-ours.driver', 'true']);
@@ -306,6 +319,124 @@ function watchDir(dir, flags) {
 	run();
 }
 
+// ---------------------------------------------------------------- service
+
+// Run `watch <dir>` at login and keep it running: a LaunchAgent on macOS,
+// a systemd user service on Linux. One service per folder.
+function serviceName(dir) {
+	return `kurumi-agent.${createHash('sha1').update(dir).digest('hex').slice(0, 8)}`;
+}
+
+function xmlEscape(value) {
+	return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function serviceSpec(dir, flags) {
+	const name = serviceName(dir);
+	const args = [stableNode(), SELF, 'watch', dir, '--interval', String(Number(flags.interval ?? 300))];
+	if (platform() === 'darwin') {
+		const label = `io.raskell.${name}`;
+		const log = join(homedir(), 'Library', 'Logs', `${name}.log`);
+		const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key><string>${label}</string>
+	<key>ProgramArguments</key>
+	<array>
+${args.map((a) => `\t\t<string>${xmlEscape(a)}</string>`).join('\n')}
+	</array>
+	<key>WorkingDirectory</key><string>${xmlEscape(dir)}</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key><string>${xmlEscape(process.env.PATH ?? '/usr/bin:/bin')}</string>
+	</dict>
+	<key>RunAtLoad</key><true/>
+	<key>KeepAlive</key><true/>
+	<key>ThrottleInterval</key><integer>30</integer>
+	<key>StandardOutPath</key><string>${xmlEscape(log)}</string>
+	<key>StandardErrorPath</key><string>${xmlEscape(log)}</string>
+</dict>
+</plist>
+`;
+		const domain = `gui/${userInfo().uid}`;
+		return {
+			file: join(homedir(), 'Library', 'LaunchAgents', `${label}.plist`),
+			content: plist,
+			log,
+			start: [['launchctl', ['bootout', `${domain}/${label}`], true], ['launchctl', ['bootstrap', domain, join(homedir(), 'Library', 'LaunchAgents', `${label}.plist`)]]],
+			stop: [['launchctl', ['bootout', `${domain}/${label}`], true]]
+		};
+	}
+	if (platform() === 'linux') {
+		const unit = `${name}.service`;
+		const content = `[Unit]
+Description=Kurumi agent for ${dir}
+
+[Service]
+ExecStart=${args.map((a) => `"${a.replace(/"/g, '\\"')}"`).join(' ')}
+WorkingDirectory=${dir}
+Environment=PATH=${process.env.PATH ?? '/usr/bin:/bin'}
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=default.target
+`;
+		return {
+			file: join(homedir(), '.config', 'systemd', 'user', unit),
+			content,
+			log: `journalctl --user -u ${unit}`,
+			start: [['systemctl', ['--user', 'daemon-reload']], ['systemctl', ['--user', 'enable', '--now', unit]]],
+			stop: [['systemctl', ['--user', 'disable', '--now', unit], true]]
+		};
+	}
+	fail('install-service supports macOS and Linux. On Windows, run `watch` from Task Scheduler at log-on.');
+}
+
+function runSteps(steps, dryRun) {
+	for (const [cmd, args, allowFail] of steps) {
+		if (dryRun) {
+			console.log(`  would run: ${cmd} ${args.join(' ')}`);
+			continue;
+		}
+		try {
+			execFileSync(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+		} catch (err) {
+			if (!allowFail) throw new Error(`${cmd} ${args.join(' ')} failed: ${(err.stderr || err.message).toString().trim()}`);
+		}
+	}
+}
+
+function installService(dir, flags) {
+	if (!isRepo(dir)) fail(`${dir} is not a git repo yet. Run: kurumi-agent init ${dir} --remote <url>`);
+	const spec = serviceSpec(dir, flags);
+	const dryRun = !!flags['dry-run'];
+	if (dryRun) {
+		console.log(`Would write ${spec.file}:\n\n${spec.content}`);
+	} else {
+		mkdirSync(join(spec.file, '..'), { recursive: true });
+		writeFileSync(spec.file, spec.content);
+	}
+	runSteps(spec.start, dryRun);
+	if (!dryRun) {
+		log(`Installed: syncing ${dir} in the background, at every login.`);
+		log(`Logs: ${spec.log}`);
+		log(`Remove with: kurumi-agent uninstall-service ${dir}`);
+	}
+}
+
+function uninstallService(dir, flags) {
+	const spec = serviceSpec(dir, flags);
+	const dryRun = !!flags['dry-run'];
+	runSteps(spec.stop, dryRun);
+	if (dryRun) console.log(`  would delete: ${spec.file}`);
+	else {
+		rmSync(spec.file, { force: true });
+		log(`Removed the background service for ${dir}.`);
+	}
+}
+
 // git merge driver: `merge-driver %O %A %B`. Merges theirs (%B) into ours
 // (%A) in place. Exit 0 = merged, non-zero = leave conflicted.
 async function mergeDriver([, oursPath, theirsPath]) {
@@ -355,6 +486,8 @@ Usage:
   kurumi-agent init  <dir> [--remote <url>] [--branch main]
   kurumi-agent sync  <dir> [--message <msg>]
   kurumi-agent watch <dir> [--interval <seconds>] [--debounce <seconds>]
+  kurumi-agent install-service   <dir> [--interval <seconds>] [--dry-run]
+  kurumi-agent uninstall-service <dir> [--dry-run]
 
 See agent/README.md for the full setup.`;
 
@@ -365,12 +498,16 @@ try {
 	switch (command) {
 		case 'init':
 		case 'sync':
-		case 'watch': {
+		case 'watch':
+		case 'install-service':
+		case 'uninstall-service': {
 			if (!positional[0]) fail(`missing <dir>\n\n${USAGE}`);
 			const dir = resolve(positional[0]);
 			if (command === 'init') init(dir, flags);
 			else if (command === 'sync') sync(dir, flags);
-			else watchDir(dir, flags);
+			else if (command === 'watch') watchDir(dir, flags);
+			else if (command === 'install-service') installService(dir, flags);
+			else uninstallService(dir, flags);
 			break;
 		}
 		case 'merge-driver':

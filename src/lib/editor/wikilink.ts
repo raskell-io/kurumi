@@ -1,18 +1,22 @@
 import { $prose } from '@milkdown/kit/utils';
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state';
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view';
+import { createRegistry } from './registry';
 
 const wikilinkPluginKey = new PluginKey('wikilink');
 const wikilinkRegex = /\[\[([^\]]+)\]\]/g;
 
 export interface WikilinkClickHandler {
-	(title: string): void;
+	(title: string, event: MouseEvent): void;
 }
 
-let clickHandler: WikilinkClickHandler | null = null;
+// Click handlers per editor (see ./registry).
+const handlers = createRegistry<WikilinkClickHandler>();
 
-export function setWikilinkClickHandler(handler: WikilinkClickHandler) {
-	clickHandler = handler;
+/** Register (or, with null, remove) the handler for the editor rooted at `root`. */
+export function setWikilinkClickHandler(root: Element, handler: WikilinkClickHandler | null) {
+	if (handler) handlers.set(root, handler);
+	else handlers.delete(root);
 }
 
 function findWikilinks(doc: any): Decoration[] {
@@ -61,9 +65,10 @@ export const wikilinkPlugin = $prose(() => {
 				const target = event.target as HTMLElement;
 				if (target.classList.contains('wikilink')) {
 					const title = target.dataset.wikilinkTitle;
+					const clickHandler = handlers.get(view);
 					if (title && clickHandler) {
 						event.preventDefault();
-						clickHandler(title);
+						clickHandler(title, event);
 						return true;
 					}
 				}

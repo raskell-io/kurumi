@@ -107,7 +107,7 @@ Kurumi (クルミ, "walnut" in Japanese — because it looks like a brain) is a 
 
 | Feature | Description |
 |---------|-------------|
-| **Action items** | Extracted from meetings or manually created, with status, due dates, recurrence, assignees |
+| **Action items** | Extracted from meetings or manually created, with status, due dates, recurrence, assignees; list or Kanban board, filter by project or assignee |
 | **Inbox** | Unified triage view: overdue actions, due today, pending proposals, unsummarized memos, untagged notes |
 | **Focus timer** | Pomodoro timer linked to action items, global progress bar with pause/resume/chime |
 | **Habits** | Daily habit tracker with week toggles and 60-day contribution heatmap |
@@ -152,7 +152,13 @@ Kurumi (クルミ, "walnut" in Japanese — because it looks like a brain) is a 
 | **DataviewBlocks** | Embedded `kurumi` query blocks with list/table/board views |
 | **Code blocks** | Syntax highlighting with copy button and language label |
 | **Callouts** | Obsidian-style `> [!info]` callout blocks |
-| **Embeds** | `![[Title]]` to embed another note inline |
+| **Embeds** | `![[Title]]` renders the other note live, right in the editor |
+| **Block handles** | Hover a block for `+` (add below) and `⋮⋮` (drag to move, or Turn into / Duplicate / Delete) |
+| **Find & replace** | `Cmd/Ctrl+F` in a note, `Cmd/Ctrl+Option+F` to replace, in this note or across all notes (undoable) |
+| **Tasks** | `[] ` or `/checkbox` for to-dos with real, clickable checkboxes |
+| **Paste links** | Paste a URL over selected text to link it |
+| **Split view** | Alt+click a note or `[[link]]` to open it beside the current one |
+| **Mobile toolbar** | Formatting bar above the on-screen keyboard |
 | **Math** | LaTeX `$inline$` and `$$block$$` syntax |
 | **Audio embeds** | Inline audio players for voice recordings |
 | **Version history** | Browse and restore earlier versions of any note |
@@ -211,9 +217,11 @@ npx svelte-check --tsconfig ./tsconfig.json   # types, a11y, CSS — should repo
 | `Cmd/Ctrl + Shift + V` | Voice assistant push-to-talk |
 | `Cmd/Ctrl + Shift + F` | Toggle focus mode |
 | `Cmd/Ctrl + \` | Collapse / expand sidebar |
+| `Cmd/Ctrl + F` | Find in note |
+| `Cmd/Ctrl + Option/Alt + F` | Find and replace |
 | `Escape` | Close the open menu, dialog, or sidebar |
 
-`Cmd/Ctrl + K`, `O`, `P`, `N`, and `Cmd/Ctrl + \` also work while you're typing in a note.
+`Cmd/Ctrl + K`, `O`, `P`, `N`, `F`, and `Cmd/Ctrl + \` also work while you're typing in a note. All of these can be changed in Settings → Keyboard shortcuts.
 
 On list pages (actions, proposals, drafts, inbox, people, tags, topics):
 

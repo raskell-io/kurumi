@@ -432,7 +432,8 @@ export function parseNotesFromFiles(
 			customProps: {},
 			vaultId,
 			deletedAt: null,
-			...(parsed.icon ? { icon: parsed.icon } : {})
+			...(parsed.icon ? { icon: parsed.icon } : {}),
+			...metadata?.notes?.[memoryId]
 		});
 	}
 
@@ -541,7 +542,8 @@ export async function syncGit(
 		folders: Folder[],
 		people: Person[],
 		events: Event[],
-		actionItems: ActionItem[]
+		actionItems: ActionItem[],
+		noteExtrasKnown: boolean
 	) => Promise<void>
 ): Promise<void> {
 	const config = getGitSyncConfig();
@@ -608,7 +610,8 @@ export async function syncGit(
 			mergedFolders,
 			remotePeople,
 			remoteEvents,
-			mergedActionItems
+			mergedActionItems,
+			!!metadata?.notes
 		);
 	}
 
@@ -640,7 +643,7 @@ export async function syncGit(
 /**
  * Merge two lists of memories, preferring newer versions
  */
-function mergeMemoryLists(local: MemoryObject[], remote: MemoryObject[]): MemoryObject[] {
+export function mergeMemoryLists(local: MemoryObject[], remote: MemoryObject[]): MemoryObject[] {
 	const merged = new Map<string, MemoryObject>();
 
 	// Add all local memories
@@ -651,9 +654,21 @@ function mergeMemoryLists(local: MemoryObject[], remote: MemoryObject[]): Memory
 	// Merge remote memories
 	for (const memory of remote) {
 		const existing = merged.get(memory.id);
-		if (!existing || memory.updatedAt > existing.updatedAt) {
+		if (!existing) {
 			merged.set(memory.id, memory);
+			continue;
 		}
+		const newer = memory.updatedAt > existing.updatedAt ? memory : existing;
+		// Favorites don't bump updatedAt; take them from whichever side
+		// starred/unstarred last.
+		const favSource =
+			(memory.favoriteChangedAt ?? 0) > (existing.favoriteChangedAt ?? 0) ? memory : existing;
+		const { favoritedAt: _f, favoriteChangedAt: _c, ...rest } = newer;
+		merged.set(memory.id, {
+			...rest,
+			...(favSource.favoritedAt ? { favoritedAt: favSource.favoritedAt } : {}),
+			...(favSource.favoriteChangedAt ? { favoriteChangedAt: favSource.favoriteChangedAt } : {})
+		});
 	}
 
 	return Array.from(merged.values());

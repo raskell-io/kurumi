@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { autofocus } from '$lib/actions/autofocus';
+	import ShortcutSettings from '$lib/components/ShortcutSettings.svelte';
+	import { labsEnabled, LAB_PAGES } from '$lib/stores/labs';
 	import {
 		exportMemoryObjectsJSON,
 		exportFullJSON,
@@ -426,7 +428,9 @@
 		{ id: 'local-ai', label: 'Local AI' },
 		{ id: 'ai', label: 'AI assistant' },
 		{ id: 'notifications', label: 'Notifications' },
+		{ id: 'shortcuts', label: 'Keyboard shortcuts' },
 		{ id: 'data', label: 'Data' },
+		{ id: 'labs', label: 'Labs' },
 		{ id: 'about', label: 'About' },
 		{ id: 'danger', label: 'Danger zone' }
 	];
@@ -1697,6 +1701,17 @@
 					</div>
 				</section>
 
+				<!-- Keyboard shortcuts -->
+				<section id="shortcuts" class="set-section" aria-labelledby="shortcuts-title">
+					<h2 id="shortcuts-title" class="set-section-title">Keyboard shortcuts</h2>
+					<p class="set-section-desc">
+						Click Change and press the new keys. Backspace removes a shortcut. Saved on this device.
+					</p>
+					<div class="set-rows">
+						<ShortcutSettings />
+					</div>
+				</section>
+
 				<!-- Data -->
 				<section id="data" class="set-section" aria-labelledby="data-title">
 					<h2 id="data-title" class="set-section-title">Data</h2>
@@ -1849,6 +1864,26 @@
 								</a>
 							{/if}
 						</div>
+					</div>
+				</section>
+
+				<!-- Labs -->
+				<section id="labs" class="set-section" aria-labelledby="labs-title">
+					<h2 id="labs-title" class="set-section-title">Labs</h2>
+					<p class="set-section-desc">
+						Features that work but are still rough. They're hidden by default to keep the app calm.
+					</p>
+					<div class="set-rows">
+						<label class="set-row">
+							<div class="set-row-text">
+								<div class="set-row-label">Show Labs features</div>
+								<p class="set-row-help">
+									Adds a Labs section to the sidebar and command palette:
+									{LAB_PAGES.map((p) => p.label).join(', ')}.
+								</p>
+							</div>
+							<input type="checkbox" class="switch" bind:checked={$labsEnabled} />
+						</label>
 					</div>
 				</section>
 
