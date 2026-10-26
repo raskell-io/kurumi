@@ -1,0 +1,16 @@
+{
+	"name": "kurumi-agent",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Sync a Kurumi local folder with a git remote using the system git",
+	"type": "module",
+	"bin": {
+		"kurumi-agent": "./kurumi-agent.mjs"
+	},
+	"engines": {
+		"node": ">=20"
+	},
+	"dependencies": {
+		"@automerge/automerge": "^3.2.1"
+	}
+}

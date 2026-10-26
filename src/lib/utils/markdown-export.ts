@@ -31,6 +31,27 @@ export function generateSlug(title: string): string {
 }
 
 /**
+ * Assign each vault a unique, filesystem-safe directory name derived from
+ * its name ("Work" → "work", a second "Work" → "work-2"). Vaults are taken
+ * oldest first so names stay stable as new vaults are added. Shared by the
+ * all-vaults ZIP export and the local-folder mirror so both lay vaults out
+ * the same way.
+ */
+export function vaultDirNames(vaults: Pick<Vault, 'id' | 'name' | 'created'>[]): Map<string, string> {
+	const names = new Map<string, string>();
+	const used = new Set<string>();
+	const ordered = [...vaults].sort((a, b) => a.created - b.created || a.id.localeCompare(b.id));
+	for (const vault of ordered) {
+		const base = generateSlug(vault.name) || 'vault';
+		let name = base;
+		for (let n = 2; used.has(name); n++) name = `${base}-${n}`;
+		used.add(name);
+		names.set(vault.id, name);
+	}
+	return names;
+}
+
+/**
  * Format a timestamp to ISO date string
  */
 function formatDate(timestamp: number): string {
@@ -255,10 +276,11 @@ export function exportMemoriesToFiles(
 	memories: MemoryObject[],
 	folders: Folder[],
 	vault: Vault,
-	options: ExportOptions
+	options: ExportOptions,
+	vaultDir: string = generateSlug(vault.name)
 ): ExportFile[] {
 	const files: ExportFile[] = [];
-	const vaultSlug = generateSlug(vault.name);
+	const vaultSlug = vaultDir;
 
 	for (const memory of memories) {
 		const folderPath = buildFolderPath(memory, folders);
@@ -280,7 +302,8 @@ export function exportMemoriesToFiles(
  */
 export async function downloadAsZip(
 	files: ExportFile[],
-	format: MarkdownExportFormat
+	format: MarkdownExportFormat,
+	label = 'export'
 ): Promise<void> {
 	const zip = new JSZip();
 
@@ -290,7 +313,7 @@ export async function downloadAsZip(
 
 	const blob = await zip.generateAsync({ type: 'blob' });
 	const timestamp = new Date().toISOString().split('T')[0];
-	const filename = `kurumi-export-${format}-${timestamp}.zip`;
+	const filename = `kurumi-${label}-${format}-${timestamp}.zip`;
 
 	const url = URL.createObjectURL(blob);
 	const a = document.createElement('a');
@@ -313,6 +336,28 @@ export async function exportVaultAsMarkdown(
 ): Promise<void> {
 	const files = exportMemoriesToFiles(memories, folders, vault, options);
 	await downloadAsZip(files, options.format);
+}
+
+/**
+ * Export every vault into one ZIP, one top-level directory per vault.
+ */
+export async function exportAllVaultsAsMarkdown(
+	vaults: Vault[],
+	memories: MemoryObject[],
+	folders: Folder[],
+	options: ExportOptions
+): Promise<void> {
+	const dirs = vaultDirNames(vaults);
+	const files = vaults.flatMap((vault) =>
+		exportMemoriesToFiles(
+			memories.filter((m) => m.vaultId === vault.id),
+			folders.filter((f) => f.vaultId === vault.id),
+			vault,
+			options,
+			dirs.get(vault.id)
+		)
+	);
+	await downloadAsZip(files, options.format, 'all-vaults');
 }
 
 /**

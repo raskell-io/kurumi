@@ -39,9 +39,13 @@ import {
 	localFSPushMarkdown,
 	localFSImportBlobs,
 	localFSReadMarkdown,
-	localFSTest
+	localFSTest,
+	localFSPushAllVaults,
+	isLocalFSAllVaults,
+	localFSReadIncoming,
+	localFSRemoveIncoming
 } from './local-fs';
-import { getMemoryObject, updateMemoryObject, applyGitImport } from '$lib/db';
+import { getMemoryObject, updateMemoryObject, applyGitImport, getVaultContents } from '$lib/db';
 import { parseMarkdownFile, parseFrontMatter } from '$lib/git/convert';
 import {
 	getAzureBlobConfig,
@@ -475,9 +479,10 @@ function tagsEqual(a: string[], b: string[]): boolean {
  * (matched by the frontmatter `id`). Files without an id (hand-created),
  * disk deletions, and on-disk renames are intentionally ignored — those stay
  * app-driven to avoid data loss. Conflicts (both sides changed since the last
- * sync) keep the in-app version.
+ * sync) keep the in-app version. `vaultId` limits the import to one vault;
+ * null (all-vaults layout) accepts notes from any vault.
  */
-async function importLocalFSEdits(vaultId: string, lastSyncedAt: number | null): Promise<void> {
+async function importLocalFSEdits(vaultId: string | null, lastSyncedAt: number | null): Promise<void> {
 	const diskFiles = await localFSReadMarkdown();
 	for (const file of diskFiles) {
 		// Only adopt files that carry a Kurumi id — i.e. ones we wrote.
@@ -486,7 +491,8 @@ async function importLocalFSEdits(vaultId: string, lastSyncedAt: number | null):
 
 		const parsed = parseMarkdownFile(file.path, file.content);
 		const existing = getMemoryObject(parsed.id);
-		if (!existing || existing.deletedAt || existing.vaultId !== vaultId) continue;
+		if (!existing || existing.deletedAt) continue;
+		if (vaultId !== null && existing.vaultId !== vaultId) continue;
 
 		const bodyChanged = canonicalBody(parsed.content) !== canonicalBody(existing.bodyMarkdown);
 		const tagsChanged = !tagsEqual(parsed.tags, existing.tags);
@@ -514,6 +520,10 @@ async function syncLocalFS(): Promise<{ success: boolean; error?: string }> {
 	try {
 		const remoteBinary = await localFSPull();
 		if (remoteBinary) await mergeDoc(remoteBinary);
+		for (const incoming of await localFSReadIncoming()) {
+			await mergeDoc(incoming.data);
+			await localFSRemoveIncoming(incoming.name);
+		}
 
 		// Import blob bytes (images/audio) written into the folder by another
 		// device before we overwrite/append on push.
@@ -524,11 +534,12 @@ async function syncLocalFS(): Promise<{ success: boolean; error?: string }> {
 		}
 
 		const vaultId = get(currentVaultId);
+		const allVaults = isLocalFSAllVaults();
 
 		// Pull in edits made directly to the .md files on disk before we
 		// overwrite them on push.
 		try {
-			await importLocalFSEdits(vaultId, get(syncState).lastSyncedAt);
+			await importLocalFSEdits(allVaults ? null : vaultId, get(syncState).lastSyncedAt);
 		} catch (importErr) {
 			console.warn('Local FS markdown import failed:', importErr);
 		}
@@ -536,11 +547,21 @@ async function syncLocalFS(): Promise<{ success: boolean; error?: string }> {
 		const localBinary = getDocBinary();
 		await localFSPush(localBinary);
 
-		// Also write a human-readable markdown mirror of the current vault
-		// (one .md per note, mirroring the folder tree). The binary above
-		// stays the source of truth for pull/merge.
+		// Also write a human-readable markdown mirror (one .md per note,
+		// mirroring the folder tree) of the current vault, or of every vault
+		// in its own subfolder. The binary above stays the source of truth
+		// for pull/merge.
 		const vault = get(vaults).find((v) => v.id === vaultId);
-		if (vault) {
+		if (allVaults) {
+			const mirrors = await Promise.all(
+				get(vaults).map(async (v) => {
+					const contents = getVaultContents(v.id);
+					const blobs = await gatherBlobPayloads(collectBlobRefs(contents.memories));
+					return { vault: v, ...contents, blobs };
+				})
+			);
+			await localFSPushAllVaults(mirrors);
+		} else if (vault) {
 			const vaultMems = get(memoryObjects).filter((m) => m.vaultId === vaultId);
 			const blobs = await gatherBlobPayloads(collectBlobRefs(vaultMems));
 			await localFSPushMarkdown(

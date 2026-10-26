@@ -9,10 +9,15 @@
 		folders,
 		vaults,
 		currentVaultId,
+		getVaultContents,
 		type ImportAnalysis,
 		type ConflictResolution
 	} from '$lib/db';
-	import { exportVaultAsMarkdown, type MarkdownExportFormat } from '$lib/utils/markdown-export';
+	import {
+		exportVaultAsMarkdown,
+		exportAllVaultsAsMarkdown,
+		type MarkdownExportFormat
+	} from '$lib/utils/markdown-export';
 	import { importObsidianVault, type ObsidianImportResult } from '$lib/utils/obsidian-import';
 	import { importRoamJSON, type RoamImportResult } from '$lib/utils/roam-import';
 	import { importEvernoteEnex, type EvernoteImportResult } from '$lib/utils/evernote-import';
@@ -26,7 +31,14 @@
 	} from '$lib/sync';
 	import { getS3Config, saveS3Config, isS3Configured, type S3Config } from '$lib/sync/s3';
 	import { getWebDAVConfig, saveWebDAVConfig, isWebDAVConfigured } from '$lib/sync/webdav';
-	import { isLocalFSSupported, hasLocalFSHandle, pickLocalFSDirectory, clearLocalFSHandle } from '$lib/sync/local-fs';
+	import {
+		isLocalFSSupported,
+		hasLocalFSHandle,
+		pickLocalFSDirectory,
+		clearLocalFSHandle,
+		isLocalFSAllVaults,
+		setLocalFSAllVaults
+	} from '$lib/sync/local-fs';
 	import { getAzureBlobConfig, saveAzureBlobConfig, isAzureBlobConfigured } from '$lib/sync/azure-blob';
 	import {
 		gitSyncState,
@@ -138,9 +150,11 @@
 	let localFSConfigured = $state(false);
 	let localFSTesting = $state(false);
 	let localFSTestResult = $state<{ success: boolean; error?: string; folder?: string } | null>(null);
+	let localFSAllVaults = $state(false);
 
 	async function loadLocalFSState() {
 		localFSAvailable = isLocalFSSupported();
+		localFSAllVaults = isLocalFSAllVaults();
 		localFSConfigured = await hasLocalFSHandle();
 	}
 
@@ -393,6 +407,7 @@
 	// Markdown export state
 	let isExportingMarkdown = $state(false);
 	let markdownExportFormat = $state<MarkdownExportFormat | null>(null);
+	let markdownExportScope = $state<'vault' | 'all'>('vault');
 
 	// Obsidian import state
 	let isImportingObsidian = $state(false);
@@ -631,6 +646,17 @@
 		isExportingMarkdown = true;
 		markdownExportFormat = format;
 		try {
+			if (markdownExportScope === 'all') {
+				const contents = $vaults.map((v) => getVaultContents(v.id));
+				await exportAllVaultsAsMarkdown(
+					$vaults,
+					contents.flatMap((c) => c.memories),
+					contents.flatMap((c) => c.folders),
+					{ format }
+				);
+				return;
+			}
+
 			const vault = $vaults.find((v) => v.id === $currentVaultId);
 			if (!vault) return;
 
@@ -1071,6 +1097,25 @@
 											)}
 										</div>
 									{/if}
+									<label class="flex items-start justify-between gap-4">
+										<span>
+											<span class="set-row-label">Write all vaults</span>
+											<span class="set-row-help block">
+												Every vault in its own subfolder instead of only the current one at the
+												top level. Use this when the folder is a git repo synced by the
+												<code>kurumi-agent</code>.
+											</span>
+										</span>
+										<input
+											type="checkbox"
+											class="switch"
+											checked={localFSAllVaults}
+											onchange={(e) => {
+												localFSAllVaults = (e.target as HTMLInputElement).checked;
+												setLocalFSAllVaults(localFSAllVaults);
+											}}
+										/>
+									</label>
 									<div class="set-actions">
 										<button onclick={handleSync} disabled={$syncState.status === 'syncing'} class="k-btn k-btn-primary">
 											<RefreshCw class="h-4 w-4 {$syncState.status === 'syncing' ? 'animate-spin' : ''}" />
@@ -1086,7 +1131,9 @@
 										Notes are written as readable <code>.md</code> files (mirroring your folders),
 										plus a <code>kurumi-sync.bin</code> used to merge across devices. Edits you make to
 										a note's text in those files are read back on the next sync. Creating, renaming,
-										or deleting notes still happens in Kurumi.
+										or deleting notes still happens in Kurumi. To back the folder with a GitHub repo
+										without giving the browser any credentials, run the local agent
+										(<code>agent/README.md</code>) on it.
 									</p>
 								{:else}
 									<div>
@@ -1691,23 +1738,36 @@
 						<div class="set-row">
 							<div class="set-row-text">
 								<div class="set-row-label" id="md-export-label">Export as Markdown</div>
-								<p class="set-row-help">The current vault as markdown files with its folder structure.</p>
+								<p class="set-row-help">
+									A ZIP of markdown files with the folder structure. All vaults puts each vault in
+									its own top-level folder.
+								</p>
 							</div>
-							<div class="set-actions" role="group" aria-labelledby="md-export-label">
-								{#each [
-									{ id: 'vanilla', label: 'Markdown' },
-									{ id: 'hugo', label: 'Hugo' },
-									{ id: 'zola', label: 'Zola' }
-								] as fmt (fmt.id)}
-									<button
-										onclick={() => handleMarkdownExport(fmt.id as MarkdownExportFormat)}
-										disabled={isExportingMarkdown}
-										class="k-btn"
-									>
-										{#if isExportingMarkdown && markdownExportFormat === fmt.id}{@render spinner()}{:else}<Download class="h-4 w-4" />{/if}
-										{fmt.label}
+							<div class="flex flex-wrap items-center gap-2">
+								<div class="k-segmented" role="group" aria-label="Export scope">
+									<button aria-pressed={markdownExportScope === 'vault'} onclick={() => (markdownExportScope = 'vault')}>
+										This vault
 									</button>
-								{/each}
+									<button aria-pressed={markdownExportScope === 'all'} onclick={() => (markdownExportScope = 'all')}>
+										All vaults
+									</button>
+								</div>
+								<div class="set-actions" role="group" aria-labelledby="md-export-label">
+									{#each [
+										{ id: 'vanilla', label: 'Markdown' },
+										{ id: 'hugo', label: 'Hugo' },
+										{ id: 'zola', label: 'Zola' }
+									] as fmt (fmt.id)}
+										<button
+											onclick={() => handleMarkdownExport(fmt.id as MarkdownExportFormat)}
+											disabled={isExportingMarkdown}
+											class="k-btn"
+										>
+											{#if isExportingMarkdown && markdownExportFormat === fmt.id}{@render spinner()}{:else}<Download class="h-4 w-4" />{/if}
+											{fmt.label}
+										</button>
+									{/each}
+								</div>
 							</div>
 						</div>
 

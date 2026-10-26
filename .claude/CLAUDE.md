@@ -186,6 +186,16 @@ OpenAI to MMS when the API key is missing.
   bare-string entity types.
 
 ### Sync
+- Local folder sync (`src/lib/sync/local-fs.ts`): writes `kurumi-sync.bin`
+  plus a markdown mirror of the current vault, or with "Write all vaults"
+  one self-contained subfolder per vault (`.kurumi/vaults.json` maps vault
+  id → folder; renamed/removed vaults' folders are pruned).
+- Local git agent (`agent/kurumi-agent.mjs`, plain Node, run outside the
+  browser): commits that folder and pulls/pushes with the system git. A
+  git merge driver CRDT-merges `kurumi-sync.bin`; regenerated files keep
+  the local side. Databases with unrelated history are parked as
+  `kurumi-sync.incoming-*.bin`, which the app merges via `mergeDoc` and
+  deletes.
 - Git sync: clones to IndexedDB, writes memories as markdown files +
   `.kurumi/metadata.json`, pulls/pushes via isomorphic-git through a
   CORS proxy, detects real conflicts (both sides changed since last
@@ -210,6 +220,8 @@ OpenAI to MMS when the API key is missing.
   full front matter, transcripts, summaries, action items, open
   questions
 - Single-memory download from memory detail page
+- All-vaults ZIP export (one top-level folder per vault, named by
+  `vaultDirNames` in `markdown-export.ts`, shared with the folder mirror)
 - Obsidian vault import
 - Full JSON backup / restore
 

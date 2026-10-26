@@ -21,6 +21,7 @@ import {
 	serializeMetadata,
 	parseMetadata
 } from '$lib/git/convert';
+import { vaultDirNames } from '$lib/utils/markdown-export';
 import { refToId, importBlobPayloads, type BlobPayload } from './blobs';
 import type { MemoryObject, Folder, Vault, Person, Event, ActionItem } from '$lib/db/types';
 
@@ -29,6 +30,10 @@ const FILENAME = 'kurumi-sync.bin';
 const METADATA_DIR = '.kurumi';
 const METADATA_FILE = 'metadata.json';
 const BLOBS_DIR = 'blobs';
+// All-vaults layout index: which subfolder each vault was last written to,
+// so a renamed (or removed) vault's old folder can be cleaned up.
+const VAULTS_INDEX_FILE = 'vaults.json';
+const ALL_VAULTS_KEY = 'kurumi-local-fs-all-vaults';
 // Synchronous mirror of "is a folder configured?". The handle itself lives in
 // IndexedDB (async), but sync gating (isSyncConfigured / shouldSync) needs a
 // synchronous answer, so we shadow handle presence in localStorage.
@@ -38,6 +43,23 @@ function setConfiguredFlag(configured: boolean): void {
 	if (typeof localStorage === 'undefined') return;
 	if (configured) localStorage.setItem(CONFIGURED_KEY, '1');
 	else localStorage.removeItem(CONFIGURED_KEY);
+}
+
+/**
+ * Mirror layout. Off (default): the current vault's notes at the folder
+ * root. On: every vault in its own subfolder (`work/`, `personal/`, …),
+ * each self-contained with its own `.kurumi/` metadata and blobs — the
+ * layout to use when the folder is a git checkout managed by the local
+ * agent (see agent/README.md).
+ */
+export function isLocalFSAllVaults(): boolean {
+	return typeof localStorage !== 'undefined' && localStorage.getItem(ALL_VAULTS_KEY) === '1';
+}
+
+export function setLocalFSAllVaults(enabled: boolean): void {
+	if (typeof localStorage === 'undefined') return;
+	if (enabled) localStorage.setItem(ALL_VAULTS_KEY, '1');
+	else localStorage.removeItem(ALL_VAULTS_KEY);
 }
 
 export function isLocalFSSupported(): boolean {
@@ -112,6 +134,33 @@ export async function localFSPull(): Promise<Uint8Array | null> {
 		}
 		throw err;
 	}
+}
+
+// Documents the local agent couldn't merge itself (two copies of the
+// database with no shared history, which a plain CRDT merge would resolve
+// by dropping one side). The agent parks the remote copy as
+// `kurumi-sync.incoming-<n>.bin`; the app merges it with its own recovery
+// logic and then deletes it.
+const INCOMING_PATTERN = /^kurumi-sync\.incoming-[\w.-]+\.bin$/;
+
+export async function localFSReadIncoming(): Promise<{ name: string; data: Uint8Array }[]> {
+	const dir = await getHandle();
+	if (!dir) return [];
+	const out: { name: string; data: Uint8Array }[] = [];
+	const entries = (dir as FileSystemDirectoryHandle & {
+		values: () => AsyncIterableIterator<FileSystemHandle>;
+	}).values();
+	for await (const handle of entries) {
+		if (handle.kind !== 'file' || !INCOMING_PATTERN.test(handle.name)) continue;
+		const file = await (handle as FileSystemFileHandle).getFile();
+		out.push({ name: handle.name, data: new Uint8Array(await file.arrayBuffer()) });
+	}
+	return out;
+}
+
+export async function localFSRemoveIncoming(name: string): Promise<void> {
+	const dir = await getHandle();
+	if (dir) await removeFileByPath(dir, name);
 }
 
 export async function localFSPush(data: Uint8Array): Promise<void> {
@@ -244,7 +293,139 @@ export async function localFSPushMarkdown(
 ): Promise<void> {
 	const dir = await getHandle();
 	if (!dir) throw new Error('Local folder not configured');
+	// Switching back from the all-vaults layout: clear its vault folders.
+	await pruneAllVaultsLayout(dir, new Set());
+	await writeVaultMarkdown(dir, { memories, folders, vault, people, events, actionItems, blobs });
+}
 
+export interface VaultMirror {
+	vault: Vault;
+	memories: MemoryObject[];
+	folders: Folder[];
+	people: Person[];
+	events: Event[];
+	actionItems: ActionItem[];
+	blobs: BlobPayload[];
+}
+
+/**
+ * All-vaults layout: write each vault into its own subfolder, in the same
+ * format `localFSPushMarkdown` uses at the root. Cleans up the root-level
+ * single-vault mirror if one exists, and the folders of vaults that were
+ * renamed or deleted since the last sync.
+ */
+export async function localFSPushAllVaults(mirrors: VaultMirror[]): Promise<void> {
+	const dir = await getHandle();
+	if (!dir) throw new Error('Local folder not configured');
+
+	// Switching from the single-vault layout: remove the root-level notes
+	// and their index (blobs stay; they're harmless and may be shared).
+	const rootPaths = await readManagedPaths(dir);
+	if (rootPaths.length > 0) {
+		await pruneManagedFiles(dir, rootPaths, new Set());
+		try {
+			const metaDir = await dir.getDirectoryHandle(METADATA_DIR);
+			await metaDir.removeEntry(METADATA_FILE);
+		} catch {
+			// Already gone.
+		}
+	}
+
+	const dirNames = vaultDirNames(mirrors.map((m) => m.vault));
+	const index: Record<string, string> = {};
+	for (const mirror of mirrors) {
+		const name = dirNames.get(mirror.vault.id)!;
+		index[mirror.vault.id] = name;
+		await writeVaultMarkdown(await getOrCreateDir(dir, [name]), mirror);
+	}
+	await pruneAllVaultsLayout(dir, new Set(Object.values(index)));
+
+	const metaDir = await getOrCreateDir(dir, [METADATA_DIR]);
+	await writeFile(
+		metaDir,
+		VAULTS_INDEX_FILE,
+		JSON.stringify({ version: 1, vaults: index }, null, 2) + '\n'
+	);
+}
+
+async function readVaultsIndex(dir: FileSystemDirectoryHandle): Promise<Record<string, string>> {
+	try {
+		const metaDir = await dir.getDirectoryHandle(METADATA_DIR);
+		const handle = await metaDir.getFileHandle(VAULTS_INDEX_FILE);
+		const parsed = JSON.parse(await (await handle.getFile()).text());
+		return parsed && typeof parsed.vaults === 'object' ? parsed.vaults : {};
+	} catch {
+		return {};
+	}
+}
+
+// Remove vault folders recorded in the all-vaults index that aren't in
+// `keep`: the notes Kurumi wrote there, the folder's `.kurumi/`, and then
+// the folder itself if nothing else is left in it. With an empty `keep`
+// this tears the whole layout down, index included.
+async function pruneAllVaultsLayout(
+	dir: FileSystemDirectoryHandle,
+	keep: Set<string>
+): Promise<void> {
+	const index = await readVaultsIndex(dir);
+	for (const name of new Set(Object.values(index))) {
+		if (keep.has(name)) continue;
+		let vaultDir: FileSystemDirectoryHandle;
+		try {
+			vaultDir = await dir.getDirectoryHandle(name);
+		} catch {
+			continue;
+		}
+		await pruneManagedFiles(vaultDir, await readManagedPaths(vaultDir), new Set());
+		try {
+			await vaultDir.removeEntry(METADATA_DIR, { recursive: true });
+		} catch {
+			// No metadata dir.
+		}
+		await removeEmptyDirByPath(dir, name);
+	}
+	if (keep.size === 0 && Object.keys(index).length > 0) {
+		try {
+			const metaDir = await dir.getDirectoryHandle(METADATA_DIR);
+			await metaDir.removeEntry(VAULTS_INDEX_FILE);
+		} catch {
+			// Already gone.
+		}
+	}
+}
+
+// Delete previously written note files that aren't in `keep`, then any
+// directories that pruning left empty.
+async function pruneManagedFiles(
+	dir: FileSystemDirectoryHandle,
+	previousPaths: string[],
+	keep: Set<string>
+): Promise<void> {
+	for (const path of previousPaths) {
+		if (!keep.has(path)) await removeFileByPath(dir, path);
+	}
+
+	// Reclaim folders that Kurumi managed but no longer uses (e.g. a deleted
+	// folder). Removing the stale .md files above leaves the directories
+	// behind, so delete the now-unused ones — deepest first so a parent can
+	// be removed once its children are gone. Empty-only removal protects any
+	// files the user placed in the folder directly.
+	const previousDirs = dirPrefixes(previousPaths);
+	const currentDirs = dirPrefixes(keep);
+	const staleDirs = [...previousDirs]
+		.filter((d) => !currentDirs.has(d))
+		.sort((a, b) => b.split('/').length - a.split('/').length);
+	for (const dirPath of staleDirs) {
+		await removeEmptyDirByPath(dir, dirPath);
+	}
+}
+
+// Write one vault's notes, blobs and `.kurumi/metadata.json` into `dir`,
+// pruning notes that a previous write put there but that no longer exist.
+async function writeVaultMarkdown(
+	dir: FileSystemDirectoryHandle,
+	{ memories, folders, vault, people, events, actionItems, blobs }: VaultMirror
+): Promise<void> {
 	const files = notesToMarkdownFiles(memories, folders);
 	const newPaths = new Set(files.map((f) => f.path));
 	const previousPaths = await readManagedPaths(dir);
@@ -280,23 +461,7 @@ export async function localFSPushMarkdown(
 	await writeFile(metaDir, METADATA_FILE, serializeMetadata(metadata));
 
 	// Prune notes we previously wrote that no longer exist (rename/delete).
-	for (const path of previousPaths) {
-		if (!newPaths.has(path)) await removeFileByPath(dir, path);
-	}
-
-	// Reclaim folders that Kurumi managed but no longer uses (e.g. a deleted
-	// folder). Removing the stale .md files above leaves the directories
-	// behind, so delete the now-unused ones — deepest first so a parent can
-	// be removed once its children are gone. Empty-only removal protects any
-	// files the user placed in the folder directly.
-	const previousDirs = dirPrefixes(previousPaths);
-	const currentDirs = dirPrefixes(newPaths);
-	const staleDirs = [...previousDirs]
-		.filter((d) => !currentDirs.has(d))
-		.sort((a, b) => b.split('/').length - a.split('/').length);
-	for (const dirPath of staleDirs) {
-		await removeEmptyDirByPath(dir, dirPath);
-	}
+	await pruneManagedFiles(dir, previousPaths, newPaths);
 }
 
 /**
@@ -305,9 +470,20 @@ export async function localFSPushMarkdown(
  * locally. No-op if the folder has no blobs dir yet.
  */
 export async function localFSImportBlobs(): Promise<void> {
-	const dir = await getHandle();
-	if (!dir) return;
+	const root = await getHandle();
+	if (!root) return;
+	const dirs = [root];
+	for (const name of new Set(Object.values(await readVaultsIndex(root)))) {
+		try {
+			dirs.push(await root.getDirectoryHandle(name));
+		} catch {
+			// Vault folder not written yet.
+		}
+	}
+	for (const dir of dirs) await importBlobsFrom(dir);
+}
 
+async function importBlobsFrom(dir: FileSystemDirectoryHandle): Promise<void> {
 	let metaDir: FileSystemDirectoryHandle;
 	let blobDir: FileSystemDirectoryHandle;
 	try {

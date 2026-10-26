@@ -61,7 +61,7 @@ Kurumi (クルミ, "walnut" in Japanese — because it looks like a brain) is a 
 | Feature | Description |
 |---------|-------------|
 | **Folders** | Unlimited nesting, drag-and-drop, hover `+`/`⋯` actions, right-click menus (rename, copy `[[link]]`, move), swipe-delete on touch |
-| **Vaults** | Separate workspaces with independent data |
+| **Vaults** | Separate workspaces with independent data; built-in icon or your own uploaded logo, editable any time |
 | **Tags** | Auto-extracted from #hashtags, merge and normalize duplicates |
 | **People** | Everyone you @mention is listed; save a person to add details, detect duplicates and merge them |
 | **Topics & Projects** | Extracted entities with dedup workflow |
@@ -128,9 +128,10 @@ Kurumi (クルミ, "walnut" in Japanese — because it looks like a brain) is a 
 | **Git sync** | Push/pull via isomorphic-git to GitHub, GitLab, Codeberg through CORS proxy |
 | **Cloudflare R2** | S3-compatible sync |
 | **S3 / Azure Blob / WebDAV** | Additional sync targets |
-| **Local filesystem** | File System Access API for local folder sync |
+| **Local filesystem** | File System Access API for local folder sync, current vault or all vaults |
+| **Local git agent** | `agent/kurumi-agent.mjs` commits that folder and pulls/pushes it with your system git: no token in the browser, no CORS proxy |
 | **Conflict resolution** | Side-by-side merge modal for real conflicts |
-| **Markdown export** | Vanilla, Hugo, or Zola format with full front matter |
+| **Markdown export** | Vanilla, Hugo, or Zola format with full front matter; current vault or all vaults |
 | **Rich text copy** | Copy note as formatted HTML to clipboard |
 | **Share** | Web Share API (mobile share sheet) with clipboard fallback |
 | **HTML publish** | Download self-contained HTML page for any note |
@@ -238,6 +239,9 @@ Kurumi supports multiple sync backends. Configure in Settings:
 | **Azure Blob** | Azure cloud storage |
 | **WebDAV** | Nextcloud, Synology, or any WebDAV server |
 | **Local FS** | File System Access API for local folder sync |
+
+To keep vaults in a GitHub repo without handing the browser a token, use
+Local FS together with the local agent; see [agent/README.md](agent/README.md).
 
 ---
 
