@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { autofocus } from '$lib/actions/autofocus';
+	import { portal } from '$lib/actions/portal';
+	import VaultIcon from './VaultIcon.svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { currentRoutePath } from '$lib/hash-router';
@@ -1203,6 +1205,7 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
+		use:portal
 		class="k-menu fixed z-[100]"
 		style="left: {contextMenuPosition.x}px; top: {contextMenuPosition.y}px;"
 		use:keepInViewport
@@ -1262,9 +1265,7 @@
 								}}
 								class="k-menu-item"
 							>
-								{#if vault.icon}
-									<span>{vault.icon}</span>
-								{/if}
+								<VaultIcon {vault} class="h-4 w-4 text-[var(--color-text-muted)]" />
 								<span class="truncate">{vault.name}</span>
 							</button>
 						{/each}
@@ -1281,6 +1282,7 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
+		use:portal
 		class="k-menu fixed z-[100]"
 		style="left: {contextMenuPosition.x}px; top: {contextMenuPosition.y}px;"
 		use:keepInViewport
@@ -1327,9 +1329,7 @@
 								}}
 								class="k-menu-item"
 							>
-								{#if vault.icon}
-									<span>{vault.icon}</span>
-								{/if}
+								<VaultIcon {vault} class="h-4 w-4 text-[var(--color-text-muted)]" />
 								<span class="truncate">{vault.name}</span>
 							</button>
 						{/each}
@@ -1353,6 +1353,7 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
+		use:portal
 		class="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4"
 		onclick={cancelDelete}
 	>
