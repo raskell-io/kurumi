@@ -52,6 +52,7 @@
 		description?: string;
 		icon?: string;
 		vaultIconId?: string; // For vault items, the icon ID from the vault icons library
+		vaultIconImage?: string; // For vault items with an uploaded logo
 		action: () => void;
 	}
 
@@ -414,6 +415,7 @@
 				title: v.name,
 				icon: 'vault',
 				vaultIconId: v.icon,
+				vaultIconImage: v.iconImage,
 				description: 'Switch to vault',
 				action: () => {
 					setCurrentVault(v.id);
@@ -603,15 +605,19 @@
 									class:text-[var(--color-accent)]={item.type === 'action'}
 									class:text-[var(--color-text-muted)]={item.type !== 'action'}
 								>
-									<svg
-										xmlns="http://www.w3.org/2000/svg"
-										class="h-3.5 w-3.5"
-										viewBox="0 0 20 20"
-										fill="currentColor"
-										aria-hidden="true"
-									>
-										<path fill-rule="evenodd" d={getItemIconPath(item)} clip-rule="evenodd" />
-									</svg>
+									{#if item.vaultIconImage}
+										<img src={item.vaultIconImage} alt="" class="h-3.5 w-3.5 rounded-[2px] object-cover" />
+									{:else}
+										<svg
+											xmlns="http://www.w3.org/2000/svg"
+											class="h-3.5 w-3.5"
+											viewBox="0 0 20 20"
+											fill="currentColor"
+											aria-hidden="true"
+										>
+											<path fill-rule="evenodd" d={getItemIconPath(item)} clip-rule="evenodd" />
+										</svg>
+									{/if}
 								</div>
 								<div class="min-w-0 flex-1">
 									<div class="truncate text-sm font-medium text-[var(--color-text)]">

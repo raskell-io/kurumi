@@ -236,6 +236,29 @@ export const allMemoryObjects: Readable<MemoryObject[]> = derived(docStore, ($do
 		.sort((a, b) => b.updatedAt - a.updatedAt);
 });
 
+// Live (non-deleted) contents of any vault, not just the current one — the
+// per-vault derived stores above only ever see the current vault. Used by
+// all-vaults export and the local-folder mirror.
+export function getVaultContents(vaultId: string): {
+	memories: MemoryObject[];
+	folders: Folder[];
+	people: Person[];
+	events: Event[];
+	actionItems: ActionItem[];
+} {
+	const d = doc;
+	if (!d) return { memories: [], folders: [], people: [], events: [], actionItems: [] };
+	const inVault = <T extends { vaultId: string }>(items: Record<string, T> | undefined) =>
+		Object.values(items ?? {}).filter((item) => item.vaultId === vaultId);
+	return {
+		memories: inVault(d.memoryObjects).filter((m) => !m.deletedAt),
+		folders: inVault(d.folders).filter((f) => !f.deletedAt),
+		people: inVault(d.people),
+		events: inVault(d.events),
+		actionItems: inVault(d.actionItems)
+	};
+}
+
 // Trash: deleted memory objects in current vault (sorted by deletedAt, newest first)
 export const trashedMemoryObjects: Readable<MemoryObject[]> = derived(
 	[docStore, currentVaultId],
@@ -760,12 +783,12 @@ export function setCurrentVault(vaultId: string): void {
 	currentVaultIdStore.set(vaultId);
 }
 
-export function addVault(name: string, icon?: string): Vault {
+export function addVault(name: string, icon?: string, iconImage?: string): Vault {
 	if (!doc) {
 		doc = Automerge.from<KurumiDocument>(createEmptyDocument());
 		docStore.set(doc);
 	}
-	const vault = createVault(name, icon);
+	const vault = createVault(name, icon, iconImage);
 	updateDoc((d) => {
 		d.vaults[vault.id] = vault;
 	});
@@ -776,12 +799,21 @@ export function getVault(id: string): Vault | undefined {
 	return doc?.vaults?.[id];
 }
 
-export function updateVault(id: string, updates: Partial<Omit<Vault, 'id' | 'created'>>): void {
+// `null` clears an optional field (Automerge can't store `undefined`);
+// leaving a key out keeps the current value.
+export function updateVault(
+	id: string,
+	updates: { name?: string; icon?: string | null; iconImage?: string | null }
+): void {
 	updateDoc((d) => {
 		const vault = d.vaults[id];
 		if (vault) {
 			if (updates.name !== undefined) vault.name = updates.name;
-			if (updates.icon !== undefined) vault.icon = updates.icon;
+			for (const key of ['icon', 'iconImage'] as const) {
+				const value = updates[key];
+				if (value === null) delete vault[key];
+				else if (value !== undefined) vault[key] = value;
+			}
 			vault.modified = Date.now();
 		}
 	});

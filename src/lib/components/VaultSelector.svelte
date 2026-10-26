@@ -1,10 +1,13 @@
 <script lang="ts">
 	import { autofocus } from '$lib/actions/autofocus';
+	import { portal } from '$lib/actions/portal';
 	import { vaults, currentVault, currentVaultId, setCurrentVault, addVault, updateVault, deleteVault } from '$lib/db';
 	import { goto } from '$app/navigation';
-	import { vaultIcons, searchIcons, getIconById, type VaultIcon } from '$lib/icons/vault-icons';
+	import { searchIcons, getIconById } from '$lib/icons/vault-icons';
+	import { imageToIconDataUrl } from '$lib/utils/image';
 	import type { Vault } from '$lib/db/types';
-	import { ChevronDown, Plus, Pencil, Check, X, Search, Archive, Trash2, AlertTriangle } from 'lucide-svelte';
+	import VaultIcon from './VaultIcon.svelte';
+	import { ChevronDown, Plus, Pencil, Check, X, Search, Archive, Trash2, AlertTriangle, Upload } from 'lucide-svelte';
 
 	let showDropdown = $state(false);
 	let showCreateModal = $state(false);
@@ -17,6 +20,9 @@
 	// Form state (shared between create and edit)
 	let formName = $state('');
 	let formIconId = $state<string | null>(null);
+	let formIconImage = $state<string | null>(null);
+	let iconUploadError = $state<string | null>(null);
+	let iconFileInput: HTMLInputElement | undefined = $state();
 	let iconSearchQuery = $state('');
 	let showIconPicker = $state(false);
 
@@ -33,17 +39,17 @@
 	}
 
 	function openCreateModal() {
-		formName = '';
-		formIconId = null;
-		iconSearchQuery = '';
+		resetForm();
 		showDropdown = false;
 		showCreateModal = true;
 	}
 
 	function openEditModal(vault: Vault, event: MouseEvent) {
 		event.stopPropagation();
+		resetForm();
 		formName = vault.name;
 		formIconId = vault.icon || null;
+		formIconImage = vault.iconImage || null;
 		iconSearchQuery = '';
 		editingVault = vault;
 		showDropdown = false;
@@ -52,7 +58,11 @@
 
 	function handleCreateVault() {
 		if (formName.trim()) {
-			const vault = addVault(formName.trim(), formIconId || undefined);
+			const vault = addVault(
+				formName.trim(),
+				formIconId || undefined,
+				formIconImage || undefined
+			);
 			setCurrentVault(vault.id);
 			resetForm();
 			showCreateModal = false;
@@ -64,7 +74,8 @@
 		if (editingVault && formName.trim()) {
 			updateVault(editingVault.id, {
 				name: formName.trim(),
-				icon: formIconId || undefined
+				icon: formIconId,
+				iconImage: formIconImage
 			});
 			resetForm();
 			showEditModal = false;
@@ -95,6 +106,8 @@
 	function resetForm() {
 		formName = '';
 		formIconId = null;
+		formIconImage = null;
+		iconUploadError = null;
 		iconSearchQuery = '';
 		showIconPicker = false;
 		showDeleteConfirm = false;
@@ -118,6 +131,19 @@
 	function clearIcon() {
 		formIconId = null;
 		iconSearchQuery = '';
+	}
+
+	async function handleIconUpload(event: Event) {
+		const input = event.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		input.value = ''; // allow re-picking the same file
+		if (!file) return;
+		iconUploadError = null;
+		try {
+			formIconImage = await imageToIconDataUrl(file);
+		} catch {
+			iconUploadError = "Couldn't read that image. Try a PNG, JPEG, WebP or SVG.";
+		}
 	}
 
 	function handleClickOutside(event: MouseEvent) {
@@ -158,15 +184,6 @@
 		}
 	});
 
-	// Portal action to render modal at document.body level
-	function portal(node: HTMLElement) {
-		document.body.appendChild(node);
-		return {
-			destroy() {
-				node.remove();
-			}
-		};
-	}
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -177,18 +194,8 @@
 		onclick={() => (showDropdown = !showDropdown)}
 		class="flex max-w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left hover:bg-[var(--color-hover)]"
 	>
-		{#if $currentVault?.icon}
-			{@const vaultIcon = getIconById($currentVault.icon)}
-			{#if vaultIcon}
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					class="h-4 w-4 shrink-0 text-[var(--color-accent)]"
-					viewBox="0 0 20 20"
-					fill="currentColor"
-				>
-					<path fill-rule="evenodd" d={vaultIcon.path} clip-rule="evenodd" />
-				</svg>
-			{/if}
+		{#if $currentVault?.icon || $currentVault?.iconImage}
+			<VaultIcon vault={$currentVault} class="h-4 w-4 text-[var(--color-accent)]" />
 		{/if}
 		<span class="truncate text-sm font-semibold text-[var(--color-text)]">
 			{$currentVault?.name || 'Select Vault'}
@@ -204,7 +211,6 @@
 			<div class="k-menu-label">Vaults</div>
 			<div class="max-h-[300px] overflow-y-auto">
 				{#each $vaults as vault (vault.id)}
-					{@const vaultIcon = vault.icon ? getIconById(vault.icon) : null}
 					{@const isCurrent = vault.id === $currentVaultId}
 					<div class="group k-menu-item !p-0" class:vault-current={isCurrent}>
 						<button
@@ -213,23 +219,15 @@
 							role="menuitemradio"
 							aria-checked={isCurrent}
 						>
-							{#if vaultIcon}
-								<svg
-									xmlns="http://www.w3.org/2000/svg"
-									class="h-4 w-4 shrink-0 {isCurrent ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]'}"
-									viewBox="0 0 20 20"
-									fill="currentColor"
-								>
-									<path fill-rule="evenodd" d={vaultIcon.path} clip-rule="evenodd" />
-								</svg>
-							{:else}
-								<Archive class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
-							{/if}
+							<VaultIcon
+								{vault}
+								class="h-4 w-4 {isCurrent && (vault.icon || vault.iconImage) ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]'}"
+							/>
 							<span class="flex-1 truncate">{vault.name}</span>
 						</button>
 						<button
 							onclick={(e) => openEditModal(vault, e)}
-							class="k-icon-btn !h-6 !w-6 opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
+							class="k-icon-btn !h-6 !w-6 opacity-0 focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
 							title="Edit vault"
 							aria-label="Edit vault {vault.name}"
 						>
@@ -245,6 +243,16 @@
 			</div>
 
 			<div class="k-menu-sep"></div>
+			{#if $currentVault}
+				<button
+					onclick={(e) => openEditModal($currentVault, e)}
+					class="k-menu-item text-[var(--color-text-muted)]"
+					role="menuitem"
+				>
+					<Pencil class="h-4 w-4" />
+					<span class="truncate">Edit “{$currentVault.name}”…</span>
+				</button>
+			{/if}
 			<button onclick={openCreateModal} class="k-menu-item text-[var(--color-text-muted)]" role="menuitem">
 				<Plus class="h-4 w-4" />
 				<span>New vault</span>
@@ -289,6 +297,41 @@
 						use:autofocus
 						onkeydown={(e) => e.key === 'Enter' && !showIconPicker && (showEditModal ? handleUpdateVault() : handleCreateVault())}
 					/>
+				</div>
+
+				<div>
+					<span class="k-label">Logo <span class="font-normal text-[var(--color-text-faint)]">(optional)</span></span>
+					<div class="flex items-center gap-3">
+						<div
+							class="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-text-faint)]"
+						>
+							<VaultIcon vault={{ iconImage: formIconImage ?? undefined, icon: formIconId ?? undefined }} class="h-7 w-7" />
+						</div>
+						<input
+							bind:this={iconFileInput}
+							type="file"
+							accept="image/*"
+							class="hidden"
+							onchange={handleIconUpload}
+						/>
+						<button type="button" class="k-btn k-btn-ghost k-btn-sm" onclick={() => iconFileInput?.click()}>
+							<Upload class="h-3.5 w-3.5" />
+							{formIconImage ? 'Replace image' : 'Upload image'}
+						</button>
+						{#if formIconImage}
+							<button type="button" class="k-btn k-btn-ghost k-btn-sm" onclick={() => (formIconImage = null)}>
+								<X class="h-3.5 w-3.5" />
+								Remove
+							</button>
+						{/if}
+					</div>
+					{#if iconUploadError}
+						<p class="mt-1.5 text-xs text-[var(--color-danger)]">{iconUploadError}</p>
+					{:else}
+						<p class="mt-1.5 text-xs text-[var(--color-text-faint)]">
+							Square images work best. An uploaded logo is used instead of the icon below.
+						</p>
+					{/if}
 				</div>
 
 				<div>

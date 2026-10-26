@@ -16,7 +16,8 @@ export function generateId(length: number = 12): string {
 export interface Vault {
 	id: string;
 	name: string;
-	icon?: string;
+	icon?: string; // id from the built-in icon library ($lib/icons/vault-icons)
+	iconImage?: string; // uploaded logo as a small square data: URL; wins over `icon`
 	created: number;
 	modified: number;
 }
@@ -436,12 +437,15 @@ export function createDefaultVault(): Vault {
 	};
 }
 
-export function createVault(name: string, icon?: string): Vault {
+export function createVault(name: string, icon?: string, iconImage?: string): Vault {
 	const now = Date.now();
+	// Automerge rejects `undefined` values, so only set the optional fields
+	// when they're present.
 	return {
 		id: generateId(),
 		name,
-		icon,
+		...(icon ? { icon } : {}),
+		...(iconImage ? { iconImage } : {}),
 		created: now,
 		modified: now
 	};

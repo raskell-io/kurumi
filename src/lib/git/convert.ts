@@ -19,6 +19,7 @@ export interface GitMetadata {
 		id: string;
 		name: string;
 		icon?: string;
+		iconImage?: string;
 	};
 	folders: Record<string, { name: string; parentId: string | null }>;
 	noteIds: Record<string, string>; // path -> memoryId mapping
@@ -228,7 +229,8 @@ export function createMetadata(
 		vault: {
 			id: vault.id,
 			name: vault.name,
-			icon: vault.icon
+			icon: vault.icon,
+			iconImage: vault.iconImage
 		},
 		folders: foldersMap,
 		noteIds,

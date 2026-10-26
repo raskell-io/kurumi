@@ -128,6 +128,33 @@ export async function processAndStoreImage(
 	return { ref, markdown, mimeType, sizeBytes: blob.size };
 }
 
+const ICON_SIZE = 128;
+
+/**
+ * Turn an uploaded logo into a small square data: URL (center-cropped,
+ * 128px, WebP with PNG fallback). Icons are stored inline on the record
+ * rather than in the blob store so they travel with the CRDT document
+ * through every sync backend; at this size they're a few KB.
+ */
+export async function imageToIconDataUrl(file: File | Blob): Promise<string> {
+	const img = await loadImage(file);
+	const side = Math.min(img.naturalWidth, img.naturalHeight);
+	if (!side) throw new Error('Image has no dimensions');
+	const sx = (img.naturalWidth - side) / 2;
+	const sy = (img.naturalHeight - side) / 2;
+
+	const canvas = document.createElement('canvas');
+	canvas.width = ICON_SIZE;
+	canvas.height = ICON_SIZE;
+	const ctx = canvas.getContext('2d');
+	if (!ctx) throw new Error('Canvas 2D context unavailable');
+	ctx.imageSmoothingQuality = 'high';
+	ctx.drawImage(img, sx, sy, side, side, 0, 0, ICON_SIZE, ICON_SIZE);
+
+	// toDataURL silently falls back to PNG where WebP encoding is missing.
+	return canvas.toDataURL('image/webp', 0.9);
+}
+
 /**
  * Resolve a blob ref to an object URL for rendering. Caches URLs
  * so repeated calls (e.g. from re-renders) don't leak memory.
