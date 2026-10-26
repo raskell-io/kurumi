@@ -13,13 +13,17 @@
 		retryMemoryProcessing,
 		extractRemindersFromMemory,
 		restoreMemoryObject,
-		permanentlyDeleteMemoryObject
+		permanentlyDeleteMemoryObject,
+		setMemoryIcon,
+		setMemoryFavorite
 	} from '$lib/db';
 	import { pushUndo } from '$lib/stores/undo';
 	import { get } from 'svelte/store';
 	import Editor from '$lib/components/Editor.svelte';
 	import InlineTemplateChooser from '$lib/components/InlineTemplateChooser.svelte';
 	import LinkPreview from '$lib/components/LinkPreview.svelte';
+	import NoteIcon from '$lib/components/NoteIcon.svelte';
+	import IconPicker from '$lib/components/IconPicker.svelte';
 	import { untrack, tick } from 'svelte';
 	import { downloadSingleMemory, type MarkdownExportFormat } from '$lib/utils/markdown-export';
 	import { publishMemoryAsHtml, copyMemoryAsHtml, shareMemory } from '$lib/utils/publish';
@@ -51,7 +55,9 @@
 		FileCode,
 		X,
 		Menu,
-		Search
+		Search,
+		Star,
+		Smile
 	} from 'lucide-svelte';
 	import { triggerSearch } from '$lib/stores/snackbar';
 	import CameraCapture from '$lib/components/CameraCapture.svelte';
@@ -66,6 +72,12 @@
 	let relatedNotes = $state<Array<{ memory: MemoryObject; score: number }>>([]);
 	let loadingRelated = $state(false);
 	let showMoreMenu = $state(false);
+	let iconPickerAnchor = $state<{ left: number; top: number; bottom: number } | null>(null);
+
+	function openIconPicker(e: MouseEvent) {
+		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		iconPickerAnchor = { left: rect.left, top: rect.top, bottom: rect.bottom };
+	}
 	let titleInput: HTMLInputElement | undefined = $state();
 	let scrollArea: HTMLDivElement | undefined = $state();
 
@@ -687,7 +699,10 @@
 					<a href="/read/folder/{folder.id}" class="max-w-40 truncate rounded px-1 py-0.5 hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]">{folder.name}</a>
 					<span class="text-[var(--color-text-faint)]">/</span>
 				{/each}
-				<span class="truncate px-1 text-[var(--color-text)]">{title && title !== 'Untitled' ? title : 'Untitled'}</span>
+				<span class="flex min-w-0 items-center gap-1.5 px-1 text-[var(--color-text)]">
+					{#if memory.icon}<NoteIcon icon={memory.icon} class="h-3.5 w-3.5" />{/if}
+					<span class="truncate">{title && title !== 'Untitled' ? title : 'Untitled'}</span>
+				</span>
 			</nav>
 
 			{#if isRecording}
@@ -712,6 +727,16 @@
 
 			<button onclick={() => triggerSearch.set(true)} class="k-icon-btn md:hidden" aria-label="Search">
 				<Search class="h-4 w-4" />
+			</button>
+			<button
+				onclick={() => setMemoryFavorite(memory!.id, !memory!.favoritedAt)}
+				class="k-icon-btn"
+				class:favorite-on={!!memory.favoritedAt}
+				title={memory.favoritedAt ? 'Remove from favorites' : 'Add to favorites'}
+				aria-label={memory.favoritedAt ? 'Remove from favorites' : 'Add to favorites'}
+				aria-pressed={!!memory.favoritedAt}
+			>
+				<Star class="h-4 w-4" fill={memory.favoritedAt ? 'currentColor' : 'none'} />
 			</button>
 			<button onclick={() => (showHistory = true)} class="k-icon-btn" title="Version history" aria-label="Version history">
 				<History class="h-4 w-4" />
@@ -753,6 +778,9 @@
 						</button>
 						<button class="k-menu-item" role="menuitem" onclick={() => { showMoreMenu = false; showHistory = true; }}>
 							<History class="h-4 w-4 text-[var(--color-text-muted)]" /> Version history
+						</button>
+						<button class="k-menu-item" role="menuitem" onclick={() => { showMoreMenu = false; if (memory) setMemoryFavorite(memory.id, !memory.favoritedAt); }}>
+							<Star class="h-4 w-4 text-[var(--color-text-muted)]" /> {memory.favoritedAt ? 'Remove from favorites' : 'Add to favorites'}
 						</button>
 						<div class="k-menu-sep"></div>
 						<div class="k-menu-label">Export</div>
@@ -805,7 +833,22 @@
 			<div class="mx-auto flex min-h-full max-w-[46rem] flex-col pt-6 md:pt-12">
 				<!-- Hover-revealed insert bar (always shown on touch devices) -->
 				<div class="group/title">
+					{#if memory.icon}
+						<button
+							onclick={openIconPicker}
+							class="page-icon -ml-1 mb-2 flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-lg"
+							title="Change icon"
+							aria-label="Change icon"
+						>
+							<NoteIcon icon={memory.icon} class="h-16 w-16 text-[3.5rem]" />
+						</button>
+					{/if}
 					<div class="insert-bar -ml-1.5 mb-1 flex items-center gap-0.5">
+						{#if !memory.icon}
+							<button onclick={openIconPicker} class="insert-btn" title="Add icon">
+								<Smile class="h-3.5 w-3.5" /> Icon
+							</button>
+						{/if}
 						<button onclick={handleImageUpload} class="insert-btn" title="Insert image">
 							<ImagePlus class="h-3.5 w-3.5" /> Image
 						</button>
@@ -1139,6 +1182,16 @@
 
 	<LinkPreview container={scrollArea} onOpen={handleWikilinkClick} />
 
+	{#if iconPickerAnchor && memory}
+		<IconPicker
+			anchor={iconPickerAnchor}
+			hasIcon={!!memory.icon}
+			onSelect={(icon) => setMemoryIcon(memory!.id, icon)}
+			onRemove={() => setMemoryIcon(memory!.id, null)}
+			onClose={() => (iconPickerAnchor = null)}
+		/>
+	{/if}
+
 	<!-- Version History Modal -->
 	{#if showHistory && memory}
 		<VersionHistoryModal
@@ -1176,6 +1229,14 @@
 {/if}
 
 <style>
+	.page-icon:hover {
+		background: var(--color-hover);
+	}
+
+	.favorite-on {
+		color: #d99a16;
+	}
+
 	.title-input {
 		border: none !important;
 		outline: none !important;

@@ -15,7 +15,8 @@
 		actionItems,
 		reminderProposals,
 		rolloverRecurringActionItems,
-		savedSearches
+		savedSearches,
+		favoriteMemoryObjects
 	} from '$lib/db';
 	import { storeBlob } from '$lib/db/blob-store';
 	import { initHashRouter, updateHashFromPath, currentRoutePath } from '$lib/hash-router';
@@ -31,7 +32,15 @@
 	import LockScreen from '$lib/components/LockScreen.svelte';
 	import { lockEnabled, isLocked, lock, autoLockMinutes, hasPinSet } from '$lib/stores/lock';
 	import { undoLast } from '$lib/stores/undo';
-	import { focusMode, toggleFocusMode, openTabs, touchTab, closeTab, moveTab } from '$lib/stores/workspace';
+	import {
+		focusMode,
+		toggleFocusMode,
+		openTabs,
+		touchTab,
+		touchRecent,
+		closeTab,
+		moveTab
+	} from '$lib/stores/workspace';
 	import {
 		bootNotifications,
 		stopNotificationLoop,
@@ -49,6 +58,7 @@
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import FolderTree from '$lib/components/FolderTree.svelte';
 	import VaultSelector from '$lib/components/VaultSelector.svelte';
+	import NoteIcon from '$lib/components/NoteIcon.svelte';
 	import TemplatePicker from '$lib/components/TemplatePicker.svelte';
 	import VoiceCaptureModal from '$lib/components/VoiceCaptureModal.svelte';
 	import {
@@ -123,6 +133,7 @@
 		}
 	}
 	let showTags = $state(false);
+	let showFavorites = $state(true);
 	let theme = $state<'light' | 'dark' | 'system'>('system');
 	let sidebarCollapsed = $state(false);
 	let showConflictModal = $state(false);
@@ -325,6 +336,13 @@
 				showSearch = !showSearch;
 				return;
 			}
+			// Quick switcher: Cmd+O (Obsidian) / Cmd+P (Notion). Opens the
+			// palette, which lists recently opened notes first.
+			if (e.key === 'o' || e.key === 'p') {
+				e.preventDefault();
+				showSearch = true;
+				return;
+			}
 			if (e.key === 'n') {
 				e.preventDefault();
 				handleNewNote();
@@ -442,6 +460,7 @@
 			const memoryMatch = to.url.pathname.match(/^\/memory\/([a-zA-Z0-9]+)/);
 			if (memoryMatch) {
 				touchTab(memoryMatch[1]);
+				touchRecent(memoryMatch[1]);
 			}
 		}
 	});
@@ -797,6 +816,37 @@
 					{/each}
 				</div>
 
+				<!-- Favorites -->
+				{#if $favoriteMemoryObjects.length > 0}
+					<div class="px-2 pt-3">
+						<button
+							onclick={() => (showFavorites = !showFavorites)}
+							class="section-label w-full"
+							aria-expanded={showFavorites}
+							aria-controls="favorites-list"
+						>
+							<ChevronRight class="h-3 w-3 transition-transform {showFavorites ? 'rotate-90' : ''}" aria-hidden="true" />
+							Favorites
+						</button>
+						{#if showFavorites}
+							<div id="favorites-list">
+								{#each $favoriteMemoryObjects as fav (fav.id)}
+									<a
+										href="/memory/{fav.id}"
+										onclick={handleNoteClick}
+										class="nav-row"
+										class:nav-row-active={currentPath === `/memory/${fav.id}`}
+										aria-current={currentPath === `/memory/${fav.id}` ? 'page' : undefined}
+									>
+										<NoteIcon icon={fav.icon} class="nav-icon" />
+										<span class="truncate">{fav.title || 'Untitled'}</span>
+									</a>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/if}
+
 				<!-- Tags -->
 				{#if allTags.length > 0}
 					<div class="px-2 pt-3">
@@ -947,6 +997,9 @@
 							ondrop={(e) => { e.preventDefault(); const from = parseInt(e.dataTransfer?.getData('text/plain') ?? '-1', 10); if (from >= 0) moveTab(from, i); }}
 							onauxclick={(e) => { if (e.button === 1) { e.preventDefault(); closeTab(tab.id); } }}
 						>
+							{#if tab.icon}
+								<NoteIcon icon={tab.icon} class="h-3.5 w-3.5" />
+							{/if}
 							<span class="truncate">{tab.title || 'Untitled'}</span>
 							<button
 								class="tab-close"

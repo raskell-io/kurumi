@@ -62,6 +62,8 @@ Kurumi (クルミ, "walnut" in Japanese — because it looks like a brain) is a 
 |---------|-------------|
 | **Folders** | Unlimited nesting, drag-and-drop, hover `+`/`⋯` actions, right-click menus (rename, copy `[[link]]`, move), swipe-delete on touch |
 | **Vaults** | Separate workspaces with independent data; built-in icon or your own uploaded logo, editable any time |
+| **Favorites** | Star notes to pin them to the top of the sidebar |
+| **Page icons** | Give any note an emoji or uploaded image icon, shown in the tree, tabs, switcher and link previews |
 | **Tags** | Auto-extracted from #hashtags, merge and normalize duplicates |
 | **People** | Everyone you @mention is listed; save a person to add details, detect duplicates and merge them |
 | **Topics & Projects** | Extracted entities with dedup workflow |
@@ -183,6 +185,7 @@ npm run preview
 
 ```bash
 npm test                                   # unit tests (Vitest)
+npm run test:e2e                           # browser smoke tests (headless Chrome; set CHROME_PATH if needed)
 npx svelte-check --tsconfig ./tsconfig.json   # types, a11y, CSS — should report 0 errors and 0 warnings
 ```
 
@@ -193,6 +196,7 @@ npx svelte-check --tsconfig ./tsconfig.json   # types, a11y, CSS — should repo
 | Shortcut | Action |
 |----------|--------|
 | `Cmd/Ctrl + K` | Command palette / search |
+| `Cmd/Ctrl + O` / `P` | Quick switcher (recent notes first) |
 | `Cmd/Ctrl + N` | New note |
 | `Cmd/Ctrl + D` | Today's daily note |
 | `Cmd/Ctrl + G` | Graph view |
@@ -209,7 +213,7 @@ npx svelte-check --tsconfig ./tsconfig.json   # types, a11y, CSS — should repo
 | `Cmd/Ctrl + \` | Collapse / expand sidebar |
 | `Escape` | Close the open menu, dialog, or sidebar |
 
-`Cmd/Ctrl + K`, `Cmd/Ctrl + N`, and `Cmd/Ctrl + \` also work while you're typing in a note.
+`Cmd/Ctrl + K`, `O`, `P`, `N`, and `Cmd/Ctrl + \` also work while you're typing in a note.
 
 On list pages (actions, proposals, drafts, inbox, people, tags, topics):
 

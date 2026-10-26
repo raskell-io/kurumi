@@ -205,6 +205,10 @@ export interface MemoryObject {
 	customProps: Record<string, unknown>;
 	vaultId: string;
 	deletedAt: number | null;
+	// Page icon: an emoji, or an uploaded image as a small data: URL.
+	icon?: string;
+	// Set when the note is pinned to Favorites; also its sort key there.
+	favoritedAt?: number;
 }
 
 export interface MeetingMetadata {

@@ -1447,6 +1447,35 @@ export function updateMemoryObject(
 	});
 }
 
+// Set or clear (null) a note's page icon.
+export function setMemoryIcon(id: string, icon: string | null): void {
+	updateDoc((d) => {
+		const memory = d.memoryObjects[id];
+		if (!memory) return;
+		if (icon) memory.icon = icon;
+		else delete memory.icon;
+		memory.updatedAt = Date.now();
+	});
+}
+
+// Pin to / unpin from Favorites. Deliberately leaves updatedAt alone:
+// starring a note isn't an edit and shouldn't reorder "recently edited".
+export function setMemoryFavorite(id: string, favorite: boolean): void {
+	updateDoc((d) => {
+		const memory = d.memoryObjects[id];
+		if (!memory) return;
+		if (favorite) memory.favoritedAt = Date.now();
+		else delete memory.favoritedAt;
+	});
+}
+
+// Favorites in the current vault, in the order they were pinned.
+export const favoriteMemoryObjects: Readable<MemoryObject[]> = derived(memoryObjects, ($memories) =>
+	$memories
+		.filter((m) => m.favoritedAt)
+		.sort((a, b) => (a.favoritedAt ?? 0) - (b.favoritedAt ?? 0))
+);
+
 export function deleteMemoryObject(id: string): void {
 	updateDoc((d) => {
 		const memory = d.memoryObjects[id];
@@ -3497,6 +3526,10 @@ export function applyGitImport(data: GitImportData): void {
 				// Clear + repopulate so the Automerge array updates in place.
 				while (existing.tags.length > 0) existing.tags.pop();
 				for (const tag of m.tags) existing.tags.push(tag);
+				// Emoji icons round-trip through frontmatter; never clear an
+				// uploaded image icon, which markdown can't carry.
+				if (m.icon) existing.icon = m.icon;
+				else if (existing.icon && !existing.icon.startsWith('data:')) delete existing.icon;
 				existing.updatedAt = m.updatedAt;
 			}
 		}

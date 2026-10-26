@@ -1,6 +1,7 @@
 /**
  * Workspace state: recently-opened tab bar, focus mode, and outgoing
- * links tracking. All in-memory for the current session.
+ * links tracking. In-memory for the current session, except the
+ * recently-opened list, which is kept per device in localStorage.
  */
 
 import { writable, derived, type Readable } from 'svelte/store';
@@ -13,6 +14,35 @@ export const focusMode = writable(false);
 
 export function toggleFocusMode(): void {
 	focusMode.update((v) => !v);
+}
+
+// --- Recently opened ------------------------------------------------------
+
+const RECENT_KEY = 'kurumi-recent-notes';
+const MAX_RECENT = 30;
+
+function loadRecent(): string[] {
+	try {
+		const parsed = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]');
+		return Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string') : [];
+	} catch {
+		return [];
+	}
+}
+
+/** Note ids this device opened, most recent first. Feeds the quick switcher. */
+export const recentNoteIds = writable<string[]>(typeof localStorage === 'undefined' ? [] : loadRecent());
+
+export function touchRecent(memoryId: string): void {
+	recentNoteIds.update((ids) => {
+		const next = [memoryId, ...ids.filter((id) => id !== memoryId)].slice(0, MAX_RECENT);
+		try {
+			localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+		} catch {
+			// Storage full or blocked: recents just won't persist.
+		}
+		return next;
+	});
 }
 
 // --- Tab bar ----------------------------------------------------------------
@@ -60,15 +90,13 @@ export function closeTab(memoryId: string): void {
 /** Derived store that resolves tab IDs to MemoryObject + title pairs
  *  so the UI can render them. Dead refs (deleted memories) are
  *  automatically dropped. */
-export const openTabs: Readable<Array<{ id: string; title: string }>> = derived(
+export const openTabs: Readable<Array<{ id: string; title: string; icon?: string }>> = derived(
 	[openTabIds, memoryObjects],
 	([$ids, $memories]) => {
 		const byId = new Map($memories.map((m) => [m.id, m]));
-		return $ids
-			.map((id) => {
-				const memory = byId.get(id);
-				return memory ? { id, title: memory.title || 'Untitled' } : null;
-			})
-			.filter((t): t is { id: string; title: string } => t !== null);
+		return $ids.flatMap((id) => {
+			const memory = byId.get(id);
+			return memory ? [{ id, title: memory.title || 'Untitled', icon: memory.icon }] : [];
+		});
 	}
 );

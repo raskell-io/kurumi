@@ -431,7 +431,8 @@ export function parseNotesFromFiles(
 			meetingExtras: null,
 			customProps: {},
 			vaultId,
-			deletedAt: null
+			deletedAt: null,
+			...(parsed.icon ? { icon: parsed.icon } : {})
 		});
 	}
 

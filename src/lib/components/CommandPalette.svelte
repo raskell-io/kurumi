@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { search } from '$lib/search';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import {
 		addMemoryObject,
 		addMeetingMemo,
@@ -23,6 +24,8 @@
 		triggerUploadRecording
 	} from '$lib/stores/snackbar';
 	import { Search, Cloud, CloudOff, Download } from 'lucide-svelte';
+	import { recentNoteIds } from '$lib/stores/workspace';
+	import NoteIcon from './NoteIcon.svelte';
 
 	interface Props {
 		onClose: () => void;
@@ -53,6 +56,7 @@
 		icon?: string;
 		vaultIconId?: string; // For vault items, the icon ID from the vault icons library
 		vaultIconImage?: string; // For vault items with an uploaded logo
+		noteIcon?: string; // For notes with a page icon (emoji or image)
 		action: () => void;
 	}
 
@@ -341,52 +345,29 @@
 		const q = query.toLowerCase().trim();
 
 		if (!q) {
-			// Show recent folders and memories sorted by modified date (actions only with > prefix)
-			const recentFolders: Command[] = $folders
-				.sort((a, b) => b.modified - a.modified)
-				.slice(0, 5)
-				.map((f) => ({
-					id: f.id,
-					type: 'folder' as const,
-					title: f.name,
-					icon: 'folder',
-					action: () => {
-						onClose();
-					}
-				}));
+			// Quick-switcher view: notes opened recently on this device, then
+			// recently edited ones to fill the list (actions only with > prefix).
+			// The note you're on is left out, so Enter jumps to the previous one.
+			const currentId = $page.url.pathname.match(/^\/memory\/([^/]+)/)?.[1];
+			const byId = new Map($memoryObjects.map((m) => [m.id, m]));
+			const opened = $recentNoteIds.flatMap((id) => (id === currentId ? [] : (byId.get(id) ?? [])));
+			const openedIds = new Set(opened.map((m) => m.id));
+			const edited = $memoryObjects
+				.filter((m) => !openedIds.has(m.id) && m.id !== currentId)
+				.sort((a, b) => b.updatedAt - a.updatedAt);
 
-			const recentMemories: Command[] = $memoryObjects
-				.slice()
-				.sort((a, b) => b.updatedAt - a.updatedAt)
-				.slice(0, 10)
-				.map((m) => ({
-					id: m.id,
-					type: 'note' as const,
-					title: m.title || 'Untitled',
-					icon: 'note',
-					description: stripHtml(m.bodyMarkdown).slice(0, 60),
-					action: () => {
-						goto(`/memory/${m.id}`);
-						onClose();
-					}
-				}));
-
-			// Combine folders and memories, sort by modified time
-			const recentItems = [...recentFolders, ...recentMemories]
-				.sort((a, b) => {
-					const aTime =
-						a.type === 'folder'
-							? ($folders.find((f) => f.id === a.id)?.modified ?? 0)
-							: ($memoryObjects.find((m) => m.id === a.id)?.updatedAt ?? 0);
-					const bTime =
-						b.type === 'folder'
-							? ($folders.find((f) => f.id === b.id)?.modified ?? 0)
-							: ($memoryObjects.find((m) => m.id === b.id)?.updatedAt ?? 0);
-					return bTime - aTime;
-				})
-				.slice(0, 10);
-
-			results = recentItems;
+			results = [...opened, ...edited].slice(0, 12).map((m) => ({
+				id: m.id,
+				type: 'note' as const,
+				title: m.title || 'Untitled',
+				icon: 'note',
+				noteIcon: m.icon,
+				description: openedIds.has(m.id) ? 'Recently opened' : stripHtml(m.bodyMarkdown).slice(0, 60),
+				action: () => {
+					goto(`/memory/${m.id}`);
+					onClose();
+				}
+			}));
 		} else if (q.startsWith('>')) {
 			// Action mode - only show actions
 			const actionQuery = q.slice(1).trim();
@@ -430,16 +411,18 @@
 				title: f.name,
 				icon: 'folder',
 				action: () => {
-					// Navigate to first note in folder, or just close
+					goto(`/read/folder/${f.id}`);
 					onClose();
 				}
 			}));
 
+			const iconById = new Map($memoryObjects.map((m) => [m.id, m.icon]));
 			const noteCommands: Command[] = noteResults.slice(0, 10).map((r) => ({
 				id: r.id,
 				type: 'note',
 				title: r.title,
 				icon: 'note',
+				noteIcon: iconById.get(r.id),
 				description: stripHtml(r.content).slice(0, 60),
 				action: () => {
 					goto(`/memory/${r.id}`);
@@ -607,6 +590,8 @@
 								>
 									{#if item.vaultIconImage}
 										<img src={item.vaultIconImage} alt="" class="h-3.5 w-3.5 rounded-[2px] object-cover" />
+									{:else if item.noteIcon}
+										<NoteIcon icon={item.noteIcon} class="h-4 w-4 text-sm" />
 									{:else}
 										<svg
 											xmlns="http://www.w3.org/2000/svg"

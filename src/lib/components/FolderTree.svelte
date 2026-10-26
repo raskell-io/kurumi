@@ -2,6 +2,7 @@
 	import { autofocus } from '$lib/actions/autofocus';
 	import { portal } from '$lib/actions/portal';
 	import VaultIcon from './VaultIcon.svelte';
+	import NoteIcon from './NoteIcon.svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { currentRoutePath } from '$lib/hash-router';
@@ -21,7 +22,8 @@
 		vaults,
 		currentVaultId,
 		moveMemoryObjectToVault,
-		moveFolderToVault
+		moveFolderToVault,
+		setMemoryFavorite
 	} from '$lib/db';
 	import {
 		ChevronRight,
@@ -29,7 +31,6 @@
 		FolderOpen,
 		FolderPlus,
 		FilePlus,
-		NotebookText,
 		Pencil,
 		Trash2,
 		FolderInput,
@@ -40,7 +41,8 @@
 		ChevronsDownUp,
 		MoreHorizontal,
 		Plus,
-		Link2
+		Link2,
+		Star
 	} from 'lucide-svelte';
 	import { pushUndo } from '$lib/stores/undo';
 
@@ -1151,7 +1153,7 @@
 				ondragend={handleDragEnd}
 			>
 				<span class="tree-chevron" aria-hidden="true"></span>
-				<NotebookText class="tree-icon" />
+				<NoteIcon icon={memory.icon} class="tree-icon" />
 				{#if renamingNote === memory.id}
 										<input
 						type="text"
@@ -1297,6 +1299,16 @@
 		<button onclick={() => copyNoteLink(contextMenuNote!)} class="k-menu-item">
 			<Link2 class="h-4 w-4" />
 			Copy [[link]]
+		</button>
+		<button
+			onclick={() => {
+				if (memory) setMemoryFavorite(memory.id, !memory.favoritedAt);
+				closeContextMenu();
+			}}
+			class="k-menu-item"
+		>
+			<Star class="h-4 w-4" />
+			{memory?.favoritedAt ? 'Remove from favorites' : 'Add to favorites'}
 		</button>
 		{#if memory?.folderId}
 			<button

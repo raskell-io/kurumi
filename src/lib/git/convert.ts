@@ -41,6 +41,7 @@ export interface ParsedNote {
 	title: string;
 	content: string;
 	tags: string[];
+	icon?: string;
 	created: number;
 	modified: number;
 }
@@ -78,6 +79,10 @@ function generateFrontMatter(memory: MemoryObject): string {
 	lines.push(`modified: ${new Date(memory.updatedAt).toISOString()}`);
 	if (memory.tags.length > 0) {
 		lines.push(`tags: [${memory.tags.map((t) => `"${t}"`).join(', ')}]`);
+	}
+	// Emoji icons only; uploaded-image icons stay in the database.
+	if (memory.icon && !memory.icon.startsWith('data:')) {
+		lines.push(`icon: "${memory.icon.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`);
 	}
 	lines.push('---');
 	lines.push('');
@@ -181,6 +186,7 @@ export function parseMarkdownFile(path: string, content: string): ParsedNote {
 		title,
 		content: body,
 		tags: (frontMatter.tags as string[]) || [],
+		...(typeof frontMatter.icon === 'string' && frontMatter.icon ? { icon: frontMatter.icon } : {}),
 		created: frontMatter.created ? new Date(frontMatter.created as string).getTime() : Date.now(),
 		modified: frontMatter.modified ? new Date(frontMatter.modified as string).getTime() : Date.now()
 	};

@@ -9,6 +9,7 @@
 	 */
 	import { memoryObjects, folders } from '$lib/db';
 	import { FileText, FilePlus } from 'lucide-svelte';
+	import NoteIcon from './NoteIcon.svelte';
 	import type { MemoryObject } from '$lib/db/types';
 
 	interface Props {
@@ -139,8 +140,9 @@
 				{#if folderName}<span class="truncate">{folderName}</span><span>·</span>{/if}
 				<span class="shrink-0">Edited {formatEdited(target.updatedAt)}</span>
 			</div>
-			<div class="mt-1.5 truncate text-sm font-semibold text-[var(--color-text)]">
-				{target.title || 'Untitled'}
+			<div class="mt-1.5 flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text)]">
+				{#if target.icon}<NoteIcon icon={target.icon} class="h-4 w-4" />{/if}
+				<span class="truncate">{target.title || 'Untitled'}</span>
 			</div>
 			{#if excerpt}
 				<p class="mt-1 line-clamp-4 text-[0.8125rem] leading-relaxed text-[var(--color-text-muted)]">{excerpt}</p>

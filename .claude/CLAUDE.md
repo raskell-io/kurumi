@@ -162,6 +162,15 @@ OpenAI to MMS when the API key is missing.
 - Graph view (`/graph`) — force-directed memory link visualization
 - Weekly review (`/review`) — stats, AI summary, overdue + pending
 - Folder tree with unlimited nesting, drag-drop, swipe-delete
+- Quick switcher (`Cmd+O` / `Cmd+P`, or `Cmd+K` with an empty query) —
+  notes recently opened on this device first (`recentNoteIds` in
+  `stores/workspace.ts`), excluding the current note
+- Favorites — `favoritedAt` on the memory (synced, doesn't bump
+  `updatedAt`); sidebar section, header star, tree row menu
+- Page icons — `icon` on the memory (emoji, or uploaded image as a data
+  URL); `IconPicker` / `NoteIcon` components; shown in tree, tabs,
+  favorites, switcher, breadcrumb and `[[link]]` hover preview. Emoji
+  icons round-trip through git frontmatter (`icon:`), images don't
 
 ### Process & Act (Phase 9 controlled action layer)
 - **Action items** (`/actions`, `Cmd+Shift+A`) — promoted from meeting
@@ -299,6 +308,7 @@ src/
 | Shortcut | Action |
 |----------|--------|
 | `Cmd/Ctrl + K` | Command palette / search |
+| `Cmd/Ctrl + O` / `P` | Quick switcher (recent notes first) |
 | `Cmd/Ctrl + N` | New note |
 | `Cmd/Ctrl + D` | Today's daily note |
 | `Cmd/Ctrl + G` | Graph view |
@@ -315,7 +325,7 @@ src/
 | `Cmd/Ctrl + `` ` | Toggle agent pane |
 | `Escape` | Close menu/modal/sidebar |
 
-`Cmd/Ctrl + K`, `N` and `\` also fire while typing in an input or the editor.
+`Cmd/Ctrl + K`, `O`, `P`, `N` and `\` also fire while typing in an input or the editor.
 
 On list pages (`/actions`, `/proposals`, `/drafts`):
 
@@ -342,6 +352,9 @@ npm run dev          # dev server
 npm run build        # production build
 npm run preview      # preview built app
 npx svelte-check     # type + a11y + css check (should be 0/0)
+npm test             # unit tests (Vitest)
+npm run test:e2e     # browser smoke tests (e2e/smoke.mjs; starts vite dev,
+                     # headless Chrome; set CHROME_PATH if needed)
 ```
 
 **Invariant:** `npx svelte-check` should always return
