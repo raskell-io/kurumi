@@ -43,10 +43,24 @@ import {
 	localFSPushAllVaults,
 	isLocalFSAllVaults,
 	localFSReadIncoming,
-	localFSRemoveIncoming
+	localFSRemoveIncoming,
+	localFSReadTree,
+	localFSManagedPaths,
+	localFSVaultFolders,
+	localFSRemoveImported,
+	localFSExactFileExists
 } from './local-fs';
-import { getMemoryObject, updateMemoryObject, applyGitImport, getVaultContents } from '$lib/db';
-import { parseMarkdownFile, parseFrontMatter } from '$lib/git/convert';
+import {
+	getMemoryObject,
+	updateMemoryObject,
+	applyGitImport,
+	getVaultContents,
+	addFolder,
+	addVault,
+	addImportedMemoryObject
+} from '$lib/db';
+import { parseMarkdownFile, parseFrontMatter, noteToMarkdownFile } from '$lib/git/convert';
+import { generateSlug, vaultDirNames } from '$lib/utils/markdown-export';
 import {
 	getAzureBlobConfig,
 	isAzureBlobConfigured,
@@ -513,6 +527,118 @@ async function importLocalFSEdits(vaultId: string | null, lastSyncedAt: number |
 }
 
 /**
+ * Bring in notes and folders that were added to the folder from outside
+ * Kurumi (a file manager, Obsidian, `git pull` by the local agent, …).
+ *
+ * - A markdown file Kurumi doesn't know (not one it wrote, no known id)
+ *   becomes a note: title from frontmatter `name`/`title` or the file
+ *   name, tags from frontmatter, folder from its directory.
+ * - Directories become folders (matched by name, or by the slug Kurumi
+ *   itself writes, so its own folders aren't duplicated); empty ones too.
+ * - In the all-vaults layout, a new top-level directory becomes a vault.
+ *
+ * Returns the imported files so the caller can remove them once the note
+ * has been written under Kurumi's own path for it (see syncLocalFS).
+ */
+async function importNewLocalFiles(
+	allVaults: boolean,
+	currentVaultId: string
+): Promise<{ path: string; memoryId: string }[]> {
+	const { files, emptyDirs } = await localFSReadTree();
+	// Case-insensitive: on macOS a file Kurumi wrote as "work/a.md" may be
+	// listed under the name the user first gave it ("Work/A.md").
+	const managed = new Set([...(await localFSManagedPaths()).keys()].map((p) => p.toLowerCase()));
+
+	// Top-level directory → vault (all-vaults layout).
+	const dirToVault = new Map<string, string>();
+	if (allVaults) {
+		const known = get(vaults);
+		const names = vaultDirNames(known);
+		for (const v of known) {
+			dirToVault.set(v.name.toLowerCase(), v.id);
+			dirToVault.set(names.get(v.id)!.toLowerCase(), v.id);
+		}
+		for (const [id, dir] of Object.entries(await localFSVaultFolders())) dirToVault.set(dir.toLowerCase(), id);
+	}
+
+	const locate = (path: string, isDir: boolean): { vaultId: string; dirs: string[] } => {
+		const parts = path.split('/');
+		const dirs = isDir ? parts : parts.slice(0, -1);
+		if (!allVaults || dirs.length === 0) return { vaultId: currentVaultId, dirs };
+		let vaultId = dirToVault.get(dirs[0].toLowerCase());
+		if (!vaultId) {
+			vaultId = addVault(dirs[0]).id;
+			dirToVault.set(dirs[0].toLowerCase(), vaultId);
+		}
+		return { vaultId, dirs: dirs.slice(1) };
+	};
+
+	const ensureFolder = (vaultId: string, dirs: string[]): string | null => {
+		let parentId: string | null = null;
+		for (const name of dirs) {
+			const key = name.toLowerCase();
+			const existing = getVaultContents(vaultId).folders.find(
+				(f) => f.parentId === parentId && (f.name.toLowerCase() === key || generateSlug(f.name) === key)
+			);
+			parentId = (existing ?? addFolder(name, parentId, vaultId)).id;
+		}
+		return parentId;
+	};
+
+	for (const dir of emptyDirs) {
+		const { vaultId, dirs } = locate(dir, true);
+		ensureFolder(vaultId, dirs);
+	}
+
+	const imported: { path: string; memoryId: string }[] = [];
+	for (const file of files) {
+		if (managed.has(file.path.toLowerCase())) continue; // one Kurumi wrote
+		const { frontMatter, body } = parseFrontMatter(file.content.replace(/\r\n?/g, '\n'));
+		const id = typeof frontMatter.id === 'string' && frontMatter.id ? frontMatter.id : undefined;
+		if (id && getMemoryObject(id)) continue; // a known note (edits are handled separately)
+
+		const { vaultId, dirs } = locate(file.path, false);
+		const fileName = file.path.split('/').pop()!.replace(/\.(md|markdown)$/i, '');
+		const named = [frontMatter.name, frontMatter.title].find((v) => typeof v === 'string' && v.trim());
+		const created = typeof frontMatter.created === 'string' ? Date.parse(frontMatter.created) : NaN;
+		const tags = Array.isArray(frontMatter.tags) ? frontMatter.tags.map(String) : [];
+		const memory = addImportedMemoryObject({
+			id,
+			title: (named as string | undefined)?.trim() || fileName,
+			bodyMarkdown: body,
+			tags,
+			folderId: ensureFolder(vaultId, dirs),
+			vaultId,
+			createdAt: Number.isNaN(created) ? file.lastModified : created,
+			updatedAt: file.lastModified
+		});
+		imported.push({ path: file.path, memoryId: memory.id });
+	}
+	return imported;
+}
+
+// After the mirror has been written, drop each imported file whose note
+// now lives under a different (Kurumi-named) path, so it isn't imported
+// twice. Only when both exist as separate files: on a case-insensitive
+// disk a path differing only in case is the very same file.
+async function removeImportedOriginals(
+	imported: { path: string; memoryId: string }[],
+	allVaults: boolean
+): Promise<void> {
+	const dirNames = vaultDirNames(get(vaults));
+	const remove: string[] = [];
+	for (const { path, memoryId } of imported) {
+		const memory = getMemoryObject(memoryId);
+		if (!memory) continue;
+		const relative = noteToMarkdownFile(memory, getVaultContents(memory.vaultId).folders).path;
+		const canonical = allVaults ? `${dirNames.get(memory.vaultId)}/${relative}` : relative;
+		if (canonical === path) continue;
+		if ((await localFSExactFileExists(canonical)) && (await localFSExactFileExists(path))) remove.push(path);
+	}
+	await localFSRemoveImported(remove);
+}
+
+/**
  * Local filesystem sync implementation
  */
 async function syncLocalFS(): Promise<{ success: boolean; error?: string }> {
@@ -544,6 +670,14 @@ async function syncLocalFS(): Promise<{ success: boolean; error?: string }> {
 			console.warn('Local FS markdown import failed:', importErr);
 		}
 
+		// New files and folders added to the folder from outside Kurumi.
+		let imported: { path: string; memoryId: string }[] = [];
+		try {
+			imported = await importNewLocalFiles(allVaults, vaultId);
+		} catch (importErr) {
+			console.warn('Local FS new-file import failed:', importErr);
+		}
+
 		const localBinary = getDocBinary();
 		await localFSPush(localBinary);
 
@@ -573,6 +707,12 @@ async function syncLocalFS(): Promise<{ success: boolean; error?: string }> {
 				get(actionItems).filter((a) => a.vaultId === vaultId),
 				blobs
 			);
+		}
+
+		try {
+			await removeImportedOriginals(imported, allVaults);
+		} catch (cleanupErr) {
+			console.warn('Local FS cleanup of imported files failed:', cleanupErr);
 		}
 
 		setSyncSuccess();

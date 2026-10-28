@@ -1047,6 +1047,36 @@ export function addMemoryObject(
 	return memory;
 }
 
+/**
+ * Create a note from a file found on disk (local folder sync): any vault,
+ * keeping the file's dates and, when it carries one, its Kurumi id.
+ */
+export function addImportedMemoryObject(options: {
+	id?: string;
+	title: string;
+	bodyMarkdown: string;
+	tags: string[];
+	folderId: string | null;
+	vaultId: string;
+	createdAt: number;
+	updatedAt: number;
+}): MemoryObject {
+	const memory = createMemoryObject({
+		title: options.title,
+		bodyMarkdown: options.bodyMarkdown,
+		folderId: options.folderId,
+		vaultId: options.vaultId
+	});
+	if (options.id) memory.id = options.id;
+	memory.tags = [...options.tags];
+	memory.createdAt = memory.capturedAt = options.createdAt;
+	memory.updatedAt = options.updatedAt;
+	updateDoc((d) => {
+		d.memoryObjects[memory.id] = memory;
+	});
+	return memory;
+}
+
 export function addVoiceMemo(options: {
 	title: string;
 	rawAudioRef: string;
@@ -1596,13 +1626,13 @@ export function deleteMemoryObject(id: string): void {
 
 // ============ Folder CRUD Operations ============
 
-export function addFolder(name: string, parentId?: string | null): Folder {
+export function addFolder(name: string, parentId?: string | null, inVaultId?: string): Folder {
 	if (!doc) {
 		console.error('Cannot add folder: database not initialized');
 		doc = Automerge.from<KurumiDocument>(createEmptyDocument());
 		docStore.set(doc);
 	}
-	const vaultId = getCurrentVaultId();
+	const vaultId = inVaultId ?? getCurrentVaultId();
 	const folder = createFolder(name, parentId ?? null, vaultId);
 	updateDoc((d) => {
 		d.folders[folder.id] = folder;

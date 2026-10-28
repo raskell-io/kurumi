@@ -526,35 +526,125 @@ export interface DiskMarkdownFile {
 	lastModified: number;
 }
 
-// Recursively read every `.md` file in the picked folder (skipping the
-// `.kurumi` metadata dir). Returns raw contents + the OS file mtime so the
-// caller can decide which side is newer.
-export async function localFSReadMarkdown(): Promise<DiskMarkdownFile[]> {
-	const dir = await getHandle();
-	if (!dir) throw new Error('Local folder not configured');
-	const out: DiskMarkdownFile[] = [];
-	await walkMarkdown(dir, '', out);
-	return out;
+const MARKDOWN_FILE = /\.(md|markdown)$/i;
+
+export interface DiskTree {
+	files: DiskMarkdownFile[];
+	emptyDirs: string[]; // directories with nothing (visible) in them
 }
 
-async function walkMarkdown(
-	dir: FileSystemDirectoryHandle,
-	prefix: string,
-	out: DiskMarkdownFile[]
-): Promise<void> {
+// Recursively read every markdown file and directory in the picked folder.
+// Hidden entries (`.kurumi`, `.git`, `.obsidian`, `.DS_Store`, …) are
+// skipped. Returns raw contents + the OS file mtime so the caller can
+// decide which side is newer.
+export async function localFSReadTree(): Promise<DiskTree> {
+	const dir = await getHandle();
+	if (!dir) throw new Error('Local folder not configured');
+	const tree: DiskTree = { files: [], emptyDirs: [] };
+	await walkTree(dir, '', tree);
+	return tree;
+}
+
+export async function localFSReadMarkdown(): Promise<DiskMarkdownFile[]> {
+	return (await localFSReadTree()).files;
+}
+
+async function walkTree(dir: FileSystemDirectoryHandle, prefix: string, tree: DiskTree): Promise<void> {
 	const entries = (dir as FileSystemDirectoryHandle & {
 		values: () => AsyncIterableIterator<FileSystemHandle>;
 	}).values();
+	let empty = true;
 	for await (const handle of entries) {
+		if (handle.name.startsWith('.')) continue;
+		empty = false;
 		const childPath = prefix ? `${prefix}/${handle.name}` : handle.name;
 		if (handle.kind === 'directory') {
-			if (handle.name === METADATA_DIR) continue;
-			await walkMarkdown(handle as FileSystemDirectoryHandle, childPath, out);
-		} else if (handle.kind === 'file' && handle.name.endsWith('.md')) {
+			await walkTree(handle as FileSystemDirectoryHandle, childPath, tree);
+		} else if (handle.kind === 'file' && MARKDOWN_FILE.test(handle.name)) {
 			const file = await (handle as FileSystemFileHandle).getFile();
-			out.push({ path: childPath, content: await file.text(), lastModified: file.lastModified });
+			tree.files.push({ path: childPath, content: await file.text(), lastModified: file.lastModified });
 		}
 	}
+	if (empty && prefix) tree.emptyDirs.push(prefix);
+}
+
+/**
+ * Paths of the notes Kurumi wrote on the last sync, mapped to their note
+ * ids (from the `.kurumi/metadata.json` of the root or of each vault
+ * folder), relative to the folder root.
+ */
+export async function localFSManagedPaths(): Promise<Map<string, string>> {
+	const root = await getHandle();
+	const out = new Map<string, string>();
+	if (!root) return out;
+	const add = async (dir: FileSystemDirectoryHandle, prefix: string) => {
+		try {
+			const metaDir = await dir.getDirectoryHandle(METADATA_DIR);
+			const handle = await metaDir.getFileHandle(METADATA_FILE);
+			const parsed = parseMetadata(await (await handle.getFile()).text());
+			for (const [path, id] of Object.entries(parsed?.noteIds ?? {})) out.set(prefix + path, id);
+		} catch {
+			// No metadata here yet.
+		}
+	};
+	await add(root, '');
+	for (const name of new Set(Object.values(await readVaultsIndex(root)))) {
+		try {
+			await add(await root.getDirectoryHandle(name), `${name}/`);
+		} catch {
+			// Vault folder missing.
+		}
+	}
+	return out;
+}
+
+/** The all-vaults index: vault id → folder name. */
+export async function localFSVaultFolders(): Promise<Record<string, string>> {
+	const root = await getHandle();
+	return root ? readVaultsIndex(root) : {};
+}
+
+/**
+ * Remove files that were imported and have since been written under
+ * their canonical path, then any directories that left empty (deepest
+ * first; non-empty ones, e.g. holding attachments, are kept).
+ */
+export async function localFSRemoveImported(paths: string[]): Promise<void> {
+	const root = await getHandle();
+	if (!root || paths.length === 0) return;
+	for (const path of paths) await removeFileByPath(root, path);
+	const dirs = [...dirPrefixes(paths)].sort((a, b) => b.split('/').length - a.split('/').length);
+	for (const dir of dirs) await removeEmptyDirByPath(root, dir);
+}
+
+/**
+ * Whether a file exists at exactly `path` (relative to the folder root),
+ * comparing names case-sensitively against the directory listings. On a
+ * case-insensitive disk (macOS, Windows) "Notes/A.md" and "notes/a.md"
+ * are one file whose listed name is whichever was created first, so this
+ * is what tells two paths apart as really different files.
+ */
+export async function localFSExactFileExists(path: string): Promise<boolean> {
+	const root = await getHandle();
+	if (!root) return false;
+	const parts = path.split('/').filter(Boolean);
+	let dir: FileSystemDirectoryHandle = root;
+	for (let i = 0; i < parts.length; i++) {
+		const wantDir = i < parts.length - 1;
+		let next: FileSystemHandle | null = null;
+		const entries = (dir as FileSystemDirectoryHandle & {
+			values: () => AsyncIterableIterator<FileSystemHandle>;
+		}).values();
+		for await (const handle of entries) {
+			if (handle.name === parts[i] && handle.kind === (wantDir ? 'directory' : 'file')) {
+				next = handle;
+				break;
+			}
+		}
+		if (!next) return false;
+		if (wantDir) dir = next as FileSystemDirectoryHandle;
+	}
+	return true;
 }
 
 const PROBE_FILENAME = '.kurumi-write-test';

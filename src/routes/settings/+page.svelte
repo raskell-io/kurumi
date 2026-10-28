@@ -1133,9 +1133,10 @@
 									</div>
 									<p class="k-help">
 										Notes are written as readable <code>.md</code> files (mirroring your folders),
-										plus a <code>kurumi-sync.bin</code> used to merge across devices. Edits you make to
-										a note's text in those files are read back on the next sync. Creating, renaming,
-										or deleting notes still happens in Kurumi. To back the folder with a GitHub repo
+										plus a <code>kurumi-sync.bin</code> used to merge across devices. On the next sync,
+										edits to a note's text are read back, and markdown files and folders you add become
+										notes and folders (Kurumi then renames them to its own file names). Renaming or
+										deleting notes still happens in Kurumi. To back the folder with a GitHub repo
 										without giving the browser any credentials, run the local agent
 										(<code>agent/README.md</code>) on it.
 									</p>

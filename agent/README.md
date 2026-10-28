@@ -106,8 +106,17 @@ them, the agent keeps this machine's version, because the next Kurumi sync
 rewrites it from the merged database anyway.
 
 Editing a note's **text** in the `.md` files, for example on github.com,
-works: Kurumi reads body and tag edits back on its next sync. Creating,
-renaming or deleting notes should happen in Kurumi.
+works: Kurumi reads body and tag edits back on its next sync.
+
+**Adding** works too: a new `.md` file becomes a note (title from
+frontmatter `title`/`name`, else the file name; tags from frontmatter)
+and a new directory becomes a folder. With **Write all vaults**, a new
+top-level directory becomes a vault. Kurumi then writes the note under
+its own file name (`Client X/Kickoff.md` → `client-x/kickoff.md`) and
+removes the original, so the agent commits that as a rename. Files that
+aren't markdown are left alone.
+
+Renaming or deleting notes should happen in Kurumi.
 
 One edge case: two databases that never synced with each other, e.g. you
 used Kurumi on two computers before setting up the repo. A plain CRDT merge
