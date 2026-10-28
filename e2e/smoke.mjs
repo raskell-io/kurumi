@@ -497,6 +497,91 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
+	async 'pasting formatted text keeps its markdown'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const paste = (data) =>
+			page.evaluate((data) => {
+				const dt = new DataTransfer();
+				for (const [k, v] of Object.entries(data)) dt.setData(k, v);
+				document.querySelector('main .ProseMirror').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+			}, data);
+		// Rendered chat output (HTML), as copied from a ChatGPT window
+		await newNote(page, 'From chat');
+		await page.click('main .ProseMirror');
+		await paste({
+			'text/plain': 'Plan Name Role Ana Lead print("hi")',
+			'text/html':
+				'<h2>Plan</h2><p>A <strong>bold</strong> idea</p><ul><li><p>one</p></li><li><p>two</p></li></ul>' +
+				'<div class="overflow-x-auto"><table><thead><tr><th>Name</th><th>Role</th></tr></thead><tbody><tr><td>Ana</td><td>Lead</td></tr></tbody></table></div>' +
+				'<pre><div class="code-header"><span>python</span><button>Copy code</button></div><code class="language-python">print("hi")</code></pre>'
+		});
+		await sleep(900);
+		const md = await bodyOf(page, 'From chat');
+		assert.match(md, /## Plan/);
+		assert.match(md, /A \*\*bold\*\* idea/);
+		assert.match(md, /- one\n- two/);
+		assert.match(md, /\| Name \| Role \|/);
+		assert.match(md, /```python\nprint\("hi"\)\n```/);
+		assert.doesNotMatch(md, /Copy code/);
+		// Markdown source as plain text (ChatGPT's copy button, editors)
+		await newNote(page, 'From markdown');
+		await page.click('main .ProseMirror');
+		await paste({ 'text/plain': '# Title\n\n- [ ] task\n\n> quote', 'text/html': '<div><span># Title</span></div>' });
+		await sleep(900);
+		const md2 = await bodyOf(page, 'From markdown');
+		assert.match(md2, /^# Title/);
+		assert.match(md2, /- \[ \] task/);
+		assert.match(md2, /> quote/);
+		assert.deepEqual(errors, []);
+	},
+
+	async 'files and folders added to the sync folder are imported'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const out = await page.evaluate(async () => {
+			const find = (frag) => performance.getEntriesByType('resource').map((e) => e.name).find((n) => n.includes(frag));
+			const db = await import(find('/src/lib/db/store.ts'));
+			const svc = await import(find('/src/lib/sync/service.ts'));
+			const kv = await import('/node_modules/idb-keyval/dist/index.js');
+			const root = await navigator.storage.getDirectory();
+			const dir = await root.getDirectoryHandle('e2e-import-' + Date.now(), { create: true });
+			await kv.set('kurumi-local-fs-handle', dir);
+			localStorage.setItem('kurumi-local-fs-configured', '1');
+			localStorage.setItem('kurumi-sync-method', 'local-fs');
+			const write = async (path, text) => {
+				const parts = path.split('/');
+				const name = parts.pop();
+				let d = dir;
+				for (const p of parts) d = await d.getDirectoryHandle(p, { create: true });
+				const w = await (await d.getFileHandle(name, { create: true })).createWritable();
+				await w.write(text);
+				await w.close();
+			};
+			await svc.sync();
+			await write('Inbox idea.md', 'Just a thought');
+			await write('Client X/Kickoff.md', '---\ntitle: "Kickoff call"\ntags: [client]\n---\nAgenda');
+			await dir.getDirectoryHandle('Empty Dir', { create: true });
+			await svc.sync();
+			await svc.sync(); // a second pass must not duplicate anything
+			let all;
+			db.allMemoryObjects.subscribe((v) => (all = v))();
+			let vaultId;
+			db.currentVaultId.subscribe((v) => (vaultId = v))();
+			const folders = db.getVaultContents(vaultId).folders;
+			const names = [];
+			for await (const h of dir.values()) names.push(h.name);
+			return {
+				notes: all.map((m) => `${folders.find((f) => f.id === m.folderId)?.name ?? '/'}:${m.title}:${m.tags.join(',')}`).sort(),
+				folders: folders.map((f) => f.name).sort(),
+				rootEntries: names.sort()
+			};
+		});
+		assert.deepEqual(out.notes, ['/:Inbox idea:', 'Client X:Kickoff call:client']);
+		assert.deepEqual(out.folders, ['Client X', 'Empty Dir']);
+		assert.ok(!out.rootEntries.includes('Inbox idea.md'), 'original file not replaced');
+		assert.ok(out.rootEntries.includes('inbox-idea.md') && out.rootEntries.includes('client-x'), out.rootEntries.join(', '));
+		assert.deepEqual(errors, []);
+	},
+
 	async 'local folder sync writes every vault (all-vaults layout)'(browser) {
 		const { page, errors } = await freshPage(browser);
 		const tree = await page.evaluate(async () => {

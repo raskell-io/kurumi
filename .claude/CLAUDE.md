@@ -222,6 +222,17 @@ OpenAI to MMS when the API key is missing.
   plus a markdown mirror of the current vault, or with "Write all vaults"
   one self-contained subfolder per vault (`.kurumi/vaults.json` maps vault
   id → folder; renamed/removed vaults' folders are pruned).
+  Reading back (`syncLocalFS` in `sync/service.ts`): body/tag edits of
+  known notes (by frontmatter id), and new `.md` files / directories
+  added from outside (`importNewLocalFiles`): files become notes, dirs
+  folders (matched by name or slug), new top-level dirs vaults in the
+  all-vaults layout. After the mirror is written, imported originals are
+  removed if their canonical path is a different file (exact-name check;
+  case-insensitive disks make `A.md`/`a.md` one file).
+- Pasting (`editor/pasteMarkdown.ts`): structured HTML (chat output, web,
+  Google Docs) → cleaned → markdown via hast-util-to-mdast → editor
+  parser; unstructured HTML (editors) uses the text/plain markdown; VS
+  Code code (non-markdown) stays a Milkdown code block.
 - Local git agent (`agent/kurumi-agent.mjs`, plain Node, run outside the
   browser): commits that folder and pulls/pushes with the system git. A
   git merge driver CRDT-merges `kurumi-sync.bin`; regenerated files keep

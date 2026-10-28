@@ -130,7 +130,7 @@ Kurumi (クルミ, "walnut" in Japanese — because it looks like a brain) is a 
 | **Git sync** | Push/pull via isomorphic-git to GitHub, GitLab, Codeberg through CORS proxy |
 | **Cloudflare R2** | S3-compatible sync |
 | **S3 / Azure Blob / WebDAV** | Additional sync targets |
-| **Local filesystem** | File System Access API for local folder sync, current vault or all vaults |
+| **Local filesystem** | File System Access API for local folder sync, current vault or all vaults; markdown files and folders you add there are imported |
 | **Local git agent** | `agent/kurumi-agent.mjs` commits that folder and pulls/pushes it with your system git: no token in the browser, no CORS proxy |
 | **Conflict resolution** | Side-by-side merge modal for real conflicts |
 | **Markdown export** | Vanilla, Hugo, or Zola format with full front matter; current vault or all vaults |
@@ -157,6 +157,7 @@ Kurumi (クルミ, "walnut" in Japanese — because it looks like a brain) is a 
 | **Find & replace** | `Cmd/Ctrl+F` in a note, `Cmd/Ctrl+Option+F` to replace, in this note or across all notes (undoable) |
 | **Tasks** | `[] ` or `/checkbox` for to-dos with real, clickable checkboxes |
 | **Paste links** | Paste a URL over selected text to link it |
+| **Paste formatting** | Paste from ChatGPT, web pages, Google Docs or a markdown editor and keep headings, lists, tables, code and links |
 | **Split view** | Alt+click a note or `[[link]]` to open it beside the current one |
 | **Mobile toolbar** | Formatting bar above the on-screen keyboard |
 | **Math** | LaTeX `$inline$` and `$$block$$` syntax |
