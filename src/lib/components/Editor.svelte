@@ -56,6 +56,7 @@
 	import { findReplacePlugin } from '$lib/editor/findReplace';
 	import { noteEmbedPlugin } from '$lib/editor/noteEmbed';
 	import { pasteLinkPlugin } from '$lib/editor/pasteLink';
+	import { pasteMarkdownPlugin } from '$lib/editor/pasteMarkdown';
 	import type { EditorView } from '@milkdown/kit/prose/view';
 	import { getMarkdown } from '@milkdown/kit/utils';
 
@@ -513,6 +514,7 @@
 			// Before clipboard: ProseMirror asks plugins in order and the
 			// clipboard plugin handles every paste.
 			.use(pasteLinkPlugin)
+			.use(pasteMarkdownPlugin)
 			.use(clipboard)
 			.use(wikilinkPlugin)
 			.use(wikilinkAutocompletePlugin)

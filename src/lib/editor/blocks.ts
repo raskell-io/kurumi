@@ -46,6 +46,10 @@ export function registerMarkdownParser(view: EditorView, parser: Parser): void {
 	parsers.set(view, parser);
 }
 
+export function getMarkdownParser(view: EditorView): Parser | undefined {
+	return parsers.get(view);
+}
+
 /** What kind of block the textblock at `pos` currently is. */
 export function blockKindAt(view: EditorView, pos: number): BlockKind {
 	const $pos = view.state.doc.resolve(pos);
