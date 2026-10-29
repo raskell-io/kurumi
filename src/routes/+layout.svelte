@@ -16,8 +16,10 @@
 		reminderProposals,
 		rolloverRecurringActionItems,
 		savedSearches,
-		favoriteMemoryObjects
+		favoriteMemoryObjects,
+		questions
 	} from '$lib/db';
+	import { myNames, isWaitingFor } from '$lib/work';
 	import { storeBlob } from '$lib/db/blob-store';
 	import { initHashRouter, updateHashFromPath, currentRoutePath } from '$lib/hash-router';
 	import { generateDailyDigest } from '$lib/digest';
@@ -89,6 +91,10 @@
 		PanelLeftOpen,
 		Menu,
 		FlaskConical,
+		FolderKanban,
+		CalendarClock,
+		Gavel,
+		HelpCircle,
 		Sun,
 		Moon,
 		Monitor
@@ -272,7 +278,10 @@
 		warn?: boolean;
 	};
 
-	let openActionCount = $derived($actionItems.filter((i) => i.status === 'open').length);
+	// Your own open to-dos; ones you're waiting on from others are separate.
+	let openActionCount = $derived($actionItems.filter((i) => i.status === 'open' && !isWaitingFor(i, $myNames)).length);
+	let openQuestionCount = $derived($questions.filter((q) => q.status === 'open').length);
+	let showWork = $state(true);
 	let pendingProposalCount = $derived($reminderProposals.filter((p) => p.status === 'pending').length);
 
 	const primaryNav: NavItem[] = [
@@ -283,6 +292,13 @@
 		{ href: '/actions', label: 'Actions', icon: CheckSquare, hint: `Action items (${modKey}⇧A)`, count: () => openActionCount },
 		{ href: '/proposals', label: 'Proposals', icon: Bell, hint: 'Reminder proposals', count: () => pendingProposalCount, warn: true },
 		{ href: '/drafts', label: 'Drafts', icon: Pencil, hint: 'Email & calendar drafts' }
+	];
+
+	const workNav: NavItem[] = [
+		{ href: '/projects', label: 'Projects', icon: FolderKanban },
+		{ href: '/meetings', label: 'Meetings', icon: CalendarClock, hint: 'Recurring meetings and their agendas' },
+		{ href: '/decisions', label: 'Decisions', icon: Gavel, hint: 'Decision log' },
+		{ href: '/questions', label: 'Questions', icon: HelpCircle, hint: 'Open questions', count: () => openQuestionCount }
 	];
 
 	let footerNav = $derived<NavItem[]>([
@@ -790,6 +806,38 @@
 							{/if}
 						</a>
 					{/each}
+				</div>
+
+				<!-- Work: projects, meetings, decisions, questions -->
+				<div class="px-2 pt-3">
+					<button
+						onclick={() => (showWork = !showWork)}
+						class="section-label w-full"
+						aria-expanded={showWork}
+						aria-controls="work-nav"
+					>
+						<ChevronRight class="h-3 w-3 transition-transform {showWork ? 'rotate-90' : ''}" aria-hidden="true" />
+						Work
+					</button>
+					{#if showWork}
+						<div id="work-nav">
+							{#each workNav as item (item.href)}
+								{@const count = item.count?.() ?? 0}
+								<a
+									href={item.href}
+									onclick={handleNoteClick}
+									class="nav-row"
+									class:nav-row-active={isActive(item.href)}
+									aria-current={isActive(item.href) ? 'page' : undefined}
+									title={item.hint}
+								>
+									<item.icon class="nav-icon" />
+									<span class="flex-1 truncate">{item.label}</span>
+									{#if count > 0}<span class="nav-count">{count > 99 ? '99+' : count}</span>{/if}
+								</a>
+							{/each}
+						</div>
+					{/if}
 				</div>
 
 				<!-- Favorites -->

@@ -25,6 +25,8 @@
 	import LinkPreview from '$lib/components/LinkPreview.svelte';
 	import NoteIcon from '$lib/components/NoteIcon.svelte';
 	import IconPicker from '$lib/components/IconPicker.svelte';
+	import NoteProjects from '$lib/components/NoteProjects.svelte';
+	import NoteRecordDialog, { type RecordKind } from '$lib/components/NoteRecordDialog.svelte';
 	import { untrack, tick } from 'svelte';
 	import { downloadSingleMemory, type MarkdownExportFormat } from '$lib/utils/markdown-export';
 	import { publishMemoryAsHtml, copyMemoryAsHtml, shareMemory } from '$lib/utils/publish';
@@ -58,7 +60,10 @@
 		Menu,
 		Search,
 		Star,
-		Smile
+		Smile,
+		FolderKanban,
+		Gavel,
+		ListChecks
 	} from 'lucide-svelte';
 	import { triggerSearch } from '$lib/stores/snackbar';
 	import CameraCapture from '$lib/components/CameraCapture.svelte';
@@ -74,6 +79,8 @@
 	let loadingRelated = $state(false);
 	let showMoreMenu = $state(false);
 	let iconPickerAnchor = $state<{ left: number; top: number; bottom: number } | null>(null);
+	let projectPicker = $state<DOMRect | null>(null);
+	let recordKind = $state<RecordKind | null>(null);
 
 	function openIconPicker(e: MouseEvent) {
 		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -801,6 +808,15 @@
 						<button class="k-menu-item" role="menuitem" disabled={extractingReminders} onclick={() => { showMoreMenu = false; handleExtractReminders(); }}>
 							<Bell class="h-4 w-4 text-[var(--color-text-muted)]" /> Find reminders & drafts
 						</button>
+						<button class="k-menu-item" role="menuitem" onclick={() => { showMoreMenu = false; recordKind = 'decision'; }}>
+							<Gavel class="h-4 w-4 text-[var(--color-text-muted)]" /> Log a decision…
+						</button>
+						<button class="k-menu-item" role="menuitem" onclick={() => { showMoreMenu = false; recordKind = 'question'; }}>
+							<HelpCircle class="h-4 w-4 text-[var(--color-text-muted)]" /> Add an open question…
+						</button>
+						<button class="k-menu-item" role="menuitem" onclick={() => { showMoreMenu = false; recordKind = 'agenda'; }}>
+							<ListChecks class="h-4 w-4 text-[var(--color-text-muted)]" /> Add to a meeting agenda…
+						</button>
 						<button class="k-menu-item" role="menuitem" onclick={() => { showMoreMenu = false; showHistory = true; }}>
 							<History class="h-4 w-4 text-[var(--color-text-muted)]" /> Version history
 						</button>
@@ -878,6 +894,9 @@
 								<Smile class="h-3.5 w-3.5" /> Icon
 							</button>
 						{/if}
+						<button onclick={(e) => (projectPicker = (e.currentTarget as HTMLElement).getBoundingClientRect())} class="insert-btn" title="Add to a project">
+							<FolderKanban class="h-3.5 w-3.5" /> Project
+						</button>
 						<button onclick={handleImageUpload} class="insert-btn" title="Insert image">
 							<ImagePlus class="h-3.5 w-3.5" /> Image
 						</button>
@@ -907,6 +926,7 @@
 						class="title-input mb-3 w-full bg-transparent font-bold text-[var(--color-text)] md:mb-5"
 						style="font-family: var(--font-editor);"
 					/>
+					<NoteProjects {memory} bind:picker={projectPicker} />
 				</div>
 
 				<!-- Audio playback for voice memos and meetings -->
@@ -1214,6 +1234,17 @@
 		onOpen={handleWikilinkClick}
 		onOpenSide={(t) => handleWikilinkClick(t, { altKey: true })}
 	/>
+
+	{#if recordKind && memory}
+		<NoteRecordDialog
+			{memory}
+			kind={recordKind}
+			onDone={(message) => {
+				recordKind = null;
+				if (message) extractionResult = message;
+			}}
+		/>
+	{/if}
 
 	{#if iconPickerAnchor && memory}
 		<IconPicker

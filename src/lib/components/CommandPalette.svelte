@@ -251,6 +251,50 @@
 			}
 		},
 		{
+			id: 'projects',
+			type: 'action',
+			title: 'Projects',
+			description: 'Notes, to-dos, decisions and questions per project',
+			icon: 'references',
+			action: () => {
+				goto('/projects');
+				onClose();
+			}
+		},
+		{
+			id: 'meetings',
+			type: 'action',
+			title: 'Recurring meetings',
+			description: '1:1s and syncs with a running agenda',
+			icon: 'references',
+			action: () => {
+				goto('/meetings');
+				onClose();
+			}
+		},
+		{
+			id: 'decisions',
+			type: 'action',
+			title: 'Decision log',
+			description: 'What was decided, when and why',
+			icon: 'references',
+			action: () => {
+				goto('/decisions');
+				onClose();
+			}
+		},
+		{
+			id: 'questions',
+			type: 'action',
+			title: 'Open questions',
+			description: 'Questions waiting for an answer',
+			icon: 'references',
+			action: () => {
+				goto('/questions');
+				onClose();
+			}
+		},
+		{
 			id: 'people',
 			type: 'action',
 			title: 'People',

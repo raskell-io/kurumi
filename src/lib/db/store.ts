@@ -36,7 +36,15 @@ import {
 	type PropertyDefinition,
 	type DatabaseColumn,
 	type SavedSearch,
-	type Flashcard
+	type Flashcard,
+	type Project,
+	type ProjectStatus,
+	type Decision,
+	type Question,
+	type QuestionStatus,
+	type MeetingSeries,
+	type MeetingCadence,
+	type AgendaItem
 } from './types';
 
 const STORAGE_KEY = 'kurumi-doc';
@@ -259,6 +267,44 @@ export function getVaultContents(vaultId: string): {
 		events: inVault(d.events),
 		actionItems: inVault(d.actionItems)
 	};
+}
+
+/** A vault's projects, decisions, questions and meeting series (for git sync). */
+export interface WorkRecords {
+	projects: Project[];
+	decisions: Decision[];
+	questions: Question[];
+	meetingSeries: MeetingSeries[];
+}
+
+export function getVaultWorkRecords(vaultId: string): WorkRecords {
+	const inVault = <T extends { vaultId: string }>(items: Record<string, T> | undefined) =>
+		Object.values(items ?? {}).filter((item) => item.vaultId === vaultId);
+	return {
+		projects: inVault(doc?.projects),
+		decisions: inVault(doc?.decisions),
+		questions: inVault(doc?.questions),
+		meetingSeries: inVault(doc?.meetingSeries)
+	};
+}
+
+/**
+ * Take work records from a git pull: each is added if new, or replaces the
+ * local copy if it was edited more recently there.
+ */
+export function applyWorkImport(work: Partial<WorkRecords>): void {
+	updateDoc((d) => {
+		for (const key of ['projects', 'decisions', 'questions', 'meetingSeries'] as const) {
+			const incoming = work[key];
+			if (!Array.isArray(incoming)) continue;
+			const target = ((d as Record<string, unknown>)[key] ??= {}) as Record<string, { updatedAt: number }>;
+			for (const rec of incoming as { id: string; updatedAt: number }[]) {
+				if (!rec?.id) continue;
+				const local = target[rec.id];
+				if (!local || (rec.updatedAt ?? 0) > (local.updatedAt ?? 0)) target[rec.id] = deepCopy(rec);
+			}
+		}
+	});
 }
 
 // Trash: deleted memory objects in current vault (sorted by deletedAt, newest first)
@@ -682,6 +728,31 @@ export async function initDB(): Promise<void> {
 					d.version = 16;
 				});
 				await saveDoc();
+			}
+
+			// Migrate: work resources (v16 -> v17). Projects aren't created from
+			// existing note project names (the Projects page suggests them);
+			// meetings' extracted decisions and unresolved questions are
+			// backfilled into the logs below, after the doc is live.
+			let backfillMeetingRecords = false;
+			if ((doc.version ?? 0) < 17) {
+				doc = Automerge.change(doc, (d) => {
+					if (!d.projects) d.projects = {};
+					if (!d.decisions) d.decisions = {};
+					if (!d.questions) d.questions = {};
+					if (!d.meetingSeries) d.meetingSeries = {};
+					d.version = 17;
+				});
+				backfillMeetingRecords = true;
+				await saveDoc();
+			}
+			if (backfillMeetingRecords) {
+				for (const m of Object.values(doc.memoryObjects)) {
+					if (m.deletedAt) continue;
+					if ((m.decisions?.length ?? 0) > 0 || (m.meetingExtras?.unresolvedQuestions?.length ?? 0) > 0) {
+						promoteMeetingRecords(m.id);
+					}
+				}
 			}
 
 			// Update internal vault ID store
@@ -1322,6 +1393,7 @@ export async function transcribeMemoryAudio(
 		// entities so they surface on the /actions dashboard. Safe to call
 		// repeatedly (dedupes by text).
 		promoteDraftActionItems(memoryId);
+		promoteMeetingRecords(memoryId);
 		// Stash any extracted reminders / drafts as pending proposals.
 		if (reminders) stashReminderProposals(memoryId, reminders);
 		if (drafts) stashDraftProposals(memoryId, drafts);
@@ -2457,6 +2529,7 @@ export function addActionItem(options: {
 	status?: ActionItemStatus;
 	confidence?: number;
 	recurrence?: Recurrence;
+	projectId?: string | null;
 }): ActionItem {
 	const now = Date.now();
 	const item: ActionItem = {
@@ -2468,6 +2541,7 @@ export function addActionItem(options: {
 		status: options.status ?? 'open',
 		confidence: options.confidence ?? 1,
 		recurrence: options.recurrence ?? 'none',
+		...(options.projectId ? { projectId: options.projectId } : {}),
 		vaultId: getCurrentVaultId(),
 		createdAt: now,
 		updatedAt: now
@@ -2700,6 +2774,409 @@ export function restoreActionItem(item: ActionItem): void {
 }
 
 // ============ Flashcard CRUD + SM-2 ============
+
+// --- Work resources: projects, decisions, questions, meeting series ---------
+
+const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+const PROJECT_STATUS_ORDER: Record<ProjectStatus, number> = { active: 0, paused: 1, done: 2, archived: 3 };
+
+// Projects in the current vault: active first, then by name.
+export const projects: Readable<Project[]> = derived([docStore, currentVaultId], ([$doc, $vaultId]) =>
+	Object.values($doc?.projects ?? {})
+		.filter((p) => p.vaultId === $vaultId)
+		.sort((a, b) => PROJECT_STATUS_ORDER[a.status] - PROJECT_STATUS_ORDER[b.status] || a.name.localeCompare(b.name))
+);
+
+// Decisions in the current vault, newest first.
+export const decisions: Readable<Decision[]> = derived([docStore, currentVaultId], ([$doc, $vaultId]) =>
+	Object.values($doc?.decisions ?? {})
+		.filter((d) => d.vaultId === $vaultId)
+		.sort((a, b) => b.decidedOn.localeCompare(a.decidedOn) || b.createdAt - a.createdAt)
+);
+
+// Questions in the current vault, newest first.
+export const questions: Readable<Question[]> = derived([docStore, currentVaultId], ([$doc, $vaultId]) =>
+	Object.values($doc?.questions ?? {})
+		.filter((q) => q.vaultId === $vaultId)
+		.sort((a, b) => b.createdAt - a.createdAt)
+);
+
+export const meetingSeries: Readable<MeetingSeries[]> = derived([docStore, currentVaultId], ([$doc, $vaultId]) =>
+	Object.values($doc?.meetingSeries ?? {})
+		.filter((m) => m.vaultId === $vaultId)
+		.sort((a, b) => a.name.localeCompare(b.name))
+);
+
+/** The project a note is in (first name on it that is a project), if any. */
+export function projectForMemory(memory: MemoryObject | undefined): Project | undefined {
+	if (!memory || !doc?.projects) return undefined;
+	const all = Object.values(doc.projects).filter((p) => p.vaultId === memory.vaultId);
+	for (const name of memory.projects ?? []) {
+		const hit = all.find((p) => sameName(p.name, name));
+		if (hit) return hit;
+	}
+	return undefined;
+}
+
+/** Whether an action item belongs to a project, directly or via its source note. */
+export function actionItemInProject(item: ActionItem, project: Project): boolean {
+	if (item.projectId) return item.projectId === project.id;
+	const memory = item.memoryObjectId ? doc?.memoryObjects[item.memoryObjectId] : undefined;
+	return !!memory?.projects?.some((n) => sameName(n, project.name));
+}
+
+/**
+ * Whether a decision/question belongs to a project: set directly, or (when
+ * it has none) through the note it came from, e.g. a meeting that was
+ * tagged with the project after the question was logged.
+ */
+export function recordInProject(rec: { projectId: string | null; memoryId: string | null }, project: Project): boolean {
+	if (rec.projectId) return rec.projectId === project.id;
+	const memory = rec.memoryId ? doc?.memoryObjects[rec.memoryId] : undefined;
+	return !!memory?.projects?.some((n) => sameName(n, project.name));
+}
+
+export function addProject(name: string, options: Partial<Pick<Project, 'status' | 'owner' | 'dueDate' | 'description'>> = {}): Project {
+	const now = Date.now();
+	const project: Project = {
+		id: generateId(),
+		name: name.trim(),
+		status: options.status ?? 'active',
+		owner: options.owner ?? null,
+		dueDate: options.dueDate ?? null,
+		description: options.description ?? '',
+		vaultId: getCurrentVaultId(),
+		createdAt: now,
+		updatedAt: now
+	};
+	updateDoc((d) => {
+		if (!d.projects) d.projects = {};
+		d.projects[project.id] = project;
+	});
+	return project;
+}
+
+/**
+ * Update a project. Renaming also renames it on every note that links to
+ * it (notes link by name).
+ */
+export function updateProject(
+	id: string,
+	updates: Partial<Pick<Project, 'name' | 'status' | 'owner' | 'dueDate' | 'description'>>
+): void {
+	updateDoc((d) => {
+		const project = d.projects?.[id];
+		if (!project) return;
+		const oldName = project.name;
+		for (const key of ['status', 'owner', 'dueDate', 'description'] as const) {
+			if (updates[key] !== undefined) (project as Record<string, unknown>)[key] = updates[key];
+		}
+		const newName = updates.name?.trim();
+		if (newName && newName !== oldName) {
+			project.name = newName;
+			for (const memory of Object.values(d.memoryObjects)) {
+				if (memory.vaultId !== project.vaultId || !memory.projects) continue;
+				const i = memory.projects.findIndex((n) => sameName(n, oldName));
+				if (i !== -1) memory.projects.splice(i, 1, newName);
+			}
+		}
+		project.updatedAt = Date.now();
+	});
+}
+
+/** Delete a project. Its notes, to-dos and records stay, just unlinked. */
+export function deleteProject(id: string): Project | undefined {
+	const project = doc?.projects?.[id];
+	if (!project) return undefined;
+	const snapshot = deepCopy(project);
+	updateDoc((d) => {
+		delete d.projects[id];
+		for (const item of Object.values(d.actionItems ?? {})) if (item.projectId === id) item.projectId = null;
+		for (const rec of Object.values(d.decisions ?? {})) if (rec.projectId === id) rec.projectId = null;
+		for (const rec of Object.values(d.questions ?? {})) if (rec.projectId === id) rec.projectId = null;
+		for (const rec of Object.values(d.meetingSeries ?? {})) if (rec.projectId === id) rec.projectId = null;
+	});
+	return snapshot;
+}
+
+export function restoreProject(project: Project): void {
+	updateDoc((d) => {
+		if (!d.projects) d.projects = {};
+		d.projects[project.id] = deepCopy(project);
+	});
+}
+
+/** Link or unlink a note and a project (by name, like extraction does). */
+export function setMemoryInProject(memoryId: string, projectName: string, inProject: boolean): void {
+	updateDoc((d) => {
+		const memory = d.memoryObjects[memoryId];
+		if (!memory) return;
+		if (!memory.projects) memory.projects = [];
+		const i = memory.projects.findIndex((n) => sameName(n, projectName));
+		if (inProject && i === -1) memory.projects.push(projectName);
+		if (!inProject && i !== -1) memory.projects.splice(i, 1);
+		memory.updatedAt = Date.now();
+	});
+}
+
+export function setActionItemProject(id: string, projectId: string | null): void {
+	updateDoc((d) => {
+		const item = d.actionItems?.[id];
+		if (!item) return;
+		item.projectId = projectId;
+		item.updatedAt = Date.now();
+	});
+}
+
+export function addDecision(options: {
+	text: string;
+	rationale?: string;
+	decidedOn?: string;
+	decidedBy?: string[];
+	memoryId?: string | null;
+	projectId?: string | null;
+}): Decision {
+	const now = Date.now();
+	const memory = options.memoryId ? doc?.memoryObjects[options.memoryId] : undefined;
+	const decision: Decision = {
+		id: generateId(),
+		text: options.text.trim(),
+		rationale: options.rationale ?? '',
+		decidedOn: options.decidedOn ?? todayIso(),
+		decidedBy: options.decidedBy ?? [],
+		memoryId: options.memoryId ?? null,
+		projectId: options.projectId !== undefined ? options.projectId : (projectForMemory(memory)?.id ?? null),
+		vaultId: memory?.vaultId ?? getCurrentVaultId(),
+		createdAt: now,
+		updatedAt: now
+	};
+	updateDoc((d) => {
+		if (!d.decisions) d.decisions = {};
+		d.decisions[decision.id] = decision;
+	});
+	return decision;
+}
+
+export function updateDecision(
+	id: string,
+	updates: Partial<Pick<Decision, 'text' | 'rationale' | 'decidedOn' | 'decidedBy' | 'projectId'>>
+): void {
+	updateDoc((d) => {
+		const rec = d.decisions?.[id];
+		if (!rec) return;
+		for (const [key, value] of Object.entries(updates)) if (value !== undefined) (rec as Record<string, unknown>)[key] = value;
+		rec.updatedAt = Date.now();
+	});
+}
+
+export function addQuestion(options: {
+	text: string;
+	assignee?: string | null;
+	memoryId?: string | null;
+	projectId?: string | null;
+}): Question {
+	const now = Date.now();
+	const memory = options.memoryId ? doc?.memoryObjects[options.memoryId] : undefined;
+	const question: Question = {
+		id: generateId(),
+		text: options.text.trim(),
+		status: 'open',
+		assignee: options.assignee ?? null,
+		answer: '',
+		answerMemoryId: null,
+		memoryId: options.memoryId ?? null,
+		projectId: options.projectId !== undefined ? options.projectId : (projectForMemory(memory)?.id ?? null),
+		vaultId: memory?.vaultId ?? getCurrentVaultId(),
+		createdAt: now,
+		updatedAt: now,
+		resolvedAt: null
+	};
+	updateDoc((d) => {
+		if (!d.questions) d.questions = {};
+		d.questions[question.id] = question;
+	});
+	return question;
+}
+
+export function updateQuestion(
+	id: string,
+	updates: Partial<Pick<Question, 'text' | 'status' | 'assignee' | 'answer' | 'answerMemoryId' | 'projectId'>>
+): void {
+	updateDoc((d) => {
+		const rec = d.questions?.[id];
+		if (!rec) return;
+		for (const [key, value] of Object.entries(updates)) if (value !== undefined) (rec as Record<string, unknown>)[key] = value;
+		if (updates.status) rec.resolvedAt = updates.status === 'open' ? null : Date.now();
+		rec.updatedAt = Date.now();
+	});
+}
+
+type WorkCollection = 'decisions' | 'questions' | 'meetingSeries';
+
+/** Delete a decision/question/series; returns it for undo (restoreRecord). */
+export function deleteRecord<T extends Decision | Question | MeetingSeries>(collection: WorkCollection, id: string): T | undefined {
+	const rec = (doc?.[collection] as Record<string, T> | undefined)?.[id];
+	if (!rec) return undefined;
+	const snapshot = deepCopy(rec);
+	updateDoc((d) => {
+		delete (d[collection] as Record<string, T>)[id];
+	});
+	return snapshot;
+}
+
+export function restoreRecord<T extends Decision | Question | MeetingSeries>(collection: WorkCollection, rec: T): void {
+	updateDoc((d) => {
+		if (!d[collection]) (d as Record<string, unknown>)[collection] = {};
+		(d[collection] as Record<string, T>)[rec.id] = deepCopy(rec);
+	});
+}
+
+/**
+ * Turn a processed meeting's decisions and unresolved questions into log
+ * entries (each at most once per note, so re-processing doesn't duplicate).
+ */
+export function promoteMeetingRecords(memoryId: string): void {
+	const memory = doc?.memoryObjects[memoryId];
+	if (!memory) return;
+	const decided = new Set(Object.values(doc!.decisions ?? {}).filter((x) => x.memoryId === memoryId).map((x) => x.text));
+	const asked = new Set(Object.values(doc!.questions ?? {}).filter((x) => x.memoryId === memoryId).map((x) => x.text));
+	const day = new Date(memory.capturedAt || memory.createdAt).toISOString().slice(0, 10);
+	for (const text of memory.decisions ?? []) {
+		if (text.trim() && !decided.has(text.trim())) {
+			addDecision({ text, memoryId, decidedOn: day, decidedBy: [...(memory.participants ?? [])] });
+		}
+	}
+	for (const text of memory.meetingExtras?.unresolvedQuestions ?? []) {
+		if (text.trim() && !asked.has(text.trim())) addQuestion({ text, memoryId });
+	}
+}
+
+export function addMeetingSeries(options: {
+	name: string;
+	people?: string[];
+	cadence?: MeetingCadence;
+	projectId?: string | null;
+}): MeetingSeries {
+	const now = Date.now();
+	const series: MeetingSeries = {
+		id: generateId(),
+		name: options.name.trim(),
+		people: options.people ?? [],
+		cadence: options.cadence ?? 'weekly',
+		projectId: options.projectId ?? null,
+		agenda: [],
+		vaultId: getCurrentVaultId(),
+		createdAt: now,
+		updatedAt: now
+	};
+	updateDoc((d) => {
+		if (!d.meetingSeries) d.meetingSeries = {};
+		d.meetingSeries[series.id] = series;
+	});
+	return series;
+}
+
+export function updateMeetingSeries(
+	id: string,
+	updates: Partial<Pick<MeetingSeries, 'name' | 'people' | 'cadence' | 'projectId'>>
+): void {
+	updateDoc((d) => {
+		const rec = d.meetingSeries?.[id];
+		if (!rec) return;
+		if (updates.name !== undefined) rec.name = updates.name;
+		if (updates.cadence !== undefined) rec.cadence = updates.cadence;
+		if (updates.projectId !== undefined) rec.projectId = updates.projectId;
+		if (updates.people !== undefined) {
+			rec.people.splice(0, rec.people.length);
+			for (const p of updates.people) rec.people.push(p);
+		}
+		rec.updatedAt = Date.now();
+	});
+}
+
+export function addAgendaItem(seriesId: string, text: string): void {
+	updateDoc((d) => {
+		const rec = d.meetingSeries?.[seriesId];
+		if (!rec || !text.trim()) return;
+		const item: AgendaItem = { id: generateId(), text: text.trim(), addedAt: Date.now(), meetingId: null };
+		rec.agenda.push(item);
+		rec.updatedAt = Date.now();
+	});
+}
+
+export function removeAgendaItem(seriesId: string, itemId: string): void {
+	updateDoc((d) => {
+		const rec = d.meetingSeries?.[seriesId];
+		if (!rec) return;
+		const i = rec.agenda.findIndex((a) => a.id === itemId);
+		if (i !== -1) rec.agenda.splice(i, 1);
+		rec.updatedAt = Date.now();
+	});
+}
+
+/**
+ * Start the next meeting of a series: a new note with the open agenda,
+ * open to-dos with the people in it, and open questions (for them or the
+ * series' project). The agenda items are marked as covered by this note.
+ */
+export function startSeriesMeeting(seriesId: string): MemoryObject | undefined {
+	const series = doc?.meetingSeries?.[seriesId];
+	if (!series) return undefined;
+	const today = todayIso();
+	const project = series.projectId ? doc!.projects?.[series.projectId] : undefined;
+	const withPeople = (name: string | null) => !!name && series.people.some((p) => sameName(p, name));
+	const openAgenda = series.agenda.filter((a) => !a.meetingId);
+	const todos = Object.values(doc!.actionItems ?? {}).filter(
+		(a) =>
+			a.vaultId === series.vaultId &&
+			(a.status === 'open' || a.status === 'in_progress') &&
+			(withPeople(a.assignee) || (project && actionItemInProject(a, project)))
+	);
+	const openQuestions = Object.values(doc!.questions ?? {}).filter(
+		(q) =>
+			q.vaultId === series.vaultId &&
+			q.status === 'open' &&
+			(withPeople(q.assignee) || (project && recordInProject(q, project)))
+	);
+
+	const lines = ['## Agenda', ''];
+	if (openAgenda.length) for (const a of openAgenda) lines.push(`- [ ] ${a.text}`);
+	else lines.push('- [ ] ');
+	if (todos.length) {
+		lines.push('', '## Open to-dos', '');
+		for (const a of todos) lines.push(`- ${a.text}${a.assignee ? ` (@${a.assignee})` : ''}${a.dueDate ? ` · due ${a.dueDate}` : ''}`);
+	}
+	if (openQuestions.length) {
+		lines.push('', '## Open questions', '');
+		for (const q of openQuestions) lines.push(`- ${q.text}${q.assignee ? ` (@${q.assignee})` : ''}`);
+	}
+	lines.push('', '## Notes', '', '', '## Decisions', '', '', '## Next steps', '');
+
+	const memory = createMemoryObject({
+		title: `${series.name} — ${today}`,
+		bodyMarkdown: lines.join('\n'),
+		folderId: null,
+		vaultId: series.vaultId
+	});
+	memory.seriesId = series.id;
+	if (project) memory.projects = [project.name];
+	memory.participants = [...series.people];
+	updateDoc((d) => {
+		d.memoryObjects[memory.id] = memory;
+		const rec = d.meetingSeries[seriesId];
+		for (const item of rec.agenda) if (!item.meetingId) item.meetingId = memory.id;
+		rec.updatedAt = Date.now();
+	});
+	return memory;
+}
+
+/** Meeting notes of a series, newest first. */
+export function seriesMeetings(seriesId: string): MemoryObject[] {
+	return Object.values(doc?.memoryObjects ?? {})
+		.filter((m) => m.seriesId === seriesId && !m.deletedAt)
+		.sort((a, b) => b.createdAt - a.createdAt);
+}
 
 // Derived store for flashcards in the current vault, sorted by next
 // review date ascending so cards due soonest come first.
@@ -3729,7 +4206,28 @@ export interface KurumiExport {
 	memoryObjects: MemoryObject[];
 	people: Person[];
 	events: Event[];
+	// Everything else, so a backup restores the whole database (older
+	// backups only had the fields above).
+	[collection: string]: unknown;
 }
+
+// Collections beyond vaults/folders/notes that a full backup carries, keyed
+// by record id on the document.
+const BACKUP_COLLECTIONS = [
+	'people',
+	'events',
+	'templates',
+	'actionItems',
+	'reminderProposals',
+	'draftProposals',
+	'databaseViews',
+	'savedSearches',
+	'flashcards',
+	'projects',
+	'decisions',
+	'questions',
+	'meetingSeries'
+] as const;
 
 export function exportFullJSON(): string {
 	if (!doc)
@@ -3751,6 +4249,9 @@ export function exportFullJSON(): string {
 		people: Object.values(doc.people || {}),
 		events: Object.values(doc.events || {})
 	};
+	for (const collection of BACKUP_COLLECTIONS) {
+		(exportData as Record<string, unknown>)[collection] = Object.values((doc[collection] as Record<string, unknown>) || {});
+	}
 	return JSON.stringify(exportData, null, 2);
 }
 
@@ -3985,6 +4486,23 @@ export async function importJSON(
 				} else {
 					d.memoryObjects[memory.id] = { ...memory, vaultId: targetVaultId };
 					importedMemories++;
+				}
+			}
+
+			// Everything else (to-dos, projects, decisions, …). Records are keyed
+			// by id; an existing one is replaced only when overwriting. With
+			// 'duplicate', existing records are kept as they are: copying them
+			// would break the ids notes, to-dos and decisions use to refer to
+			// each other.
+			for (const collection of BACKUP_COLLECTIONS) {
+				const records = (data as Record<string, unknown>)[collection];
+				if (!Array.isArray(records)) continue;
+				const target = ((d as Record<string, unknown>)[collection] ??= {}) as Record<string, Record<string, unknown>>;
+				for (const record of records as Record<string, unknown>[]) {
+					if (!record || typeof record.id !== 'string') continue;
+					if (target[record.id] && options.conflictResolution !== 'overwrite') continue;
+					const vaultId = typeof record.vaultId === 'string' ? vaultIdMap.get(record.vaultId) || record.vaultId : record.vaultId;
+					target[record.id] = deepCopy({ ...record, ...(vaultId !== undefined ? { vaultId } : {}) });
 				}
 			}
 		});

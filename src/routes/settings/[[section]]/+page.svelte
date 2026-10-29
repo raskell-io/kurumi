@@ -2,6 +2,7 @@
 	import { autofocus } from '$lib/actions/autofocus';
 	import ShortcutSettings from '$lib/components/ShortcutSettings.svelte';
 	import AboutKurumi from '$lib/components/AboutKurumi.svelte';
+	import { myNames } from '$lib/work';
 	import { labsEnabled, LAB_PAGES } from '$lib/stores/labs';
 	import {
 		exportMemoryObjectsJSON,
@@ -426,6 +427,7 @@
 	// In-page section nav (sticky on wide screens); highlights the section in view
 	const navSections = [
 		{ id: 'appearance', label: 'Appearance' },
+		{ id: 'profile', label: 'Profile' },
 		{ id: 'sync', label: 'Sync' },
 		{ id: 'local-ai', label: 'Local AI' },
 		{ id: 'ai', label: 'AI assistant' },
@@ -956,6 +958,38 @@
 								<button aria-pressed={editorFontSize === 'medium'} onclick={() => setEditorFontSize('medium')}>Medium</button>
 								<button aria-pressed={editorFontSize === 'large'} onclick={() => setEditorFontSize('large')}>Large</button>
 							</div>
+						</div>
+					</div>
+				</section>
+				{/if}
+
+				<!-- Profile -->
+				{#if current === 'profile'}
+				<section id="profile" class="set-section" aria-labelledby="profile-title">
+					<h2 id="profile-title" class="set-section-title">Profile</h2>
+					<p class="set-section-desc">How Kurumi recognises you. Saved on this device.</p>
+					<div class="set-rows">
+						<div class="set-row">
+							<div class="set-row-text">
+								<label class="set-row-label" for="my-names">Your name</label>
+								<p class="set-row-help">
+									To-dos assigned to anyone else show under Actions → Waiting for. Add each name
+									meetings might use for you, separated by commas. "Me" and "I" always count.
+								</p>
+							</div>
+							<input
+								id="my-names"
+								class="k-input sm:!w-64"
+								placeholder="e.g. Zara, Zara Z."
+								value={$myNames.join(', ')}
+								onchange={(e) =>
+									myNames.set(
+										(e.currentTarget as HTMLInputElement).value
+											.split(',')
+											.map((n) => n.trim())
+											.filter(Boolean)
+									)}
+							/>
 						</div>
 					</div>
 				</section>

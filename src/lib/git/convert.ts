@@ -27,6 +27,13 @@ export interface GitMetadata {
 	// with something to record are listed; the key's presence means the
 	// writer knew about these fields (see GitImportData.noteExtrasKnown).
 	notes?: Record<string, NoteExtras>;
+	// Projects, decisions, questions and meeting series of the vault.
+	work?: {
+		projects: unknown[];
+		decisions: unknown[];
+		questions: unknown[];
+		meetingSeries: unknown[];
+	};
 	people: Record<string, Person>;
 	events: Record<string, Event>;
 	actionItems?: Record<string, ActionItem>;
@@ -212,7 +219,8 @@ export function createMetadata(
 	people: Person[],
 	events: Event[],
 	actionItems: ActionItem[] = [],
-	blobs: Record<string, { mimeType: string }> = {}
+	blobs: Record<string, { mimeType: string }> = {},
+	work?: GitMetadata['work']
 ): GitMetadata {
 	const foldersMap: Record<string, { name: string; parentId: string | null }> = {};
 	for (const folder of folders) {
@@ -258,6 +266,7 @@ export function createMetadata(
 		folders: foldersMap,
 		noteIds,
 		notes,
+		...(work ? { work } : {}),
 		people: peopleMap,
 		events: eventsMap,
 		actionItems: actionItemsMap,

@@ -7,12 +7,16 @@
 		updateActionItemStatus,
 		updateMemoryObject,
 		completeRecurring,
+		questions,
+		meetingSeries,
 		todayIso,
 		type ActionItem
 	} from '$lib/db';
 	import { pushUndo } from '$lib/stores/undo';
 	import { dueInfo } from '$lib/utils/due';
 	import { openNoteTasks, checkTaskInBody, sortOpenActionItems, type NoteTask } from '$lib/todos';
+	import { myNames, isWaitingFor } from '$lib/work';
+	import { meetingsOf, nextMeetingDate } from '$lib/meetings';
 	import { askKurumi, isAskKurumiResult, type AskKurumiResult } from '$lib/ask';
 	import { parseVoiceCommand } from '$lib/voice-commands';
 	import { parseSearchQuery, hasAnyFilter } from '$lib/search';
@@ -45,7 +49,10 @@
 		CalendarDays,
 		ArrowRight,
 		ListTodo,
-		NotebookText
+		NotebookText,
+		UserRoundCheck,
+		HelpCircle,
+		CalendarClock
 	} from 'lucide-svelte';
 	import {
 		showNewNoteSnackbar,
@@ -128,7 +135,18 @@
 	// Open action items in the order they need attention, plus unchecked
 	// `- [ ]` items written in notes.
 	const today = todayIso();
-	let openItems = $derived(sortOpenActionItems($actionItems, today));
+	// Your own to-dos; what others owe you is the "waiting for" line below.
+	let openItems = $derived(sortOpenActionItems($actionItems.filter((a) => !isWaitingFor(a, $myNames)), today));
+	let waitingCount = $derived($actionItems.filter((a) => isWaitingFor(a, $myNames)).length);
+	let openQuestionCount = $derived($questions.filter((q) => q.status === 'open').length);
+	// The recurring meeting due soonest (today or overdue first).
+	let nextMeeting = $derived.by(() => {
+		const upcoming = $meetingSeries
+			.map((s) => ({ series: s, date: nextMeetingDate(s.cadence, meetingsOf(s.id, $memoryObjects)[0]) }))
+			.filter((x): x is { series: (typeof $meetingSeries)[number]; date: string } => !!x.date)
+			.sort((a, b) => a.date.localeCompare(b.date));
+		return upcoming[0] ?? null;
+	});
 	let overdueCount = $derived(openItems.filter((a) => a.dueDate && a.dueDate < today).length);
 	let dueTodayCount = $derived(openItems.filter((a) => a.dueDate === today).length);
 	let inProgressCount = $derived(openItems.filter((a) => a.status === 'in_progress').length);
@@ -602,6 +620,24 @@
 					</p>
 				{/if}
 			</section>
+		{/if}
+
+		<!-- Others' to-dos, open questions, the next recurring meeting -->
+		{#if waitingCount > 0 || openQuestionCount > 0 || nextMeeting}
+			<div class="work-strip mb-6">
+				{#if waitingCount > 0}
+					<a href="/actions?filter=waiting"><UserRoundCheck class="h-3.5 w-3.5" /> Waiting on others · {waitingCount}</a>
+				{/if}
+				{#if openQuestionCount > 0}
+					<a href="/questions"><HelpCircle class="h-3.5 w-3.5" /> Open questions · {openQuestionCount}</a>
+				{/if}
+				{#if nextMeeting}
+					{@const due = dueInfo(nextMeeting.date, true, today)}
+					<a href="/meetings/{nextMeeting.series.id}" class:due-now={due.tone !== ''}>
+						<CalendarClock class="h-3.5 w-3.5" /> {nextMeeting.series.name} · {due.label}
+					</a>
+				{/if}
+			</div>
 		{/if}
 
 		{#if pendingProposalsCount > 0}
@@ -1099,6 +1135,36 @@
 
 	.todo-source:hover {
 		color: var(--color-accent);
+	}
+
+	.work-strip {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		margin-top: -0.75rem;
+	}
+
+	.work-strip a {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		min-height: 2rem;
+		padding: 0 0.75rem;
+		border: 1px solid var(--color-border);
+		border-radius: 999px;
+		font-size: 0.8125rem;
+		color: var(--color-text-muted);
+		text-decoration: none;
+	}
+
+	.work-strip a:hover {
+		border-color: var(--color-accent);
+		color: var(--color-text);
+	}
+
+	.work-strip a.due-now {
+		border-color: color-mix(in srgb, var(--color-accent) 50%, var(--color-border));
+		color: var(--color-text);
 	}
 
 	.todo-warn {

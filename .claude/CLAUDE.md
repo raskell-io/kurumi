@@ -84,7 +84,7 @@ that loop:
 ## Data model
 
 Everything lives on one Automerge document. The current schema version
-is **11** (incremented by migrations in `src/lib/db/store.ts`).
+is **17** (incremented by migrations in `src/lib/db/store.ts`).
 
 Persistence (`saveDoc` in `store.ts`): a full snapshot under
 `kurumi-doc` plus incremental change chunks under `kurumi-doc-changes`
@@ -114,6 +114,13 @@ Key fields: `id`, `type`, `title`, `bodyMarkdown`, `rawAudioRef`,
 - `actionItems` — promoted from meeting drafts or manually created; have status (open/in_progress/done/cancelled) and dueDate
 - `reminderProposals` — time-anchored nudges extracted from memories, awaiting user review (pending/approved/rejected/snoozed); approval creates an ActionItem
 - `draftProposals` — email and calendar-event drafts extracted from memories (pending/used/rejected), user copies them into their real client
+- `projects` — first-class projects (status, owner, due, description). Notes link by **name** (`MemoryObject.projects`, also filled by extraction); action items by `projectId` or via their source note; decisions/questions by `projectId` or source note (`recordInProject`). Note project names that aren't projects are only *suggested* on /projects
+- `decisions` — decision log; meeting summaries' `decisions` are promoted automatically (`promoteMeetingRecords`)
+- `questions` — open questions (open/answered/dropped); meetings' `unresolvedQuestions` are promoted automatically
+- `meetingSeries` — recurring meetings with a running agenda; `startSeriesMeeting` creates a note (`seriesId`) from the open agenda + open to-dos/questions for its people/project
+
+"Waiting for" (`src/lib/work.ts`): open action items assigned to someone
+other than you (your names: Settings → Profile, per device).
 
 ## Capture pipeline
 
@@ -269,7 +276,12 @@ OpenAI to MMS when the API key is missing.
 - Full JSON backup / restore
 
 ### Organization
-- Action items: list or Kanban board (Open / In progress / Done, drag
+- Work section: Projects (/projects, /projects/[id]), Meetings
+  (/meetings, /meetings/[id]), Decisions (/decisions), Questions
+  (/questions). Notes link to projects via chips under the title; the
+  note ⋯ menu logs decisions/questions and adds agenda items
+  (`NoteRecordDialog`). Person pages show what's waiting on them
+- Action items: Active / Waiting for / Completed tabs; list or Kanban board (Open / In progress / Done, drag
   or arrows), filters by project (from the source note) and assignee
 - Labs (`stores/labs.ts`, Settings → Labs, off by default): Habits,
   Flashcards, Timeline, Smart folders. Canvas and database views stay

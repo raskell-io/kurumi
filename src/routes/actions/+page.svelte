@@ -3,6 +3,7 @@
 	import {
 		actionItems,
 		memoryObjects,
+		projects,
 		addActionItem,
 		updateActionItem,
 		updateActionItemStatus,
@@ -17,6 +18,8 @@
 	import { pushUndo } from '$lib/stores/undo';
 	import { dueInfo as dueLabel } from '$lib/utils/due';
 	import ActionBoard from '$lib/components/ActionBoard.svelte';
+	import { myNames, isWaitingFor, waitingByPerson } from '$lib/work';
+	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import {
 		ArrowUpRight,
@@ -50,13 +53,18 @@
 
 	// Filter tabs. "Active" (open + in progress) is the default so the
 	// list reads as a to-do list; finished work is one click away.
-	type Filter = 'active' | 'closed' | 'all';
+	// Active: your open items. Waiting for: open items assigned to others
+	// (see $lib/work), grouped by person.
+	type Filter = 'active' | 'waiting' | 'closed' | 'all';
 	const FILTERS: Array<{ value: Filter; label: string }> = [
 		{ value: 'active', label: 'Active' },
+		{ value: 'waiting', label: 'Waiting for' },
 		{ value: 'closed', label: 'Completed' },
 		{ value: 'all', label: 'All' }
 	];
-	let filter = $state<Filter>('active');
+	let filter = $state<Filter>(
+		(['active', 'waiting', 'closed', 'all'] as const).find((f) => f === $page.url.searchParams.get('filter')) ?? 'active'
+	);
 
 	function setFilter(next: Filter) {
 		if (filter === next) return;
@@ -90,7 +98,10 @@
 	let projectFilter = $state('');
 	let assigneeFilter = $state('');
 	let memoryById = $derived(new Map($memoryObjects.map((m) => [m.id, m])));
+	// Projects an item is in: set directly, or through its source note.
 	function itemProjects(item: ActionItem): string[] {
+		const direct = item.projectId ? $projects.find((p) => p.id === item.projectId)?.name : undefined;
+		if (direct) return [direct];
 		return item.memoryObjectId ? (memoryById.get(item.memoryObjectId)?.projects ?? []) : [];
 	}
 	let projectOptions = $derived(
@@ -109,24 +120,34 @@
 		)
 	);
 
-	type Group = { label: string; status: ActionItemStatus; items: ActionItem[] };
+	type Group = { key: string; label: string; status: ActionItemStatus; items: ActionItem[] };
 
 	let groups = $derived.by<Group[]>(() => {
 		const open: ActionItem[] = [];
 		const inProgress: ActionItem[] = [];
 		const done: ActionItem[] = [];
 		const cancelled: ActionItem[] = [];
+		if (filter === 'waiting') {
+			return waitingByPerson(visibleItems, $myNames).map((g) => ({
+				key: `person:${g.person}`,
+				label: g.person,
+				status: 'open' as const,
+				items: g.items
+			}));
+		}
 		for (const item of visibleItems) {
+			// Active is your own work; others' open items are under Waiting for.
+			if (filter === 'active' && isWaitingFor(item, $myNames)) continue;
 			if (item.status === 'open') open.push(item);
 			else if (item.status === 'in_progress') inProgress.push(item);
 			else if (item.status === 'done') done.push(item);
 			else cancelled.push(item);
 		}
 		const all: Group[] = [
-			{ label: 'Open', status: 'open', items: open },
-			{ label: 'In progress', status: 'in_progress', items: inProgress },
-			{ label: 'Done', status: 'done', items: done },
-			{ label: 'Cancelled', status: 'cancelled', items: cancelled }
+			{ key: 'open', label: 'Open', status: 'open', items: open },
+			{ key: 'in_progress', label: 'In progress', status: 'in_progress', items: inProgress },
+			{ key: 'done', label: 'Done', status: 'done', items: done },
+			{ key: 'cancelled', label: 'Cancelled', status: 'cancelled', items: cancelled }
 		];
 		if (filter === 'active') return all.slice(0, 2);
 		if (filter === 'closed') return all.slice(2);
@@ -136,8 +157,10 @@
 	let totalOpen = $derived($actionItems.filter((i) => i.status === 'open').length);
 	let totalInProgress = $derived($actionItems.filter((i) => i.status === 'in_progress').length);
 	let totalClosed = $derived($actionItems.length - totalOpen - totalInProgress);
+	let totalWaiting = $derived($actionItems.filter((i) => isWaitingFor(i, $myNames)).length);
 	let filterCounts = $derived<Record<Filter, number>>({
-		active: totalOpen + totalInProgress,
+		active: totalOpen + totalInProgress - totalWaiting,
+		waiting: totalWaiting,
 		closed: totalClosed,
 		all: $actionItems.length
 	});
@@ -672,12 +695,14 @@
 			<p class="k-empty-title">{filter === 'active' ? 'All caught up' : 'Nothing here'}</p>
 			<p>
 				{filter === 'active'
-					? 'Every action item is done or cancelled.'
-					: 'Completed and cancelled items will show up here.'}
+					? 'Every action item is done, cancelled, or with someone else.'
+					: filter === 'waiting'
+						? 'Open items assigned to other people show up here. Set your own name in Settings → Profile.'
+						: 'Completed and cancelled items will show up here.'}
 			</p>
 		</div>
 	{:else}
-		{#each groups as group (group.status)}
+		{#each groups as group (group.key)}
 			{#if group.items.length > 0}
 				<section>
 					<h2 class="k-section-title">

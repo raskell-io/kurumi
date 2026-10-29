@@ -108,6 +108,11 @@ Kurumi (クルミ, "walnut" in Japanese — because it looks like a brain) is a 
 | Feature | Description |
 |---------|-------------|
 | **Action items** | Extracted from meetings or manually created, with status, due dates, recurrence, assignees; list or Kanban board, filter by project or assignee |
+| **Waiting for** | To-dos assigned to other people, per person, on the Actions page and each person's page |
+| **Projects** | Notes, to-dos, decisions, open questions and meetings per project; suggested from the project names your notes already use |
+| **Decision log** | What was decided, when and why; meetings add their decisions automatically |
+| **Open questions** | Tracked until answered; meetings add their unresolved questions automatically |
+| **Recurring meetings** | 1:1s and syncs with a running agenda; starting one creates the meeting note with agenda, open to-dos and questions |
 | **Inbox** | Unified triage view: overdue actions, due today, pending proposals, unsummarized memos, untagged notes |
 | **Focus timer** | Pomodoro timer linked to action items, global progress bar with pause/resume/chime |
 | **Habits** | Daily habit tracker with week toggles and 60-day contribution heatmap |

@@ -212,6 +212,8 @@ export interface MemoryObject {
 	// Last time the note was starred or unstarred. Starring doesn't bump
 	// updatedAt, so git sync merges favorites on this instead.
 	favoriteChangedAt?: number;
+	// The recurring meeting this note is an instance of.
+	seriesId?: string;
 }
 
 export interface MeetingMetadata {
@@ -241,10 +243,91 @@ export interface ActionItem {
 	// value means the item rolls over to its next occurrence when
 	// completed or when its dueDate passes.
 	recurrence: Recurrence;
+	// Project it belongs to, when set directly (otherwise it can still be
+	// in a project through its source note).
+	projectId?: string | null;
 	vaultId: string;
 	createdAt: number;
 	updatedAt: number;
 	[key: string]: unknown; // Automerge compatibility
+}
+
+// --- Work resources (schema v17) -------------------------------------------
+//
+// Projects tie notes, to-dos, decisions, questions and meetings together.
+// Notes link to a project by name (MemoryObject.projects, which entity
+// extraction also fills), everything else by projectId.
+
+export type ProjectStatus = 'active' | 'paused' | 'done' | 'archived';
+
+export interface Project {
+	id: string;
+	name: string;
+	status: ProjectStatus;
+	owner: string | null;
+	dueDate: string | null; // ISO date
+	description: string;
+	vaultId: string;
+	createdAt: number;
+	updatedAt: number;
+	[key: string]: unknown; // Automerge compatibility
+}
+
+/** An entry in the decision log. */
+export interface Decision {
+	id: string;
+	text: string;
+	rationale: string;
+	decidedOn: string; // ISO date
+	decidedBy: string[];
+	memoryId: string | null; // note/meeting it came from
+	projectId: string | null;
+	vaultId: string;
+	createdAt: number;
+	updatedAt: number;
+	[key: string]: unknown;
+}
+
+export type QuestionStatus = 'open' | 'answered' | 'dropped';
+
+/** An open question (e.g. left unresolved in a meeting) until answered. */
+export interface Question {
+	id: string;
+	text: string;
+	status: QuestionStatus;
+	assignee: string | null;
+	answer: string;
+	answerMemoryId: string | null; // note holding the answer
+	memoryId: string | null; // where it was raised
+	projectId: string | null;
+	vaultId: string;
+	createdAt: number;
+	updatedAt: number;
+	resolvedAt: number | null;
+	[key: string]: unknown;
+}
+
+export type MeetingCadence = 'weekly' | 'biweekly' | 'monthly' | 'none';
+
+export interface AgendaItem {
+	id: string;
+	text: string;
+	addedAt: number;
+	meetingId: string | null; // the meeting note it was covered in
+}
+
+/** A recurring meeting (e.g. a weekly 1:1) with a running agenda. */
+export interface MeetingSeries {
+	id: string;
+	name: string;
+	people: string[];
+	cadence: MeetingCadence;
+	projectId: string | null;
+	agenda: AgendaItem[];
+	vaultId: string;
+	createdAt: number;
+	updatedAt: number;
+	[key: string]: unknown;
 }
 
 /**
@@ -429,6 +512,10 @@ export interface KurumiDocument {
 	databaseViews: Record<string, DatabaseView>;
 	savedSearches: Record<string, SavedSearch>;
 	flashcards: Record<string, Flashcard>;
+	projects: Record<string, Project>;
+	decisions: Record<string, Decision>;
+	questions: Record<string, Question>;
+	meetingSeries: Record<string, MeetingSeries>;
 	currentVaultId: string;
 	version: number;
 	[key: string]: unknown; // Required for Automerge compatibility
@@ -473,8 +560,12 @@ export function createEmptyDocument(): KurumiDocument {
 		databaseViews: {},
 		savedSearches: {},
 		flashcards: {},
+		projects: {},
+		decisions: {},
+		questions: {},
+		meetingSeries: {},
 		currentVaultId: DEFAULT_VAULT_ID,
-		version: 16
+		version: 17
 	};
 }
 

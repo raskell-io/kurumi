@@ -29,6 +29,7 @@ import {
 	type GitSyncConfig,
 	type MemoryConflict
 } from './status';
+import { getVaultWorkRecords, applyWorkImport, type WorkRecords } from '$lib/db';
 import type { MemoryObject, Folder, Vault, Person, Event, ActionItem } from '../db/types';
 import {
 	collectBlobRefs,
@@ -241,7 +242,8 @@ export async function writeNotesToRepo(
 		people,
 		events,
 		actionItems,
-		blobMeta
+		blobMeta,
+		getVaultWorkRecords(vault.id)
 	);
 	const metadataJson = serializeMetadata(metadata);
 
@@ -603,6 +605,9 @@ export async function syncGit(
 		const mergedMemories = mergeMemoryLists(localMemories, remoteMemories);
 		const mergedFolders = mergeFolderLists(localFolders, remoteFolders);
 		const mergedActionItems = mergeActionItemLists(localActionItems, remoteActionItems);
+
+		// Projects, decisions, questions and meeting series from the remote.
+		if (metadata?.work) applyWorkImport(metadata.work as Partial<WorkRecords>);
 
 		// Import merged data
 		await onImport(
