@@ -5,8 +5,14 @@
 		actionItems,
 		reminderProposals,
 		updateActionItemStatus,
-		todayIso
+		updateMemoryObject,
+		completeRecurring,
+		todayIso,
+		type ActionItem
 	} from '$lib/db';
+	import { pushUndo } from '$lib/stores/undo';
+	import { dueInfo } from '$lib/utils/due';
+	import { openNoteTasks, checkTaskInBody, sortOpenActionItems, type NoteTask } from '$lib/todos';
 	import { askKurumi, isAskKurumiResult, type AskKurumiResult } from '$lib/ask';
 	import { parseVoiceCommand } from '$lib/voice-commands';
 	import { parseSearchQuery, hasAnyFilter } from '$lib/search';
@@ -34,9 +40,19 @@
 		CheckSquare,
 		Square,
 		Bell,
-		Radio
+		Radio,
+		Users,
+		CalendarDays,
+		ArrowRight,
+		ListTodo,
+		NotebookText
 	} from 'lucide-svelte';
-	import { showNewNoteSnackbar, triggerVoiceAssistant } from '$lib/stores/snackbar';
+	import {
+		showNewNoteSnackbar,
+		triggerVoiceAssistant,
+		triggerVoiceCapture,
+		triggerMeetingCapture
+	} from '$lib/stores/snackbar';
 
 	type Turn = {
 		question: string;
@@ -80,18 +96,79 @@
 		[...$memoryObjects].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5)
 	);
 
-	// Action items due on or before today, still open — the Phase 9
-	// "actually show me what's next" surface. Done / cancelled items
-	// are excluded so the list stays actionable.
-	let dueToday = $derived.by(() => {
-		const today = todayIso();
-		return $actionItems.filter(
-			(a) =>
-				(a.status === 'open' || a.status === 'in_progress') &&
-				a.dueDate !== null &&
-				a.dueDate <= today
-		);
-	});
+	// --- Quick capture ----------------------------------------------------
+	// Type a thought and press Enter to save it as a note without leaving
+	// the page; ⌘/Ctrl+Enter saves and opens it.
+	let captureText = $state('');
+	let captured = $state<{ id: string; title: string } | null>(null);
+	let capturedTimer: ReturnType<typeof setTimeout> | undefined;
+
+	function saveCapture(open: boolean) {
+		const text = captureText.trim();
+		if (!text) {
+			if (open) handleNewNote();
+			return;
+		}
+		// Title: the first line, cut at a word near 80 characters. The full
+		// text goes in the body when it's longer than that.
+		const firstLine = text.split('\n')[0];
+		const title = firstLine.length <= 80 ? firstLine : firstLine.slice(0, 80).replace(/\s+\S*$/, '') + '…';
+		const memory = addMemoryObject(title, text === title ? '' : text, null);
+		captureText = '';
+		if (open) {
+			goto(`/memory/${memory.id}`);
+			return;
+		}
+		captured = { id: memory.id, title };
+		clearTimeout(capturedTimer);
+		capturedTimer = setTimeout(() => (captured = null), 6000);
+	}
+
+	// --- To do ----------------------------------------------------------------
+	// Open action items in the order they need attention, plus unchecked
+	// `- [ ]` items written in notes.
+	const today = todayIso();
+	let openItems = $derived(sortOpenActionItems($actionItems, today));
+	let overdueCount = $derived(openItems.filter((a) => a.dueDate && a.dueDate < today).length);
+	let dueTodayCount = $derived(openItems.filter((a) => a.dueDate === today).length);
+	let inProgressCount = $derived(openItems.filter((a) => a.status === 'in_progress').length);
+	let noteTasks = $derived(openNoteTasks($memoryObjects));
+	// Show up to 5 action items and fill the card to 7 rows with note tasks.
+	let shownItems = $derived(openItems.slice(0, 5));
+	let shownNoteTasks = $derived(noteTasks.slice(0, Math.max(0, 7 - shownItems.length)));
+	let moreItems = $derived(openItems.length - shownItems.length);
+	let moreTasks = $derived(noteTasks.length - shownNoteTasks.length);
+	let todoSummary = $derived(
+		[
+			overdueCount && `${overdueCount} overdue`,
+			dueTodayCount && `${dueTodayCount} due today`,
+			inProgressCount && `${inProgressCount} in progress`
+		]
+			.filter(Boolean)
+			.join(' · ')
+	);
+
+	// Same completion as the Actions page: recurring items roll over to
+	// their next occurrence. Undoable.
+	function completeItem(item: ActionItem) {
+		const previous = item.status;
+		if (item.recurrence !== 'none') completeRecurring(item.id);
+		else updateActionItemStatus(item.id, 'done');
+		pushUndo({ label: `Completed “${item.text}”`, undo: () => updateActionItemStatus(item.id, previous) });
+	}
+
+	function completeNoteTask(task: NoteTask) {
+		const memory = $memoryObjects.find((m) => m.id === task.memoryId);
+		if (!memory) return;
+		const before = memory.bodyMarkdown;
+		const after = checkTaskInBody(before, task.line, task.text);
+		if (after === null) return;
+		updateMemoryObject(memory.id, { bodyMarkdown: after });
+		pushUndo({
+			label: `Checked “${task.text}”`,
+			undo: () => updateMemoryObject(memory.id, { bodyMarkdown: before })
+		});
+	}
 
 	let pendingProposalsCount = $derived(
 		$reminderProposals.filter((p) => p.status === 'pending').length
@@ -422,56 +499,123 @@
 			<h1 class="mt-1 text-2xl font-semibold tracking-tight text-[var(--color-text)] md:text-[1.75rem]">{greeting}</h1>
 		</header>
 
-		<!-- Due today + pending proposals strip -->
-		{#if dueToday.length > 0 || pendingProposalsCount > 0}
-			<div class="mb-6 space-y-3">
-				{#if dueToday.length > 0}
-					<div class="rounded-xl border border-[var(--color-accent)]/30 bg-[var(--color-accent)]/5 p-4">
-						<div class="mb-2 flex items-center justify-between">
-							<div class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
-								<CheckSquare class="h-4 w-4 text-[var(--color-accent)]" />
-								Due today or earlier
-								<span class="rounded-full bg-[var(--color-bg-secondary)] px-2 text-xs text-[var(--color-text-muted)]">
-									{dueToday.length}
-								</span>
-							</div>
-							<a href="/actions" class="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-accent)]">
-								View all →
-							</a>
-						</div>
-						<ul class="space-y-1">
-							{#each dueToday.slice(0, 5) as item (item.id)}
-								<li class="flex items-center gap-2 text-sm">
-									<button
-										class="flex h-5 w-5 shrink-0 items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-accent)]"
-										onclick={() => updateActionItemStatus(item.id, 'done')}
-										aria-label="Mark done"
-									>
-										<Square class="h-4 w-4" />
-									</button>
-									<span class="flex-1 truncate text-[var(--color-text)]">{item.text}</span>
-									{#if item.dueDate}
-										<span class="shrink-0 text-xs text-[var(--color-text-muted)]">{item.dueDate}</span>
-									{/if}
-								</li>
-							{/each}
-						</ul>
-					</div>
-				{/if}
-				{#if pendingProposalsCount > 0}
-					<a
-						href="/proposals"
-						class="flex items-center gap-3 rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-3 text-sm text-[var(--color-text)] transition-colors hover:border-yellow-500/50"
-					>
-						<Bell class="h-4 w-4 text-yellow-500" />
-						<span class="flex-1">
-							{pendingProposalsCount} reminder proposal{pendingProposalsCount === 1 ? '' : 's'}
-							waiting for your review
-						</span>
-						<span class="text-xs text-[var(--color-text-muted)]">Review →</span>
-					</a>
+		<!-- Capture: quick thought, new note, voice, meeting, today -->
+		<section class="capture mb-6" aria-label="Capture">
+			<div class="capture-box">
+				<input
+					bind:value={captureText}
+					onkeydown={(e) => {
+						if (e.key === 'Enter') {
+							e.preventDefault();
+							saveCapture(e.metaKey || e.ctrlKey);
+						}
+					}}
+					type="text"
+					class="capture-input"
+					placeholder="Capture a thought…"
+					aria-label="Capture a thought"
+				/>
+				{#if captureText.trim()}
+					<span class="hidden shrink-0 text-xs text-[var(--color-text-faint)] sm:inline">↵ save · {modKey}↵ open</span>
 				{/if}
 			</div>
+			{#if captured}
+				<p class="mt-2 flex items-center gap-2 text-xs text-[var(--color-text-muted)]" role="status">
+					<span class="k-badge k-badge-success">Saved</span>
+					<span class="truncate">{captured.title}</span>
+					<a href="/memory/{captured.id}" class="shrink-0 text-[var(--color-accent)]">Open</a>
+				</p>
+			{/if}
+			<div class="capture-actions">
+				<button type="button" onclick={handleNewNote} class="capture-primary text-white dark:text-[#1e1e2e]">
+					<Plus class="h-5 w-5" />
+					<span class="flex-1 text-left">New note</span>
+					<span class="text-xs opacity-70">{modKey}N</span>
+				</button>
+				<button type="button" onclick={() => triggerVoiceCapture.set(true)} class="capture-secondary">
+					<Mic class="h-4 w-4" /> Voice memo
+				</button>
+				<button type="button" onclick={() => triggerMeetingCapture.set(true)} class="capture-secondary">
+					<Users class="h-4 w-4" /> Meeting
+				</button>
+				<a href="/daily" class="capture-secondary">
+					<CalendarDays class="h-4 w-4" /> Today's note
+				</a>
+			</div>
+		</section>
+
+		<!-- To do: open action items and unchecked tasks in notes -->
+		{#if openItems.length > 0 || noteTasks.length > 0}
+			<section class="todo mb-6" aria-labelledby="todo-title">
+				<div class="mb-1 flex items-center justify-between gap-3">
+					<h2 id="todo-title" class="!m-0 flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+						<ListTodo class="h-4 w-4 text-[var(--color-accent)]" />
+						To do
+						<span class="rounded-full bg-[var(--color-bg)] px-2 text-xs font-normal tabular-nums text-[var(--color-text-muted)]">
+							{openItems.length + noteTasks.length}
+						</span>
+					</h2>
+					<a href="/actions" class="inline-flex shrink-0 items-center text-xs text-[var(--color-text-muted)] hover:text-[var(--color-accent)]">
+						All actions →
+					</a>
+				</div>
+				{#if todoSummary}
+					<p class="mb-2 text-xs" class:text-[var(--color-danger)]={overdueCount > 0} class:text-[var(--color-text-muted)]={overdueCount === 0}>
+						{todoSummary}
+					</p>
+				{/if}
+				<ul class="space-y-0.5">
+					{#each shownItems as item (item.id)}
+						{@const due = item.dueDate ? dueInfo(item.dueDate, true, today) : null}
+						<li class="todo-row">
+							<button class="todo-check" onclick={() => completeItem(item)} aria-label="Mark “{item.text}” done">
+								<Square class="h-4 w-4" />
+							</button>
+							<span class="min-w-0 flex-1 truncate text-[var(--color-text)]">{item.text}</span>
+							{#if item.status === 'in_progress'}
+								<span class="shrink-0 text-xs text-[var(--color-accent)]">In progress</span>
+							{/if}
+							{#if due}
+								<span class="shrink-0 text-xs" class:text-[var(--color-danger)]={due.tone === 'danger'} class:todo-warn={due.tone === 'warn'} class:text-[var(--color-text-faint)]={!due.tone}>
+									{due.label}
+								</span>
+							{/if}
+						</li>
+					{/each}
+					{#each shownNoteTasks as task (task.memoryId + ':' + task.line)}
+						<li class="todo-row">
+							<button class="todo-check" onclick={() => completeNoteTask(task)} aria-label="Check “{task.text}”">
+								<Square class="h-4 w-4" />
+							</button>
+							<span class="min-w-0 flex-1 truncate text-[var(--color-text)]">{task.text}</span>
+							<a href="/memory/{task.memoryId}" class="todo-source" title="Open “{task.noteTitle}”">
+								<NotebookText class="h-3 w-3" /><span class="truncate">{task.noteTitle}</span>
+							</a>
+						</li>
+					{/each}
+				</ul>
+				{#if moreItems > 0 || moreTasks > 0}
+					<p class="mt-2 text-xs text-[var(--color-text-faint)]">
+						{#if moreItems > 0}<a href="/actions" class="hover:text-[var(--color-accent)]">{moreItems} more action {moreItems === 1 ? 'item' : 'items'}</a>{/if}
+						{#if moreItems > 0 && moreTasks > 0} · {/if}
+						{#if moreTasks > 0}{moreTasks} more in your notes{/if}
+					</p>
+				{/if}
+			</section>
+		{/if}
+
+		{#if pendingProposalsCount > 0}
+			<a
+				href="/proposals"
+				class="mb-6 flex items-center gap-3 rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-3 text-sm text-[var(--color-text)] transition-colors hover:border-yellow-500/50"
+			>
+				<Bell class="h-4 w-4 text-yellow-500" />
+				<span class="flex-1">
+					{pendingProposalsCount} reminder proposal{pendingProposalsCount === 1 ? '' : 's'}
+					waiting for your review
+				</span>
+				<span class="text-xs text-[var(--color-text-muted)]">Review →</span>
+			</a>
 		{/if}
 
 		<!-- Patterns + daily digest -->
@@ -736,7 +880,7 @@
 						Add an OpenAI API key to ask questions across your memories, with citations.
 					</p>
 					<a
-						href="/settings"
+						href="/settings/ai"
 						class="inline-flex shrink-0 items-center gap-2 self-start rounded-md border border-[var(--color-border)] px-2.5 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-hover)] sm:self-auto"
 					>
 						<Settings class="h-3.5 w-3.5" />
@@ -751,15 +895,6 @@
 			<section>
 				<div class="mb-1 flex items-center justify-between px-2">
 					<h2 class="text-xs font-semibold text-[var(--color-text-faint)]">Recent</h2>
-					<button
-						type="button"
-						onclick={handleNewNote}
-						class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-[var(--color-text-muted)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
-						title="New note ({modKey}N)"
-					>
-						<Plus class="h-3.5 w-3.5" />
-						New note
-					</button>
 				</div>
 				<ul>
 					{#each recentMemories as memory (memory.id)}
@@ -780,15 +915,6 @@
 					{/each}
 				</ul>
 			</section>
-		{:else}
-			<button
-				type="button"
-				onclick={handleNewNote}
-				class="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-hover)]"
-			>
-				<Plus class="h-4 w-4" />
-				New note
-			</button>
 		{/if}
 	{/if}
 </div>
@@ -815,6 +941,168 @@
 	:global(.markdown-content sup .ask-citation:hover) {
 		background: color-mix(in srgb, var(--color-accent) 35%, transparent);
 		text-decoration: none;
+	}
+
+	/* Capture card */
+	.capture {
+		padding: 0.875rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg, 12px);
+		background: var(--color-bg-secondary);
+	}
+
+	.capture-box {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0 0.75rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md, 8px);
+		background: var(--color-bg);
+	}
+
+	.capture-box:focus-within {
+		border-color: color-mix(in srgb, var(--color-accent) 60%, var(--color-border));
+		box-shadow: 0 0 0 3px var(--color-accent-soft);
+	}
+
+	.capture-input,
+	.capture-input:focus,
+	.capture-input:focus-visible {
+		min-width: 0;
+		flex: 1;
+		height: 2.75rem;
+		border: none !important;
+		background: transparent;
+		color: var(--color-text);
+		font-size: 0.9375rem;
+		outline: none !important;
+		box-shadow: none !important;
+	}
+
+	.capture-input::placeholder {
+		color: var(--color-text-faint);
+	}
+
+	/* Phone: New note full width, the three others in one row below.
+	   Wider: one row, New note taking the slack. */
+	.capture-actions {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 0.5rem;
+		margin-top: 0.75rem;
+	}
+
+	@media (min-width: 640px) {
+		.capture-actions {
+			display: flex;
+		}
+	}
+
+	.capture-primary {
+		display: flex;
+		grid-column: 1 / -1;
+		align-items: center;
+		gap: 0.5rem;
+		min-height: 2.75rem;
+		padding: 0 1rem;
+		border-radius: var(--radius-md, 8px);
+		background: var(--color-accent);
+		font-size: 0.9375rem;
+		font-weight: 600;
+		box-shadow: var(--shadow-sm, none);
+	}
+
+	.capture-primary:hover {
+		background: var(--color-accent-hover, var(--color-accent));
+	}
+
+	@media (min-width: 640px) {
+		.capture-primary {
+			flex: 1 1 auto;
+		}
+	}
+
+	.capture-secondary {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 0.25rem;
+		min-height: 3.5rem;
+		padding: 0.375rem 0.5rem;
+		white-space: nowrap;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md, 8px);
+		background: var(--color-bg);
+		color: var(--color-text-muted);
+		font-size: 0.8125rem;
+		text-decoration: none;
+	}
+
+	@media (min-width: 640px) {
+		.capture-secondary {
+			flex: 0 0 auto;
+			flex-direction: row;
+			gap: 0.375rem;
+			min-height: 2.75rem;
+			padding: 0 0.875rem;
+		}
+	}
+
+	.capture-secondary:hover {
+		background: var(--color-hover);
+		color: var(--color-text);
+	}
+
+	/* To do card */
+	.todo {
+		padding: 0.875rem 1rem;
+		border: 1px solid color-mix(in srgb, var(--color-accent) 30%, var(--color-border));
+		border-radius: var(--radius-lg, 12px);
+		background: color-mix(in srgb, var(--color-accent) 5%, transparent);
+	}
+
+	.todo-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		min-height: 2rem;
+		font-size: 0.875rem;
+	}
+
+	.todo-check {
+		display: flex;
+		width: 1.5rem;
+		height: 1.5rem;
+		flex-shrink: 0;
+		align-items: center;
+		justify-content: center;
+		border-radius: 4px;
+		color: var(--color-text-muted);
+	}
+
+	.todo-check:hover {
+		color: var(--color-accent);
+	}
+
+	.todo-source {
+		display: inline-flex;
+		max-width: 10rem;
+		flex-shrink: 0;
+		align-items: center;
+		gap: 0.25rem;
+		font-size: 0.75rem;
+		color: var(--color-text-faint);
+		text-decoration: none;
+	}
+
+	.todo-source:hover {
+		color: var(--color-accent);
+	}
+
+	.todo-warn {
+		color: #df8e1d;
 	}
 
 	.ask-input:focus {
