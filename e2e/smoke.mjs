@@ -57,9 +57,14 @@ async function launchBrowser(profileDir) {
 	throw lastError;
 }
 
+// Contexts opened by the running scenario; closed when it ends, so earlier
+// scenarios' app instances (timers, workers) don't pile up and stall Chrome.
+const openContexts = [];
+
 /** Fresh browser profile + page at the app root, with errors collected. */
 async function freshPage(browser) {
 	const context = await browser.createBrowserContext();
+	openContexts.push(context);
 	const page = await context.newPage();
 	await page.setViewport({ width: 1400, height: 900 });
 	const errors = [];
@@ -581,6 +586,64 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
+	async 'work: projects, waiting for, decisions, questions, recurring meetings'(browser) {
+		const { page, errors } = await freshPage(browser);
+		await db(page, `
+			const m = db.addMemoryObject('Falcon weekly', 'body');
+			db.setMemoryInProject(m.id, 'Falcon', true);
+			db.addQuestion({ text: 'Who owns the budget?', memoryId: m.id, assignee: 'Sam' });
+		`);
+		await sleep(600); // let the save land before reloading
+		// A note's project name is suggested, then made a project
+		await page.goto(`${BASE}/projects`, { waitUntil: 'load' });
+		await page.waitForFunction(() => [...document.querySelectorAll('button')].some((b) => b.textContent.includes('Make project')));
+		await clickText(page, 'button', 'Make project');
+		await page.waitForSelector('input[aria-label="Project name"]');
+		const quickAdd = async (prefix, value) => {
+			await page.evaluate((p) => [...document.querySelectorAll('input')].find((i) => (i.placeholder || '').startsWith(p)).focus(), prefix);
+			await page.keyboard.type(value);
+			await page.keyboard.press('Enter');
+			await sleep(300);
+		};
+		await quickAdd('Add a to-do', 'Send the deck @Sam');
+		await quickAdd('Log a decision', 'Launch in Q1');
+		const projectText = await page.$eval('main', (e) => e.innerText);
+		assert.match(projectText, /Send the deck\s+Waiting · Sam/);
+		assert.match(projectText, /Who owns the budget\?/, 'question from a project note missing');
+		assert.match(projectText, /Launch in Q1/);
+		// Waiting for
+		await page.goto(`${BASE}/actions?filter=waiting`, { waitUntil: 'load' });
+		await page.waitForSelector('.k-section-title');
+		assert.match(await page.$eval('main', (e) => e.innerText), /Sam\s+1[\s\S]*Send the deck/);
+		// Recurring meeting: agenda + start
+		await page.goto(`${BASE}/meetings`, { waitUntil: 'load' });
+		await page.waitForSelector('input[aria-label="Meeting name"]');
+		await page.type('input[aria-label="Meeting name"]', '1:1 with Sam');
+		await page.type('input[aria-label="People"]', 'Sam');
+		await clickText(page, 'button', 'Create');
+		await page.waitForFunction(() => location.hash.startsWith('#/meetings/'));
+		await page.waitForSelector('.series-title');
+		await quickAdd('Add something to discuss', 'Hiring plan');
+		await clickText(page, 'button', 'Start meeting');
+		await page.waitForSelector('input[aria-label="Note title"]');
+		await sleep(300);
+		const body = await db(page, `let ms; db.memoryObjects.subscribe((v) => (ms = v))(); return ms.find((m) => m.title.startsWith('1:1 with Sam')).bodyMarkdown;`);
+		assert.match(body, /## Agenda\n\n- \[ \] Hiring plan/);
+		assert.match(body, /Send the deck \(@Sam\)/);
+		assert.match(body, /Who owns the budget\? \(@Sam\)/);
+		// Profile: being Sam means nothing is waiting
+		await page.goto(`${BASE}/settings/profile`, { waitUntil: 'load' });
+		await page.waitForSelector('#my-names');
+		await page.type('#my-names', 'Sam');
+		await page.keyboard.press('Tab');
+		await page.goto(`${BASE}/actions?filter=waiting`, { waitUntil: 'load' });
+		await page.waitForSelector('.k-empty');
+		// Full backup carries the new collections
+		const backup = await db(page, `const j = JSON.parse(db.exportFullJSON()); return [j.projects.length, j.decisions.length, j.questions.length, j.meetingSeries.length];`);
+		assert.deepEqual(backup, [1, 1, 1, 1]);
+		assert.deepEqual(errors, []);
+	},
+
 	async 'edits persist across reloads (incremental saves)'(browser) {
 		const { page, errors } = await freshPage(browser);
 		await db(page, `for (let i = 0; i < 5; i++) db.addMemoryObject('Saved ' + i, 'b');`);
@@ -737,6 +800,8 @@ try {
 		} catch (err) {
 			failed++;
 			console.log(`  ✗ ${name}\n      ${err.message.split('\n').join('\n      ')}`);
+		} finally {
+			for (const context of openContexts.splice(0)) await context.close().catch(() => {});
 		}
 	}
 } finally {
