@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { openImageFromContainer, isViewable } from '$lib/stores/imageViewer';
 	import { marked } from 'marked';
 	import { findMemoryObjectByTitle } from '$lib/db';
 	import { resolveBlobUrl, isBlobRef } from '$lib/utils/image';
@@ -203,6 +204,13 @@
 
 	function handleClick(e: MouseEvent) {
 		const target = e.target as HTMLElement;
+
+		// Images open in the full-screen viewer (unless they're a link).
+		if (target instanceof HTMLImageElement && !target.closest('a') && isViewable(target)) {
+			e.preventDefault();
+			openImageFromContainer(contentDiv ?? target.parentElement!, target);
+			return;
+		}
 
 		// Handle code block copy button
 		if (target.dataset.action === 'copy-code') {
@@ -931,5 +939,9 @@
 
 	.markdown-content :global(details > :last-child) {
 		padding-bottom: 0.625em;
+	}
+
+	.markdown-content :global(img:not(a img)) {
+		cursor: zoom-in;
 	}
 </style>

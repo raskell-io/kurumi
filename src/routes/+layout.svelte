@@ -44,6 +44,7 @@
 		closeSplit
 	} from '$lib/stores/workspace';
 	import SplitPane from '$lib/components/SplitPane.svelte';
+	import ImageViewer from '$lib/components/ImageViewer.svelte';
 	import { labsEnabled, LAB_PAGES } from '$lib/stores/labs';
 	import { matchShortcut, type ShortcutId } from '$lib/shortcuts';
 	import {
@@ -1120,6 +1121,9 @@
 		<SyncFab visible={showSyncStatus} onConflict={() => (showConflictModal = true)} />
 	{/if}
 {/if}
+
+<!-- Full-screen image viewer (opened from images in notes) -->
+<ImageViewer />
 
 <style>
 	/* Boot screen: only reveal after a beat so fast boots don't flash */

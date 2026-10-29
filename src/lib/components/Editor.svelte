@@ -57,6 +57,8 @@
 	import { noteEmbedPlugin } from '$lib/editor/noteEmbed';
 	import { pasteLinkPlugin } from '$lib/editor/pasteLink';
 	import { pasteMarkdownPlugin } from '$lib/editor/pasteMarkdown';
+	import { imageFilePlugin } from '$lib/editor/imageFiles';
+	import { imageClickPlugin } from '$lib/editor/imageClick';
 	import type { EditorView } from '@milkdown/kit/prose/view';
 	import { getMarkdown } from '@milkdown/kit/utils';
 
@@ -270,7 +272,7 @@
 	 * as the src (so markdown serialization preserves it), then the
 	 * MutationObserver swaps in the object URL for display.
 	 */
-	async function insertImageNode(blobRef: string, alt: string) {
+	async function insertImageNode(blobRef: string, alt: string, at: number | null = null) {
 		if (!editor) return;
 		try {
 			const view = editor.ctx.get(editorViewCtx);
@@ -287,7 +289,7 @@
 				alt: alt || 'image',
 				title: alt || ''
 			});
-			const { from } = state.selection;
+			const from = at !== null && at <= state.doc.content.size ? at : state.selection.from;
 			const tr = state.tr.insert(from, imageNode);
 			view.dispatch(tr);
 			view.focus();
@@ -513,6 +515,23 @@
 			.use(history)
 			// Before clipboard: ProseMirror asks plugins in order and the
 			// clipboard plugin handles every paste.
+			.use(
+				imageFilePlugin(async (files, at) => {
+					// Store each image (converted to AVIF/WebP) and insert it; for
+					// drops, at the drop point, later ones after the earlier.
+					let pos = at;
+					for (const file of files) {
+						try {
+							const alt = file.name && file.name !== 'image.png' ? file.name.replace(/\.[^.]+$/, '') : 'pasted image';
+							const result = await processAndStoreImage(file, alt);
+							await insertImageNode(result.ref, alt, pos);
+							if (pos !== null) pos += 1;
+						} catch (err) {
+							console.error('Image paste/drop failed:', err);
+						}
+					}
+				})
+			)
 			.use(pasteLinkPlugin)
 			.use(pasteMarkdownPlugin)
 			.use(clipboard)
@@ -529,6 +548,7 @@
 			.use(block)
 			.use(findReplacePlugin)
 			.use(noteEmbedPlugin)
+			.use(imageClickPlugin)
 			.create();
 
 		// Unmounted while Milkdown was starting (e.g. quick note switch):
@@ -595,45 +615,7 @@
 		const blobResolver = new MutationObserver(() => void resolveBlobImages());
 		blobResolver.observe(editorContainer, { childList: true, subtree: true });
 
-		// Image paste handler: intercept clipboard paste events that
-		// contain images, convert to AVIF, store, and insert as an
-		// image node (not markdown text — Milkdown doesn't re-parse).
-		editorContainer.addEventListener('paste', async (e: ClipboardEvent) => {
-			const items = e.clipboardData?.items;
-			if (!items) return;
-			for (const item of items) {
-				if (item.type.startsWith('image/')) {
-					e.preventDefault();
-					const file = item.getAsFile();
-					if (!file) continue;
-					try {
-						const result = await processAndStoreImage(file);
-						await insertImageNode(result.ref, 'pasted image');
-					} catch (err) {
-						console.error('Image paste failed:', err);
-					}
-					return;
-				}
-			}
-		});
-
-		// Image drop handler: intercept drag-and-drop of image files.
-		editorContainer.addEventListener('drop', async (e: DragEvent) => {
-			const files = e.dataTransfer?.files;
-			if (!files) return;
-			for (const file of files) {
-				if (file.type.startsWith('image/')) {
-					e.preventDefault();
-					try {
-						const result = await processAndStoreImage(file, file.name.replace(/\.[^.]+$/, ''));
-						await insertImageNode(result.ref, file.name.replace(/\.[^.]+$/, ''));
-					} catch (err) {
-						console.error('Image drop failed:', err);
-					}
-					return;
-				}
-			}
-		});
+		// Image paste/drop is handled by imageFilePlugin (see .use below).
 
 		editorContainer.addEventListener('dragover', (e: DragEvent) => {
 			if (e.dataTransfer?.types.includes('Files')) {
@@ -780,6 +762,11 @@
 		margin-bottom: 0 !important;
 		font-size: 0.8125em;
 		color: var(--color-text-faint);
+	}
+
+	/* Images open in the viewer on click */
+	.milkdown-editor :global(.ProseMirror img:not(.ProseMirror-separator)) {
+		cursor: zoom-in;
 	}
 
 	/* A block selected via its handle */
