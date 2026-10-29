@@ -343,7 +343,7 @@ src/
 │   ├── read/                # Blog-style reader with filters
 │   ├── references/          # Tags / people / dates / links browse
 │   ├── review/              # Weekly review
-│   ├── settings/            # All settings panels
+│   ├── settings/[[section]]/ # One page per settings section (/settings/sync, …)
 │   ├── tags/                # Tag normalization
 │   ├── templates/           # Template management
 │   ├── topics/              # Topic + project merge

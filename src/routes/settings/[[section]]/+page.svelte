@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { autofocus } from '$lib/actions/autofocus';
 	import ShortcutSettings from '$lib/components/ShortcutSettings.svelte';
+	import AboutKurumi from '$lib/components/AboutKurumi.svelte';
 	import { labsEnabled, LAB_PAGES } from '$lib/stores/labs';
 	import {
 		exportMemoryObjectsJSON,
@@ -82,7 +83,8 @@
 		type ModelStatus
 	} from '$lib/inference';
 	import { onMount } from 'svelte';
-	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2, RefreshCw, Wifi, Sparkles, ChevronDown, Cloud, Shield, BookOpen, HardDrive } from 'lucide-svelte';
+	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2, RefreshCw, Wifi, Sparkles, ChevronDown, ChevronLeft, ChevronRight, Cloud, Shield, BookOpen, HardDrive } from 'lucide-svelte';
+	import { page } from '$app/stores';
 	import GitConflictModal from '$lib/components/GitConflictModal.svelte';
 	import {
 		notificationsSupported,
@@ -434,29 +436,16 @@
 		{ id: 'about', label: 'About' },
 		{ id: 'danger', label: 'Danger zone' }
 	];
-	let activeSection = $state('appearance');
+	// Each section is its own page: /settings/<section>. Without one, wide
+	// screens show the first section and narrow screens the section list.
+	let section = $derived(navSections.find((n) => n.id === $page.params.section)?.id ?? null);
+	let current = $derived(section ?? navSections[0].id);
 	let scrollEl: HTMLDivElement | undefined = $state();
 
-	function jumpToSection(id: string) {
-		activeSection = id;
-		document.getElementById(id)?.scrollIntoView({ block: 'start' });
-	}
-
+	// Start each section at the top.
 	$effect(() => {
-		if (!scrollEl || typeof IntersectionObserver === 'undefined') return;
-		const observer = new IntersectionObserver(
-			(entries) => {
-				for (const entry of entries) {
-					if (entry.isIntersecting) activeSection = entry.target.id;
-				}
-			},
-			{ root: scrollEl, rootMargin: '0px 0px -75% 0px' }
-		);
-		for (const s of navSections) {
-			const el = document.getElementById(s.id);
-			if (el) observer.observe(el);
-		}
-		return () => observer.disconnect();
+		void current;
+		scrollEl?.scrollTo({ top: 0 });
 	});
 
 	onMount(() => {
@@ -890,39 +879,33 @@
 {/snippet}
 
 <svelte:head>
-	<title>Settings - Kurumi</title>
+	<title>{section ? `${navSections.find((n) => n.id === section)?.label} · Settings` : 'Settings'} - Kurumi</title>
 </svelte:head>
 
 <div class="h-full overflow-y-auto overscroll-contain" bind:this={scrollEl}>
 	<div class="k-page settings-page">
-		<div class="settings-layout">
-			<!-- In-page section nav (wide screens only) -->
+		<div class="settings-layout" class:show-index={!section}>
+			<!-- Section nav: a sidebar on wide screens, the index page on narrow ones -->
 			<nav class="settings-nav" aria-label="Settings sections">
+				<h1 class="settings-index-title">Settings</h1>
 				{#each navSections as s (s.id)}
 					<a
-						href="#{s.id}"
+						href="/settings/{s.id}"
 						class="settings-nav-link"
 						class:danger={s.id === 'danger'}
-						aria-current={activeSection === s.id ? 'true' : undefined}
-						onclick={(e) => {
-							e.preventDefault();
-							jumpToSection(s.id);
-						}}
+						aria-current={current === s.id ? 'page' : undefined}
 					>
 						{s.label}
+						<ChevronRight class="settings-nav-chevron h-4 w-4" />
 					</a>
 				{/each}
 			</nav>
 
-			<div class="min-w-0 flex-1">
-				<header class="k-page-header">
-					<div class="min-w-0">
-						<h1 class="k-page-title">Settings</h1>
-						<p class="k-page-subtitle">Preferences for Kurumi on this device.</p>
-					</div>
-				</header>
+			<div class="settings-content min-w-0 flex-1">
+				<a href="/settings" class="settings-back"><ChevronLeft class="h-4 w-4" />Settings</a>
 
 				<!-- Appearance -->
+				{#if current === 'appearance'}
 				<section id="appearance" class="set-section" aria-labelledby="appearance-title">
 					<h2 id="appearance-title" class="set-section-title">Appearance</h2>
 					<p class="set-section-desc">Theme and editor typography. Changes apply instantly.</p>
@@ -976,8 +959,10 @@
 						</div>
 					</div>
 				</section>
+				{/if}
 
 				<!-- Sync -->
+				{#if current === 'sync'}
 				<section id="sync" class="set-section" aria-labelledby="sync-title">
 					<h2 id="sync-title" class="set-section-title">
 						Sync
@@ -1373,8 +1358,10 @@
 						{/if}
 					</div>
 				</section>
+				{/if}
 
 				<!-- Local AI -->
+				{#if current === 'local-ai'}
 				<section id="local-ai" class="set-section" aria-labelledby="local-ai-title">
 					<h2 id="local-ai-title" class="set-section-title">
 						Local AI
@@ -1526,8 +1513,10 @@
 						</div>
 					</div>
 				</section>
+				{/if}
 
 				<!-- AI Assistant -->
+				{#if current === 'ai'}
 				<section id="ai" class="set-section" aria-labelledby="ai-title">
 					<h2 id="ai-title" class="set-section-title">
 						AI assistant
@@ -1634,8 +1623,10 @@
 						</div>
 					</div>
 				</section>
+				{/if}
 
 				<!-- Notifications -->
+				{#if current === 'notifications'}
 				<section id="notifications" class="set-section" aria-labelledby="notifications-title">
 					<h2 id="notifications-title" class="set-section-title">
 						Notifications
@@ -1701,8 +1692,10 @@
 						{/if}
 					</div>
 				</section>
+				{/if}
 
 				<!-- Keyboard shortcuts -->
+				{#if current === 'shortcuts'}
 				<section id="shortcuts" class="set-section" aria-labelledby="shortcuts-title">
 					<h2 id="shortcuts-title" class="set-section-title">Keyboard shortcuts</h2>
 					<p class="set-section-desc">
@@ -1712,8 +1705,10 @@
 						<ShortcutSettings />
 					</div>
 				</section>
+				{/if}
 
 				<!-- Data -->
+				{#if current === 'data'}
 				<section id="data" class="set-section" aria-labelledby="data-title">
 					<h2 id="data-title" class="set-section-title">Data</h2>
 					<p class="set-section-desc">
@@ -1867,8 +1862,10 @@
 						</div>
 					</div>
 				</section>
+				{/if}
 
 				<!-- Labs -->
+				{#if current === 'labs'}
 				<section id="labs" class="set-section" aria-labelledby="labs-title">
 					<h2 id="labs-title" class="set-section-title">Labs</h2>
 					<p class="set-section-desc">
@@ -1887,31 +1884,16 @@
 						</label>
 					</div>
 				</section>
+				{/if}
 
 				<!-- About & Documentation -->
+				{#if current === 'about'}
 				<section id="about" class="set-section" aria-labelledby="about-title">
-					<h2 id="about-title" class="set-section-title">About</h2>
-					<p class="set-section-desc">Version info and guides.</p>
-					<div class="set-rows">
-						<div class="set-row">
-							<div class="flex min-w-0 items-center gap-3">
-								<img src="/icon-192.avif" alt="" class="h-9 w-9 shrink-0 rounded-lg" />
-								<div class="min-w-0">
-									<div class="set-row-label">Kurumi <span class="font-normal text-[var(--color-text-faint)]">v0.1.0</span></div>
-									<p class="set-row-help">
-										Your local-first second brain. Built with SvelteKit, Automerge and Tailwind CSS;
-										data is stored locally in IndexedDB.
-									</p>
-								</div>
-							</div>
-							<a href="https://ko-fi.com/raskell" target="_blank" rel="noopener" class="k-btn no-underline">
-								<svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-									<path d="M23.881 8.948c-.773-4.085-4.859-4.593-4.859-4.593H.723c-.604 0-.679.798-.679.798s-.082 7.324-.022 11.822c.164 2.424 2.586 2.672 2.586 2.672s8.267-.023 11.966-.049c2.438-.426 2.683-2.566 2.658-3.734 4.352.24 7.422-2.831 6.649-6.916zm-11.062 3.511c-1.246 1.453-4.011 3.976-4.011 3.976s-.121.119-.31.023c-.076-.057-.108-.09-.108-.09-.443-.441-3.368-3.049-4.034-3.954-.709-.965-1.041-2.7-.091-3.71.951-1.01 3.005-1.086 4.363.407 0 0 1.565-1.782 3.468-.963 1.904.82 1.832 3.011.723 4.311z"/>
-								</svg>
-								Support on Ko-fi
-							</a>
-						</div>
+					<h2 id="about-title" class="sr-only">About Kurumi</h2>
+					<AboutKurumi />
 
+					<h4 class="mb-1 mt-8 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-faint)]">Guides</h4>
+					<div class="set-rows">
 						<!-- Sync Setup -->
 						<details class="set-disclosure" bind:open={showSyncDocs}>
 							<summary>
@@ -1943,7 +1925,7 @@ mise run setup</code></pre>
 
 								<h4>Step 3: Configure Kurumi</h4>
 								<ol>
-									<li>In the <strong>Sync</strong> section above, choose <strong>R2</strong> and enter your Worker URL</li>
+									<li>In <a href="/settings/sync"><strong>Settings → Sync</strong></a>, choose <strong>R2</strong> and enter your Worker URL</li>
 									<li>Enter the sync token from Step 2</li>
 									<li>Click <strong>Save</strong> then <strong>Test connection</strong></li>
 								</ol>
@@ -1992,9 +1974,24 @@ mise run setup</code></pre>
 							</div>
 						</details>
 					</div>
+
+					<div class="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-border)] pt-4">
+						<p class="text-xs text-[var(--color-text-faint)]">
+							Kurumi v0.1.0 · Built with SvelteKit, Automerge and transformers.js ·
+							<a href="https://github.com/raskell-io/kurumi" target="_blank" rel="noopener">Source on GitHub</a>
+						</p>
+								<a href="https://ko-fi.com/raskell" target="_blank" rel="noopener" class="k-btn no-underline">
+									<svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+										<path d="M23.881 8.948c-.773-4.085-4.859-4.593-4.859-4.593H.723c-.604 0-.679.798-.679.798s-.082 7.324-.022 11.822c.164 2.424 2.586 2.672 2.586 2.672s8.267-.023 11.966-.049c2.438-.426 2.683-2.566 2.658-3.734 4.352.24 7.422-2.831 6.649-6.916zm-11.062 3.511c-1.246 1.453-4.011 3.976-4.011 3.976s-.121.119-.31.023c-.076-.057-.108-.09-.108-.09-.443-.441-3.368-3.049-4.034-3.954-.709-.965-1.041-2.7-.091-3.71.951-1.01 3.005-1.086 4.363.407 0 0 1.565-1.782 3.468-.963 1.904.82 1.832 3.011.723 4.311z"/>
+									</svg>
+									Support on Ko-fi
+								</a>
+					</div>
 				</section>
+				{/if}
 
 				<!-- Danger Zone -->
+				{#if current === 'danger'}
 				<section id="danger" class="set-section" aria-labelledby="danger-title">
 					<h2 id="danger-title" class="set-section-title !text-[var(--color-danger)]">Danger zone</h2>
 					<p class="set-section-desc">Irreversible actions. Export a backup first.</p>
@@ -2011,6 +2008,7 @@ mise run setup</code></pre>
 						</div>
 					</div>
 				</section>
+				{/if}
 
 				<!-- Bottom safe area spacer -->
 				<div class="h-8 safe-bottom md:h-0"></div>
@@ -2179,26 +2177,109 @@ mise run setup</code></pre>
 		gap: 3rem;
 	}
 
+	/* Narrow screens: /settings is the section list, each section its own
+	   page with a back link. Wide screens: sidebar + section. */
+	.settings-layout.show-index .settings-content {
+		display: none;
+	}
+
+	.settings-layout.show-index .settings-nav {
+		display: flex;
+		flex: 1;
+		flex-direction: column;
+	}
+
+	.settings-index-title {
+		margin-bottom: 0.75rem;
+		font-size: 1.5rem;
+		font-weight: 700;
+		color: var(--color-text);
+	}
+
+	.settings-layout.show-index .settings-nav-link {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0.75rem 0.25rem;
+		border-bottom: 1px solid var(--color-border);
+		border-radius: 0;
+		font-size: 0.9375rem;
+		color: var(--color-text);
+	}
+
+	/* The index list has no "current" item; nothing is open yet. */
+	.settings-layout.show-index .settings-nav-link[aria-current='page'] {
+		background: none;
+		font-weight: inherit;
+	}
+
+	.settings-back {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		margin: -0.5rem 0 1rem -0.25rem;
+		font-size: 0.875rem;
+		color: var(--color-text-muted);
+		text-decoration: none;
+	}
+
+	.settings-nav :global(.settings-nav-chevron) {
+		display: none;
+		color: var(--color-text-faint);
+	}
+
+	.settings-layout.show-index .settings-nav :global(.settings-nav-chevron) {
+		display: block;
+	}
+
 	.settings-nav {
 		display: none;
 	}
 
 	/* Sticky section nav only when there's room beside the 46rem column */
-	@media (min-width: 1280px) {
+	@media (min-width: 1024px) {
 		.settings-page {
 			max-width: 62rem;
 		}
 
-		.settings-nav {
+		.settings-nav,
+		.settings-layout.show-index .settings-nav {
 			position: sticky;
 			top: 3rem;
 			display: flex;
+			flex: none;
 			flex-direction: column;
 			gap: 0.0625rem;
-			width: 9rem;
+			width: 10rem;
 			flex-shrink: 0;
 			align-self: flex-start;
 			padding-top: 0.25rem;
+		}
+
+		.settings-layout.show-index .settings-content {
+			display: block;
+		}
+
+		.settings-layout.show-index .settings-nav-link {
+			display: block;
+			padding: 0.3125rem 0.625rem;
+			border-bottom: none;
+			border-radius: var(--radius-sm);
+			font-size: 0.8125rem;
+			color: var(--color-text-muted);
+		}
+
+		/* Wide screens show the first section, so it is current. */
+		.settings-layout.show-index .settings-nav-link[aria-current='page'] {
+			background: var(--color-active);
+			color: var(--color-text);
+			font-weight: 500;
+		}
+
+		.settings-layout.show-index .settings-nav :global(.settings-nav-chevron),
+		.settings-index-title,
+		.settings-back {
+			display: none;
 		}
 	}
 
@@ -2215,7 +2296,7 @@ mise run setup</code></pre>
 		color: var(--color-text);
 	}
 
-	.settings-nav-link[aria-current='true'] {
+	.settings-nav-link[aria-current='page'] {
 		background: var(--color-active);
 		color: var(--color-text);
 		font-weight: 500;
