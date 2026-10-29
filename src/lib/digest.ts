@@ -264,7 +264,7 @@ export function detectPatterns(): DetectedPattern[] {
 				type: 'frequent-person',
 				message: `${name} appears in ${count} memories this month`,
 				actionLabel: 'View',
-				actionHref: `/read/person/${encodeURIComponent(name)}`
+				actionHref: `/people/${encodeURIComponent(name)}`
 			});
 		}
 	}

@@ -58,7 +58,7 @@
 		<div class="k-empty">
 			<Calendar />
 			<div class="k-empty-title">No dates yet</div>
-			<p>Type //YYYY-MM-DD in a note to reference a date.</p>
+			<p>Type //YYYY-MM-DD in a note, or give a to-do a due date.</p>
 		</div>
 	{/if}
 </div>

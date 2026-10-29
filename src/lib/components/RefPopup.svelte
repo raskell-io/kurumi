@@ -53,7 +53,7 @@
 
 	function handleViewAll() {
 		if (onNavigate) {
-			if (type === 'person') onNavigate(`/read/person/${encodeURIComponent(value)}`);
+			if (type === 'person') onNavigate(`/people/${encodeURIComponent(value)}`);
 			else if (type === 'date') onNavigate(`/read/date/${value}`);
 			else if (type === 'tag') onNavigate(`/read/tag/${value}`);
 		}

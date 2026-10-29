@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { markdownExcerpt } from '$lib/utils/excerpt';
 	import { goto } from '$app/navigation';
 	import {
 		Calendar,
@@ -8,7 +9,9 @@
 		NotebookText,
 		Plus,
 		ChevronRight,
-		Pencil
+		Pencil,
+		CircleCheck,
+		CalendarClock
 	} from 'lucide-svelte';
 	import type { DateWithEvents } from '$lib/db/store';
 	import { addEvent } from '$lib/db';
@@ -56,14 +59,6 @@
 		goto(`/memory/${noteId}`);
 	}
 
-	function getPreview(content: string): string {
-		return content
-			.replace(/^---[\s\S]*?---\n?/, '')
-			.replace(/[#@\/\[\]]/g, '')
-			.trim()
-			.slice(0, 100);
-	}
-
 	function createEventHandler() {
 		// Create a new Event object - reactivity is handled by store subscription in parent
 		addEvent(dateInfo.date, { title: 'New Event' });
@@ -106,6 +101,20 @@
 	let eventTitle = $derived(primaryEvent?.title || '');
 	let eventTime = $derived(primaryEvent?.time || '');
 	let eventLocation = $derived(primaryEvent?.location || '');
+
+	let todos = $derived(dateInfo.todos ?? []);
+	let meetings = $derived(dateInfo.meetings ?? []);
+	// Without an event, the first meeting or to-do names the row.
+	let rowTitle = $derived(eventTitle || meetings[0]?.name || todos[0]?.text || '');
+	let counts = $derived(
+		[
+			todos.length && `${todos.length} to-do${todos.length === 1 ? '' : 's'}`,
+			meetings.length && `${meetings.length} meeting${meetings.length === 1 ? '' : 's'}`,
+			dateInfo.mentioningMemories.length && `${dateInfo.mentioningMemories.length} note${dateInfo.mentioningMemories.length === 1 ? '' : 's'}`
+		]
+			.filter(Boolean)
+			.join(' · ')
+	);
 </script>
 
 <li class="event-card" class:expanded>
@@ -115,8 +124,8 @@
 			{#if showDate}
 				<span class="date-text">{formatDate(dateInfo.date)}</span>
 			{/if}
-			{#if eventTitle}
-				<span class="event-title">{eventTitle}</span>
+			{#if rowTitle}
+				<span class="event-title">{rowTitle}</span>
 			{/if}
 			{#if eventTime}
 				<span class="event-meta-inline">
@@ -134,10 +143,7 @@
 		{#if getRelativeDate(dateInfo.date)}
 			<span class="relative-date">{getRelativeDate(dateInfo.date)}</span>
 		{/if}
-		<span class="note-count"
-			>{dateInfo.mentioningMemories.length}
-			{dateInfo.mentioningMemories.length === 1 ? 'note' : 'notes'}</span
-		>
+		<span class="note-count">{counts}</span>
 		<ChevronRight class="chevron h-4 w-4 shrink-0 text-[var(--color-text-faint)] {expanded ? 'expanded' : ''}" />
 	</button>
 
@@ -234,6 +240,44 @@
 				</div>
 			{/if}
 
+			{#if todos.length > 0}
+				<div class="content-section">
+					<h4 class="content-label">To-dos due</h4>
+					<ul class="notes-list">
+						{#each todos as todo (todo.id)}
+							<li>
+								<a class="k-row note-item" href={todo.memoryObjectId ? `/memory/${todo.memoryObjectId}` : '/actions'}>
+									<CircleCheck class="h-4 w-4 shrink-0 text-[var(--color-text-faint)]" />
+									<div class="note-info">
+										<span class="note-title">{todo.text}</span>
+										{#if todo.assignee}<span class="note-preview">{todo.assignee}</span>{/if}
+									</div>
+								</a>
+							</li>
+						{/each}
+					</ul>
+				</div>
+			{/if}
+
+			{#if meetings.length > 0}
+				<div class="content-section">
+					<h4 class="content-label">Meetings</h4>
+					<ul class="notes-list">
+						{#each meetings as series (series.id)}
+							<li>
+								<a class="k-row note-item" href="/meetings/{series.id}">
+									<CalendarClock class="h-4 w-4 shrink-0 text-[var(--color-text-faint)]" />
+									<div class="note-info">
+										<span class="note-title">{series.name}</span>
+										<span class="note-preview">Next one expected · {series.agenda.filter((a) => !a.meetingId).length} on the agenda</span>
+									</div>
+								</a>
+							</li>
+						{/each}
+					</ul>
+				</div>
+			{/if}
+
 			<!-- Notes Section -->
 			{#if dateInfo.mentioningMemories.length > 0}
 				<div class="content-section">
@@ -245,8 +289,8 @@
 									<NotebookText class="h-4 w-4 shrink-0 text-[var(--color-text-faint)]" />
 									<div class="note-info">
 										<span class="note-title">{memory.title || 'Untitled'}</span>
-										{#if getPreview(memory.bodyMarkdown)}
-											<span class="note-preview">{getPreview(memory.bodyMarkdown)}</span>
+										{#if markdownExcerpt(memory.bodyMarkdown, 100)}
+											<span class="note-preview">{markdownExcerpt(memory.bodyMarkdown, 100)}</span>
 										{/if}
 									</div>
 								</button>

@@ -187,6 +187,12 @@ OpenAI to MMS when the API key is missing.
 - Semantic search via local embeddings (MiniLM or multilingual-e5)
 - Ask Kurumi (`/`) — hybrid keyword + semantic retrieval with inline
   `[n]` citations, multi-turn conversation, voice mode
+- Person page (`/people/{name}`) — contact profile (edit, vCard),
+  waiting-for, open questions, recurring meetings and mentioning notes.
+  @mentions, References → People and the People list all open it
+- References (`/references`) — tags, people, links, and a dates agenda
+  of `//dates`, events, open to-dos by due date and the next expected
+  date of each recurring meeting
 - Read mode (`/read`) — blog-style browsing with folder / tag / date
   / person / topic filter routes
 - Graph view (`/graph`) — force-directed memory link visualization
@@ -350,10 +356,10 @@ src/
 │   ├── drafts/              # Email/calendar draft review
 │   ├── graph/               # Graph view
 │   ├── memory/[id]/         # Memory detail + editor
-│   ├── people/              # People management + merge
+│   ├── people/              # People management + merge; [name]/ person page
 │   ├── proposals/           # Reminder proposals review
 │   ├── read/                # Blog-style reader with filters
-│   ├── references/          # Tags / people / dates / links browse
+│   ├── references/          # Tags / people / dates (+ due to-dos, meetings) / links
 │   ├── review/              # Weekly review
 │   ├── settings/[[section]]/ # One page per settings section (/settings/sync, …)
 │   ├── tags/                # Tag normalization

@@ -1004,7 +1004,7 @@
 						<div class="mb-4 flex flex-wrap items-center gap-2 md:mb-6">
 							{#each memory.participants as person}
 								<a
-									href="/read/person/{encodeURIComponent(person)}"
+									href="/people/{encodeURIComponent(person)}"
 									class="inline-flex items-center gap-1 rounded-full bg-[var(--color-bg-secondary)] px-3 py-1 text-xs text-[var(--color-text)] hover:bg-[var(--color-hover)]"
 								>
 									<span class="text-[var(--color-text-muted)]">@</span>{person}

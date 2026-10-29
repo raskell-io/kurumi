@@ -644,6 +644,52 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
+	async 'person page and the dates agenda'(browser) {
+		const { page, errors } = await freshPage(browser);
+		await db(page, `
+			db.addMemoryObject('Contract call', 'Talked to @Ana about the contract');
+			const due = new Date(Date.now() + 2 * 864e5);
+			const iso = [due.getFullYear(), String(due.getMonth() + 1).padStart(2, '0'), String(due.getDate()).padStart(2, '0')].join('-');
+			db.addActionItem({ text: 'Send the contract', assignee: 'Ana', dueDate: iso });
+			const series = db.addMeetingSeries({ name: 'Sync with Ana', people: ['Ana'], cadence: 'weekly' });
+			db.startSeriesMeeting(series.id);
+		`);
+		await sleep(600);
+		// References → People rows open the person page
+		await page.goto(`${BASE}/references?tab=people`, { waitUntil: 'load' });
+		await page.waitForFunction(() => [...document.querySelectorAll('a')].some((a) => a.textContent.includes('@Ana')));
+		await clickText(page, 'main a', '@Ana');
+		await page.waitForFunction(() => location.hash.startsWith('#/people/Ana'));
+		await page.waitForFunction(() => document.querySelector('main').innerText.includes('Mentioned in'));
+		const text = await page.$eval('main', (e) => e.innerText);
+		assert.match(text, /Waiting for from Ana[\s\S]*Send the contract/);
+		assert.match(text, /Meetings[\s\S]*Sync with Ana/);
+		assert.match(text, /Mentioned in[\s\S]*Contract call/);
+		// Profile: create, edit, clear
+		await clickText(page, 'main button', 'Create profile');
+		await page.waitForFunction(() => [...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Edit'));
+		await clickText(page, 'main button', 'Edit');
+		await page.type('input[aria-label="Email"]', 'ana@example.com');
+		await clickText(page, 'main button', 'Save');
+		await page.waitForFunction(() => document.querySelector('main').innerText.includes('ana@example.com'));
+		await clickText(page, 'main button', 'Edit');
+		await page.$eval('input[aria-label="Email"]', (i) => (i.value = '') || i.dispatchEvent(new Event('input', { bubbles: true })));
+		await clickText(page, 'main button', 'Save');
+		await page.waitForFunction(() => !document.querySelector('main').innerText.includes('ana@example.com'));
+		// Old person links land on the person page too
+		await page.goto(`${BASE}/references?tab=people&item=Ana`, { waitUntil: 'load' });
+		await page.waitForFunction(() => location.hash.startsWith('#/people/Ana'));
+		// Dates tab lists the due to-do and the next meeting
+		await page.goto(`${BASE}/references?tab=dates`, { waitUntil: 'load' });
+		await page.waitForSelector('.event-card');
+		const agenda = await page.$eval('main', (e) => e.innerText);
+		assert.match(agenda, /Send the contract[\s\S]*1 to-do/);
+		assert.match(agenda, /Sync with Ana[\s\S]*1 meeting/);
+		await clickText(page, '.event-card button', 'Send the contract');
+		await page.waitForFunction(() => document.querySelector('main').innerText.includes('To-dos due'));
+		assert.deepEqual(errors, []);
+	},
+
 	async 'edits persist across reloads (incremental saves)'(browser) {
 		const { page, errors } = await freshPage(browser);
 		await db(page, `for (let i = 0; i < 5; i++) db.addMemoryObject('Saved ' + i, 'b');`);

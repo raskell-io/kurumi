@@ -413,7 +413,7 @@
 		// Set up tag/person/date click handlers to navigate to references page
 		setReferenceClickHandlers(root, {
 			tag: (tag) => goto(`/references?tab=tags&item=${encodeURIComponent(tag)}`),
-			person: (name) => goto(`/references?tab=people&item=${encodeURIComponent(name)}`),
+			person: (name) => goto(`/people/${encodeURIComponent(name)}`),
 			date: (date) => goto(`/references?tab=dates&item=${encodeURIComponent(date)}`)
 		});
 

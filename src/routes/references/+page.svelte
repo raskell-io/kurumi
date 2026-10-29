@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { markdownExcerpt } from '$lib/utils/excerpt';
 	import {
 		getAllTags,
 		getAllLinks,
@@ -8,13 +9,15 @@
 		getMemoryObjectsByLink,
 		people as peopleStore,
 		events as eventsStore,
-		type MemoryObject
+		actionItems,
+		meetingSeries,
+		memoryObjects
 	} from '$lib/db';
+	import { withWork } from '$lib/agenda';
 	import { get } from 'svelte/store';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { Tag, User, Calendar, Link, ChevronRight, ExternalLink, Globe } from 'lucide-svelte';
-	import PersonCard from '$lib/components/PersonCard.svelte';
 	import AgendaView from '$lib/components/AgendaView.svelte';
 	import ExportMenu from '$lib/components/ExportMenu.svelte';
 
@@ -30,6 +33,11 @@
 		{ id: 'dates', label: 'Dates', icon: Calendar },
 		{ id: 'links', label: 'Links', icon: Link }
 	];
+
+	// Old person links (?tab=people&item=…) now go to the person page.
+	if (initialTab === 'people' && initialItem) {
+		goto(`/people/${encodeURIComponent(initialItem)}`, { replaceState: true });
+	}
 
 	let activeTab = $state<TabType>(initialTab);
 	let expandedItem = $state<string | null>(initialItem);
@@ -52,10 +60,14 @@
 		void peopleData; // Dependency trigger
 		return getAllPeopleWithMetadata();
 	});
-	let allDates = $derived.by(() => {
+	// //dates and events from notes (what the calendar export contains)...
+	let noteDates = $derived.by(() => {
 		void eventsData; // Dependency trigger
+		void $memoryObjects;
 		return getAllDatesWithEvents();
 	});
+	// ...plus to-dos due and meetings coming up, for the agenda
+	let allDates = $derived(withWork(noteDates, $actionItems, $meetingSeries, $memoryObjects));
 	let allLinks = $derived(getAllLinks());
 
 	// Group links by domain for categorized display
@@ -128,13 +140,6 @@
 		goto(`/memory/${memoryId}`);
 	}
 
-	function getPreview(memory: MemoryObject): string {
-		const content = memory.bodyMarkdown
-			.replace(/^---[\s\S]*?---\n?/, '') // Remove frontmatter
-			.replace(/[#@\/\[\]]/g, '')
-			.trim();
-		return content.slice(0, 100) + (content.length > 100 ? '...' : '');
-	}
 </script>
 
 <svelte:head>
@@ -169,7 +174,7 @@
 				<a href="/people" class="k-btn k-btn-ghost k-btn-sm">Manage</a>
 				<ExportMenu type="people" people={allPeople} />
 			{:else if activeTab === 'dates'}
-				<ExportMenu type="dates" dates={allDates} />
+				<ExportMenu type="dates" dates={noteDates} />
 			{:else if activeTab === 'links'}
 				<ExportMenu type="links" links={allLinks} />
 			{/if}
@@ -201,7 +206,7 @@
 										<li>
 											<button class="k-row note-item" onclick={() => openMemory(memory.id)}>
 												<span class="note-title">{memory.title || 'Untitled'}</span>
-												<span class="note-preview">{getPreview(memory)}</span>
+												<span class="note-preview">{markdownExcerpt(memory.bodyMarkdown, 100)}</span>
 											</button>
 										</li>
 									{/each}
@@ -212,7 +217,7 @@
 				</ul>
 			{/if}
 
-			<!-- People Tab - Using PersonCard -->
+			<!-- People Tab: each row opens the person page -->
 		{:else if activeTab === 'people'}
 			{#if allPeople.length === 0}
 				<div class="k-empty">
@@ -223,11 +228,14 @@
 			{:else}
 				<ul class="items-list">
 					{#each allPeople as person (person.name)}
-						<PersonCard
-							{person}
-							expanded={expandedItem === person.name}
-							onToggle={() => toggleExpand(person.name)}
-						/>
+						<li>
+							<a class="k-row item-header" href="/people/{encodeURIComponent(person.name)}">
+								<User class="h-4 w-4 shrink-0 text-[var(--color-ref-person)]" />
+								<span class="item-name">@{person.name}</span>
+								<span class="quick-info">{person.person?.company ?? person.person?.email ?? ''}</span>
+								<span class="item-count">{person.count} {person.count === 1 ? 'note' : 'notes'}</span>
+							</a>
+						</li>
 					{/each}
 				</ul>
 			{/if}
@@ -284,7 +292,7 @@
 														<li>
 															<button class="k-row note-item" onclick={() => openMemory(memory.id)}>
 																<span class="note-title">{memory.title || 'Untitled'}</span>
-																<span class="note-preview">{getPreview(memory)}</span>
+																<span class="note-preview">{markdownExcerpt(memory.bodyMarkdown, 100)}</span>
 															</button>
 														</li>
 													{/each}
@@ -381,6 +389,17 @@
 	.tag-hash {
 		margin-right: 0.0625rem;
 		color: var(--color-ref-tag);
+	}
+
+	.quick-info {
+		flex-shrink: 1;
+		min-width: 0;
+		max-width: 40%;
+		overflow: hidden;
+		font-size: 0.75rem;
+		color: var(--color-text-faint);
+		white-space: nowrap;
+		text-overflow: ellipsis;
 	}
 
 	.item-count {

@@ -5320,6 +5320,8 @@ export interface DateWithEvents {
 	date: string;
 	events: Event[]; // Event objects for this date
 	mentioningMemories: MemoryObject[];
+	todos?: ActionItem[]; // Open to-dos due that day (see $lib/agenda)
+	meetings?: MeetingSeries[]; // Recurring meetings expected that day
 }
 
 /**

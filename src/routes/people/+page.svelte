@@ -148,7 +148,7 @@
 				// A focused button/link handles its own Enter.
 				if (target.tagName === 'BUTTON' || target.tagName === 'A') break;
 				const person = $people[focusIndex];
-				if (person) goto(`/read/person/${encodeURIComponent(person.name)}`);
+				if (person) goto(`/people/${encodeURIComponent(person.name)}`);
 				break;
 			}
 			case 'Delete':
@@ -239,7 +239,7 @@
 				{#each $people as person, i (person.id)}
 					{@const refs = refCount(person)}
 					<li class="k-row group" class:focused={focusIndex === i} data-row-index={i}>
-						<a href="/read/person/{encodeURIComponent(person.name)}" class="flex min-w-0 flex-1 items-baseline gap-2">
+						<a href="/people/{encodeURIComponent(person.name)}" class="flex min-w-0 flex-1 items-baseline gap-2">
 							<span class="truncate">{person.name}</span>
 							{#if person.title || person.company}
 								<span class="truncate text-xs text-[var(--color-text-faint)]">
@@ -273,7 +273,7 @@
 			<ul>
 				{#each unsaved as mention (mention.name)}
 					<li class="k-row group">
-						<a href="/read/person/{encodeURIComponent(mention.name)}" class="min-w-0 flex-1 truncate">
+						<a href="/people/{encodeURIComponent(mention.name)}" class="min-w-0 flex-1 truncate">
 							{mention.name}
 						</a>
 						<span class="k-badge" title="{mention.count} mention{mention.count === 1 ? '' : 's'}">{mention.count}</span>
