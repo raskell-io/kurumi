@@ -631,7 +631,8 @@
 
 		<!-- Footer -->
 		<div
-			class="flex items-center justify-between border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-text-faint)] safe-bottom"
+			class="flex items-center justify-between border-t border-[var(--color-border)] px-4 pt-2 text-xs text-[var(--color-text-faint)]"
+			style="padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));"
 		>
 			<div class="flex items-center gap-4">
 				<span class="hidden items-center gap-1.5 md:flex"><span class="k-kbd">↑</span><span class="k-kbd">↓</span> navigate</span>

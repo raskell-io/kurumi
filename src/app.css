@@ -217,7 +217,10 @@ body {
 	background-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
 }
 
-/* Safe area utilities for iPhone notch/home indicator */
+/* Safe area utilities for iPhone notch/home indicator. These replace any
+   padding on that side (0 on devices without an inset), so for elements
+   that need their own padding too, use
+   `padding-bottom: max(<padding>, env(safe-area-inset-bottom, 0px))`. */
 .safe-top {
 	padding-top: env(safe-area-inset-top, 0);
 }

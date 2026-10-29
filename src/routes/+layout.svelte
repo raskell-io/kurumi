@@ -919,7 +919,13 @@
 			</div>
 
 			<!-- Footer -->
-			<div class="flex items-center justify-between gap-0.5 border-t border-[var(--color-border)] px-2 py-1.5 safe-bottom">
+			<!-- Bottom padding: a real gap on desktop (the plain safe-bottom
+			     utility resolves to 0 there and overrode py-*), more on phones
+			     with a home indicator. -->
+			<div
+				class="flex items-center justify-between gap-0.5 border-t border-[var(--color-border)] px-2 pt-2"
+				style="padding-bottom: max(0.625rem, env(safe-area-inset-bottom, 0px));"
+			>
 				{#each footerNav as item (item.label)}
 					<a
 						href={item.href}
