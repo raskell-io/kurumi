@@ -460,7 +460,7 @@ const scenarios = {
 
 	async 'shortcuts can be rebound; Labs toggles its section'(browser) {
 		const { page, errors } = await freshPage(browser);
-		await page.goto(`${BASE}/settings`, { waitUntil: 'load' });
+		await page.goto(`${BASE}/settings/shortcuts`, { waitUntil: 'load' });
 		await page.waitForFunction(() => document.querySelectorAll('#shortcuts .set-row').length > 10);
 		const rows = await page.$$eval('#shortcuts .set-row', (rs) => rs.map((r) => r.textContent.replace(/\s+/g, ' ').trim()));
 		assert.ok(rows.some((r) => r.includes('Graph')), `shortcut rows: ${JSON.stringify(rows)} at ${page.url()}`);
@@ -474,13 +474,110 @@ const scenarios = {
 		assert.ok(!page.url().includes('graph'), 'old binding still active');
 		await press(page, MOD, 'Shift', 'g');
 		assert.ok(page.url().includes('graph'), 'new binding not active');
-		await page.goto(`${BASE}/settings`, { waitUntil: 'load' });
-		await sleep(800);
+		await page.goto(`${BASE}/settings/labs`, { waitUntil: 'load' });
+		await page.waitForSelector('#labs input[type=checkbox]');
 		assert.equal(await page.$('#labs-list'), null);
 		await page.evaluate(() => document.querySelector('#labs input[type=checkbox]').click());
 		await sleep(300);
 		await clickText(page, 'button.section-label', 'Labs');
 		assert.match(await page.$eval('#labs-list', (e) => e.textContent), /Habits/);
+		assert.deepEqual(errors, []);
+	},
+
+	async 'settings: one page per section, About explains Kurumi'(browser) {
+		const { page, errors } = await freshPage(browser);
+		await page.goto(`${BASE}/settings`, { waitUntil: 'load' });
+		await page.waitForSelector('.settings-nav-link');
+		const shown = () => page.$$eval('section.set-section', (s) => s.map((x) => x.id));
+		const active = () => page.$eval('.settings-nav-link[aria-current="page"]', (e) => e.textContent.trim());
+		assert.deepEqual(await shown(), ['appearance']);
+		for (const [label, id] of [['About', 'about'], ['Danger zone', 'danger'], ['Sync', 'sync']]) {
+			await clickText(page, '.settings-nav-link', label);
+			await page.waitForFunction((id) => location.hash === `#/settings/${id}`, {}, id);
+			assert.deepEqual(await shown(), [id]);
+			assert.equal(await active(), label);
+		}
+		await page.goto(`${BASE}/settings/about`, { waitUntil: 'load' });
+		await page.waitForSelector('.about-headline');
+		assert.match(await page.$eval('#about', (e) => e.textContent), /local-first second brain/);
+		assert.deepEqual(errors, []);
+	},
+
+	async 'home: quick capture, new note, and the to-do card'(browser) {
+		const { page, errors } = await freshPage(browser);
+		await db(page, `
+			const today = new Date().toISOString().slice(0, 10);
+			db.addMemoryObject('Plan', '- [ ] Send budget\\n- [x] Done already\\n');
+			db.addActionItem({ text: 'Standup notes', dueDate: today, recurrence: 'daily' });
+			db.addActionItem({ text: 'Someday task' });
+		`);
+		await page.goto(BASE, { waitUntil: 'load' });
+		await page.waitForSelector('.todo-row');
+		const rows = () => page.$$eval('.todo-row', (r) => r.map((x) => x.textContent.replace(/\s+/g, ' ').trim()));
+		assert.deepEqual((await rows()).map((r) => r.split(' ').slice(0, 2).join(' ')), ['Standup notes', 'Someday task', 'Send budget']);
+		// Quick capture saves without leaving the page
+		await page.click('.capture-input');
+		await page.keyboard.type('Call the bank');
+		await page.keyboard.press('Enter');
+		await page.waitForSelector('[role=status]');
+		assert.ok(page.url().endsWith('/#/'), page.url());
+		assert.equal(await bodyOf(page, 'Call the bank'), '');
+		// Ticking: recurring item rolls over; note task is checked in the note
+		await page.evaluate(() => [...document.querySelectorAll('.todo-row')].find((r) => r.textContent.includes('Standup')).querySelector('.todo-check').click());
+		await page.evaluate(() => [...document.querySelectorAll('.todo-row')].find((r) => r.textContent.includes('Send budget')).querySelector('.todo-check').click());
+		await sleep(400);
+		assert.match(await bodyOf(page, 'Plan'), /- \[x\] Send budget/);
+		assert.ok((await rows()).some((r) => r.startsWith('Standup notes') && r.includes('Tomorrow')), 'next occurrence missing');
+		// The big New note button opens a note
+		await page.click('.capture-primary');
+		await page.waitForSelector('input[aria-label="Note title"]');
+		assert.deepEqual(errors, []);
+	},
+
+	async 'pasted images: one copy each, and a zoomable viewer'(browser) {
+		const { page, errors } = await freshPage(browser);
+		await newNote(page, 'Photos');
+		await page.click('main .ProseMirror');
+		// Image file + HTML <img>, as when copying an image in a browser
+		for (const color of ['#2b6cb0', '#c05621']) {
+			await page.evaluate(async (color) => {
+				const c = document.createElement('canvas');
+				c.width = 1600;
+				c.height = 1000;
+				const ctx = c.getContext('2d');
+				ctx.fillStyle = color;
+				ctx.fillRect(0, 0, 1600, 1000);
+				const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+				const dt = new DataTransfer();
+				dt.items.add(new File([blob], 'image.png', { type: 'image/png' }));
+				dt.setData('text/html', '<img src="https://example.com/x.png">');
+				document.querySelector('main .ProseMirror').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+			}, color);
+			await sleep(1500);
+		}
+		const images = () => page.$$('main .ProseMirror img:not(.ProseMirror-separator)');
+		assert.equal((await images()).length, 2, 'each paste should insert one image');
+		assert.doesNotMatch(await bodyOf(page, 'Photos'), /example\.com/);
+
+		const state = () => page.evaluate(() => {
+			const v = document.querySelector('.viewer');
+			return v ? `${v.querySelector('.viewer-percent').textContent} ${v.querySelector('.viewer-bottom span')?.textContent ?? ''}` : 'closed';
+		});
+		await (await images())[0].click();
+		await page.waitForSelector('.viewer');
+		await sleep(300);
+		const fit = await state();
+		assert.match(fit, /^\d+% 1 \/ 2$/, fit);
+		await page.keyboard.press('+');
+		assert.notEqual(await state(), fit, 'zoom did not change');
+		await page.keyboard.press('0');
+		assert.equal(await state(), fit);
+		await page.keyboard.press('ArrowRight');
+		await sleep(300);
+		assert.match(await state(), / 2 \/ 2$/);
+		await page.keyboard.press('Escape');
+		assert.equal(await state(), 'closed');
+		assert.equal((await images()).length, 2, 'opening the viewer changed the note');
 		assert.deepEqual(errors, []);
 	},
 
