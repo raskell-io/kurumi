@@ -454,6 +454,13 @@ npm run test:e2e     # browser smoke tests (e2e/smoke.mjs; starts vite dev,
 npm run test:pwa     # production build + service worker checks (e2e/pwa.mjs)
 ```
 
+**Releases:** bump `version` in package.json (`npm version X.Y.Z
+--no-git-tag-version`, semver), commit, then tag that commit with an
+annotated `vX.Y.Z` tag summarising the release and push it
+(`git push origin vX.Y.Z`; origin pushes to GitHub and Codeberg). The
+app shows `version · commit · build date` (`__KURUMI_VERSION__`) in
+About and Settings → Offline & storage.
+
 **Invariant:** `npx svelte-check` should always return
 `0 errors and 0 warnings`. CI and local pre-push runs enforce this.
 
