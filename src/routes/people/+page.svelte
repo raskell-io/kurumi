@@ -316,7 +316,7 @@
 				</div>
 				<p>
 					Every <code>@{mergeSource.name}</code> mention becomes
-					<code>@{mergeTarget.name}</code> across notes, action items and
+					<code>@{mergeTarget.name}</code> across notes, to-dos and
 					participant lists, and the {mergeSource.name} entry is removed.
 					You can undo this right after with {modKey}Z.
 				</p>

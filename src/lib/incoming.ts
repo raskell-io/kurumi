@@ -7,6 +7,7 @@ import { addMemoryObject, addMeetingMemo, transcribeMemoryAudio, updateMemoryObj
 import { storeBlob } from '$lib/db/blob-store';
 import { parseMarkdownFile } from '$lib/git/convert';
 import { processAndStoreImage } from '$lib/utils/image';
+import { storeAttachment } from '$lib/attachments';
 
 const isRecording = (f: File) => f.type.startsWith('audio/') || f.type.startsWith('video/');
 const isImage = (f: File) => f.type.startsWith('image/');
@@ -46,12 +47,13 @@ export interface Shared {
 
 /**
  * Everything shared at once: recordings become memos, text files notes,
- * and the shared text, link and images one note together. Returns the
- * ids created, the one to open first.
+ * and the shared text, link, images and other files (as attachments) one
+ * note together. Returns the ids created, the one to open first.
  */
 export async function importShared({ title = '', text = '', url = '', files = [] }: Shared): Promise<string[]> {
 	const ids: string[] = [];
 	const images: string[] = [];
+	const attachments: { name: string; markdown: string }[] = [];
 	for (const file of files) {
 		try {
 			if (isRecording(file)) ids.push(await importRecording(file));
@@ -59,6 +61,7 @@ export async function importShared({ title = '', text = '', url = '', files = []
 				const alt = file.name.replace(/\.[^.]+$/, '') || 'image';
 				images.push((await processAndStoreImage(file, alt)).markdown);
 			} else if (isText(file)) ids.push(await importMarkdownFile(file));
+			else attachments.push(await storeAttachment(file));
 		} catch (err) {
 			console.error('Could not import shared file', file.name, err);
 		}
@@ -67,12 +70,17 @@ export async function importShared({ title = '', text = '', url = '', files = []
 	// Some apps put the link in the text instead of the url field.
 	const link = url || (/^https?:\/\/\S+$/.test(text.trim()) ? text.trim() : '');
 	const body = text.trim() === link ? '' : text.trim();
-	if (title || body || link || images.length) {
+	if (title || body || link || images.length || attachments.length) {
 		const lines: string[] = [];
 		if (link) lines.push(`Source: [${link}](${link})`, '');
 		if (body) lines.push(body, '');
 		if (images.length) lines.push(images.join('\n\n'), '');
-		const noteTitle = title.trim() || body.split('\n')[0].slice(0, 80) || (images.length ? 'Shared image' : 'Shared link');
+		if (attachments.length) lines.push(attachments.map((a) => `- ${a.markdown}`).join('\n'), '');
+		const noteTitle =
+			title.trim() ||
+			body.split('\n')[0].slice(0, 80) ||
+			(attachments.length === 1 && !images.length ? attachments[0].name : '') ||
+			(images.length ? 'Shared image' : attachments.length ? 'Shared files' : 'Shared link');
 		ids.unshift(addMemoryObject(noteTitle, lines.join('\n').trim(), null).id);
 	}
 	return ids;

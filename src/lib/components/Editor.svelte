@@ -57,7 +57,10 @@
 	import { noteEmbedPlugin } from '$lib/editor/noteEmbed';
 	import { pasteLinkPlugin } from '$lib/editor/pasteLink';
 	import { pasteMarkdownPlugin } from '$lib/editor/pasteMarkdown';
-	import { imageFilePlugin } from '$lib/editor/imageFiles';
+	import { fileDropPlugin } from '$lib/editor/fileDrop';
+	import { TextSelection } from '@milkdown/kit/prose/state';
+	import { storeAttachment } from '$lib/attachments';
+	import { storeBlob } from '$lib/db/blob-store';
 	import { imageClickPlugin } from '$lib/editor/imageClick';
 	import type { EditorView } from '@milkdown/kit/prose/view';
 	import { getMarkdown } from '@milkdown/kit/utils';
@@ -272,6 +275,28 @@
 	 * as the src (so markdown serialization preserves it), then the
 	 * MutationObserver swaps in the object URL for display.
 	 */
+	/**
+	 * Insert `name` linked to an attachment ref, plus a space so typing
+	 * continues outside the link. Returns the position after it (or null
+	 * when inserting at the cursor).
+	 */
+	function insertAttachmentLink(ref: string, name: string, at: number | null): number | null {
+		if (!editor) return at;
+		const view = editor.ctx.get(editorViewCtx);
+		const { state } = view;
+		const link = state.schema.marks.link;
+		if (!link) return at;
+		const from = at !== null && at <= state.doc.content.size ? at : state.selection.from;
+		const text = state.schema.text(name, [link.create({ href: ref, title: null })]);
+		const tr = state.tr.insert(from, [text, state.schema.text(' ')]);
+		const after = from + name.length + 1;
+		// Pasted at the cursor: keep typing after the link, not before it.
+		if (at === null) tr.setSelection(TextSelection.create(tr.doc, after));
+		view.dispatch(tr);
+		view.focus();
+		return at === null ? null : after;
+	}
+
 	async function insertImageNode(blobRef: string, alt: string, at: number | null = null) {
 		if (!editor) return;
 		try {
@@ -516,18 +541,29 @@
 			// Before clipboard: ProseMirror asks plugins in order and the
 			// clipboard plugin handles every paste.
 			.use(
-				imageFilePlugin(async (files, at) => {
-					// Store each image (converted to AVIF/WebP) and insert it; for
-					// drops, at the drop point, later ones after the earlier.
+				fileDropPlugin(async (files, at) => {
+					// Images (converted to AVIF/WebP) inline, recordings as an
+					// audio player, anything else as an attachment link; for
+					// drops at the drop point, later ones after the earlier.
 					let pos = at;
 					for (const file of files) {
 						try {
-							const alt = file.name && file.name !== 'image.png' ? file.name.replace(/\.[^.]+$/, '') : 'pasted image';
-							const result = await processAndStoreImage(file, alt);
-							await insertImageNode(result.ref, alt, pos);
+							const name = file.name.replace(/\.[^.]+$/, '');
+							if (file.type.startsWith('image/')) {
+								const alt = file.name && file.name !== 'image.png' ? name : 'pasted image';
+								const result = await processAndStoreImage(file, alt);
+								await insertImageNode(result.ref, alt, pos);
+							} else if (file.type.startsWith('audio/')) {
+								const ref = await storeBlob(file, file.type);
+								await insertImageNode(ref, `audio:${name || 'recording'}`, pos);
+							} else {
+								const { ref, name: fileName } = await storeAttachment(file);
+								pos = insertAttachmentLink(ref, fileName, pos);
+								continue;
+							}
 							if (pos !== null) pos += 1;
 						} catch (err) {
-							console.error('Image paste/drop failed:', err);
+							console.error('File paste/drop failed:', err);
 						}
 					}
 				})
@@ -615,7 +651,7 @@
 		const blobResolver = new MutationObserver(() => void resolveBlobImages());
 		blobResolver.observe(editorContainer, { childList: true, subtree: true });
 
-		// Image paste/drop is handled by imageFilePlugin (see .use below).
+		// File paste/drop is handled by fileDropPlugin (see .use below).
 
 		editorContainer.addEventListener('dragover', (e: DragEvent) => {
 			if (e.dataTransfer?.types.includes('Files')) {

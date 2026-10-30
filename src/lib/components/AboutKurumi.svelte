@@ -26,7 +26,7 @@
 		},
 		{
 			title: 'Surface',
-			text: 'Due items, reminders and related notes come back when they matter: in your daily note, Actions and Ask Kurumi.'
+			text: 'Due items, reminders and related notes come back when they matter: in your daily note, To-dos and Ask Kurumi.'
 		},
 		{
 			title: 'Own',
@@ -38,7 +38,7 @@
 		{ icon: PenLine, title: 'Write fast', text: 'A markdown editor with [[links]], draggable blocks, templates and daily notes.' },
 		{ icon: Mic, title: 'Capture by voice', text: 'Voice memos and meeting recordings, transcribed and summarised.' },
 		{ icon: Search, title: 'Find anything', text: 'Instant search, search by meaning, and Ask Kurumi: answers from your notes, with citations.' },
-		{ icon: ListTodo, title: 'Act on it', text: 'Action items on a list or board, plus reminders and email drafts proposed from your notes.' },
+		{ icon: ListTodo, title: 'Act on it', text: 'To-dos on a list or board, plus reminders and email drafts proposed from your notes.' },
 		{ icon: FolderTree, title: 'Organise loosely', text: 'Vaults, folders, favorites, tags, people, and a graph of how notes connect.' },
 		{ icon: RefreshCw, title: 'Sync your way', text: 'A GitHub repo via the local agent, a local folder, S3, R2, WebDAV or Azure.' },
 		{ icon: Cpu, title: 'Private AI', text: 'On-device models for transcription, search and summaries. A remote model only if you add a key.' },
@@ -49,7 +49,7 @@
 		{ title: 'No account, no Kurumi server.', text: 'Your notes live in your browser and in storage you choose. Nothing passes through us.' },
 		{ title: 'Never locked in.', text: 'Export to Markdown (also for Obsidian, Hugo, Zola) or a full backup any time. Import from Obsidian, Roam or Evernote.' },
 		{ title: 'An assistant that proposes.', text: 'Reminders and drafts wait for your approval. Nothing is sent or scheduled on your behalf.' },
-		{ title: 'Ready for work.', text: 'Meetings, action items and separate vaults, synced to your company GitHub with your own credentials.' }
+		{ title: 'Ready for work.', text: 'Meetings, to-dos and separate vaults, synced to your company GitHub with your own credentials.' }
 	];
 
 	const tips: { id: ShortcutId; label: string }[] = [

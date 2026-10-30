@@ -201,7 +201,7 @@
 
 		<div class="cal-legend">
 			<span class="legend-item"><span class="pill-dot"></span> Notes, memos &amp; meetings</span>
-			<span class="legend-item pill-due"><span class="pill-dot"></span> Actions due</span>
+			<span class="legend-item pill-due"><span class="pill-dot"></span> To-dos due</span>
 		</div>
 	</div>
 </div>

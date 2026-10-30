@@ -110,7 +110,7 @@ async function checkAndNotify(): Promise<void> {
 		notifiedThisSession.add(item.id);
 
 		const isOverdue = item.dueDate !== null && item.dueDate < today;
-		const title = isOverdue ? 'Overdue: Kurumi action item' : 'Due today: Kurumi action item';
+		const title = isOverdue ? 'Overdue to-do' : 'To-do due today';
 		const options = { body: item.text, tag: `kurumi-action-${item.id}`, icon: '/icon-192.png' };
 		try {
 			if (registration?.active) {

@@ -213,7 +213,7 @@
 				{#if mode === 'meeting'}
 					<p class="px-4 text-xs leading-relaxed text-[var(--color-text-muted)]">
 						Long-form recording. When you stop, the meeting is transcribed and summarized with
-						action items, decisions, and key topics.
+						to-dos, decisions, and key topics.
 					</p>
 
 					<!-- Tab/window audio toggle (remote-meeting-enhanced mode) -->

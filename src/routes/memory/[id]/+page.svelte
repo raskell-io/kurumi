@@ -21,6 +21,7 @@
 	import { openInSplit } from '$lib/stores/workspace';
 	import { get } from 'svelte/store';
 	import Editor from '$lib/components/Editor.svelte';
+	import { stashEdit } from '$lib/unsaved';
 	import InlineTemplateChooser from '$lib/components/InlineTemplateChooser.svelte';
 	import LinkPreview from '$lib/components/LinkPreview.svelte';
 	import NoteIcon from '$lib/components/NoteIcon.svelte';
@@ -615,6 +616,26 @@
 		saveLiveContent();
 	});
 
+	// Full page loads skip beforeNavigate (reload, a file or share opening in
+	// this window, closing the tab): save the live content then too.
+	// The editor reports changes 200ms late, so also note typing as it
+	// happens; otherwise a reload right after a keystroke skips the save.
+	$effect(() => {
+		const save = () => {
+			saveLiveContent();
+			if (memory && hasLocalEdits) stashEdit(memory.id, title, content);
+		};
+		const typed = (e: Event) => {
+			if ((e.target as HTMLElement | null)?.closest?.('main .ProseMirror')) hasLocalEdits = true;
+		};
+		window.addEventListener('pagehide', save);
+		window.addEventListener('input', typed, true);
+		return () => {
+			window.removeEventListener('pagehide', save);
+			window.removeEventListener('input', typed, true);
+		};
+	});
+
 	// Deleting is a soft delete into Trash, so skip the confirmation and offer
 	// undo instead (Cmd+Z or the toast).
 	function handleDelete() {
@@ -1030,7 +1051,7 @@
 								<div class="mb-2 flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
 									<span class="flex items-center gap-2">
 										<CheckSquare class="h-3 w-3" />
-										Action items
+										To-dos
 									</span>
 									<a href="/actions" class="text-[var(--color-accent)] hover:underline normal-case tracking-normal">
 										View dashboard →

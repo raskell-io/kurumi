@@ -67,11 +67,12 @@ that loop:
 │   memory · inference router · undo ·       │
 │   notifications · snackbar · ask           │
 ├────────────────────────────────────────────┤
-│         Automerge Document (v11)           │
+│         Automerge Document (v17)           │
 │  memoryObjects · folders · vaults ·        │
 │  people · events · templates ·             │
 │  actionItems · reminderProposals ·         │
-│  draftProposals                            │
+│  draftProposals · projects · decisions ·   │
+│  questions · meetingSeries · …             │
 ├────────────────────────────────────────────┤
 │   IndexedDB (doc binary + blob store +     │
 │   embeddings cache + model cache)          │
@@ -111,7 +112,7 @@ Key fields: `id`, `type`, `title`, `bodyMarkdown`, `rawAudioRef`,
 - `people` — first-class @mention entities with merge workflow
 - `events` — `//YYYY-MM-DD` references
 - `templates` — parameterized note templates
-- `actionItems` — promoted from meeting drafts or manually created; have status (open/in_progress/done/cancelled) and dueDate
+- `actionItems` — shown as **To-dos** everywhere in the UI (code keeps `ActionItem`, the route stays `/actions`). Promoted from meeting drafts or manually created; have status (open/in_progress/done/cancelled) and dueDate
 - `reminderProposals` — time-anchored nudges extracted from memories, awaiting user review (pending/approved/rejected/snoozed); approval creates an ActionItem
 - `draftProposals` — email and calendar-event drafts extracted from memories (pending/used/rejected), user copies them into their real client
 - `projects` — first-class projects (status, owner, due, description). Notes link by **name** (`MemoryObject.projects`, also filled by extraction); action items by `projectId` or via their source note; decisions/questions by `projectId` or source note (`recordInProject`). Note project names that aren't projects are only *suggested* on /projects
@@ -176,6 +177,11 @@ OpenAI to MMS when the API key is missing.
   `splitNoteId` in `stores/workspace.ts`); Alt+click a tree row or
   `[[link]]`. Both panes reload when a note changes elsewhere, unless
   the user is mid-edit
+- Files: pasting or dropping a file (`editor/fileDrop.ts`) inserts
+  images inline, audio as a player (`![audio:…](blob:…)`), anything else
+  as an attachment link `[name.pdf](blob:<id>)` (`src/lib/attachments.ts`)
+  that renders as a chip and opens in a tab or downloads. Typing at a
+  chip's edge stays plain text. Blob sync carries attachments like images
 - Voice memos with pause/resume, waveform, mic + tab audio
 - Meeting mode: long-form recording with structured summary
 - Upload existing audio/video for transcription
@@ -209,7 +215,7 @@ OpenAI to MMS when the API key is missing.
   icons round-trip through git frontmatter (`icon:`), images don't
 
 ### Process & Act (Phase 9 controlled action layer)
-- **Action items** (`/actions`, `Cmd+Shift+A`) — promoted from meeting
+- **To-dos** (`/actions`, `Cmd+Shift+A`) — promoted from meeting
   drafts or manually created. Inline edit, bulk select, mark done /
   in_progress / cancelled / delete. Due-today list on home page.
 - **Reminder proposals** (`/proposals`) — time-anchored follow-ups
@@ -218,8 +224,9 @@ OpenAI to MMS when the API key is missing.
 - **Draft proposals** (`/drafts`) — email + calendar-event drafts
   extracted from memories. Copy-to-clipboard; no email/calendar API
   integration by design.
-- **Browser notifications** — optional; fires for due action items
-  every 60s while the app is open. Clicking jumps to `/actions`.
+- **Browser notifications** — optional; fires for due to-dos every 60s
+  while the app is open (with Mark done / Snooze 1h buttons through the
+  service worker). Clicking jumps to `/actions`.
 
 ### Ontology maintenance (roadmap §6.6)
 - **People merge** (`/people`) — detect duplicates, merge rewrites
@@ -287,7 +294,7 @@ OpenAI to MMS when the API key is missing.
   (/questions). Notes link to projects via chips under the title; the
   note ⋯ menu logs decisions/questions and adds agenda items
   (`NoteRecordDialog`). Person pages show what's waiting on them
-- Action items: Active / Waiting for / Completed tabs; list or Kanban board (Open / In progress / Done, drag
+- To-dos: Active / Waiting for / Completed tabs; list or Kanban board (Open / In progress / Done, drag
   or arrows), filters by project (from the source note) and assignee
 - Labs (`stores/labs.ts`, Settings → Labs, off by default): Habits,
   Flashcards, Timeline, Smart folders. Canvas and database views stay
@@ -310,10 +317,15 @@ OpenAI to MMS when the API key is missing.
   keeps the badge (your due/overdue to-dos), applies queued notification
   actions, and imports `.md` files opened with Kurumi (`launchQueue`)
 - `src/lib/incoming.ts` turns shares and opened files into notes
-  (recordings → transcribed memos, images inline, markdown parsed)
+  (recordings → transcribed memos, images inline, markdown parsed, other
+  files as attachments)
 - Manifest: share target with files, app icon shortcuts (`/?new=note`,
-  `/?new=voice`, `/#/daily`, `/#/actions`), `.md` file handler. No
-  `launch_handler`: focus-existing would drop share POST data
+  `/?new=voice`, `/#/daily`, `/#/actions`), `.md` file handler, and
+  `launch_handler: navigate-existing` so launches reuse the open window.
+  Not focus-existing: that may never perform a share's POST. The window
+  reloads, so editors save on `pagehide`; that IndexedDB write can be cut
+  off by the unload, so the text is also stashed in localStorage
+  (`src/lib/unsaved.ts`) and applied at the next start if missing
 - Sync skips network methods while offline and runs on `online`;
   SyncFab shows "Offline". Settings → Offline & storage shows status,
   space used, version (`__KURUMI_VERSION__`), and resets the offline copy
@@ -376,7 +388,7 @@ src/
 ├── routes/
 │   ├── +layout.svelte       # Sidebar, keyboard shortcuts, boot
 │   ├── +page.svelte         # Home / Ask Kurumi + due-today strip
-│   ├── actions/             # Action items dashboard
+│   ├── actions/             # To-dos (ActionItem) list + board
 │   ├── daily/[date]/        # Daily notes
 │   ├── drafts/              # Email/calendar draft review
 │   ├── graph/               # Graph view
@@ -407,7 +419,7 @@ src/
 | `Cmd/Ctrl + ,` | Settings |
 | `Cmd/Ctrl + Z` | Undo last destructive action |
 | `Cmd/Ctrl + Shift + R` | Read mode |
-| `Cmd/Ctrl + Shift + A` | Action items dashboard |
+| `Cmd/Ctrl + Shift + A` | To-dos |
 | `Cmd/Ctrl + Shift + V` | Voice assistant push-to-talk |
 | `Cmd/Ctrl + Shift + I` | Inbox |
 | `Cmd/Ctrl + Shift + C` | Calendar |
@@ -454,6 +466,10 @@ npm run test:e2e     # browser smoke tests (e2e/smoke.mjs; starts vite dev,
 npm run test:pwa     # production build + service worker checks (e2e/pwa.mjs)
 ```
 
+CI (`.github/workflows/ci.yml`) runs svelte-check, unit tests and the
+build, plus a `browser` job with both browser suites (Chrome with
+`--no-sandbox` when `CI` is set). Deploys don't wait for CI.
+
 **Releases:** bump `version` in package.json (`npm version X.Y.Z
 --no-git-tag-version`, semver), commit, then tag that commit with an
 annotated `vX.Y.Z` tag summarising the release and push it
@@ -490,6 +506,6 @@ About and Settings → Offline & storage.
 
 ## Contributing
 
-Personal project — fork and adapt for your own setup. The roadmap in
-`.claude/plans/kurumi-roadmap.md` is the source of truth for phase
-planning.
+Personal project — fork and adapt for your own setup. The original
+phase plan is `.claude/plans/kurumi-roadmap.md` (largely done); what's
+next is tracked in `.claude/plans/next-phase-roadmap.md`.

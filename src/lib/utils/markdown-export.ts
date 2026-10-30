@@ -212,7 +212,7 @@ function buildExtraSections(memory: MemoryObject): string {
 	if (memory.meetingExtras) {
 		const { actionItems, unresolvedQuestions, followUpSuggestions } = memory.meetingExtras;
 		if (actionItems.length > 0) {
-			sections.push('## Action items', '');
+			sections.push('## To-dos', '');
 			for (const item of actionItems) {
 				const parts = [`- [ ] ${item.text}`];
 				if (item.assignee) parts.push(`— ${item.assignee}`);

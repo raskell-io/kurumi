@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { handleAttachmentClick } from '$lib/attachments';
 	import { openImageFromContainer, isViewable } from '$lib/stores/imageViewer';
 	import { marked } from 'marked';
 	import { findMemoryObjectByTitle } from '$lib/db';
@@ -204,6 +205,9 @@
 
 	function handleClick(e: MouseEvent) {
 		const target = e.target as HTMLElement;
+
+		// Attachment links open the stored file.
+		if (handleAttachmentClick(e)) return;
 
 		// Images open in the full-screen viewer (unless they're a link).
 		if (target instanceof HTMLImageElement && !target.closest('a') && isViewable(target)) {

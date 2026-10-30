@@ -1021,7 +1021,7 @@
 							<div class="set-row-text">
 								<label class="set-row-label" for="my-names">Your name</label>
 								<p class="set-row-help">
-									To-dos assigned to anyone else show under Actions → Waiting for. Add each name
+									To-dos assigned to anyone else show under To-dos → Waiting for. Add each name
 									meetings might use for you, separated by commas. "Me" and "I" always count.
 								</p>
 							</div>
@@ -1734,7 +1734,7 @@
 							<span class="k-badge k-badge-success">On</span>
 						{/if}
 					</h2>
-					<p class="set-section-desc">Browser alerts when action items come due.</p>
+					<p class="set-section-desc">Browser alerts when to-dos come due.</p>
 					<div class="set-rows">
 						{#if !notifSupported}
 							<p class="set-row text-sm text-[var(--color-text-muted)]">Your browser doesn't support notifications.</p>
@@ -1748,8 +1748,8 @@
 								<div class="set-row-text">
 									<div class="set-row-label" id="notif-label">While the app is open</div>
 									<p class="set-row-help">
-										Checks every minute while a tab is open and notifies you of each due action item.
-										Clicking a notification opens Actions.
+										Checks every minute while a tab is open and notifies you of each due to-do.
+										Clicking a notification opens To-dos.
 									</p>
 								</div>
 								<button

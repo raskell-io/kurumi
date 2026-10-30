@@ -24,7 +24,7 @@ Already shipped and working:
 - Realtime API voice session (untested against live endpoint)
 - Reminder proposals with recurring support
 - Draft proposals (email / calendar)
-- Action items dashboard with inline edit / bulk ops / undo
+- To-dos dashboard (ActionItem; list or board) with inline edit / bulk ops / undo
 - Weekly review page
 - Daily notes
 - People / tag / topic / project merge with full undo
@@ -36,6 +36,10 @@ Already shipped and working:
 - Templates with variable substitution
 - Trash with 30-day retention
 - Multi-vault support
+- Work: projects, decisions, open questions, recurring meetings, waiting-for,
+  person pages, file attachments
+- Installable offline PWA: share target (text, images, recordings, files),
+  icon shortcuts, badge, notification actions, `.md` file handling
 
 ---
 
@@ -253,9 +257,9 @@ execution context, observability.
 
 ## Tier 4 — workspace & navigation polish
 
-### [ ] Split-pane editor
-Open multiple memories side-by-side. Obsidian-style draggable splits.
-DEFERRED — needs significant editor state management.
+### [x] Split-pane editor
+A second note beside the main one (`SplitPane.svelte`); Alt+click a tree
+row or `[[link]]`. One split, not Obsidian-style arbitrary splits.
 
 ### [x] Saved searches in the sidebar
 Pin a filter query with a name. Data model: SavedSearch type in
@@ -266,17 +270,17 @@ tree. CRUD in store.ts.
 Pin memories you're currently working on. Persistent across sessions.
 DEFERRED — tab bar covers the same use case.
 
-### [ ] Search within a memory
-Cmd+F inside the editor. Native browser search hits the whole page;
-this scopes to the current memory's body. DEFERRED.
+### [x] Search within a memory
+Cmd+F find bar scoped to the note, Cmd+Alt+F find and replace, also
+across notes (`editor/findReplace.ts`, `FindBar.svelte`).
 
 ### [x] Outgoing links sidebar
 Extracts [[wikilinks]] from the current memory and renders resolved
 links in a section above backlinks on the read mode page.
 
-### [ ] Bread-crumb navigation
-Show folder path + recent memory trail at the top of the editor.
-DEFERRED — mobile header already shows breadcrumbs.
+### [x] Bread-crumb navigation
+Folder path above the note title (with page icons); the tab bar covers
+the recent-memory trail.
 
 ### [x] Tab bar for recently-opened memories
 Browser-style tab strip at the top of the main content area. Tracks

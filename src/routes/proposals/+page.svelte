@@ -234,7 +234,7 @@
 		if (itemSnapshot) deleteActionItem(itemSnapshot.id);
 		reopenReminderProposal(proposal.id);
 		pushUndo({
-			label: itemSnapshot ? 'Reopened reminder and removed its action item' : 'Reopened reminder',
+			label: itemSnapshot ? 'Reopened reminder and removed its to-do' : 'Reopened reminder',
 			undo: () => {
 				if (itemSnapshot) restoreActionItem(itemSnapshot);
 				restoreReminderProposal(snapshot);
@@ -627,7 +627,7 @@
 											<button
 												class="k-icon-btn approve"
 												onclick={() => handleApprove(proposal)}
-												title="Approve and create action item (a)"
+												title="Approve and create to-do (a)"
 												aria-label="Approve"
 											>
 												<Check class="h-4 w-4" />

@@ -62,7 +62,7 @@ const COMMAND_PATTERNS: Array<{
 			const text = match[1].trim();
 			addActionItem({ text, dueDate: null, assignee: null });
 			return {
-				response: `Added action item: "${text}".`
+				response: `Added to-do: "${text}".`
 			};
 		}
 	},
@@ -91,7 +91,7 @@ const COMMAND_PATTERNS: Array<{
 		pattern: /^(?:what'?s?\s+(?:due|on)\s+today|show\s+(?:my\s+)?(?:tasks|actions|action\s*items))/i,
 		handler: () => {
 			return {
-				response: 'Opening your action items.',
+				response: 'Opening your to-dos.',
 				navigateTo: '/actions'
 			};
 		}

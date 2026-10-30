@@ -236,7 +236,7 @@
 
 	function toggleDone(item: ActionItem) {
 		if (item.status === 'done') {
-			changeStatus(item, 'open', 'Reopened action item');
+			changeStatus(item, 'open', 'Reopened to-do');
 		} else if (item.recurrence !== 'none') {
 			// Recurring: mark this occurrence done AND spawn the next one.
 			// Undo is best-effort — we restore the original status but
@@ -266,11 +266,11 @@
 	}
 
 	function cancelItem(item: ActionItem) {
-		changeStatus(item, 'cancelled', 'Cancelled action item');
+		changeStatus(item, 'cancelled', 'Cancelled to-do');
 	}
 
 	function reopenItem(item: ActionItem) {
-		changeStatus(item, 'open', 'Reopened action item');
+		changeStatus(item, 'open', 'Reopened to-do');
 	}
 
 	function remove(item: ActionItem) {
@@ -531,13 +531,13 @@
 </script>
 
 <svelte:head>
-	<title>Action items - Kurumi</title>
+	<title>To-dos - Kurumi</title>
 </svelte:head>
 
 <div class="k-page" class:board-page={view === 'board'}>
 	<header class="k-page-header">
 		<div class="min-w-0">
-			<h1 class="k-page-title">Action items</h1>
+			<h1 class="k-page-title">To-dos</h1>
 			<p class="k-page-subtitle">
 				{totalOpen} open
 				{#if totalInProgress > 0}· {totalInProgress} in progress{/if}
@@ -638,7 +638,7 @@
 				placeholder="What needs to be done?"
 				onkeydown={handleCreateKeydown}
 				class="k-input border-transparent shadow-none focus:border-transparent focus:shadow-none"
-				aria-label="Action item"
+				aria-label="To-do"
 				use:autofocus
 			/>
 			<div class="form-row">
@@ -675,11 +675,11 @@
 	{#if $actionItems.length === 0 && !showCreate}
 		<div class="k-empty">
 			<CircleCheck />
-			<p class="k-empty-title">No action items yet</p>
-			<p>Action items are extracted from meetings, or you can add your own.</p>
+			<p class="k-empty-title">No to-dos yet</p>
+			<p>To-dos are extracted from meetings, or you can add your own.</p>
 			<button class="k-btn mt-2" onclick={openCreate}>
 				<Plus class="h-4 w-4" />
-				New action item
+				New to-do
 			</button>
 		</div>
 	{:else if view === 'board'}
@@ -695,7 +695,7 @@
 			<p class="k-empty-title">{filter === 'active' ? 'All caught up' : 'Nothing here'}</p>
 			<p>
 				{filter === 'active'
-					? 'Every action item is done, cancelled, or with someone else.'
+					? 'Every to-do is done, cancelled, or with someone else.'
 					: filter === 'waiting'
 						? 'Open items assigned to other people show up here. Set your own name in Settings → Profile.'
 						: 'Completed and cancelled items will show up here.'}
@@ -759,7 +759,7 @@
 											bind:value={editText}
 											onkeydown={handleEditKeydown}
 											class="k-input h-8"
-											aria-label="Action item"
+											aria-label="To-do"
 											use:autofocus
 										/>
 										<div class="form-row">

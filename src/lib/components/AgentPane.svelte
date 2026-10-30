@@ -1116,7 +1116,7 @@
 			case 'create_memory': return `Created note: "${tc.args.title ?? ''}"`;
 			case 'update_memory': return `Updated note: "${tc.args.title || tc.args.memoryId || ''}"`;
 			case 'add_action_item': return `Added action: "${tc.args.text ?? ''}"`;
-			case 'list_action_items': return `Listed action items${tc.args.status ? ` (${tc.args.status})` : ''}`;
+			case 'list_action_items': return `Listed to-dos${tc.args.status ? ` (${tc.args.status})` : ''}`;
 			case 'add_reminder': return `Proposed reminder: "${tc.args.text ?? ''}"`;
 			case 'generate_daily_digest': return 'Generated daily digest';
 			case 'search_people': return `Searched people: "${tc.args.query ?? 'all'}"`;
@@ -1400,7 +1400,7 @@
 						<Sparkles class="h-5 w-5 text-[var(--color-text-faint)]" />
 						<p class="empty-title">Ask anything, or tell me what to do</p>
 						<p class="hint">
-							I can search your vault, create notes, add action items, and propose reminders.
+							I can search your vault, create notes, add to-dos, and propose reminders.
 						</p>
 						<div class="starters">
 							{#each STARTERS as starter}

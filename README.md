@@ -49,11 +49,13 @@ Kurumi (クルミ, "walnut" in Japanese — because it looks like a brain) is a 
 |---------|-------------|
 | **Typed notes** | Milkdown markdown editor with wikilinks, @mentions, #tags, //dates, templates, slash commands |
 | **Voice memos** | Record with pause/resume, waveform visualization, auto-transcription |
-| **Meeting mode** | Long-form recording with structured summary, action items, decisions, participants |
+| **Meeting mode** | Long-form recording with structured summary, to-dos, decisions, participants |
 | **Audio/video upload** | Import existing recordings for transcription and processing |
 | **Camera capture** | Photo capture from webcam or mobile camera, stored as AVIF |
 | **Web clipper** | Bookmarklet captures page title, URL, and selected text |
-| **Share target** | Share content from any app directly into Kurumi (PWA) |
+| **Share target** | Share text, links, images, recordings and files from any app into Kurumi (installed app) |
+| **File attachments** | Paste or drop any file into a note; PDFs and documents show as chips that open or download |
+| **Offline app** | Installable, starts without a connection, icon shortcuts and due to-do badge, opens `.md` files |
 | **Daily notes** | Template-based daily journal with AI-generated reflection prompts |
 
 ### Organize
@@ -91,13 +93,13 @@ Kurumi (クルミ, "walnut" in Japanese — because it looks like a brain) is a 
 
 | Feature | Description |
 |---------|-------------|
-| **Agent chat** | Multi-turn streaming conversation with 10 tools (search, create, update notes, action items, reminders, people, topics) |
+| **Agent chat** | Multi-turn streaming conversation with 10 tools (search, create, update notes, to-dos, reminders, people, topics) |
 | **Chat to note** | Have a conversation, then save the result as a note — per-message or distilled |
 | **Reference autocomplete** | Type `[[`, `@`, `#`, `//` in the agent chat for note/person/tag/date completion |
 | **Voice commands** | "Create a note about...", "Remind me to...", "What's due today" from push-to-talk |
 | **Transcription** | Whisper (local via transformers.js) with OpenAI fallback |
 | **Summarization** | Auto-generated short and long summaries for voice memos and meetings |
-| **Entity extraction** | Participants, topics, projects, action items extracted from transcripts |
+| **Entity extraction** | Participants, topics, projects, to-dos extracted from transcripts |
 | **Reminder proposals** | Time-anchored follow-ups extracted from memories, reviewed in `/proposals` |
 | **Draft proposals** | Email and calendar event drafts extracted from meetings |
 | **Daily digest** | Auto-generated on first app open each day |
@@ -107,17 +109,17 @@ Kurumi (クルミ, "walnut" in Japanese — because it looks like a brain) is a 
 
 | Feature | Description |
 |---------|-------------|
-| **Action items** | Extracted from meetings or manually created, with status, due dates, recurrence, assignees; list or Kanban board, filter by project or assignee |
-| **Waiting for** | To-dos assigned to other people, per person, on the Actions page and each person's page |
+| **To-dos** | Extracted from meetings or manually created, with status, due dates, recurrence, assignees; list or Kanban board, filter by project or assignee |
+| **Waiting for** | To-dos assigned to other people, per person, on the To-dos page and each person's page |
 | **Projects** | Notes, to-dos, decisions, open questions and meetings per project; suggested from the project names your notes already use |
 | **Decision log** | What was decided, when and why; meetings add their decisions automatically |
 | **Open questions** | Tracked until answered; meetings add their unresolved questions automatically |
 | **Recurring meetings** | 1:1s and syncs with a running agenda; starting one creates the meeting note with agenda, open to-dos and questions |
 | **Inbox** | Unified triage view: overdue actions, due today, pending proposals, unsummarized memos, untagged notes |
-| **Focus timer** | Pomodoro timer linked to action items, global progress bar with pause/resume/chime |
+| **Focus timer** | Pomodoro timer linked to to-dos, global progress bar with pause/resume/chime |
 | **Habits** | Daily habit tracker with week toggles and 60-day contribution heatmap |
 | **Flashcards** | Spaced repetition (SM-2) with AI-generated Q&A from notes |
-| **Browser notifications** | Due action item alerts while the app is open |
+| **Browser notifications** | Due to-do alerts with Mark done / Snooze buttons |
 
 ### Privacy & Security
 
@@ -217,7 +219,7 @@ npx svelte-check --tsconfig ./tsconfig.json   # types, a11y, CSS — should repo
 | `Cmd/Ctrl + ,` | Settings |
 | `Cmd/Ctrl + `` ` | Toggle agent chat |
 | `Cmd/Ctrl + Shift + R` | Read mode |
-| `Cmd/Ctrl + Shift + A` | Action items |
+| `Cmd/Ctrl + Shift + A` | To-dos |
 | `Cmd/Ctrl + Shift + I` | Inbox |
 | `Cmd/Ctrl + Shift + C` | Calendar |
 | `Cmd/Ctrl + Shift + V` | Voice assistant push-to-talk |

@@ -29,12 +29,15 @@ const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
 function startServer() {
 	const server = spawn('npx', ['vite', 'dev', '--port', String(PORT), '--strictPort'], {
-		stdio: ['ignore', 'pipe', 'pipe']
+		stdio: ['ignore', 'pipe', 'pipe'],
+		// Own process group: stopping it also stops vite, not just npx.
+		detached: true
 	});
 	return new Promise((resolve, reject) => {
 		const timer = setTimeout(() => reject(new Error('vite dev did not start')), 60_000);
 		server.stdout.on('data', (chunk) => {
-			if (chunk.toString().includes(`localhost:${PORT}`)) {
+			// Without colour codes: with CI set, vite colours the port separately.
+			if (chunk.toString().replace(/\x1b\[[0-9;]*m/g, '').includes(`localhost:${PORT}`)) {
 				clearTimeout(timer);
 				resolve(server);
 			}
@@ -43,8 +46,17 @@ function startServer() {
 	});
 }
 
+function stopServer(server) {
+	try {
+		process.kill(-server.pid);
+	} catch {
+		server.kill();
+	}
+}
+
 async function launchBrowser(profileDir) {
-	const options = { headless: true, userDataDir: profileDir };
+	// GitHub's Ubuntu runners block Chrome's sandbox (AppArmor).
+	const options = { headless: true, userDataDir: profileDir, args: process.env.CI ? ['--no-sandbox'] : [] };
 	const candidates = [process.env.CHROME_PATH, undefined, existsSync(MAC_CHROME) ? MAC_CHROME : null];
 	let lastError;
 	for (const executablePath of candidates.filter((c) => c !== null)) {
@@ -589,6 +601,54 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
+	async 'attachments open from the note, and edits survive a reload'(browser) {
+		const { page, errors, context } = await freshPage(browser);
+		await newNote(page, 'Files');
+		await page.click('main .ProseMirror');
+		await page.evaluate(() => {
+			const dt = new DataTransfer();
+			dt.items.add(new File(['%PDF-1.4\n%fake'], 'brief.pdf', { type: 'application/pdf' }));
+			document.querySelector('main .ProseMirror').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+		});
+		const chip = await page.waitForSelector('main .ProseMirror a[href^="blob:"]');
+		assert.equal(await chip.evaluate((a) => a.textContent), 'brief.pdf');
+		// The cursor ends up after the link
+		await page.keyboard.type('signed');
+		await page.waitForFunction(() => /brief\.pdf\s+signed/.test(document.querySelector('main .ProseMirror').textContent));
+		await sleep(700);
+		assert.match(await bodyOf(page, 'Files'), /\[brief\.pdf\]\(blob:[0-9A-Za-z]+\) signed/);
+		// Clicking opens the stored file in a new tab
+		const opened = context.waitForTarget((t) => t.url().startsWith('blob:http'), { timeout: 10_000 });
+		await chip.click();
+		await (await (await opened).page())?.close();
+		// Read mode too
+		const id = await page.evaluate(() => location.hash.split('/').pop());
+		await page.goto(`${BASE}/read/${id}`, { waitUntil: 'load' });
+		const readChip = await page.waitForSelector('main a[href^="blob:"]');
+		const openedAgain = context.waitForTarget((t) => t.url().startsWith('blob:http'), { timeout: 10_000 });
+		await readChip.click();
+		await (await (await openedAgain).page())?.close();
+		// Typing and reloading at once (as when a shared file opens in this
+		// window) keeps the last keystrokes: the editor saves on pagehide.
+		await page.goto(`${BASE}/memory/${id}`, { waitUntil: 'load' });
+		await page.waitForSelector('main .ProseMirror');
+		await sleep(500);
+		// Focus, not a click (that would open the chip); the cursor lands at
+		// the start of the line, right before the chip.
+		await page.focus('main .ProseMirror');
+		await page.keyboard.type('last words ');
+		const typed = await page.$eval('main .ProseMirror', (e) => e.textContent);
+		assert.match(typed, /last words/);
+		await page.reload({ waitUntil: 'load' });
+		await page.waitForSelector('main .ProseMirror');
+		await sleep(800);
+		const body = await bodyOf(page, 'Files');
+		assert.match(body, /last words/);
+		// Typed at the start of the line, before the chip: not part of the link
+		assert.match(body, /last words \[brief\.pdf\]\(blob:/);
+		assert.deepEqual(errors, []);
+	},
+
 	async 'work: projects, waiting for, decisions, questions, recurring meetings'(browser) {
 		const { page, errors } = await freshPage(browser);
 		await db(page, `
@@ -930,7 +990,7 @@ try {
 	}
 } finally {
 	await browser?.close();
-	server.kill();
+	stopServer(server);
 	rmSync(profile, { recursive: true, force: true });
 }
 console.log(failed ? `\n${failed} failed` : '\nall passed');

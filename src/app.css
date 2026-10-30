@@ -962,3 +962,34 @@ textarea {
 		transition-duration: 0.01ms !important;
 	}
 }
+
+/* Attachment links ([report.pdf](blob:<id>), src/lib/attachments.ts): a
+   chip with a paperclip, in the editor and in read mode. Runtime object
+   URLs (blob:http…) are excluded. */
+a[href^='blob:']:not([href*='://']) {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3em;
+	padding: 0.05em 0.5em 0.05em 0.4em;
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-sm, 0.375rem);
+	background: var(--color-bg-secondary);
+	color: var(--color-text);
+	font-size: 0.92em;
+	text-decoration: none;
+	cursor: pointer;
+}
+
+a[href^='blob:']:not([href*='://'])::before {
+	content: '';
+	width: 0.95em;
+	height: 0.95em;
+	flex-shrink: 0;
+	background: var(--color-text-muted);
+	-webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48'/%3E%3C/svg%3E") center / contain no-repeat;
+	mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+a[href^='blob:']:not([href*='://']):hover {
+	border-color: var(--color-accent);
+}

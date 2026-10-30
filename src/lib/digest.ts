@@ -142,7 +142,7 @@ export async function generateDailyDigest(
 
 		// Due actions
 		if (dueActions.length > 0) {
-			lines.push(`## Action items due`);
+			lines.push(`## To-dos due`);
 			lines.push('');
 			for (const a of dueActions.slice(0, 15)) {
 				lines.push(`- [ ] ${a.text}${a.dueDate ? ` (due ${a.dueDate})` : ''}${a.assignee ? ` — ${a.assignee}` : ''}`);

@@ -62,7 +62,7 @@ export default defineConfig({
 						type: 'image/avif'
 					}
 				],
-				// Web Share Target: text, links, images, recordings and markdown
+				// Web Share Target: text, links, images, recordings, markdown and other files
 				// shared from other apps. static/sw-notify.js receives the POST,
 				// stashes it, and opens /?share=incoming (src/lib/incoming.ts).
 				share_target: {
@@ -76,7 +76,9 @@ export default defineConfig({
 						files: [
 							{
 								name: 'share_files',
-								accept: ['image/*', 'audio/*', 'video/*', 'text/markdown', 'text/plain', '.md', '.markdown', '.txt']
+								// Images, recordings and markdown get special handling;
+								// anything else (PDFs, documents) becomes an attachment.
+								accept: ['image/*', 'audio/*', 'video/*', 'text/*', 'application/*', '.md', '.markdown', '.txt']
 							}
 						]
 					}
@@ -88,6 +90,11 @@ export default defineConfig({
 					{ name: 'Voice memo', short_name: 'Voice', url: '/?new=voice' },
 					{ name: 'To-dos', short_name: 'To-dos', url: '/#/actions' }
 				],
+				// Launches (opened files, shares, shortcuts) reuse the open Kurumi
+				// window. navigate-existing, not focus-existing: the window really
+				// navigates to the launch URL, so a share's POST still reaches the
+				// service worker. Editors save on pagehide before that reload.
+				launch_handler: { client_mode: ['navigate-existing', 'auto'] },
 				// "Open with Kurumi" for markdown files (installed desktop app);
 				// handled through window.launchQueue in src/lib/pwa-boot.ts.
 				file_handlers: [

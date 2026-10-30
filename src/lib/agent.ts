@@ -102,7 +102,7 @@ const TOOLS = [
 		type: 'function' as const,
 		function: {
 			name: 'add_action_item',
-			description: 'Add a new action item / task to the vault.',
+			description: 'Add a new to-do to the vault.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -141,7 +141,7 @@ const TOOLS = [
 		function: {
 			name: 'generate_daily_digest',
 			description:
-				"Generate a daily digest note summarizing yesterday's captures, open action items, and pending proposals.",
+				"Generate a daily digest note summarizing yesterday's captures, open to-dos, and pending proposals.",
 			parameters: {
 				type: 'object',
 				properties: {
@@ -180,7 +180,7 @@ const TOOLS = [
 		type: 'function' as const,
 		function: {
 			name: 'list_action_items',
-			description: 'List action items from the vault, optionally filtered by status.',
+			description: 'List to-dos from the vault, optionally filtered by status.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -225,11 +225,11 @@ const TOOLS = [
 const TOOL_STATUS_LABELS: Record<string, string> = {
 	search_memory: 'Searching vault...',
 	create_memory: 'Creating note...',
-	add_action_item: 'Adding action item...',
+	add_action_item: 'Adding to-do...',
 	add_reminder: 'Adding reminder...',
 	generate_daily_digest: 'Generating digest...',
 	update_memory: 'Updating note...',
-	list_action_items: 'Listing action items...',
+	list_action_items: 'Listing to-dos...',
 	search_people: 'Searching people...',
 	search_topics: 'Searching topics...'
 };
@@ -237,7 +237,7 @@ const TOOL_STATUS_LABELS: Record<string, string> = {
 const SYSTEM_PROMPT = [
 	'You are Kurumi, an AI-native second-brain assistant.',
 	"You have access to the user's personal vault of notes, voice memos,",
-	'meetings, action items, and reminders.',
+	'meetings, to-dos, and reminders.',
 	'',
 	'When the user asks a question about their knowledge, ALWAYS call',
 	'search_memory first before answering.',

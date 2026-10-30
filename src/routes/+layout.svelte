@@ -20,6 +20,7 @@
 	import { myNames, isWaitingFor } from '$lib/work';
 	import { importRecording } from '$lib/incoming';
 	import { bootPwa } from '$lib/pwa-boot';
+	import { restoreStashedEdits } from '$lib/unsaved';
 	import { initHashRouter, updateHashFromPath, currentRoutePath } from '$lib/hash-router';
 	import { generateDailyDigest } from '$lib/digest';
 	import { initSearch, syncIndex } from '$lib/search';
@@ -279,7 +280,7 @@
 		{ href: '/daily', label: 'Today', icon: CalendarDays, hint: `Today's daily note (${modKey}D)` },
 		{ href: '/inbox', label: 'Inbox', icon: Inbox, hint: `Inbox (${modKey}⇧I)` },
 		{ href: '/calendar', label: 'Calendar', icon: Calendar, hint: `Calendar (${modKey}⇧C)` },
-		{ href: '/actions', label: 'Actions', icon: CheckSquare, hint: `Action items (${modKey}⇧A)`, count: () => openActionCount },
+		{ href: '/actions', label: 'To-dos', icon: CheckSquare, hint: `To-dos (${modKey}⇧A)`, count: () => openActionCount },
 		{ href: '/proposals', label: 'Proposals', icon: Bell, hint: 'Reminder proposals', count: () => pendingProposalCount, warn: true },
 		{ href: '/drafts', label: 'Drafts', icon: Pencil, hint: 'Email & calendar drafts' }
 	];
@@ -492,6 +493,8 @@
 
 		// Initialize async stuff
 		initDB().then(() => {
+			// Edits a reload cut off (see $lib/unsaved), before anything renders
+			restoreStashedEdits();
 			initSearch();
 			setupVisibilitySync();
 			setupAutoSync();

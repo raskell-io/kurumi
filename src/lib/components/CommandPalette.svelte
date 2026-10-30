@@ -187,7 +187,7 @@
 		{
 			id: 'actions',
 			type: 'action',
-			title: 'Action items',
+			title: 'To-dos',
 			description: 'Open the tasks extracted from meetings',
 			icon: 'check',
 			action: () => {

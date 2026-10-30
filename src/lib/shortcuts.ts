@@ -51,7 +51,7 @@ export const SHORTCUTS: ShortcutDef[] = [
 	{ id: 'dailyNote', label: "Today's daily note", group: 'Navigate', defaults: ['mod+d'] },
 	{ id: 'inbox', label: 'Inbox', group: 'Navigate', defaults: ['mod+shift+i'] },
 	{ id: 'calendar', label: 'Calendar', group: 'Navigate', defaults: ['mod+shift+c'] },
-	{ id: 'actions', label: 'Action items', group: 'Navigate', defaults: ['mod+shift+a'] },
+	{ id: 'actions', label: 'To-dos', group: 'Navigate', defaults: ['mod+shift+a'] },
 	{ id: 'readMode', label: 'Read mode', group: 'Navigate', defaults: ['mod+shift+r'] },
 	{ id: 'graph', label: 'Graph', group: 'Navigate', defaults: ['mod+g'] },
 	{ id: 'references', label: 'References', group: 'Navigate', defaults: ['mod+r'] },

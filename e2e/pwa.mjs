@@ -24,11 +24,16 @@ const MAC_CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function startServer() {
-	const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: ['ignore', 'pipe', 'pipe'] });
+	const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], {
+		stdio: ['ignore', 'pipe', 'pipe'],
+		// Own process group: stopping it also stops vite, not just npx.
+		detached: true
+	});
 	return new Promise((resolve, reject) => {
 		const timer = setTimeout(() => reject(new Error('vite preview did not start')), 60_000);
 		server.stdout.on('data', (chunk) => {
-			if (chunk.toString().includes(`localhost:${PORT}`)) {
+			// Without colour codes: with CI set, vite colours the port separately.
+			if (chunk.toString().replace(/\x1b\[[0-9;]*m/g, '').includes(`localhost:${PORT}`)) {
 				clearTimeout(timer);
 				resolve(server);
 			}
@@ -37,8 +42,17 @@ function startServer() {
 	});
 }
 
+function stopServer(server) {
+	try {
+		process.kill(-server.pid);
+	} catch {
+		server.kill();
+	}
+}
+
 async function launchBrowser(profileDir) {
-	const options = { headless: true, userDataDir: profileDir };
+	// GitHub's Ubuntu runners block Chrome's sandbox (AppArmor).
+	const options = { headless: true, userDataDir: profileDir, args: process.env.CI ? ['--no-sandbox'] : [] };
 	const candidates = [process.env.CHROME_PATH, undefined, existsSync(MAC_CHROME) ? MAC_CHROME : null];
 	let lastError;
 	for (const executablePath of candidates.filter((c) => c !== null)) {
@@ -71,6 +85,8 @@ const checks = {
 			['/?new=note', '/#/daily', '/?new=voice', '/#/actions']
 		);
 		assert.deepEqual(manifest.file_handlers[0].accept['text/markdown'], ['.md', '.markdown']);
+		assert.deepEqual(manifest.launch_handler, { client_mode: ['navigate-existing', 'auto'] });
+		assert.ok(manifest.share_target.params.files[0].accept.includes('application/*'));
 	},
 
 	async 'share target: a POSTed file and text become a note'(page) {
@@ -87,6 +103,7 @@ const checks = {
 			const file = Object.assign(document.createElement('input'), { type: 'file', name: 'share_files' });
 			const dt = new DataTransfer();
 			dt.items.add(new File(['# Hello\n\nfrom a file'], 'hello.md', { type: 'text/markdown' }));
+			dt.items.add(new File(['%PDF-1.4\n%fake'], 'contract.pdf', { type: 'application/pdf' }));
 			file.files = dt.files;
 			form.append(file);
 			document.body.append(form);
@@ -94,6 +111,8 @@ const checks = {
 		});
 		await page.waitForFunction(() => location.hash.startsWith('#/memory/'), { timeout: 20_000 });
 		await page.waitForFunction(() => document.querySelector('input[aria-label="Note title"]')?.value === 'Shared from phone', { timeout: 10_000 });
+		// The PDF is an attachment chip in that note
+		await page.waitForFunction(() => document.querySelector('main .ProseMirror a[href^="blob:"]')?.textContent === 'contract.pdf', { timeout: 10_000 });
 		await page.goto(`${BASE}/#/read`, { waitUntil: 'load' });
 		await page.waitForFunction(() => document.body.innerText.includes('Hello'), { timeout: 10_000 });
 	},
@@ -105,8 +124,8 @@ const checks = {
 		await page.waitForSelector('main', { timeout: 20_000 });
 		await page.waitForFunction(() => [...document.querySelectorAll('main button')].some((b) => b.textContent.trim() === 'New'), { timeout: 20_000 });
 		await page.evaluate(() => [...document.querySelectorAll('main button')].find((b) => b.textContent.trim() === 'New').click());
-		await page.waitForSelector('input[aria-label="Action item"]');
-		await page.type('input[aria-label="Action item"]', 'Pay the invoice');
+		await page.waitForSelector('input[aria-label="To-do"]');
+		await page.type('input[aria-label="To-do"]', 'Pay the invoice');
 		await page.$eval('input[aria-label="Due date"]', (input) => {
 			const d = new Date();
 			input.value = [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
@@ -195,7 +214,7 @@ try {
 	}
 } finally {
 	await browser?.close();
-	server.kill();
+	stopServer(server);
 	rmSync(profile, { recursive: true, force: true });
 }
 console.log(failed ? `\n${failed} failed` : '\nall passed');

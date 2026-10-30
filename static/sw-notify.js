@@ -134,7 +134,7 @@ async function checkAndNotify() {
 		const overdue = item.dueDate < today;
 		try {
 			await self.registration.showNotification(
-				overdue ? 'Overdue: Kurumi action item' : 'Due today: Kurumi action item',
+				overdue ? 'Overdue to-do' : 'To-do due today',
 				{
 					body: item.text,
 					tag: `kurumi-action-${item.id}`,

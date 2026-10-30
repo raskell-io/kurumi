@@ -455,7 +455,7 @@ export async function initDB(): Promise<void> {
 					d.templates[meetingNotesId] = {
 						id: meetingNotesId,
 						name: 'Meeting Notes',
-						description: 'Template for meeting notes with agenda and action items',
+						description: 'Template for meeting notes with agenda and to-dos',
 						content: `# Meeting: {title}
 
 **Date:** {date}
@@ -466,7 +466,7 @@ export async function initDB(): Promise<void> {
 
 ## Notes
 
-## Action Items
+## To-dos
 - [ ] `,
 						vaultId,
 						created: now,
@@ -3751,7 +3751,7 @@ export function addStarterTemplates(): void {
 		d.templates[meetingNotesId] = {
 			id: meetingNotesId,
 			name: 'Meeting Notes',
-			description: 'Template for meeting notes with agenda and action items',
+			description: 'Template for meeting notes with agenda and to-dos',
 			content: `# Meeting: {title}
 
 **Date:** {date}
@@ -3762,7 +3762,7 @@ export function addStarterTemplates(): void {
 
 ## Notes
 
-## Action Items
+## To-dos
 - [ ] `,
 			vaultId,
 			created: now,

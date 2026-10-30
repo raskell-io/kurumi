@@ -125,14 +125,14 @@
 				lines.push('');
 			}
 			if (actionsCreatedThisWeek.length > 0) {
-				lines.push(`Action items created (${actionsCreatedThisWeek.length}):`);
+				lines.push(`To-dos created (${actionsCreatedThisWeek.length}):`);
 				for (const a of actionsCreatedThisWeek.slice(0, 15)) {
 					lines.push(`- ${a.text}${a.dueDate ? ` (due ${a.dueDate})` : ''}`);
 				}
 				lines.push('');
 			}
 			if (actionsCompletedThisWeek.length > 0) {
-				lines.push(`Action items completed (${actionsCompletedThisWeek.length}):`);
+				lines.push(`To-dos completed (${actionsCompletedThisWeek.length}):`);
 				for (const a of actionsCompletedThisWeek.slice(0, 15)) {
 					lines.push(`- ${a.text}`);
 				}
@@ -214,7 +214,7 @@
 				<div class="stat-value">
 					{actionsCompletedThisWeek.length}<span class="stat-of">/{actionsCreatedThisWeek.length}</span>
 				</div>
-				<div class="stat-label">Actions done / new</div>
+				<div class="stat-label">To-dos done / new</div>
 			</div>
 		</section>
 
@@ -224,7 +224,7 @@
 					<a href="/actions" class="k-row">
 						<AlertCircle class="h-4 w-4 shrink-0 text-[var(--color-danger)]" />
 						<span class="flex-1 min-w-0">
-							{overdueActions.length} action item{overdueActions.length === 1 ? '' : 's'} overdue
+							{overdueActions.length} to-do{overdueActions.length === 1 ? '' : 's'} overdue
 						</span>
 						<span class="row-cta">Review <ChevronRight class="h-3.5 w-3.5" /></span>
 					</a>
@@ -271,7 +271,7 @@
 					{:else}
 						<p class="summary-placeholder">
 							Generate a short natural-language recap of this week's meetings, memos, and
-							action items.
+							to-dos.
 						</p>
 					{/if}
 				</div>

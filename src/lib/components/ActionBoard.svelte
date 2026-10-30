@@ -51,7 +51,7 @@
 	}
 </script>
 
-<div class="board" role="list" aria-label="Action items board">
+<div class="board" role="list" aria-label="To-dos board">
 	{#each columns as col (col.status)}
 		<section
 			class="board-col"

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { stashEdit } from '$lib/unsaved';
 	import { goto } from '$app/navigation';
 	import { untrack } from 'svelte';
 	import { memoryObjects, addMemoryObject, updateMemoryObject } from '$lib/db';
@@ -81,6 +82,17 @@
 	}
 
 	$effect(() => () => flush());
+
+	// The page can reload under us (e.g. a file or share opening in this
+	// window); save first.
+	$effect(() => {
+		const save = () => {
+			if (pending) stashEdit(pending.id, pending.title, pending.content);
+			flush();
+		};
+		window.addEventListener('pagehide', save);
+		return () => window.removeEventListener('pagehide', save);
+	});
 </script>
 
 <section class="split-pane" aria-label="Split view">

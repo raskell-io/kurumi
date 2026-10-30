@@ -27,3 +27,25 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+  browser:
+    # Headless Chrome against `vite dev` (e2e/smoke.mjs), then against a
+    # production build with the service worker (e2e/pwa.mjs).
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Also downloads puppeteer's Chrome.
+      - run: npm ci
+
+      - name: Browser tests
+        run: npm run test:e2e
+
+      - name: Installed-app (PWA) tests
+        run: npm run test:pwa
