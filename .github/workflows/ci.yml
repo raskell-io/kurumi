@@ -45,13 +45,15 @@ jobs:
       - run: npm ci
 
       # A real (virtual) display: headless Chrome on Linux reports no mouse,
-      # so (hover: hover) is false and hover-only UI never shows.
+      # so (hover: hover) is false and hover-only UI never shows. 1920x1080
+      # fits the tests' 1400x900 pages; xvfb's 640x480 default puts clicks
+      # off-screen.
       - name: Browser tests
-        run: xvfb-run -a npm run test:e2e
+        run: xvfb-run -a -s "-screen 0 1920x1080x24" npm run test:e2e
         env:
           HEADFUL: 1
 
       - name: Installed-app (PWA) tests
-        run: xvfb-run -a npm run test:pwa
+        run: xvfb-run -a -s "-screen 0 1920x1080x24" npm run test:pwa
         env:
           HEADFUL: 1

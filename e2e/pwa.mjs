@@ -57,7 +57,11 @@ async function launchBrowser(profileDir) {
 	const options = {
 		headless: !process.env.HEADFUL,
 		userDataDir: profileDir,
-		args: process.env.CI ? ['--no-sandbox'] : []
+		args: [
+			...(process.env.CI ? ['--no-sandbox'] : []),
+			// Room for the 1400x900 viewport the scenarios set.
+			...(process.env.HEADFUL ? ['--window-size=1600,1000'] : [])
+		]
 	};
 	const candidates = [process.env.CHROME_PATH, undefined, existsSync(MAC_CHROME) ? MAC_CHROME : null];
 	let lastError;
