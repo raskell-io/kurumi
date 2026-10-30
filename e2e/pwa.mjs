@@ -51,8 +51,14 @@ function stopServer(server) {
 }
 
 async function launchBrowser(profileDir) {
-	// GitHub's Ubuntu runners block Chrome's sandbox (AppArmor).
-	const options = { headless: true, userDataDir: profileDir, args: process.env.CI ? ['--no-sandbox'] : [] };
+	// GitHub's Ubuntu runners block Chrome's sandbox (AppArmor). HEADFUL=1
+	// (CI runs it under xvfb-run): headless Chrome on Linux has no mouse,
+	// reports (hover: none), and the app then hides its hover UI.
+	const options = {
+		headless: !process.env.HEADFUL,
+		userDataDir: profileDir,
+		args: process.env.CI ? ['--no-sandbox'] : []
+	};
 	const candidates = [process.env.CHROME_PATH, undefined, existsSync(MAC_CHROME) ? MAC_CHROME : null];
 	let lastError;
 	for (const executablePath of candidates.filter((c) => c !== null)) {

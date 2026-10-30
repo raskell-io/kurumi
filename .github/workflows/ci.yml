@@ -44,8 +44,14 @@ jobs:
       # Also downloads puppeteer's Chrome.
       - run: npm ci
 
+      # A real (virtual) display: headless Chrome on Linux reports no mouse,
+      # so (hover: hover) is false and hover-only UI never shows.
       - name: Browser tests
-        run: npm run test:e2e
+        run: xvfb-run -a npm run test:e2e
+        env:
+          HEADFUL: 1
 
       - name: Installed-app (PWA) tests
-        run: npm run test:pwa
+        run: xvfb-run -a npm run test:pwa
+        env:
+          HEADFUL: 1

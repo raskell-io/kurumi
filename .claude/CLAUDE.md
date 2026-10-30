@@ -467,8 +467,10 @@ npm run test:pwa     # production build + service worker checks (e2e/pwa.mjs)
 ```
 
 CI (`.github/workflows/ci.yml`) runs svelte-check, unit tests and the
-build, plus a `browser` job with both browser suites (Chrome with
-`--no-sandbox` when `CI` is set). Deploys don't wait for CI.
+build, plus a `browser` job with both browser suites: Chrome with
+`--no-sandbox` when `CI` is set, in a window under `xvfb-run` with
+`HEADFUL=1` (headless Chrome on Linux reports `(hover: none)`, which
+hides the hover UI the tests use). Deploys don't wait for CI.
 
 **Releases:** bump `version` in package.json (`npm version X.Y.Z
 --no-git-tag-version`, semver), commit, then tag that commit with an
