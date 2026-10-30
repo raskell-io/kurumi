@@ -4,6 +4,9 @@
 /// <reference types="vite-plugin-pwa/svelte" />
 /// <reference types="vite-plugin-pwa/client" />
 declare global {
+	/** Package version · commit · build date (vite.config.ts). */
+	const __KURUMI_VERSION__: string;
+
 	namespace App {
 		// interface Error {}
 		// interface Locals {}

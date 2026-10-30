@@ -4,8 +4,25 @@ import { SvelteKitPWA } from '@vite-pwa/sveltekit';
 import { defineConfig } from 'vite';
 import wasm from 'vite-plugin-wasm';
 import topLevelAwait from 'vite-plugin-top-level-await';
+import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+
+// Shown in Settings → Offline & storage: package version, commit, build date.
+const version = (() => {
+	const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version;
+	let commit = '';
+	try {
+		commit = execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+	} catch {
+		// Not a git checkout (e.g. a source tarball).
+	}
+	return [pkg, commit, new Date().toISOString().slice(0, 10)].filter(Boolean).join(' · ');
+})();
 
 export default defineConfig({
+	define: {
+		__KURUMI_VERSION__: JSON.stringify(version)
+	},
 	plugins: [
 		wasm(),
 		topLevelAwait(),
@@ -45,18 +62,40 @@ export default defineConfig({
 						type: 'image/avif'
 					}
 				],
-				// Web Share Target: allows other apps to share text/URLs
-				// into Kurumi (mobile → "Share to Kurumi" creates a new
-				// memory with the shared content).
+				// Web Share Target: text, links, images, recordings and markdown
+				// shared from other apps. static/sw-notify.js receives the POST,
+				// stashes it, and opens /?share=incoming (src/lib/incoming.ts).
 				share_target: {
-					action: '/',
-					method: 'GET',
+					action: '/share-target',
+					method: 'POST',
+					enctype: 'multipart/form-data',
 					params: {
 						title: 'share_title',
 						text: 'share_text',
-						url: 'share_url'
+						url: 'share_url',
+						files: [
+							{
+								name: 'share_files',
+								accept: ['image/*', 'audio/*', 'video/*', 'text/markdown', 'text/plain', '.md', '.markdown', '.txt']
+							}
+						]
 					}
-				}
+				},
+				// Long-press / right-click on the app icon.
+				shortcuts: [
+					{ name: 'New note', short_name: 'Note', url: '/?new=note' },
+					{ name: "Today's daily note", short_name: 'Today', url: '/#/daily' },
+					{ name: 'Voice memo', short_name: 'Voice', url: '/?new=voice' },
+					{ name: 'To-dos', short_name: 'To-dos', url: '/#/actions' }
+				],
+				// "Open with Kurumi" for markdown files (installed desktop app);
+				// handled through window.launchQueue in src/lib/pwa-boot.ts.
+				file_handlers: [
+					{
+						action: '/',
+						accept: { 'text/markdown': ['.md', '.markdown'], 'text/plain': ['.txt'] }
+					}
+				]
 			},
 			workbox: {
 				globPatterns: ['**/*.{js,css,html,ico,png,svg,avif,woff,woff2,wasm}'],

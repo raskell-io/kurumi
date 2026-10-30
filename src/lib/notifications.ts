@@ -24,6 +24,8 @@
 import { get } from 'svelte/store';
 import { actionItems, todayIso } from '$lib/db';
 import type { ActionItem } from '$lib/db/types';
+import { isMine } from '$lib/work';
+import { snoozes } from '$lib/pwa';
 
 const SETTINGS_KEY = 'kurumi-notifications-enabled';
 const BACKGROUND_SETTINGS_KEY = 'kurumi-background-notifications-enabled';
@@ -82,33 +84,47 @@ function itemIsDueNow(item: ActionItem, today: string): boolean {
 	return item.dueDate <= today;
 }
 
+/** A snoozed item (Snooze on a notification) may notify again later. */
+export function forgetNotified(id: string): void {
+	notifiedThisSession.delete(id);
+}
+
 /**
  * Walk the current action items and fire a notification for anything
  * due that hasn't been shown yet this session. Called both immediately
- * on loop start and on a timer.
+ * on loop start and on a timer. Through the service worker when there
+ * is one, so the notification gets Mark done / Snooze buttons.
  */
-function checkAndNotify(): void {
+async function checkAndNotify(): Promise<void> {
 	if (!notificationsSupported()) return;
 	if (Notification.permission !== 'granted') return;
 	if (!notificationsEnabled()) return;
 
 	const today = todayIso();
-	const items = get(actionItems);
-	for (const item of items) {
+	const now = Date.now();
+	const snoozed = new Set((await snoozes()).filter((s) => s.until > now).map((s) => s.id));
+	const registration = await navigator.serviceWorker?.getRegistration().catch(() => undefined);
+	for (const item of get(actionItems)) {
 		if (!itemIsDueNow(item, today)) continue;
-		if (notifiedThisSession.has(item.id)) continue;
+		if (notifiedThisSession.has(item.id) || snoozed.has(item.id)) continue;
 		notifiedThisSession.add(item.id);
 
 		const isOverdue = item.dueDate !== null && item.dueDate < today;
+		const title = isOverdue ? 'Overdue: Kurumi action item' : 'Due today: Kurumi action item';
+		const options = { body: item.text, tag: `kurumi-action-${item.id}`, icon: '/icon-192.png' };
 		try {
-			const notification = new Notification(
-				isOverdue ? 'Overdue: Kurumi action item' : 'Due today: Kurumi action item',
-				{
-					body: item.text,
-					tag: `kurumi-action-${item.id}`,
-					icon: '/icon-192.png'
-				}
-			);
+			if (registration?.active) {
+				await registration.showNotification(title, {
+					...options,
+					data: { actionItemId: item.id },
+					actions: [
+						{ action: 'done', title: 'Mark done' },
+						{ action: 'snooze', title: 'Snooze 1h' }
+					]
+				} as NotificationOptions);
+				continue;
+			}
+			const notification = new Notification(title, options);
 			notification.onclick = () => {
 				window.focus();
 				window.location.hash = '#/actions';
@@ -116,15 +132,16 @@ function checkAndNotify(): void {
 			};
 		} catch {
 			// Some browsers throw if Notification is used outside a user gesture;
-			// safe to ignore since we'll retry on the next tick.
+			// retry on the next tick.
+			notifiedThisSession.delete(item.id);
 		}
 	}
 }
 
 export function startNotificationLoop(): void {
 	if (intervalHandle !== null) return;
-	checkAndNotify();
-	intervalHandle = setInterval(checkAndNotify, CHECK_INTERVAL_MS);
+	void checkAndNotify();
+	intervalHandle = setInterval(() => void checkAndNotify(), CHECK_INTERVAL_MS);
 }
 
 export function stopNotificationLoop(): void {
@@ -188,6 +205,7 @@ interface DueCacheItem {
 	text: string;
 	dueDate: string;
 	status: string;
+	mine: boolean; // counts toward the icon badge
 }
 
 /** Open the dedicated due-cache IndexedDB. Kept separate from the main
@@ -236,7 +254,8 @@ function itemToCacheEntry(item: ActionItem): DueCacheItem | null {
 		id: item.id,
 		text: item.text,
 		dueDate: item.dueDate,
-		status: item.status
+		status: item.status,
+		mine: isMine(item.assignee)
 	};
 }
 

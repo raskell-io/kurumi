@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { importShared } from '$lib/incoming';
+	import { takeAll, type SharedPayload } from '$lib/pwa';
 	import {
 		memoryObjects,
 		addMemoryObject,
@@ -72,30 +74,30 @@
 		showNewNoteSnackbar.set(true);
 	}
 
-	// Handle Web Share Target: when the PWA receives shared content
-	// from another app, the share_target manifest sends it as query
-	// params (share_title, share_text, share_url). We pick those up
-	// on mount and create a new memory.
+	// Arrivals from outside: the share sheet (POST shares are stashed by
+	// the service worker and land on ?share=incoming; old GET shares carry
+	// share_* params) and the app icon shortcuts (?new=note|voice).
 	onMount(() => {
-		const shareTitle = $page.url.searchParams.get('share_title');
-		const shareText = $page.url.searchParams.get('share_text');
-		const shareUrl = $page.url.searchParams.get('share_url');
-		if (shareTitle || shareText || shareUrl) {
-			const title = shareTitle || 'Shared content';
-			const lines: string[] = [];
-			lines.push(`# ${title}`);
-			lines.push('');
-			if (shareUrl) {
-				lines.push(`Source: [${shareUrl}](${shareUrl})`);
-				lines.push('');
-			}
-			if (shareText) {
-				lines.push(shareText);
-				lines.push('');
-			}
-			const memory = addMemoryObject(title, lines.join('\n'), null);
-			goto(`/memory/${memory.id}`, { replaceState: true });
+		const params = $page.url.searchParams;
+		const newKind = params.get('new');
+		// Replace the shortcut URL, so Back doesn't create another note.
+		if (newKind === 'note') return void goto(`/memory/${addMemoryObject().id}`, { replaceState: true });
+		if (newKind === 'voice') {
+			goto('/', { replaceState: true });
+			triggerVoiceCapture.set(true);
+			return;
 		}
+		const open = (ids: string[]) => goto(ids.length ? `/memory/${ids[0]}` : '/', { replaceState: true });
+		if (params.get('share') === 'incoming') {
+			takeAll<SharedPayload>('shared').then(async (payloads) => {
+				const ids: string[] = [];
+				for (const p of payloads) ids.push(...(await importShared(p)));
+				open(ids);
+			});
+			return;
+		}
+		const shared = { title: params.get('share_title') ?? '', text: params.get('share_text') ?? '', url: params.get('share_url') ?? '' };
+		if (shared.title || shared.text || shared.url) importShared(shared).then(open);
 	});
 
 	// Get 5 most recently edited memories

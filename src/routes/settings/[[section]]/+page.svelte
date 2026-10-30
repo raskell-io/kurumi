@@ -83,6 +83,16 @@
 		type EmbedModelChoice,
 		type ModelStatus
 	} from '$lib/inference';
+	import { TTS_MODEL } from '$lib/inference/providers/tts-local';
+	import {
+		offlineInfo,
+		storageInfo,
+		requestPersistentStorage,
+		resetOfflineCache,
+		online,
+		type OfflineInfo,
+		type StorageInfo
+	} from '$lib/pwa';
 	import { onMount } from 'svelte';
 	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2, RefreshCw, Wifi, Sparkles, ChevronDown, ChevronLeft, ChevronRight, Cloud, Shield, BookOpen, HardDrive } from 'lucide-svelte';
 	import { page } from '$app/stores';
@@ -270,6 +280,43 @@
 		$localModelStatus[`embed:${currentEmbedModelId}`] ?? { state: 'idle' as const }
 	);
 
+	// Download every enabled model, so local AI works without a connection.
+	function downloadAllModels() {
+		const s = $localInferenceSettings;
+		preloadPipeline('transcribe', currentWhisperModelId, { dtype: 'fp32' });
+		if (s.textModelEnabled) preloadPipeline('text-generation', currentTextModelId);
+		if (s.embedModelEnabled) preloadPipeline('embed', currentEmbedModelId);
+		preloadPipeline('tts', TTS_MODEL);
+	}
+	let ttsStatus = $derived($localModelStatus[`tts:${TTS_MODEL}`] ?? { state: 'idle' as const });
+	let modelStatuses = $derived([
+		whisperStatus,
+		...($localInferenceSettings.textModelEnabled ? [textStatus] : []),
+		...($localInferenceSettings.embedModelEnabled ? [embedStatus] : []),
+		ttsStatus
+	]);
+	let allModelsReady = $derived(modelStatuses.every((m) => m.state === 'ready'));
+	let modelsLoading = $derived(modelStatuses.some((m) => m.state === 'loading'));
+
+	// Offline & storage
+	let offline = $state<OfflineInfo | null>(null);
+	let storage = $state<StorageInfo | null>(null);
+	let persistAsked = $state(false);
+	async function refreshOfflineStatus() {
+		[offline, storage] = await Promise.all([offlineInfo(), storageInfo()]);
+	}
+	$effect(() => {
+		if (current === 'offline') void refreshOfflineStatus();
+	});
+	async function keepData() {
+		persistAsked = true;
+		await requestPersistentStorage();
+		await refreshOfflineStatus();
+	}
+	const formatBytes = (n: number) =>
+		n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${Math.round(n / 1e6)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`;
+	const appVersion = __KURUMI_VERSION__;
+
 	// Import state
 	let showImportModal = $state(false);
 	let importFileContent = $state<string | null>(null);
@@ -434,6 +481,7 @@
 		{ id: 'notifications', label: 'Notifications' },
 		{ id: 'shortcuts', label: 'Keyboard shortcuts' },
 		{ id: 'data', label: 'Data' },
+		{ id: 'offline', label: 'Offline & storage' },
 		{ id: 'labs', label: 'Labs' },
 		{ id: 'about', label: 'About' },
 		{ id: 'danger', label: 'Danger zone' }
@@ -1530,6 +1578,24 @@
 
 						<div class="set-row">
 							<div class="set-row-text">
+								<div class="set-row-label">Use offline</div>
+								<p class="set-row-help">
+									Download every model turned on above (and on-device speech), so transcription,
+									search and voice answers work without a connection.
+								</p>
+							</div>
+							{#if allModelsReady}
+								<span class="k-badge k-badge-success"><Check class="h-3 w-3" />All downloaded</span>
+							{:else}
+								<button type="button" class="k-btn" onclick={downloadAllModels} disabled={modelsLoading}>
+									<Download class="h-3.5 w-3.5" />
+									{modelsLoading ? 'Downloading…' : 'Download all'}
+								</button>
+							{/if}
+						</div>
+
+						<div class="set-row">
+							<div class="set-row-text">
 								<div class="set-row-label">Model cache</div>
 								<p class="set-row-help">Stuck on a broken download? Clear the cache and re-download the transcription model.</p>
 							</div>
@@ -1916,6 +1982,95 @@
 							</div>
 							<input type="checkbox" class="switch" bind:checked={$labsEnabled} />
 						</label>
+					</div>
+				</section>
+				{/if}
+
+				<!-- Offline & storage -->
+				{#if current === 'offline'}
+				<section id="offline" class="set-section" aria-labelledby="offline-title">
+					<h2 id="offline-title" class="set-section-title">
+						Offline & storage
+						{#if !$online}<span class="k-badge k-badge-warn">Offline now</span>{/if}
+					</h2>
+					<p class="set-section-desc">Kurumi keeps everything on this device and works without a connection.</p>
+					<div class="set-rows">
+						<div class="set-row">
+							<div class="set-row-text">
+								<div class="set-row-label">Works offline</div>
+								<p class="set-row-help">
+									{#if offline?.ready}
+										The app is saved on this device{offline.cachedFiles ? ` (${offline.cachedFiles} files)` : ''} and starts without a connection.
+									{:else if import.meta.env.DEV}
+										Not in the development server; the offline copy only exists in built versions.
+									{:else}
+										Not yet. Reload once while online and Kurumi saves itself for offline use.
+									{/if}
+								</p>
+							</div>
+							{#if offline?.ready}
+								<span class="k-badge k-badge-success"><Check class="h-3 w-3" />Ready</span>
+							{:else if offline && !import.meta.env.DEV}
+								<span class="k-badge">Not yet</span>
+							{/if}
+						</div>
+
+						<div class="set-row">
+							<div class="set-row-text">
+								<div class="set-row-label">Keep my data</div>
+								<p class="set-row-help">
+									{#if storage?.persisted}
+										The browser won't clear Kurumi's data to free up space.
+									{:else if storage?.persisted === false}
+										The browser may clear Kurumi's data when the disk runs low.
+										{persistAsked ? 'It declined for now; installing Kurumi as an app usually changes that.' : 'Ask it to keep it.'}
+									{:else}
+										This browser doesn't say whether it keeps Kurumi's data.
+									{/if}
+								</p>
+							</div>
+							{#if storage?.persisted}
+								<span class="k-badge k-badge-success"><Shield class="h-3 w-3" />Kept</span>
+							{:else if storage?.persisted === false}
+								<button type="button" class="k-btn" onclick={keepData}><Shield class="h-3.5 w-3.5" />Keep data</button>
+							{/if}
+						</div>
+
+						{#if storage?.usage != null}
+							<div class="set-row">
+								<div class="set-row-text">
+									<div class="set-row-label">Space used</div>
+									<p class="set-row-help">
+										Notes, images, recordings{offline?.modelFiles ? ', downloaded AI models' : ''} and the offline copy of the app.
+									</p>
+								</div>
+								<span class="text-sm tabular-nums text-[var(--color-text-muted)]">
+									{formatBytes(storage.usage)}{#if storage.quota} of {formatBytes(storage.quota)}{/if}
+								</span>
+							</div>
+						{/if}
+
+						<div class="set-row">
+							<div class="set-row-text">
+								<div class="set-row-label">Version</div>
+								<p class="set-row-help">New versions show a Reload prompt when they're ready.</p>
+							</div>
+							<code class="text-xs text-[var(--color-text-muted)]">{appVersion}</code>
+						</div>
+
+						<div class="set-row">
+							<div class="set-row-text">
+								<div class="set-row-label">Reset offline copy</div>
+								<p class="set-row-help">
+									If the app looks stuck on an old version: drops the saved copy and reloads. Your notes and
+									downloaded models stay.
+								</p>
+							</div>
+							<button type="button" class="k-btn" onclick={resetOfflineCache} disabled={!$online}>
+								<RefreshCw class="h-3.5 w-3.5" />
+								Reset
+							</button>
+						</div>
 					</div>
 				</section>
 				{/if}

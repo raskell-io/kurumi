@@ -7,8 +7,6 @@
 		initDB,
 		memoryObjects,
 		addMemoryObject,
-		addMeetingMemo,
-		transcribeMemoryAudio,
 		getAllTags,
 		folders,
 		trashCount,
@@ -20,7 +18,8 @@
 		questions
 	} from '$lib/db';
 	import { myNames, isWaitingFor } from '$lib/work';
-	import { storeBlob } from '$lib/db/blob-store';
+	import { importRecording } from '$lib/incoming';
+	import { bootPwa } from '$lib/pwa-boot';
 	import { initHashRouter, updateHashFromPath, currentRoutePath } from '$lib/hash-router';
 	import { generateDailyDigest } from '$lib/digest';
 	import { initSearch, syncIndex } from '$lib/search';
@@ -128,17 +127,7 @@
 
 		uploadingFile = true;
 		try {
-			const ref = await storeBlob(file, file.type || 'audio/webm');
-			const now = Date.now();
-			const memory = addMeetingMemo({
-				title: file.name.replace(/\.[^.]+$/, '') || 'Uploaded recording',
-				rawAudioRef: ref,
-				captureMode: 'upload',
-				startedAt: now,
-				endedAt: now
-			});
-			await goto(`/memory/${memory.id}`);
-			void transcribeMemoryAudio(memory.id, file, file.type || 'audio/webm');
+			await goto(`/memory/${await importRecording(file)}`);
 		} catch (err) {
 			console.error('Upload failed:', err);
 		} finally {
@@ -447,6 +436,7 @@
 
 	// Initialize hash router and sync on navigation
 	let cleanupHashRouter: (() => void) | null = null;
+	let cleanupPwa: (() => void) | null = null;
 
 	afterNavigate(({ to }) => {
 		if (to?.url?.pathname) {
@@ -506,6 +496,8 @@
 			setupVisibilitySync();
 			setupAutoSync();
 			initialized = true;
+			// Persistent storage, icon badge, notification actions, opened files
+			cleanupPwa = bootPwa();
 			// Start the notification loop if the user previously opted in.
 			// No-op if disabled or permission not granted.
 			bootNotifications();
@@ -622,6 +614,7 @@
 			teardownVisibilitySync();
 			teardownAutoSync();
 			cleanupHashRouter?.();
+			cleanupPwa?.();
 			stopNotificationLoop();
 			stopDueCacheSync();
 		};

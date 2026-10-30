@@ -690,6 +690,81 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
+	async 'app arrivals: icon shortcuts, shares, notification actions'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const notes = () => db(page, `let ms; db.memoryObjects.subscribe((v) => (ms = v))(); return ms.map((m) => ({ title: m.title, body: m.bodyMarkdown, tags: [...m.tags] }));`);
+		// App icon shortcut: new note, without leaving ?new=note in history
+		await page.goto(`${BASE}/?new=note`, { waitUntil: 'load' });
+		await page.waitForFunction(() => location.hash.startsWith('#/memory/'));
+		assert.ok(!(await page.evaluate(() => location.search.includes('new='))));
+		// Text share (GET params)
+		await page.goto(`${BASE}/?share_title=Read%20later&share_text=Worth%20a%20look&share_url=https%3A%2F%2Fexample.org%2Fpost`, { waitUntil: 'load' });
+		await page.waitForFunction(() => location.hash.startsWith('#/memory/'));
+		const link = (await notes()).find((n) => n.title === 'Read later');
+		assert.match(link.body, /Source: \[https:\/\/example\.org\/post\]\(https:\/\/example\.org\/post\)\n\nWorth a look/);
+		// Files shared through the service worker's mailbox
+		await page.evaluate(async () => {
+			const canvas = Object.assign(document.createElement('canvas'), { width: 4, height: 4 });
+			const png = await new Promise((r) => canvas.toBlob(r, 'image/png'));
+			const files = [
+				new File([png], 'whiteboard.png', { type: 'image/png' }),
+				new File(['---\nname: "Spec draft"\ntags: [spec]\n---\nThe body'], 'spec.md', { type: 'text/markdown' })
+			];
+			const req = indexedDB.open('kurumi-sw', 1);
+			req.onupgradeneeded = () => ['shared', 'pending', 'snoozed'].forEach((n) => req.result.createObjectStore(n, { keyPath: 'id' }));
+			const idb = await new Promise((r) => (req.onsuccess = () => r(req.result)));
+			await new Promise((r) => {
+				const tx = idb.transaction('shared', 'readwrite');
+				tx.objectStore('shared').put({ id: 'x', title: '', text: 'From my phone', url: '', files, receivedAt: Date.now() });
+				tx.oncomplete = r;
+			});
+			idb.close();
+		});
+		await page.goto(`${BASE}/?share=incoming`, { waitUntil: 'load' });
+		await page.waitForFunction(() => location.hash.startsWith('#/memory/'), { timeout: 15000 });
+		await sleep(500);
+		const all = await notes();
+		const photo = all.find((n) => n.title === 'From my phone');
+		assert.ok(photo, 'shared text + image note missing');
+		assert.match(photo.body, /From my phone\n\n!\[whiteboard\]\(blob:/);
+		const spec = all.find((n) => n.title === 'Spec draft');
+		assert.deepEqual([spec?.body.trim(), spec?.tags], ['The body', ['spec']]);
+		// Mark done from a notification while the app was closed
+		const id = await db(page, `return db.addActionItem({ text: 'Renew passport', dueDate: db.todayIso() }).id;`);
+		await sleep(600);
+		await page.evaluate(async (id) => {
+			const req = indexedDB.open('kurumi-sw', 1);
+			const idb = await new Promise((r) => (req.onsuccess = () => r(req.result)));
+			await new Promise((r) => {
+				const tx = idb.transaction('pending', 'readwrite');
+				tx.objectStore('pending').put({ id, action: 'done', at: Date.now() });
+				tx.oncomplete = r;
+			});
+			idb.close();
+		}, id);
+		await page.reload({ waitUntil: 'load' });
+		await page.waitForFunction(
+			async (id) => {
+				const url = performance.getEntriesByType('resource').map((e) => e.name).find((n) => n.includes('/src/lib/db/store.ts'));
+				if (!url) return false;
+				const db = await import(url);
+				let items = [];
+				db.actionItems.subscribe((v) => (items = v))();
+				return items.find((a) => a.id === id)?.status === 'done';
+			},
+			{ timeout: 10000 },
+			id
+		);
+		// Settings → Offline & storage
+		await page.goto(`${BASE}/settings/offline`, { waitUntil: 'load' });
+		await page.waitForSelector('#offline-title');
+		await sleep(500); // status reads are async
+		const text = await page.$eval('main', (e) => e.innerText);
+		assert.match(text, /Not in the development server/);
+		assert.match(text, /Version/);
+		assert.deepEqual(errors, []);
+	},
+
 	async 'edits persist across reloads (incremental saves)'(browser) {
 		const { page, errors } = await freshPage(browser);
 		await db(page, `for (let i = 0; i < 5; i++) db.addMemoryObject('Saved ' + i, 'b');`);

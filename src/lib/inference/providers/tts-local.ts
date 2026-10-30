@@ -46,7 +46,7 @@ import type { ControlledLabel } from '../../db/types';
 import { loadPipeline } from '../local-models';
 import { getLocalInferenceSettings } from '../settings';
 
-const TTS_MODEL = 'Xenova/mms-tts-eng';
+export const TTS_MODEL = 'Xenova/mms-tts-eng';
 
 function notImplemented<T>(method: string): InferenceResult<T> {
 	return {

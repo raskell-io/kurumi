@@ -1024,8 +1024,15 @@ export function teardownAutoSync(): void {
 // Visibility change sync
 let visibilityListenerAdded = false;
 
+/** Every method but the local folder needs the network. */
+export function syncNeedsNetwork(): boolean {
+	return getSyncMethod() !== 'local-fs';
+}
+
 function shouldSync(): boolean {
 	if (!isSyncConfigured()) return false;
+	// Offline: wait for the 'online' event instead of failing.
+	if (syncNeedsNetwork() && typeof navigator !== 'undefined' && !navigator.onLine) return false;
 
 	const method = getSyncMethod();
 
@@ -1055,11 +1062,19 @@ function handleVisibilityChange(): void {
 	}
 }
 
+// Back online: push what was edited offline.
+function handleOnline(): void {
+	if (shouldSync()) sync().catch(console.error);
+	// Synced moments before going offline: try again once the guard allows.
+	else if (isSyncConfigured()) setTimeout(() => shouldSync() && sync().catch(console.error), MIN_SYNC_INTERVAL_MS);
+}
+
 export function setupVisibilitySync(): void {
 	if (typeof document === 'undefined') return;
 	if (visibilityListenerAdded) return;
 
 	document.addEventListener('visibilitychange', handleVisibilityChange);
+	window.addEventListener('online', handleOnline);
 	visibilityListenerAdded = true;
 }
 
@@ -1068,5 +1083,6 @@ export function teardownVisibilitySync(): void {
 	if (!visibilityListenerAdded) return;
 
 	document.removeEventListener('visibilitychange', handleVisibilityChange);
+	window.removeEventListener('online', handleOnline);
 	visibilityListenerAdded = false;
 }

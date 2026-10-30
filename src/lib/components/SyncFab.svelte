@@ -8,14 +8,17 @@
 	 * caller to open the resolution modal.
 	 */
 	import { RefreshCw, CheckCircle, AlertCircle, Cloud, CloudOff } from 'lucide-svelte';
-	import { syncIndicator, sync } from '$lib/sync';
+	import { syncIndicator, sync, syncNeedsNetwork } from '$lib/sync';
+	import { online } from '$lib/pwa';
 
 	let {
 		visible = false,
 		onConflict
 	}: { visible?: boolean; onConflict?: () => void } = $props();
 
-	let status = $derived($syncIndicator.status);
+	// Offline (for methods that need the network) wins over the last result.
+	let offline = $derived(!$online && syncNeedsNetwork());
+	let status = $derived(offline ? 'offline' : $syncIndicator.status);
 	let syncing = $derived(status === 'syncing');
 
 	function handleClick() {
@@ -23,13 +26,15 @@
 			onConflict?.();
 			return;
 		}
-		if (!syncing) {
+		if (!syncing && !offline) {
 			sync().catch((err) => console.error('Force sync failed:', err));
 		}
 	}
 
 	function label(): string {
 		switch (status) {
+			case 'offline':
+				return 'Offline · syncs when back online';
 			case 'syncing':
 				return 'Syncing…';
 			case 'success':
@@ -46,6 +51,7 @@
 	}
 
 	function tooltip(): string {
+		if (offline) return 'Offline. Changes are saved here and sync when you are back online';
 		if (status === 'conflict') return 'Resolve sync conflicts';
 		if (status === 'error') return `${$syncIndicator.error || 'Sync failed'} — click to retry`;
 		return 'Force sync now';
@@ -58,17 +64,17 @@
 	<button
 		type="button"
 		onclick={handleClick}
-		disabled={syncing}
+		disabled={syncing || offline}
 		title={tooltip()}
 		aria-label={tooltip()}
 		class="sync-fab"
-		class:expanded={syncing || status === 'error' || status === 'conflict'}
+		class:expanded={syncing || offline || status === 'error' || status === 'conflict'}
 		class:is-error={status === 'error'}
 		class:is-conflict={status === 'conflict'}
 	>
 		{#if status === 'syncing'}
 			<RefreshCw class="h-3.5 w-3.5 shrink-0 animate-spin text-[var(--color-accent)]" />
-		{:else if status === 'error'}
+		{:else if status === 'error' || offline}
 			<CloudOff class="h-3.5 w-3.5 shrink-0" />
 		{:else if status === 'conflict'}
 			<AlertCircle class="h-3.5 w-3.5 shrink-0" />

@@ -299,7 +299,24 @@ OpenAI to MMS when the API key is missing.
   user to click Reload instead of reloading mid-edit
 - The app shell and assets are precached. The ONNX runtime (jsdelivr)
   is cached CacheFirst and model weights sit in transformers.js's own
-  cache, so local AI works offline after one online run
+  cache, so local AI works offline after one online run (Settings →
+  Local AI → Download all)
+- `static/sw-notify.js` (imported into the generated worker) handles the
+  share target POST (`/share-target` → stashed → `/?share=incoming`),
+  notification Mark done / Snooze 1h, periodic due checks and the icon
+  badge. It shares the `kurumi-sw` IndexedDB (`shared`, `pending`,
+  `snoozed`) with `src/lib/pwa.ts`; keep store names in step
+- `src/lib/pwa-boot.ts` (after DB init): asks for persistent storage,
+  keeps the badge (your due/overdue to-dos), applies queued notification
+  actions, and imports `.md` files opened with Kurumi (`launchQueue`)
+- `src/lib/incoming.ts` turns shares and opened files into notes
+  (recordings → transcribed memos, images inline, markdown parsed)
+- Manifest: share target with files, app icon shortcuts (`/?new=note`,
+  `/?new=voice`, `/#/daily`, `/#/actions`), `.md` file handler. No
+  `launch_handler`: focus-existing would drop share POST data
+- Sync skips network methods while offline and runs on `online`;
+  SyncFab shows "Offline". Settings → Offline & storage shows status,
+  space used, version (`__KURUMI_VERSION__`), and resets the offline copy
 
 ### Performance notes
 - Embeddings run in a Web Worker (`inference/embed.worker.ts`, wired
@@ -434,6 +451,7 @@ npx svelte-check     # type + a11y + css check (should be 0/0)
 npm test             # unit tests (Vitest)
 npm run test:e2e     # browser smoke tests (e2e/smoke.mjs; starts vite dev,
                      # headless Chrome; set CHROME_PATH if needed)
+npm run test:pwa     # production build + service worker checks (e2e/pwa.mjs)
 ```
 
 **Invariant:** `npx svelte-check` should always return
