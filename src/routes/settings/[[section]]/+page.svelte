@@ -2166,7 +2166,7 @@ mise run setup</code></pre>
 
 					<div class="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-border)] pt-4">
 						<p class="text-xs text-[var(--color-text-faint)]">
-							Kurumi v0.1.0 · Built with SvelteKit, Automerge and transformers.js ·
+							Kurumi <a href="/settings/offline" title="Version · commit · build date">{appVersion}</a> · Built with SvelteKit, Automerge and transformers.js ·
 							<a href="https://github.com/raskell-io/kurumi" target="_blank" rel="noopener">Source on GitHub</a>
 						</p>
 								<a href="https://ko-fi.com/raskell" target="_blank" rel="noopener" class="k-btn no-underline">

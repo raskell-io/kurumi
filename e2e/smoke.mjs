@@ -504,7 +504,10 @@ const scenarios = {
 		}
 		await page.goto(`${BASE}/settings/about`, { waitUntil: 'load' });
 		await page.waitForSelector('.about-headline');
-		assert.match(await page.$eval('#about', (e) => e.textContent), /local-first second brain/);
+		const about = await page.$eval('#about', (e) => e.textContent);
+		assert.match(about, /local-first second brain/);
+		// The real build version (package · commit · date), not a fixed string
+		assert.match(about, /Kurumi \d+\.\d+\.\d+ · [0-9a-f]{7,} · \d{4}-\d{2}-\d{2}/);
 		assert.deepEqual(errors, []);
 	},
 
