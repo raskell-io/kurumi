@@ -293,6 +293,14 @@ OpenAI to MMS when the API key is missing.
   Flashcards, Timeline, Smart folders. Canvas and database views stay
   unlinked until they get real data-model support
 
+### Offline (PWA)
+- `UpdateToast.svelte` registers the Workbox service worker (production
+  builds only; `registerType: 'prompt'`), so new versions wait for the
+  user to click Reload instead of reloading mid-edit
+- The app shell and assets are precached. The ONNX runtime (jsdelivr)
+  is cached CacheFirst and model weights sit in transformers.js's own
+  cache, so local AI works offline after one online run
+
 ### Performance notes
 - Embeddings run in a Web Worker (`inference/embed.worker.ts`, wired
   through `loadPipeline('embed')`); vectors are cached in memory and

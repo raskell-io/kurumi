@@ -12,7 +12,8 @@ export default defineConfig({
 		tailwindcss(),
 		sveltekit(),
 		SvelteKitPWA({
-			registerType: 'autoUpdate',
+			// Registered by UpdateToast.svelte; new versions wait for a reload.
+			registerType: 'prompt',
 			manifest: {
 				name: 'Kurumi - Second Brain',
 				short_name: 'Kurumi',
@@ -84,11 +85,23 @@ export default defineConfig({
 						// Includes the LFS CDN where the actual model weights live.
 						urlPattern: /^https:\/\/(?:[a-z0-9-]+\.)?(?:huggingface\.co|hf\.co)\/.*/i,
 						handler: 'NetworkOnly'
+					},
+					{
+						// The ONNX runtime transformers.js loads from jsdelivr. Its
+						// URLs are versioned, so cache it for good: local inference
+						// then works offline once it has run online.
+						urlPattern: /^https:\/\/cdn\.jsdelivr\.net\/npm\/onnxruntime-web@.*/i,
+						handler: 'CacheFirst',
+						options: {
+							cacheName: 'onnxruntime',
+							expiration: { maxEntries: 20 },
+							cacheableResponse: { statuses: [0, 200] }
+						}
 					}
 				]
 			},
 			devOptions: {
-				enabled: true
+				enabled: false
 			}
 		})
 	],

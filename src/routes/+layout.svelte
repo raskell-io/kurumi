@@ -29,6 +29,7 @@
 	import { gitSyncState } from '$lib/git';
 	import GitConflictModal from '$lib/components/GitConflictModal.svelte';
 	import UndoToast from '$lib/components/UndoToast.svelte';
+	import UpdateToast from '$lib/components/UpdateToast.svelte';
 	import AgentPane from '$lib/components/AgentPane.svelte';
 	import FocusTimer from '$lib/components/FocusTimer.svelte';
 	import LockScreen from '$lib/components/LockScreen.svelte';
@@ -1168,6 +1169,7 @@
 	{/if}
 
 	<UndoToast />
+	<UpdateToast />
 	<LockScreen />
 
 	<!-- Floating sync sign + force-sync button (bottom-right) -->
