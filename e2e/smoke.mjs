@@ -370,17 +370,21 @@ const scenarios = {
 		await page.mouse.click(box.x, box.y);
 		await sleep(700);
 
-		// Paste a URL onto selected text
-		const word = await page.evaluate(() => {
-			const h = document.querySelector('main .ProseMirror h3').firstChild;
+		// Paste a URL onto selected text. The word is selected directly:
+		// a double-click doesn't select under Linux/X11 (CI).
+		await page.evaluate(() => {
+			const editor = document.querySelector('main .ProseMirror');
+			editor.focus();
+			const h = editor.querySelector('h3').firstChild;
 			const i = h.textContent.indexOf('docs');
 			const r = document.createRange();
 			r.setStart(h, i);
 			r.setEnd(h, i + 4);
-			const b = r.getBoundingClientRect();
-			return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+			const sel = getSelection();
+			sel.removeAllRanges();
+			sel.addRange(r);
 		});
-		await page.mouse.click(word.x, word.y, { clickCount: 2 });
+		await sleep(200); // ProseMirror reads the DOM selection on selectionchange
 		await page.evaluate(() => {
 			const dt = new DataTransfer();
 			dt.setData('text/plain', 'https://example.com/docs');
