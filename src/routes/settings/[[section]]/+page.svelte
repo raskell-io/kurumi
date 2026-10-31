@@ -15,6 +15,8 @@
 		currentVaultId,
 		getVaultContents,
 		syncEncrypted,
+		getLoadStats,
+		getVaultSizeStats,
 		type ImportAnalysis,
 		type ConflictResolution
 	} from '$lib/db';
@@ -321,6 +323,9 @@
 	const formatBytes = (n: number) =>
 		n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${Math.round(n / 1e6)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`;
 	const appVersion = __KURUMI_VERSION__;
+	// Startup cost on this device (see Phase 2 notes in CLAUDE.md)
+	const loadStats = getLoadStats();
+	const sizeStats = getVaultSizeStats();
 	// What this browser can do as an installed app (see the row above Version).
 	const platform = (() => {
 		if (typeof navigator === 'undefined') return 'other';
@@ -2265,6 +2270,19 @@
 								<span class="text-sm tabular-nums text-[var(--color-text-muted)]">
 									{formatBytes(storage.usage)}{#if storage.quota} of {formatBytes(storage.quota)}{/if}
 								</span>
+							</div>
+						{/if}
+
+						{#if loadStats}
+							<div class="set-row">
+								<div class="set-row-text">
+									<div class="set-row-label">Startup</div>
+									<p class="set-row-help">
+										The database loaded in {loadStats.loadMs < 1000 ? `${loadStats.loadMs} ms` : `${(loadStats.loadMs / 1000).toFixed(1)} s`}:
+										{sizeStats.notes} note{sizeStats.notes === 1 ? '' : 's'} with {sizeStats.textChars >= 1e6 ? `${(sizeStats.textChars / 1e6).toFixed(1)} million` : sizeStats.textChars.toLocaleString()} characters
+										of text, {formatBytes(loadStats.storedBytes)} stored.
+									</p>
+								</div>
 							</div>
 						{/if}
 

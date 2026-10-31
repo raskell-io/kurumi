@@ -876,6 +876,7 @@ const scenarios = {
 		const text = await page.$eval('main', (e) => e.innerText);
 		assert.match(text, /Not in the development server/);
 		assert.match(text, /Version/);
+		assert.match(text, /The database loaded in \d+(\.\d)? m?s: \d+ notes? with/);
 		assert.deepEqual(errors, []);
 	},
 

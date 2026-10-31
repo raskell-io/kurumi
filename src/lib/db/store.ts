@@ -336,9 +336,30 @@ export const trashCount: Readable<number> = derived(
 );
 
 // Initialize the database
+/** How the last start went: shown in Settings → Offline & storage. */
+export interface LoadStats {
+	loadMs: number;
+	storedBytes: number;
+	chunks: number;
+}
+let loadStats: LoadStats | null = null;
+export const getLoadStats = () => loadStats;
+
+/** Size of what loading has to rebuild: notes and their text, all vaults. */
+export function getVaultSizeStats(): { notes: number; textChars: number } {
+	let notes = 0;
+	let textChars = 0;
+	for (const m of Object.values(doc?.memoryObjects ?? {})) {
+		notes++;
+		textChars += (m.bodyMarkdown?.length ?? 0) + (m.title?.length ?? 0) + (m.transcript?.length ?? 0);
+	}
+	return { notes, textChars };
+}
+
 export async function initDB(): Promise<void> {
 	let savedData: Uint8Array | undefined;
 	try {
+		const loadStart = performance.now();
 		savedData = await get<Uint8Array>(STORAGE_KEY);
 
 		if (savedData) {
@@ -356,6 +377,11 @@ export async function initDB(): Promise<void> {
 			}
 			savedChunks = chunks;
 			persistedHeads = Automerge.getHeads(doc);
+			loadStats = {
+				loadMs: Math.round(performance.now() - loadStart),
+				storedBytes: savedData.length + chunks.reduce((n, c) => n + c.length, 0),
+				chunks: chunks.length
+			};
 
 			// Legacy docs (v1-v5) stored memories under `notes`. Treat the field as
 			// untyped during these older migrations; v5→v6 below relocates it.
