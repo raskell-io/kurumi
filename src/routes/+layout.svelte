@@ -16,7 +16,8 @@
 		savedSearches,
 		favoriteMemoryObjects,
 		questions,
-		vaultNeedsNewerApp
+		vaultNeedsNewerApp,
+		todayIso
 	} from '$lib/db';
 	import { myNames, isWaitingFor } from '$lib/work';
 	import { importRecording } from '$lib/incoming';
@@ -510,11 +511,12 @@
 			// Auto-generate yesterday's daily digest on first open each day.
 			// Fire-and-forget so it doesn't block boot. Idempotent: checks
 			// localStorage for the last generated date to avoid duplicates.
+			// Days with nothing to report get no note.
 			const DIGEST_DATE_KEY = 'kurumi-last-auto-digest';
-			const today = new Date().toISOString().split('T')[0];
+			const today = todayIso();
 			if (localStorage.getItem(DIGEST_DATE_KEY) !== today) {
 				setTimeout(() => {
-					generateDailyDigest().then(() => {
+					generateDailyDigest(undefined, { skipIfEmpty: true }).then(() => {
 						localStorage.setItem(DIGEST_DATE_KEY, today);
 					}).catch(() => {
 						// Silently fail — no inference provider configured, etc.

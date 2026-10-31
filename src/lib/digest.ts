@@ -28,10 +28,11 @@ import { inferenceRouter } from '$lib/inference';
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Yesterday's local date (toISOString would give the UTC date). */
 function yesterday(): string {
 	const d = new Date();
 	d.setDate(d.getDate() - 1);
-	return d.toISOString().split('T')[0];
+	return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
 }
 
 function dateRangeMs(isoDate: string): { start: number; end: number } {
@@ -76,8 +77,9 @@ async function summarizeText(text: string): Promise<string | null> {
  * Returns the new memory's id so the caller can navigate to it.
  */
 export async function generateDailyDigest(
-	forDate?: string
-): Promise<string> {
+	forDate?: string,
+	options: { skipIfEmpty?: boolean } = {}
+): Promise<string | null> {
 	const targetDate = forDate ?? yesterday();
 	const today = todayIso();
 	const { start, end } = dateRangeMs(targetDate);
@@ -111,6 +113,8 @@ export async function generateDailyDigest(
 	lines.push('');
 
 	if (captures.length === 0 && dueActions.length === 0 && pending.length === 0) {
+		// The automatic morning digest doesn't file a note about nothing.
+		if (options.skipIfEmpty) return null;
 		lines.push('*Nothing to report for this day.*');
 	} else {
 		// Captures

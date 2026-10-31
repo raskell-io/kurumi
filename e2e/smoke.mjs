@@ -94,6 +94,13 @@ async function freshPage(browser) {
 	await page.setViewport({ width: 1400, height: 900 });
 	const errors = [];
 	page.on('pageerror', (err) => errors.push(err.message));
+	// The automatic daily digest would add a note 5 s after start, in the
+	// middle of a scenario: mark today's as done.
+	await page.evaluateOnNewDocument(() => {
+		const d = new Date();
+		const today = [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
+		localStorage.setItem('kurumi-last-auto-digest', today);
+	});
 	await page.goto(BASE, { waitUntil: 'load' });
 	await page.waitForSelector('aside');
 	await sleep(800);
@@ -487,6 +494,11 @@ const scenarios = {
 		await sleep(400);
 		assert.equal(await bodyOf(page, 'Beta'), 'Beta body plus split\n');
 		assert.equal(await bodyOf(page, 'Alpha'), 'Alpha body plus main\n');
+		// A note created in the background (sync, the morning digest) leaves both editors alone
+		await db(page, `db.addMemoryObject('Arrived in the background', 'x');`);
+		await sleep(1500);
+		assert.deepEqual(errors, [], 'a background note broke an editor');
+		assert.equal(await bodyOf(page, 'Beta'), 'Beta body plus split\n');
 		// Slash menus still work in the main editor after the split closes
 		await page.click('button[aria-label="Close split view"]');
 		await page.click('main .ProseMirror');

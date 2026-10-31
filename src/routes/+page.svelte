@@ -221,7 +221,7 @@
 		generatingDigest = true;
 		try {
 			const id = await generateDailyDigest();
-			goto(`/memory/${id}`);
+			if (id) goto(`/memory/${id}`);
 		} catch (err) {
 			askError = err instanceof Error ? err.message : 'Digest generation failed';
 		} finally {

@@ -31,6 +31,33 @@ function filterNodes($pos: ResolvedPos, node: { type: { name: string } }): boole
 	return $pos.depth === 0;
 }
 
+/**
+ * The block service schedules work on the next animation frame (e.g. a
+ * focus on mouseup) that reads the editor view. When the editor is torn
+ * down in between (closing the split view, a pane reloading its note),
+ * Milkdown throws "Context editorView not found" from inside that frame.
+ * This ctx answers `undefined` for the view once it's gone; everything
+ * else passes through.
+ */
+function tolerantCtx(ctx: Ctx): Ctx {
+	return new Proxy(ctx, {
+		get(target, prop) {
+			if (prop === 'get') {
+				return (slice: Parameters<Ctx['get']>[0]) => {
+					try {
+						return target.get(slice);
+					} catch (err) {
+						if (slice === editorViewCtx) return undefined;
+						throw err;
+					}
+				};
+			}
+			const value = Reflect.get(target, prop, target);
+			return typeof value === 'function' ? value.bind(target) : value;
+		}
+	});
+}
+
 export function configureBlockHandle(
 	ctx: Ctx,
 	onMenu: (anchor: DOMRect, blockPos: number) => void
@@ -43,7 +70,7 @@ export function configureBlockHandle(
 			el.innerHTML = `<button type="button" class="bh-btn bh-add" title="Add a block below" aria-label="Add a block below">${PLUS}</button><button type="button" class="bh-btn bh-grip" title="Drag to move · Click for options" aria-label="Block options">${GRIP}</button>`;
 
 			const provider = new BlockProvider({
-				ctx,
+				ctx: tolerantCtx(ctx),
 				content: el,
 				getOffset: () => 6,
 				getPlacement: () => 'left-start'
