@@ -12,8 +12,11 @@
 		questions,
 		meetingSeries,
 		todayIso,
+		vaults,
+		setCurrentVault,
 		type ActionItem
 	} from '$lib/db';
+	import { createExampleVault, EXAMPLE_VAULT_NAME } from '$lib/example-vault';
 	import { pushUndo } from '$lib/stores/undo';
 	import { dueInfo } from '$lib/utils/due';
 	import { openNoteTasks, checkTaskInBody, sortOpenActionItems, type NoteTask } from '$lib/todos';
@@ -54,7 +57,8 @@
 		NotebookText,
 		UserRoundCheck,
 		HelpCircle,
-		CalendarClock
+		CalendarClock,
+		Compass
 	} from 'lucide-svelte';
 	import {
 		showNewNoteSnackbar,
@@ -67,6 +71,17 @@
 		question: string;
 		result: AskKurumiResult;
 	};
+
+	// Newcomers: a separate, ready-made vault that shows what Kurumi does.
+	// If it exists already, switch to it instead of making another.
+	function exploreExample() {
+		const existing = $vaults.find((v) => v.name === EXAMPLE_VAULT_NAME);
+		if (existing) {
+			setCurrentVault(existing.id);
+			return;
+		}
+		goto(`/memory/${createExampleVault()}`);
+	}
 
 	function handleNewNote() {
 		const memory = addMemoryObject();
@@ -502,6 +517,10 @@
 				<Plus class="h-4 w-4" />
 				Create your first note
 				<span class="ml-1 text-xs opacity-70">{modKey}N</span>
+			</button>
+			<button type="button" onclick={exploreExample} class="k-btn k-btn-ghost mt-3">
+				<Compass class="h-4 w-4" />
+				Or explore an example first
 			</button>
 
 			<ul class="mx-auto mt-12 w-full max-w-sm divide-y divide-[var(--color-border)] rounded-xl border border-[var(--color-border)] text-left">

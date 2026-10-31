@@ -30,7 +30,7 @@
  * raw text for the user to clean up.
  */
 
-import { addMemoryObject } from '$lib/db';
+import { addMemoryObject, batchUpdates } from '$lib/db';
 
 export interface RoamImportResult {
 	success: boolean;
@@ -86,21 +86,23 @@ export async function importRoamJSON(file: File): Promise<RoamImportResult> {
 		let pagesCreated = 0;
 		let blockCount = 0;
 
-		for (const page of pages) {
-			const title = page.title?.trim();
-			if (!title) {
-				skipped.push('(page with no title)');
-				continue;
+		batchUpdates(() => {
+			for (const page of pages) {
+				const title = page.title?.trim();
+				if (!title) {
+					skipped.push('(page with no title)');
+					continue;
+				}
+
+				const { body, count } = renderBlocks(page.children ?? [], 0);
+				blockCount += count;
+
+				// Empty pages are fine — users often have stub pages from
+				// aliases — so we create them anyway with an empty body.
+				addMemoryObject(title, body, null);
+				pagesCreated++;
 			}
-
-			const { body, count } = renderBlocks(page.children ?? [], 0);
-			blockCount += count;
-
-			// Empty pages are fine — users often have stub pages from
-			// aliases — so we create them anyway with an empty body.
-			addMemoryObject(title, body, null);
-			pagesCreated++;
-		}
+		});
 
 		return {
 			success: true,

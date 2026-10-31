@@ -57,7 +57,8 @@ import {
 	getVaultContents,
 	addFolder,
 	addVault,
-	addImportedMemoryObject
+	addImportedMemoryObject,
+	batchUpdates
 } from '$lib/db';
 import { parseMarkdownFile, parseFrontMatter, noteToMarkdownFile } from '$lib/git/convert';
 import { generateSlug, vaultDirNames } from '$lib/utils/markdown-export';
@@ -591,29 +592,32 @@ async function importNewLocalFiles(
 	}
 
 	const imported: { path: string; memoryId: string }[] = [];
-	for (const file of files) {
-		if (managed.has(file.path.toLowerCase())) continue; // one Kurumi wrote
-		const { frontMatter, body } = parseFrontMatter(file.content.replace(/\r\n?/g, '\n'));
-		const id = typeof frontMatter.id === 'string' && frontMatter.id ? frontMatter.id : undefined;
-		if (id && getMemoryObject(id)) continue; // a known note (edits are handled separately)
+	// One store refresh and save for everything found (see batchUpdates).
+	batchUpdates(() => {
+		for (const file of files) {
+			if (managed.has(file.path.toLowerCase())) continue; // one Kurumi wrote
+			const { frontMatter, body } = parseFrontMatter(file.content.replace(/\r\n?/g, '\n'));
+			const id = typeof frontMatter.id === 'string' && frontMatter.id ? frontMatter.id : undefined;
+			if (id && getMemoryObject(id)) continue; // a known note (edits are handled separately)
 
-		const { vaultId, dirs } = locate(file.path, false);
-		const fileName = file.path.split('/').pop()!.replace(/\.(md|markdown)$/i, '');
-		const named = [frontMatter.name, frontMatter.title].find((v) => typeof v === 'string' && v.trim());
-		const created = typeof frontMatter.created === 'string' ? Date.parse(frontMatter.created) : NaN;
-		const tags = Array.isArray(frontMatter.tags) ? frontMatter.tags.map(String) : [];
-		const memory = addImportedMemoryObject({
-			id,
-			title: (named as string | undefined)?.trim() || fileName,
-			bodyMarkdown: body,
-			tags,
-			folderId: ensureFolder(vaultId, dirs),
-			vaultId,
-			createdAt: Number.isNaN(created) ? file.lastModified : created,
-			updatedAt: file.lastModified
-		});
-		imported.push({ path: file.path, memoryId: memory.id });
-	}
+			const { vaultId, dirs } = locate(file.path, false);
+			const fileName = file.path.split('/').pop()!.replace(/\.(md|markdown)$/i, '');
+			const named = [frontMatter.name, frontMatter.title].find((v) => typeof v === 'string' && v.trim());
+			const created = typeof frontMatter.created === 'string' ? Date.parse(frontMatter.created) : NaN;
+			const tags = Array.isArray(frontMatter.tags) ? frontMatter.tags.map(String) : [];
+			const memory = addImportedMemoryObject({
+				id,
+				title: (named as string | undefined)?.trim() || fileName,
+				bodyMarkdown: body,
+				tags,
+				folderId: ensureFolder(vaultId, dirs),
+				vaultId,
+				createdAt: Number.isNaN(created) ? file.lastModified : created,
+				updatedAt: file.lastModified
+			});
+			imported.push({ path: file.path, memoryId: memory.id });
+		}
+	});
 	return imported;
 }
 

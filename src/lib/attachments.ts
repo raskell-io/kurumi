@@ -7,6 +7,7 @@
  */
 
 import { getBlob, storeBlob } from '$lib/db/blob-store';
+import { showNotice } from '$lib/stores/notice';
 
 /** A stored blob ref (`blob:<id>`), not a runtime object URL (`blob:http…`). */
 export function isAttachmentRef(href: string | null | undefined): href is string {
@@ -35,7 +36,7 @@ export function openAttachment(ref: string, name: string): void {
 	void getBlob(ref).then((stored) => {
 		if (!stored) {
 			tab?.close();
-			alertMissing(name);
+			tellMissing(name);
 			return;
 		}
 		const url = URL.createObjectURL(stored.blob);
@@ -51,10 +52,10 @@ export function openAttachment(ref: string, name: string): void {
 	});
 }
 
-// Not on this device yet (another device attached it and sync hasn't
-// brought the bytes over). A console note, not a dialog: dialogs block.
-function alertMissing(name: string): void {
-	console.warn(`[attachments] "${name}" isn't on this device yet; sync to fetch it.`);
+// Not on this device yet: another device attached it and sync hasn't
+// brought the file over.
+function tellMissing(name: string): void {
+	showNotice(`"${name}" isn't on this device yet. Sync to fetch it.`);
 }
 
 /** Click handler for rendered markdown: opens attachment links. Returns true when handled. */

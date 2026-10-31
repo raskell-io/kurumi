@@ -30,6 +30,7 @@
 	import GitConflictModal from '$lib/components/GitConflictModal.svelte';
 	import UndoToast from '$lib/components/UndoToast.svelte';
 	import UpdateToast from '$lib/components/UpdateToast.svelte';
+	import NoticeToast from '$lib/components/NoticeToast.svelte';
 	import AgentPane from '$lib/components/AgentPane.svelte';
 	import FocusTimer from '$lib/components/FocusTimer.svelte';
 	import LockScreen from '$lib/components/LockScreen.svelte';
@@ -1166,6 +1167,7 @@
 
 	<UndoToast />
 	<UpdateToast />
+	<NoticeToast />
 	<LockScreen />
 
 	<!-- Floating sync sign + force-sync button (bottom-right) -->

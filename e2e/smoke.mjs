@@ -17,6 +17,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import puppeteer from 'puppeteer';
+import JSZip from 'jszip';
+import { writeFileSync } from 'node:fs';
 
 const PORT = Number(process.env.E2E_PORT ?? 5299);
 const BASE = `http://localhost:${PORT}`;
@@ -642,6 +644,11 @@ const scenarios = {
 		const openedAgain = context.waitForTarget((t) => t.url().startsWith('blob:http'), { timeout: 10_000 });
 		await readChip.click();
 		await (await (await openedAgain).page())?.close();
+		// A file another device attached that hasn't synced here: a notice
+		await db(page, `db.addMemoryObject('Elsewhere', '[minutes.docx](blob:notSyncedYet1)');`);
+		await page.goto(`${BASE}/read/${await db(page, `let ms; db.memoryObjects.subscribe((v) => (ms = v))(); return ms.find((m) => m.title === 'Elsewhere').id;`)}`, { waitUntil: 'load' });
+		await (await page.waitForSelector('main a[href="blob:notSyncedYet1"]')).click();
+		await page.waitForFunction(() => document.querySelector('.notice-toast')?.textContent.includes("isn't on this device yet"));
 		// Typing and reloading at once (as when a shared file opens in this
 		// window) keeps the last keystrokes: the editor saves on pagehide.
 		await page.goto(`${BASE}/memory/${id}`, { waitUntil: 'load' });
@@ -852,6 +859,110 @@ const scenarios = {
 		await sleep(1500);
 		const titles = await db(page, `let ms; db.allMemoryObjects.subscribe((v) => (ms = v))(); return ms.map((m) => m.title);`);
 		for (let i = 0; i < 5; i++) assert.ok(titles.includes('Saved ' + i), `missing Saved ${i}`);
+		// Chunks loaded at start are folded into a snapshot shortly after
+		await page.waitForFunction(
+			async () => {
+				const kv = await import('/node_modules/idb-keyval/dist/index.js');
+				return ((await kv.get('kurumi-doc-changes')) || []).length === 0;
+			},
+			{ timeout: 20_000, polling: 500 }
+		);
+		assert.deepEqual(errors, []);
+	},
+
+	async 'autosaves store the edit, not a copy of the note'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const growth = await db(page, `
+			const W = 'falcon budget roadmap hiring launch review customer contract design meeting'.split(' ');
+			const words = (n) => Array.from({ length: n }, (_, i) => W[(i * 7 + n) % W.length]).join(' ');
+			const m = db.addMemoryObject('Long note', words(450));
+			const stored = async () => {
+				await new Promise((r) => setTimeout(r, 300));
+				const snap = (await kv.get('kurumi-doc'))?.length ?? 0;
+				const chunks = ((await kv.get('kurumi-doc-changes')) || []).reduce((a, c) => a + c.length, 0);
+				return snap + chunks;
+			};
+			const before = await stored();
+			let body = words(450);
+			for (let i = 0; i < 300; i++) {
+				body += ' ' + W[i % W.length] + i;
+				db.updateMemoryObject(m.id, { bodyMarkdown: body, title: 'Long note ' + (i % 3) });
+				if (i % 50 === 0) await new Promise((r) => setTimeout(r, 0));
+			}
+			return (await stored()) - before;
+		`);
+		// Whole-text replacement grew it by ~1.5 MB here; diffs by ~50 KB
+		// (mostly per-change overhead, which compaction folds away).
+		assert.ok(growth < 150_000, `300 autosaves grew storage by ${growth} bytes`);
+		assert.deepEqual(errors, []);
+	},
+
+	async 'import from Notion: pages, nesting, links, images'(browser) {
+		const { page, errors } = await freshPage(browser);
+		// A Notion "Markdown & CSV" export, wrapped in an outer ZIP as Notion does
+		const id = (n) => String(n).padStart(32, 'a');
+		const inner = new JSZip();
+		inner.file(`Work ${id(1)}.md`, `# Work\n\nOur team space. See [Kickoff call](Work%20${id(1)}/Kickoff%20call%20${id(2)}.md).`);
+		inner.file(`Work ${id(1)}/Kickoff call ${id(2)}.md`, `# Kickoff call\n\nDecided the scope.\n\n![](Kickoff%20call%20${id(2)}/whiteboard.png)\n\n[brief.pdf](Kickoff%20call%20${id(2)}/brief.pdf)\n\nBack to [Work](../Work%20${id(1)}.md)`);
+		inner.file(`Work ${id(1)}/Kickoff call ${id(2)}/whiteboard.png`, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64'));
+		inner.file(`Work ${id(1)}/Kickoff call ${id(2)}/brief.pdf`, '%PDF-1.4');
+		inner.file(`Work ${id(1)}/Tasks ${id(3)}.csv`, 'Name,Status\nShip,Done');
+		const outer = new JSZip();
+		outer.file('Export-part-1.zip', await inner.generateAsync({ type: 'nodebuffer' }));
+		const zipPath = join(tmpdir(), `kurumi-notion-${Date.now()}.zip`);
+		writeFileSync(zipPath, await outer.generateAsync({ type: 'nodebuffer' }));
+
+		await page.goto(`${BASE}/settings/data`, { waitUntil: 'load' });
+		const input = await page.waitForSelector('input[aria-label="Notion export"]');
+		await input.uploadFile(zipPath);
+		await page.waitForFunction(() => document.querySelector('main').innerText.includes('Imported 2 pages and 2 files'), { timeout: 15_000 });
+		rmSync(zipPath, { force: true });
+
+		const notes = await db(page, `
+			let ms; db.memoryObjects.subscribe((v) => (ms = v))();
+			let fs; db.folders.subscribe((v) => (fs = v))();
+			return { notes: ms.map((m) => ({ title: m.title, body: m.bodyMarkdown, folder: fs.find((f) => f.id === m.folderId)?.name ?? null })), folders: fs.map((f) => f.name) };
+		`);
+		const work = notes.notes.find((n) => n.title === 'Work');
+		const kickoff = notes.notes.find((n) => n.title === 'Kickoff call');
+		assert.equal(work.folder, null);
+		assert.equal(kickoff.folder, 'Work');
+		assert.deepEqual(notes.folders, ['Work']);
+		assert.match(work.body, /See \[\[Kickoff call\]\]/);
+		assert.match(kickoff.body, /!\[\]\(blob:[0-9A-Za-z]+\)/);
+		assert.match(kickoff.body, /\[brief\.pdf\]\(blob:[0-9A-Za-z]+\)/);
+		assert.match(kickoff.body, /Back to \[\[Work\]\]/);
+		assert.doesNotMatch(kickoff.body, /^# Kickoff/);
+		assert.deepEqual(errors, []);
+	},
+
+	async 'welcome: explore the example vault'(browser) {
+		const { page, errors } = await freshPage(browser);
+		await page.waitForFunction(() => document.querySelector('main').innerText.includes('Welcome to Kurumi'));
+		await clickText(page, 'main button', 'explore an example');
+		await page.waitForFunction(() => document.querySelector('input[aria-label="Note title"]')?.value === 'Start here', { timeout: 15_000 });
+		const counts = await db(page, `
+			let v; db.vaults.subscribe((x) => (v = x))();
+			let cur; db.currentVaultId.subscribe((x) => (cur = x))();
+			let ms; db.memoryObjects.subscribe((x) => (ms = x))();
+			let ai; db.actionItems.subscribe((x) => (ai = x))();
+			let ps; db.projects.subscribe((x) => (ps = x))();
+			let ss; db.meetingSeries.subscribe((x) => (ss = x))();
+			let ds; db.decisions.subscribe((x) => (ds = x))();
+			let qs; db.questions.subscribe((x) => (qs = x))();
+			return { vault: v.find((x) => x.id === cur).name, notes: ms.length, todos: ai.length, waiting: ai.filter((a) => a.assignee).length, projects: ps.map((p) => p.name), series: ss.map((s) => s.name), decisions: ds.length, questions: qs.length };
+		`);
+		assert.deepEqual(counts, { vault: 'Example', notes: 4, todos: 5, waiting: 2, projects: ['Falcon launch'], series: ['Falcon weekly'], decisions: 2, questions: 2 });
+		// The project page pulls it together
+		await page.goto(`${BASE}/projects`, { waitUntil: 'load' });
+		await page.waitForFunction(() => [...document.querySelectorAll('main a')].some((a) => a.textContent.includes('Falcon launch')), { timeout: 10_000 });
+		await clickText(page, 'main a', 'Falcon launch');
+		await page.waitForFunction(() => document.querySelector('main').innerText.includes('Which SSO vendor fits our budget?'), { timeout: 10_000 });
+		// Asking again switches to it instead of making a second one
+		await page.goto(`${BASE}/`, { waitUntil: 'load' });
+		await page.waitForSelector('aside');
+		const vaultsAfter = await db(page, `let v; db.vaults.subscribe((x) => (v = x))(); return v.filter((x) => x.name === 'Example').length;`);
+		assert.equal(vaultsAfter, 1);
 		assert.deepEqual(errors, []);
 	},
 

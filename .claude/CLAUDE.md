@@ -96,6 +96,27 @@ A doc that doesn't descend from the persisted heads (restore, adopt
 remote, reset) always gets a fresh snapshot, so old data can't merge
 back in on load. Unreadable stored data is kept under
 `kurumi-doc-unreadable-*` instead of being overwritten.
+Loaded chunks are compacted 3s after start too (`scheduleCompaction`),
+not only after an edit, so capture-and-close use doesn't pile them up.
+
+**Writing note text:** always through `setMemoryText(d, id, field,
+value)` (Automerge `updateText`, a diff), never `memory.bodyMarkdown =
+…`. Strings are collaborative text in Automerge 3; assigning one stores
+a full new copy, so with autosave the history (and load time) grew with
+every pause in typing. The e2e scenario "autosaves store the edit, not a
+copy of the note" guards this (~1.5 MB vs ~50 KB for 300 saves).
+
+**Bulk changes** (imports, generated vaults): wrap them in
+`batchUpdates(() => …)`: one store refresh and one save instead of one
+per item. Code inside reads the document directly; derived stores
+update at the end.
+
+**Scale, measured (Oct 2026):** load time is dominated by Automerge
+text: ~0.65 s per million characters of note bodies (10k notes of
+2.7 KB: 17 s). Plain (`ImmutableString`) bodies load the same in ~1 s,
+but reading them yields objects and a fresh history is needed for the
+gain, which every sync backend would have to adopt instead of merge;
+not done yet.
 
 **MemoryObject** is the unified capture shape — text notes, voice
 memos, meetings, files, references all use it, distinguished by `type`.
@@ -281,7 +302,16 @@ OpenAI to MMS when the API key is missing.
 ### Export / Import
 - Markdown export in three formats (vanilla, Hugo, Zola) with
   full front matter, transcripts, summaries, action items, open
-  questions
+  questions. Images, recordings and attachments go into `<vault>/assets/`
+  in the ZIP, linked relatively (`collectAssets` / `linkAssets`)
+- Notion import (`utils/notion-import.ts`): the "Markdown & CSV" ZIP
+  (ZIPs inside are opened); ids stripped, page tree → folders, page links
+  → [[wikilinks]] (no aliases: Kurumi has no `[[a|b]]`), files stored as
+  blob refs, CSV tables skipped (rows come as pages)
+- Example vault (`src/lib/example-vault.ts`): welcome screen "explore an
+  example" or ⌘K "Explore example vault"; a separate vault named
+  `Example` with a project, meeting series, to-dos, decisions, questions
+  and people, dated relative to today
 - Single-memory download from memory detail page
 - All-vaults ZIP export (one top-level folder per vault, named by
   `vaultDirNames` in `markdown-export.ts`, shared with the folder mirror)
@@ -326,6 +356,10 @@ OpenAI to MMS when the API key is missing.
   reloads, so editors save on `pagehide`; that IndexedDB write can be cut
   off by the unload, so the text is also stashed in localStorage
   (`src/lib/unsaved.ts`) and applied at the next start if missing
+- `stores/notice.ts` + `NoticeToast.svelte`: one short app-wide message
+  (`showNotice`), e.g. an attachment not synced to this device yet
+- Settings → Offline & storage says what this browser can't do as an
+  installed app (iOS: no share target, file handling or background checks)
 - Sync skips network methods while offline and runs on `online`;
   SyncFab shows "Offline". Settings → Offline & storage shows status,
   space used, version (`__KURUMI_VERSION__`), and resets the offline copy
@@ -508,6 +542,6 @@ About and Settings → Offline & storage.
 
 ## Contributing
 
-Personal project — fork and adapt for your own setup. The original
+MIT licensed (`LICENSE`). Fork and adapt for your own setup. The original
 phase plan is `.claude/plans/kurumi-roadmap.md` (largely done); what's
 next is tracked in `.claude/plans/next-phase-roadmap.md`.

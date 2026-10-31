@@ -765,6 +765,11 @@ export async function initDB(): Promise<void> {
 
 		docStore.set(doc);
 
+		// Fold the chunks just loaded into a snapshot soon after start.
+		// Compaction otherwise only follows an edit plus 20s idle, so a
+		// capture-and-close habit let chunks pile up and slowed every load.
+		scheduleCompaction(3_000);
+
 		// Auto-cleanup old trash items (>30 days)
 		const cleanedUp = cleanupOldTrashInternal();
 		if (cleanedUp > 0) {
@@ -883,7 +888,7 @@ async function writeDocLoop(): Promise<void> {
 	scheduleCompaction();
 }
 
-function scheduleCompaction(): void {
+function scheduleCompaction(delay = COMPACT_AFTER_IDLE_MS): void {
 	clearTimeout(compactTimer);
 	if (savedChunks.length === 0) return;
 	compactTimer = setTimeout(() => {
@@ -904,7 +909,7 @@ function scheduleCompaction(): void {
 		};
 		if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 10_000 });
 		else run();
-	}, COMPACT_AFTER_IDLE_MS);
+	}, delay);
 }
 
 function saveDoc(): Promise<void> {
@@ -919,6 +924,23 @@ function saveDoc(): Promise<void> {
 	return saving.then(() => (saveDirty ? saveDoc() : undefined));
 }
 
+/**
+ * Set a note's text field by diff (Automerge.updateText), so a save stores
+ * the edit instead of a full new copy of the text. Assigning a string
+ * replaces the whole collaborative text: with autosave every pause in
+ * typing added the note again to the history, growing the vault (and its
+ * load time) without bound.
+ */
+type MemoryTextField = 'title' | 'bodyMarkdown' | 'rawText' | 'summaryLong' | 'transcript';
+function setMemoryText(d: KurumiDocument, id: string, field: MemoryTextField, value: string): void {
+	const memory = d.memoryObjects[id] as unknown as Record<string, unknown> | undefined;
+	if (!memory) return;
+	const current = memory[field];
+	if (current === value) return;
+	if (typeof current === 'string') Automerge.updateText(d, ['memoryObjects', id, field], value);
+	else memory[field] = value;
+}
+
 // Update document with a change function
 function updateDoc(changeFn: (doc: KurumiDocument) => void): void {
 	if (!doc) {
@@ -926,8 +948,36 @@ function updateDoc(changeFn: (doc: KurumiDocument) => void): void {
 		return;
 	}
 	doc = Automerge.change(doc, changeFn);
+	if (batchDepth > 0) {
+		batchDirty = true;
+		return;
+	}
 	docStore.set(doc);
 	saveDoc(); // Fire and forget, we have local state
+}
+
+let batchDepth = 0;
+let batchDirty = false;
+
+/**
+ * Run many updates (imports, bulk edits) with one store refresh and one
+ * save at the end. Every update otherwise re-derives each list from the
+ * whole document and starts a save, which made a 10,000-note import take
+ * minutes. Changes still apply to the document immediately, so code in
+ * the batch reads them; only subscribers see the result late.
+ */
+export function batchUpdates<T>(fn: () => T): T {
+	batchDepth++;
+	try {
+		return fn();
+	} finally {
+		batchDepth--;
+		if (batchDepth === 0 && batchDirty) {
+			batchDirty = false;
+			docStore.set(doc);
+			saveDoc();
+		}
+	}
 }
 
 // Fire-and-forget deletion of any blob refs and the cached embedding for
@@ -1280,7 +1330,7 @@ export async function transcribeMemoryAudio(
 		updateDoc((d) => {
 			const memory = d.memoryObjects[memoryId];
 			if (!memory) return;
-			memory.transcript = result.value!.text;
+			setMemoryText(d, memory.id, 'transcript', result.value!.text);
 			memory.processingState = 'summarizing';
 			memory.processingError = null;
 			memory.transcriptSegments.splice(0, memory.transcriptSegments.length);
@@ -1343,7 +1393,7 @@ export async function transcribeMemoryAudio(
 			if (!memory) return;
 			if (meetingSummary) {
 				if (meetingSummary.summaryShort) memory.summaryShort = meetingSummary.summaryShort;
-				if (meetingSummary.summaryLong) memory.summaryLong = meetingSummary.summaryLong;
+				if (meetingSummary.summaryLong) setMemoryText(d, memory.id, 'summaryLong', meetingSummary.summaryLong);
 
 				// Replace decisions and topics arrays (Automerge needs in-place mutation)
 				memory.decisions.splice(0, memory.decisions.length);
@@ -1374,7 +1424,7 @@ export async function transcribeMemoryAudio(
 						memory.title.startsWith('Voice memo —') ||
 						memory.title === 'Untitled';
 					if (looksAutoTitled) {
-						memory.title = meetingSummary.title;
+						setMemoryText(d, memory.id, 'title', meetingSummary.title);
 					}
 				}
 			}
@@ -1425,7 +1475,7 @@ export async function transcribeMemoryAudio(
 			const looksAutoTitled =
 				memory.title.startsWith('Voice memo —') || memory.title === 'Untitled';
 			if (looksAutoTitled) {
-				memory.title = title;
+				setMemoryText(d, memory.id, 'title', title);
 			}
 		}
 
@@ -1638,9 +1688,9 @@ export function updateMemoryObject(
 	updateDoc((d) => {
 		const memory = d.memoryObjects[id];
 		if (!memory) return;
-		if (updates.title !== undefined) memory.title = updates.title;
-		if (updates.bodyMarkdown !== undefined) memory.bodyMarkdown = updates.bodyMarkdown;
-		if (updates.rawText !== undefined) memory.rawText = updates.rawText;
+		if (updates.title !== undefined) setMemoryText(d, memory.id, 'title', updates.title);
+		if (updates.bodyMarkdown !== undefined) setMemoryText(d, memory.id, 'bodyMarkdown', updates.bodyMarkdown);
+		if (updates.rawText !== undefined) setMemoryText(d, memory.id, 'rawText', updates.rawText);
 		if (updates.tags !== undefined) {
 			// Clear and repopulate tags array for Automerge
 			while (memory.tags.length > 0) memory.tags.pop();
@@ -1650,6 +1700,7 @@ export function updateMemoryObject(
 		if (updates.processingState !== undefined) memory.processingState = updates.processingState;
 		if (updates.processingError !== undefined) memory.processingError = updates.processingError;
 		if (updates.summaryShort !== undefined) memory.summaryShort = updates.summaryShort;
+		// Written once by processing, and nullable: assigned, not diffed.
 		if (updates.summaryLong !== undefined) memory.summaryLong = updates.summaryLong;
 		if (updates.transcript !== undefined) memory.transcript = updates.transcript;
 		memory.updatedAt = Date.now();
@@ -2204,7 +2255,7 @@ export function mergePeople(sourceId: string, targetId: string): PeopleMergeSnap
 			if (memory.vaultId !== tgt.vaultId) continue;
 
 			if (atRegex.test(memory.bodyMarkdown)) {
-				memory.bodyMarkdown = memory.bodyMarkdown.replace(atRegex, `@${tgt.name}`);
+				setMemoryText(d, memory.id, 'bodyMarkdown', memory.bodyMarkdown.replace(atRegex, `@${tgt.name}`));
 				memory.updatedAt = Date.now();
 			}
 			atRegex.lastIndex = 0;
@@ -2263,7 +2314,7 @@ export function restoreFromPeopleMergeSnapshot(snapshot: PeopleMergeSnapshot): v
 			const memory = d.memoryObjects[m.memoryId];
 			if (!memory) continue;
 			if (m.bodyMarkdown !== undefined) {
-				memory.bodyMarkdown = m.bodyMarkdown;
+				setMemoryText(d, memory.id, 'bodyMarkdown', m.bodyMarkdown);
 			}
 			if (m.participants !== undefined) {
 				memory.participants.splice(0, memory.participants.length);
@@ -4141,8 +4192,8 @@ export function applyGitImport(data: GitImportData): void {
 				continue;
 			}
 			if (m.updatedAt > existing.updatedAt) {
-				existing.title = m.title;
-				existing.bodyMarkdown = m.bodyMarkdown;
+				setMemoryText(d, existing.id, 'title', m.title);
+				setMemoryText(d, existing.id, 'bodyMarkdown', m.bodyMarkdown);
 				// Clear + repopulate so the Automerge array updates in place.
 				while (existing.tags.length > 0) existing.tags.pop();
 				for (const tag of m.tags) existing.tags.push(tag);
@@ -4647,7 +4698,7 @@ export function renameTag(oldTag: string, newTag: string): TagRenameSnapshot | n
 				// markdown body — handle that below.
 			} else {
 				regex.lastIndex = 0;
-				memory.bodyMarkdown = memory.bodyMarkdown.replace(regex, `$1#${to}`);
+				setMemoryText(d, memory.id, 'bodyMarkdown', memory.bodyMarkdown.replace(regex, `$1#${to}`));
 				memory.updatedAt = Date.now();
 			}
 
@@ -4680,7 +4731,7 @@ export function restoreFromTagRenameSnapshot(snapshot: TagRenameSnapshot): void 
 			const memory = d.memoryObjects[m.memoryId];
 			if (!memory) continue;
 			if (m.bodyMarkdown !== undefined) {
-				memory.bodyMarkdown = m.bodyMarkdown;
+				setMemoryText(d, memory.id, 'bodyMarkdown', m.bodyMarkdown);
 			}
 			if (m.tags !== undefined) {
 				memory.tags.splice(0, memory.tags.length);

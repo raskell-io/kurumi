@@ -25,6 +25,7 @@
 	import { importObsidianVault, type ObsidianImportResult } from '$lib/utils/obsidian-import';
 	import { importRoamJSON, type RoamImportResult } from '$lib/utils/roam-import';
 	import { importEvernoteEnex, type EvernoteImportResult } from '$lib/utils/evernote-import';
+	import { importNotionExport, type NotionImportResult } from '$lib/utils/notion-import';
 	import { generateBookmarklet } from '$lib/utils/web-clipper';
 	import {
 		syncState, initSyncState, sync, testConnection,
@@ -316,6 +317,15 @@
 	const formatBytes = (n: number) =>
 		n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${Math.round(n / 1e6)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`;
 	const appVersion = __KURUMI_VERSION__;
+	// What this browser can do as an installed app (see the row above Version).
+	const platform = (() => {
+		if (typeof navigator === 'undefined') return 'other';
+		const ua = navigator.userAgent;
+		if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return 'ios';
+		if (/Firefox\//.test(ua)) return 'firefox';
+		if (/Safari\//.test(ua) && !/Chrome\/|Chromium\/|Edg\//.test(ua)) return 'safari';
+		return 'chromium';
+	})();
 
 	// Import state
 	let showImportModal = $state(false);
@@ -470,6 +480,9 @@
 	let isImportingEvernote = $state(false);
 	let evernoteImportResult = $state<EvernoteImportResult | null>(null);
 	let evernoteFileInputRef: HTMLInputElement | undefined = $state();
+	let isImportingNotion = $state(false);
+	let notionImportResult = $state<NotionImportResult | null>(null);
+	let notionFileInputRef: HTMLInputElement | undefined = $state();
 
 	// In-page section nav (sticky on wide screens); highlights the section in view
 	const navSections = [
@@ -814,6 +827,20 @@
 		} finally {
 			isImportingEvernote = false;
 			if (evernoteFileInputRef) evernoteFileInputRef.value = '';
+		}
+	}
+
+	async function handleNotionFileSelect(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		isImportingNotion = true;
+		notionImportResult = null;
+		try {
+			notionImportResult = await importNotionExport(file);
+		} finally {
+			isImportingNotion = false;
+			if (notionFileInputRef) notionFileInputRef.value = '';
 		}
 	}
 
@@ -1925,6 +1952,27 @@
 
 						<div class="set-row">
 							<div class="set-row-text">
+								<div class="set-row-label">Import from Notion</div>
+								<p class="set-row-help">
+									In Notion: Settings → Export all workspace content (or a page's ⋯ → Export), format
+									<strong>Markdown &amp; CSV</strong>, with subpages. Pick the downloaded <code>.zip</code>.
+									Pages keep their nesting as folders, links become [[wikilinks]], images and files come along.
+								</p>
+								{#if notionImportResult}
+									{@render importResultLine(
+										notionImportResult,
+										`Imported ${notionImportResult.notesCreated} page${notionImportResult.notesCreated === 1 ? '' : 's'}${notionImportResult.filesStored ? ` and ${notionImportResult.filesStored} file${notionImportResult.filesStored === 1 ? '' : 's'}` : ''}`
+									)}
+								{/if}
+							</div>
+							<input bind:this={notionFileInputRef} type="file" accept=".zip,application/zip" onchange={handleNotionFileSelect} class="hidden" aria-label="Notion export" />
+							<button onclick={() => notionFileInputRef?.click()} disabled={isImportingNotion} class="k-btn">
+								{#if isImportingNotion}{@render spinner()}Importing…{:else}<Upload class="h-4 w-4" />Select file{/if}
+							</button>
+						</div>
+
+						<div class="set-row">
+							<div class="set-row-text">
 								<div class="set-row-label">Import from Evernote</div>
 								<p class="set-row-help">An <code>.enex</code> export. Notes become markdown with tags kept as #hashtags.</p>
 								{#if evernoteImportResult}
@@ -2049,6 +2097,28 @@
 								</span>
 							</div>
 						{/if}
+
+						<div class="set-row">
+							<div class="set-row-text">
+								<div class="set-row-label">On this device</div>
+								<p class="set-row-help">
+									{#if platform === 'ios'}
+										iPhone and iPad: notes, search and offline work fully once Kurumi is on the home screen.
+										Apple doesn't let web apps receive shares from other apps, open files, or check for due
+										to-dos in the background, so those three need Kurumi open.
+									{:else if platform === 'safari'}
+										Safari on the Mac: everything works in the open tab. Sharing into Kurumi, opening files
+										with it and background reminders need Chrome or Edge with Kurumi installed.
+									{:else if platform === 'firefox'}
+										Firefox: everything works in the open tab. Installing as an app, sharing into Kurumi,
+										opening files with it and background reminders need Chrome or Edge.
+									{:else}
+										Chrome or Edge: everything works, including sharing into Kurumi (Android), opening
+										<code>.md</code> files with it and background reminders once installed.
+									{/if}
+								</p>
+							</div>
+						</div>
 
 						<div class="set-row">
 							<div class="set-row-text">

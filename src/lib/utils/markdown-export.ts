@@ -5,6 +5,7 @@
 
 import type { MemoryObject, Folder, Vault } from '../db/types';
 import JSZip from 'jszip';
+import { getBlob } from '../db/blob-store';
 
 export type MarkdownExportFormat = 'vanilla' | 'hugo' | 'zola';
 
@@ -15,7 +16,87 @@ export interface ExportOptions {
 
 export interface ExportFile {
 	path: string;
-	content: string;
+	content: string | Blob;
+}
+
+// ---------------------------------------------------------------- assets
+//
+// Images, recordings and attachments live in the blob store, referenced
+// from notes as `blob:<id>`. The ZIP export carries them as files under
+// `<vault>/assets/` and points the notes at them with relative links, so
+// the export works in any markdown editor.
+
+const BLOB_REF_RE = /blob:([0-9A-Za-z]+)(?![0-9A-Za-z:])/g;
+
+const MIME_EXT: Record<string, string> = {
+	'image/avif': 'avif',
+	'image/webp': 'webp',
+	'image/png': 'png',
+	'image/jpeg': 'jpg',
+	'image/gif': 'gif',
+	'image/svg+xml': 'svg',
+	'audio/webm': 'webm',
+	'audio/ogg': 'ogg',
+	'audio/mpeg': 'mp3',
+	'audio/mp4': 'm4a',
+	'audio/wav': 'wav',
+	'video/mp4': 'mp4',
+	'video/webm': 'webm',
+	'application/pdf': 'pdf'
+};
+
+/** Blob refs a note uses: in its body, plus its recording. */
+export function blobRefsOf(memory: MemoryObject): string[] {
+	const refs = new Set<string>();
+	for (const match of (memory.bodyMarkdown ?? '').matchAll(BLOB_REF_RE)) refs.add(`blob:${match[1]}`);
+	for (const ref of [memory.rawAudioRef, memory.rawMediaRef]) if (ref?.startsWith('blob:')) refs.add(ref);
+	return [...refs];
+}
+
+/** File name for an asset: its id, with an extension from the type or the link text. */
+function assetFileName(ref: string, mimeType: string, bodies: string[]): string {
+	const id = ref.slice('blob:'.length);
+	let ext = MIME_EXT[mimeType.split(';')[0]];
+	if (!ext) {
+		// Attachments: `[report.docx](blob:id)` names its own extension.
+		const named = bodies
+			.map((b) => b.match(new RegExp(`\\[([^\\]]*\\.([A-Za-z0-9]{1,8}))\\]\\(${ref}\\)`)))
+			.find(Boolean);
+		ext = named?.[2]?.toLowerCase() ?? 'bin';
+	}
+	return `${id}.${ext}`;
+}
+
+export interface ExportAssets {
+	/** ref → file name under `assets/` */
+	names: Map<string, string>;
+	/** ref → the file */
+	blobs: Map<string, Blob>;
+}
+
+/** Read every blob the memories use. Missing blobs (not synced to this device) are left out. */
+export async function collectAssets(
+	memories: MemoryObject[],
+	readBlob: (ref: string) => Promise<{ blob: Blob; mimeType: string } | null>
+): Promise<ExportAssets> {
+	const assets: ExportAssets = { names: new Map(), blobs: new Map() };
+	const bodies = memories.map((m) => m.bodyMarkdown ?? '');
+	for (const ref of new Set(memories.flatMap(blobRefsOf))) {
+		const stored = await readBlob(ref);
+		if (!stored) continue;
+		assets.names.set(ref, assetFileName(ref, stored.mimeType, bodies));
+		assets.blobs.set(ref, stored.blob);
+	}
+	return assets;
+}
+
+/** Point a body's blob refs at the exported files, relative to the note. */
+export function linkAssets(body: string, names: Map<string, string>, depth: number): string {
+	const up = '../'.repeat(depth);
+	return body.replace(BLOB_REF_RE, (whole, id: string) => {
+		const name = names.get(`blob:${id}`);
+		return name ? `${up}assets/${name}` : whole;
+	});
 }
 
 /**
@@ -247,7 +328,8 @@ export function exportMemoryToMarkdown(
 	memory: MemoryObject,
 	memories: MemoryObject[],
 	folders: Folder[],
-	options: ExportOptions
+	options: ExportOptions,
+	assets?: { names: Map<string, string>; depth: number }
 ): string {
 	let frontMatter = '';
 
@@ -263,8 +345,13 @@ export function exportMemoryToMarkdown(
 			break;
 	}
 
-	const body = convertWikilinks(memory.bodyMarkdown, memories, memory, folders);
-	const extras = buildExtraSections(memory);
+	let body = convertWikilinks(memory.bodyMarkdown, memories, memory, folders);
+	let extras = buildExtraSections(memory);
+	if (assets) {
+		body = linkAssets(body, assets.names, assets.depth);
+		const recording = memory.rawAudioRef ? assets.names.get(memory.rawAudioRef) : undefined;
+		if (recording) extras += `\n\n[Recording](${'../'.repeat(assets.depth)}assets/${recording})\n`;
+	}
 
 	return frontMatter + body + extras;
 }
@@ -277,7 +364,8 @@ export function exportMemoriesToFiles(
 	folders: Folder[],
 	vault: Vault,
 	options: ExportOptions,
-	vaultDir: string = generateSlug(vault.name)
+	vaultDir: string = generateSlug(vault.name),
+	assets?: ExportAssets
 ): ExportFile[] {
 	const files: ExportFile[] = [];
 	const vaultSlug = vaultDir;
@@ -290,8 +378,16 @@ export function exportMemoriesToFiles(
 		const pathParts = [vaultSlug, ...folderPath, filename];
 		const path = pathParts.join('/');
 
-		const content = exportMemoryToMarkdown(memory, memories, folders, options);
+		// Depth below the vault root: notes in folders link up to assets/
+		const content = exportMemoryToMarkdown(memory, memories, folders, options, assets && { names: assets.names, depth: folderPath.length });
 		files.push({ path, content });
+	}
+
+	if (assets) {
+		const used = new Set(memories.flatMap(blobRefsOf));
+		for (const [ref, name] of assets.names) {
+			if (used.has(ref)) files.push({ path: `${vaultSlug}/assets/${name}`, content: assets.blobs.get(ref)! });
+		}
 	}
 
 	return files;
@@ -334,7 +430,8 @@ export async function exportVaultAsMarkdown(
 	vault: Vault,
 	options: ExportOptions
 ): Promise<void> {
-	const files = exportMemoriesToFiles(memories, folders, vault, options);
+	const assets = await collectAssets(memories, getBlob);
+	const files = exportMemoriesToFiles(memories, folders, vault, options, undefined, assets);
 	await downloadAsZip(files, options.format);
 }
 
@@ -348,13 +445,15 @@ export async function exportAllVaultsAsMarkdown(
 	options: ExportOptions
 ): Promise<void> {
 	const dirs = vaultDirNames(vaults);
+	const assets = await collectAssets(memories, getBlob);
 	const files = vaults.flatMap((vault) =>
 		exportMemoriesToFiles(
 			memories.filter((m) => m.vaultId === vault.id),
 			folders.filter((f) => f.vaultId === vault.id),
 			vault,
 			options,
-			dirs.get(vault.id)
+			dirs.get(vault.id),
+			assets
 		)
 	);
 	await downloadAsZip(files, options.format, 'all-vaults');

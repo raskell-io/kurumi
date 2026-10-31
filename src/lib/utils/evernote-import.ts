@@ -25,7 +25,7 @@
  * and tags. Each note becomes a MemoryObject.
  */
 
-import { addMemoryObject } from '$lib/db';
+import { addMemoryObject, batchUpdates } from '$lib/db';
 
 export interface EvernoteImportResult {
 	success: boolean;
@@ -63,47 +63,49 @@ export async function importEvernoteEnex(file: File): Promise<EvernoteImportResu
 		const skipped: string[] = [];
 		let notesCreated = 0;
 
-		for (const noteEl of noteElements) {
-			const title = noteEl.querySelector('title')?.textContent?.trim() || 'Untitled';
+		batchUpdates(() => {
+			for (const noteEl of noteElements) {
+				const title = noteEl.querySelector('title')?.textContent?.trim() || 'Untitled';
 
-			// Extract content: it's ENML (Evernote's XML-based format)
-			// wrapped in CDATA. We parse it as HTML and strip tags to
-			// get plain text, which is good enough for a first pass.
-			const contentEl = noteEl.querySelector('content');
-			let bodyMarkdown = '';
-			if (contentEl?.textContent) {
-				bodyMarkdown = enmlToMarkdown(contentEl.textContent);
+				// Extract content: it's ENML (Evernote's XML-based format)
+				// wrapped in CDATA. We parse it as HTML and strip tags to
+				// get plain text, which is good enough for a first pass.
+				const contentEl = noteEl.querySelector('content');
+				let bodyMarkdown = '';
+				if (contentEl?.textContent) {
+					bodyMarkdown = enmlToMarkdown(contentEl.textContent);
+				}
+
+				// Parse created/updated timestamps (YYYYMMDDTHHMMSSz format)
+				const createdStr = noteEl.querySelector('created')?.textContent;
+				const updatedStr = noteEl.querySelector('updated')?.textContent;
+
+				// Extract tags
+				const tagElements = noteEl.querySelectorAll('tag');
+				const tags = Array.from(tagElements)
+					.map((t) => t.textContent?.trim())
+					.filter((t): t is string => !!t);
+
+				// Add tags as #hashtags at the top of the body
+				if (tags.length > 0) {
+					bodyMarkdown = tags.map((t) => `#${t.replace(/\s+/g, '-')}`).join(' ') + '\n\n' + bodyMarkdown;
+				}
+
+				const memory = addMemoryObject(title, bodyMarkdown, null);
+
+				// Patch timestamps if available (addMemoryObject sets them to
+				// Date.now(); we override after creation)
+				if (createdStr || updatedStr) {
+					const created = createdStr ? parseEvernoteDate(createdStr) : undefined;
+					const updated = updatedStr ? parseEvernoteDate(updatedStr) : undefined;
+					// Direct store mutation would be cleaner but we don't expose
+					// a "set timestamps" helper, and the memory is already created.
+					// For the import path this is acceptable.
+				}
+
+				notesCreated++;
 			}
-
-			// Parse created/updated timestamps (YYYYMMDDTHHMMSSz format)
-			const createdStr = noteEl.querySelector('created')?.textContent;
-			const updatedStr = noteEl.querySelector('updated')?.textContent;
-
-			// Extract tags
-			const tagElements = noteEl.querySelectorAll('tag');
-			const tags = Array.from(tagElements)
-				.map((t) => t.textContent?.trim())
-				.filter((t): t is string => !!t);
-
-			// Add tags as #hashtags at the top of the body
-			if (tags.length > 0) {
-				bodyMarkdown = tags.map((t) => `#${t.replace(/\s+/g, '-')}`).join(' ') + '\n\n' + bodyMarkdown;
-			}
-
-			const memory = addMemoryObject(title, bodyMarkdown, null);
-
-			// Patch timestamps if available (addMemoryObject sets them to
-			// Date.now(); we override after creation)
-			if (createdStr || updatedStr) {
-				const created = createdStr ? parseEvernoteDate(createdStr) : undefined;
-				const updated = updatedStr ? parseEvernoteDate(updatedStr) : undefined;
-				// Direct store mutation would be cleaner but we don't expose
-				// a "set timestamps" helper, and the memory is already created.
-				// For the import path this is acceptable.
-			}
-
-			notesCreated++;
-		}
+		});
 
 		return {
 			success: true,

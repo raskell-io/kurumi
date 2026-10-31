@@ -1,7 +1,8 @@
 {
 	"name": "kurumi",
 	"private": true,
-	"version": "0.2.0",
+	"version": "0.3.0",
+	"license": "MIT",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
@@ -31,7 +32,7 @@
 		"vitest": "^4.1.4"
 	},
 	"dependencies": {
-		"@automerge/automerge": "^3.2.1",
+		"@automerge/automerge": "^3.5.0",
 		"@automerge/automerge-repo": "^2.5.1",
 		"@automerge/automerge-repo-storage-indexeddb": "^2.5.1",
 		"@huggingface/transformers": "^4.0.1",

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { createExampleVault, EXAMPLE_VAULT_NAME } from '$lib/example-vault';
 	import { search } from '$lib/search';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
@@ -105,6 +106,19 @@
 			action: () => {
 				onClose();
 				triggerUploadRecording.set(true);
+			}
+		},
+		{
+			id: 'example-vault',
+			type: 'action',
+			title: 'Explore example vault',
+			description: 'A small work project showing what Kurumi does (separate vault)',
+			icon: 'folder',
+			action: () => {
+				onClose();
+				const existing = $vaults.find((v) => v.name === EXAMPLE_VAULT_NAME);
+				if (existing) setCurrentVault(existing.id);
+				else goto(`/memory/${createExampleVault()}`);
 			}
 		},
 		{

@@ -1,4 +1,4 @@
-import { addMemoryObject, addFolder } from '$lib/db';
+import { addMemoryObject, addFolder, batchUpdates } from '$lib/db';
 
 export interface ObsidianImportResult {
 	success: boolean;
@@ -57,27 +57,30 @@ export async function importObsidianVault(): Promise<ObsidianImportResult> {
 			return depthA - depthB;
 		});
 
-		for (const folder of folders) {
-			const parentPath = getParentPath(folder.path);
-			const parentId = parentPath ? folderIdMap.get(parentPath) || null : null;
-
-			const newFolder = addFolder(folder.name, parentId);
-			folderIdMap.set(folder.path, newFolder.id);
-			foldersCreated++;
-		}
-
-		// Create memories
+		// One store refresh and save for the whole vault (see batchUpdates).
 		let notesCreated = 0;
-		for (const file of files) {
-			const parentPath = getParentPath(file.path);
-			const folderId = parentPath ? folderIdMap.get(parentPath) || null : null;
+		batchUpdates(() => {
+			for (const folder of folders) {
+				const parentPath = getParentPath(folder.path);
+				const parentId = parentPath ? folderIdMap.get(parentPath) || null : null;
 
-			// Remove .md extension for title
-			const title = file.name.replace(/\.md$/i, '');
+				const newFolder = addFolder(folder.name, parentId);
+				folderIdMap.set(folder.path, newFolder.id);
+				foldersCreated++;
+			}
 
-			addMemoryObject(title, file.content, folderId);
-			notesCreated++;
-		}
+			// Create memories
+			for (const file of files) {
+				const parentPath = getParentPath(file.path);
+				const folderId = parentPath ? folderIdMap.get(parentPath) || null : null;
+
+				// Remove .md extension for title
+				const title = file.name.replace(/\.md$/i, '');
+
+				addMemoryObject(title, file.content, folderId);
+				notesCreated++;
+			}
+		});
 
 		return {
 			success: true,

@@ -179,6 +179,17 @@ Kurumi (クルミ, "walnut" in Japanese — because it looks like a brain) is a 
 
 Visit [kurumi.raskell.io](https://kurumi.raskell.io) and install as a PWA.
 
+| | Chrome / Edge (desktop, Android) | Safari (Mac) | iPhone / iPad (home screen) | Firefox |
+|---|---|---|---|---|
+| Notes, search, to-dos, offline | ✓ | ✓ | ✓ | ✓ |
+| Install as an app | ✓ | ✓ (Dock) | ✓ | — |
+| Share into Kurumi from other apps | Android | — | — | — |
+| Open `.md` files with Kurumi | desktop | — | — | — |
+| Due to-do reminders in the background | ✓ | — | — | — |
+
+Apple doesn't give web apps the share sheet, file opening or background
+checks, so on iPhone and iPad those need Kurumi open.
+
 ### Run Locally
 
 ```bash
