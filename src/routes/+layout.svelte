@@ -15,7 +15,8 @@
 		rolloverRecurringActionItems,
 		savedSearches,
 		favoriteMemoryObjects,
-		questions
+		questions,
+		vaultNeedsNewerApp
 	} from '$lib/db';
 	import { myNames, isWaitingFor } from '$lib/work';
 	import { importRecording } from '$lib/incoming';
@@ -1168,6 +1169,12 @@
 	<UndoToast />
 	<UpdateToast />
 	<NoticeToast />
+	{#if $vaultNeedsNewerApp}
+		<div class="newer-vault" role="alert">
+			This vault was saved by a newer version of Kurumi.
+			<button class="k-btn k-btn-sm k-btn-primary" onclick={() => location.reload()}>Reload to update</button>
+		</div>
+	{/if}
 	<LockScreen />
 
 	<!-- Floating sync sign + force-sync button (bottom-right) -->
@@ -1344,5 +1351,23 @@
 	.tab-close:hover {
 		background: var(--color-active);
 		color: var(--color-text);
+	}
+
+	/* A newer Kurumi saved this vault: ask for the update (store.ts canReadDocument) */
+	.newer-vault {
+		position: fixed;
+		top: calc(0.75rem + env(safe-area-inset-top, 0px));
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 300;
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.5rem 0.5rem 0.5rem 1rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		background: var(--color-bg);
+		box-shadow: var(--shadow-lg);
+		font-size: 0.875rem;
 	}
 </style>

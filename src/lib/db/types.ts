@@ -521,6 +521,16 @@ export interface KurumiDocument {
 	/** Sync end-to-end encryption is on (src/lib/sync/crypto.ts). In the
 	 * document so every device follows the choice; keys stay per device. */
 	syncEncrypted?: boolean;
+	/** Which history this document is. "Optimize vault" starts a fresh one;
+	 * sync then adopts the newer history instead of merging the two
+	 * (src/lib/db/store.ts, mergeDoc). Absent: the original history. */
+	epoch?: { id: string; createdAt: number };
+	/** 'plain': long text fields (body, transcript, summary) are stored as
+	 * plain strings (Automerge ImmutableString), not character-level text,
+	 * so loading is fast. Absent: collaborative text everywhere. */
+	textFormat?: 'plain';
+	/** Oldest Kurumi that understands this document; older ones refuse it. */
+	minAppVersion?: string;
 	[key: string]: unknown; // Required for Automerge compatibility
 }
 

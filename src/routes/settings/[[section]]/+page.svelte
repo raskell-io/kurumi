@@ -17,6 +17,10 @@
 		syncEncrypted,
 		getLoadStats,
 		getVaultSizeStats,
+		isVaultOptimized,
+		optimizeVault,
+		undoOptimizeVault,
+		hasPreOptimizeCopy,
 		type ImportAnalysis,
 		type ConflictResolution
 	} from '$lib/db';
@@ -326,6 +330,46 @@
 	// Startup cost on this device (see Phase 2 notes in CLAUDE.md)
 	const loadStats = getLoadStats();
 	const sizeStats = getVaultSizeStats();
+
+	// Optimize vault (Phase 2): fresh history, plain long-text fields
+	let optimized = $state(isVaultOptimized());
+	let optimizing = $state(false);
+	let optimizeNote = $state<string | null>(null);
+	let optimizeError = $state<string | null>(null);
+	let canUndoOptimize = $state(false);
+	$effect(() => {
+		if (current === 'offline') hasPreOptimizeCopy().then((v) => (canUndoOptimize = v));
+	});
+	async function handleOptimize() {
+		optimizing = true;
+		optimizeError = optimizeNote = null;
+		try {
+			const { beforeBytes, afterBytes } = await optimizeVault();
+			optimized = true;
+			canUndoOptimize = true;
+			optimizeNote = `Optimized: ${formatBytes(beforeBytes)} → ${formatBytes(afterBytes)}. The next start loads the faster format; synced devices switch on their next sync.`;
+			if (isSyncConfigured()) void sync();
+		} catch (err) {
+			optimizeError = err instanceof Error ? err.message : String(err);
+		} finally {
+			optimizing = false;
+		}
+	}
+	async function handleUndoOptimize() {
+		optimizing = true;
+		optimizeError = optimizeNote = null;
+		try {
+			await undoOptimizeVault();
+			optimized = isVaultOptimized();
+			canUndoOptimize = false;
+			optimizeNote = 'Back to the previous format; edits made since were kept.';
+			if (isSyncConfigured()) void sync();
+		} catch (err) {
+			optimizeError = err instanceof Error ? err.message : String(err);
+		} finally {
+			optimizing = false;
+		}
+	}
 	// What this browser can do as an installed app (see the row above Version).
 	const platform = (() => {
 		if (typeof navigator === 'undefined') return 'other';
@@ -2285,6 +2329,41 @@
 								</div>
 							</div>
 						{/if}
+
+						<div class="set-row">
+							<div class="set-row-text">
+								<div class="set-row-label flex items-center gap-2">
+									Optimize vault
+									{#if optimized}<span class="k-badge k-badge-success"><Check class="h-3 w-3" />Optimized</span>{/if}
+								</div>
+								<p class="set-row-help">
+									{#if optimized}
+										Long text is stored in the fast format, so starts stay quick as the vault grows.
+									{:else}
+										Stores long text (note bodies, transcripts) in a format that loads many times faster:
+										seconds become a fraction of a second for large vaults. Edit history from before
+										optimizing is dropped, and if two devices edit the same note at the same moment the
+										later save wins. <strong>Update Kurumi on all your devices first</strong> (compare the
+										version below): they switch on their next sync. You can undo it on this device.
+									{/if}
+								</p>
+								{#if optimizeNote}<p class="mt-1.5 text-xs text-[var(--color-text-muted)]" role="status">{optimizeNote}</p>{/if}
+								{#if optimizeError}<p class="mt-1.5 text-xs text-[var(--color-danger)]" role="alert">{optimizeError}</p>{/if}
+							</div>
+							<div class="flex gap-1.5">
+								{#if !optimized}
+									<button class="k-btn k-btn-primary" onclick={handleOptimize} disabled={optimizing}>
+										{#if optimizing}{@render spinner()}{/if}
+										Optimize
+									</button>
+								{:else if canUndoOptimize}
+									<button class="k-btn" onclick={handleUndoOptimize} disabled={optimizing}>
+										{#if optimizing}{@render spinner()}{/if}
+										Undo
+									</button>
+								{/if}
+							</div>
+						</div>
 
 						<div class="set-row">
 							<div class="set-row-text">

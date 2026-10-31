@@ -111,12 +111,33 @@ copy of the note" guards this (~1.5 MB vs ~50 KB for 300 saves).
 per item. Code inside reads the document directly; derived stores
 update at the end.
 
-**Scale, measured (Oct 2026):** load time is dominated by Automerge
-text: ~0.65 s per million characters of note bodies (10k notes of
-2.7 KB: 17 s). Plain (`ImmutableString`) bodies load the same in ~1 s,
-but reading them yields objects and a fresh history is needed for the
-gain, which every sync backend would have to adopt instead of merge;
-not done yet.
+**Optimized vaults (Phase 2):** Settings → Offline & storage → Optimize
+vault (`optimizeVault`) rebuilds the document as a fresh history
+(`doc.epoch`) with long text fields (`bodyMarkdown`, `transcript`,
+`summaryLong`, `rawText`) as Automerge `ImmutableString`s
+(`doc.textFormat = 'plain'`, `doc.minAppVersion = PLAIN_FORMAT_SINCE`).
+Measured at 10k notes: database load 11.9 s → 0.9 s. The old database is
+kept under `kurumi-doc-before-optimize` (`undoOptimizeVault`, which keeps
+edits made since). Rules for code in `store.ts`:
+- Read memories outside change callbacks through `memoriesView()` /
+  `memoriesOf(doc)` (plain JS strings, cached per memory object), never
+  `doc.memoryObjects` directly: ImmutableStrings come back as objects.
+- Inside change callbacks wrap text before string methods:
+  `plainText(memory.bodyMarkdown)`.
+- Write memories with `toStored(memory, d)`, text fields with
+  `setMemoryText` / `storedText(d, …)`.
+- Other modules only see memories through store exports, which are
+  already plain.
+Sync across histories (`mergeDoc`): same epoch → CRDT merge; different →
+the newer epoch wins and the other side's records are merged in by
+`mergeRecords` (every collection, union by id, newest timestamp wins).
+`mergeRecords` is also the fallback when a CRDT merge of unrelated copies
+loses records (it replaced `manualMerge`, which missed 8 collections). A
+document with `minAppVersion` newer than this app is refused
+(`NewerVaultError`; on load the layout asks to reload). The local agent
+needs no change: its merge driver already refuses unrelated histories and
+parks them for `mergeDoc`.
+Text format load cost: ~0.65 s per million characters; plain: a fraction.
 
 **MemoryObject** is the unified capture shape — text notes, voice
 memos, meetings, files, references all use it, distinguished by `type`.

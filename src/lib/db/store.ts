@@ -1,5 +1,5 @@
 import * as Automerge from '@automerge/automerge';
-import { get, set, setMany } from 'idb-keyval';
+import { get, set, setMany, del } from 'idb-keyval';
 import { writable, derived, type Readable } from 'svelte/store';
 import { deleteBlob, getBlob } from './blob-store';
 import { deleteEmbedding, embedMemory } from '$lib/embeddings';
@@ -88,7 +88,7 @@ export const memoryObjects: Readable<MemoryObject[]> = derived(
 	[docStore, currentVaultId],
 	([$doc, $vaultId]) => {
 		if (!$doc) return [];
-		return Object.values($doc.memoryObjects)
+		return Object.values(memoriesOf($doc))
 			.filter((m) => m.vaultId === $vaultId && !m.deletedAt)
 			.sort((a, b) => b.updatedAt - a.updatedAt);
 	}
@@ -241,7 +241,7 @@ export const draftProposals: Readable<DraftProposal[]> = derived(
 // All memory objects across all vaults (for cross-vault operations), excludes deleted
 export const allMemoryObjects: Readable<MemoryObject[]> = derived(docStore, ($doc) => {
 	if (!$doc) return [];
-	return Object.values($doc.memoryObjects)
+	return Object.values(memoriesOf($doc))
 		.filter((m) => !m.deletedAt)
 		.sort((a, b) => b.updatedAt - a.updatedAt);
 });
@@ -261,7 +261,7 @@ export function getVaultContents(vaultId: string): {
 	const inVault = <T extends { vaultId: string }>(items: Record<string, T> | undefined) =>
 		Object.values(items ?? {}).filter((item) => item.vaultId === vaultId);
 	return {
-		memories: inVault(d.memoryObjects).filter((m) => !m.deletedAt),
+		memories: inVault(memoriesOf(d)).filter((m) => !m.deletedAt),
 		folders: inVault(d.folders).filter((f) => !f.deletedAt),
 		people: inVault(d.people),
 		events: inVault(d.events),
@@ -312,7 +312,7 @@ export const trashedMemoryObjects: Readable<MemoryObject[]> = derived(
 	[docStore, currentVaultId],
 	([$doc, $vaultId]) => {
 		if (!$doc) return [];
-		return Object.values($doc.memoryObjects)
+		return Object.values(memoriesOf($doc))
 			.filter((m) => m.vaultId === $vaultId && m.deletedAt !== null)
 			.sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
 	}
@@ -349,11 +349,91 @@ export const getLoadStats = () => loadStats;
 export function getVaultSizeStats(): { notes: number; textChars: number } {
 	let notes = 0;
 	let textChars = 0;
-	for (const m of Object.values(doc?.memoryObjects ?? {})) {
+	for (const m of Object.values(memoriesView())) {
 		notes++;
 		textChars += (m.bodyMarkdown?.length ?? 0) + (m.title?.length ?? 0) + (m.transcript?.length ?? 0);
 	}
 	return { notes, textChars };
+}
+
+const BEFORE_OPTIMIZE_KEY = 'kurumi-doc-before-optimize';
+
+/** The stored vault was saved by a newer Kurumi than this one (a reload updates it). */
+export const vaultNeedsNewerApp = writable(false);
+
+/** Whether this vault already uses the fast format (see optimizeVault). */
+export function isVaultOptimized(): boolean {
+	return isPlainFormat(doc);
+}
+
+/**
+ * "Optimize vault": rebuild the document as a fresh history with long text
+ * fields as plain strings, which loads many times faster. Version history
+ * before this point is dropped. The old database is kept under
+ * BEFORE_OPTIMIZE_KEY (undoOptimizeVault). Synced devices adopt the new
+ * history on their next sync (mergeDoc) once they run PLAIN_FORMAT_SINCE
+ * or later; older Kurumi versions must be updated first.
+ */
+export async function optimizeVault(): Promise<{ beforeBytes: number; afterBytes: number }> {
+	if (!doc) throw new Error('Database not initialized');
+	const before = Automerge.save(doc);
+	await set(BEFORE_OPTIMIZE_KEY, before);
+	const json = plainJSON(doc);
+
+	let fresh = Automerge.change(Automerge.init<KurumiDocument>(), (d) => {
+		const root = d as unknown as Record<string, unknown>;
+		for (const [key, value] of Object.entries(json)) {
+			if (SCALAR_KEYS.has(key)) {
+				if (key !== 'notes' && value !== undefined && value !== null) root[key] = value;
+			} else if (value && typeof value === 'object' && !Array.isArray(value)) root[key] = {};
+		}
+		d.epoch = { id: generateId(16), createdAt: Date.now() };
+		d.textFormat = 'plain';
+		d.minAppVersion = PLAIN_FORMAT_SINCE;
+	});
+	// Records in batches: one change with everything can exceed Automerge's limits.
+	const records: [string, string, unknown][] = [];
+	for (const [key, value] of Object.entries(json)) {
+		if (SCALAR_KEYS.has(key) || !value || typeof value !== 'object' || Array.isArray(value)) continue;
+		for (const [id, record] of Object.entries(value as Record<string, unknown>)) records.push([key, id, record]);
+	}
+	for (let i = 0; i < records.length; i += 500) {
+		fresh = Automerge.change(fresh, (d) => {
+			const root = d as unknown as Record<string, Record<string, unknown>>;
+			for (const [key, id, record] of records.slice(i, i + 500)) {
+				root[key][id] = key === 'memoryObjects' ? toStored(record as MemoryObject, d) : record;
+			}
+		});
+	}
+
+	doc = fresh;
+	docStore.set(doc);
+	await saveDoc(); // a fresh snapshot: the new history doesn't descend from the stored one
+	return { beforeBytes: before.length, afterBytes: Automerge.save(doc).length };
+}
+
+/** Whether a pre-optimize copy exists (undoOptimizeVault can restore it). */
+export async function hasPreOptimizeCopy(): Promise<boolean> {
+	return !!(await get(BEFORE_OPTIMIZE_KEY));
+}
+
+/**
+ * Put the database back as it was before optimizing. Edits made since are
+ * merged in record by record, so nothing typed afterwards is lost.
+ */
+export async function undoOptimizeVault(): Promise<void> {
+	const saved = await get<Uint8Array>(BEFORE_OPTIMIZE_KEY);
+	if (!saved || !doc) throw new Error('No copy from before optimizing on this device');
+	const since = plainJSON(doc);
+	doc = mergeRecords(Automerge.load<KurumiDocument>(saved), [since]);
+	// The restored history must win over the optimized one everywhere: a
+	// fresh epoch, newer than the optimize, in the original text format.
+	doc = Automerge.change(doc, (d) => {
+		d.epoch = { id: generateId(16), createdAt: Date.now() };
+	});
+	docStore.set(doc);
+	await saveDoc();
+	await del(BEFORE_OPTIMIZE_KEY);
 }
 
 export async function initDB(): Promise<void> {
@@ -377,6 +457,7 @@ export async function initDB(): Promise<void> {
 			}
 			savedChunks = chunks;
 			persistedHeads = Automerge.getHeads(doc);
+			if (!canReadDocument(doc)) vaultNeedsNewerApp.set(true);
 			loadStats = {
 				loadMs: Math.round(performance.now() - loadStart),
 				storedBytes: savedData.length + chunks.reduce((n, c) => n + c.length, 0),
@@ -773,7 +854,7 @@ export async function initDB(): Promise<void> {
 				await saveDoc();
 			}
 			if (backfillMeetingRecords) {
-				for (const m of Object.values(doc.memoryObjects)) {
+				for (const m of Object.values(memoriesView())) {
 					if (m.deletedAt) continue;
 					if ((m.decisions?.length ?? 0) > 0 || (m.meetingExtras?.unresolvedQuestions?.length ?? 0) > 0) {
 						promoteMeetingRecords(m.id);
@@ -833,7 +914,7 @@ function cleanupOldTrashInternal(): number {
 	const foldersToDelete: string[] = [];
 
 	// Collect items to delete
-	for (const m of Object.values(doc.memoryObjects)) {
+	for (const m of Object.values(memoriesView())) {
 		if (m.deletedAt && m.deletedAt < thirtyDaysAgo) {
 			memoryIdsToDelete.push(m.id);
 			deleteBlobsForMemory(m);
@@ -950,6 +1031,107 @@ function saveDoc(): Promise<void> {
 	return saving.then(() => (saveDirty ? saveDoc() : undefined));
 }
 
+// ============ Text format and history epochs (Phase 2) ============
+//
+// "Optimize vault" (optimizeVault) rebuilds the document with a fresh
+// history and long text fields as plain strings (Automerge
+// ImmutableString) instead of character-level text: loading costs
+// ~0.65 s per million characters as text, a fraction of that as plain
+// strings. The trade: two devices editing the *same* note body at the
+// same moment no longer merge character by character; the later save
+// wins (Automerge keeps the other as a conflict value).
+//
+// Reading: ImmutableString values come back as objects, so everything
+// outside a change callback reads memories through memoriesOf() /
+// memoriesView(), which return them with plain JS strings (cached per
+// memory object, so unchanged notes keep their identity). Writing:
+// toStored() / setMemoryText() / storedText() turn strings into
+// ImmutableStrings when the document is in the plain format.
+
+/** Long text fields that are plain strings in optimized vaults. */
+const PLAIN_FIELDS = ['bodyMarkdown', 'transcript', 'summaryLong', 'rawText'] as const;
+type PlainField = (typeof PLAIN_FIELDS)[number];
+const isPlainField = (field: string): field is PlainField => (PLAIN_FIELDS as readonly string[]).includes(field);
+
+/** A stored text value as a JS string (ImmutableString, text or nothing). */
+export function plainText(value: unknown): string {
+	if (typeof value === 'string') return value;
+	if (value instanceof Automerge.ImmutableString) return value.toString();
+	return value == null ? '' : String(value);
+}
+
+function isPlainFormat(d: { textFormat?: unknown } | null | undefined): boolean {
+	return d?.textFormat === 'plain';
+}
+
+/** The value to store for a long text field: an ImmutableString in plain-format documents. */
+function storedText<T extends string | null | undefined>(d: KurumiDocument, value: T): T | Automerge.ImmutableString {
+	return typeof value === 'string' && isPlainFormat(d) ? new Automerge.ImmutableString(value) : value;
+}
+
+/** A memory as it goes into the document. */
+function toStored<T extends Partial<MemoryObject>>(m: T, d: KurumiDocument): T {
+	if (!isPlainFormat(d)) return m;
+	const out: Record<string, unknown> = { ...m };
+	for (const field of PLAIN_FIELDS) if (typeof out[field] === 'string') out[field] = new Automerge.ImmutableString(out[field] as string);
+	return out as T;
+}
+
+const memoryReads = new WeakMap<object, MemoryObject>();
+/** A memory with its long text fields as JS strings. */
+function readMemory(m: MemoryObject): MemoryObject {
+	const raw = m as unknown as Record<string, unknown>;
+	if (!PLAIN_FIELDS.some((f) => raw[f] instanceof Automerge.ImmutableString)) return m;
+	let read = memoryReads.get(m);
+	if (!read) {
+		const copy: Record<string, unknown> = { ...raw };
+		for (const f of PLAIN_FIELDS) if (raw[f] instanceof Automerge.ImmutableString) copy[f] = plainText(raw[f]);
+		read = copy as unknown as MemoryObject;
+		memoryReads.set(m, read);
+	}
+	return read;
+}
+
+const recordReads = new WeakMap<object, Record<string, MemoryObject>>();
+/** A document's memories, readable as plain JS (see readMemory). */
+function memoriesOf(d: KurumiDocument | null | undefined): Record<string, MemoryObject> {
+	const source = d?.memoryObjects;
+	if (!source) return {};
+	if (!isPlainFormat(d)) return source;
+	let read = recordReads.get(source);
+	if (!read) {
+		read = {};
+		for (const [id, m] of Object.entries(source)) read[id] = readMemory(m);
+		recordReads.set(source, read);
+	}
+	return read;
+}
+const memoriesView = () => memoriesOf(doc);
+
+/** This app's version, compared with a document's minAppVersion. */
+const APP_SEMVER = __KURUMI_SEMVER__;
+/** The first version that reads plain-format documents and history epochs. */
+const PLAIN_FORMAT_SINCE = '0.4.0';
+
+function semverAtLeast(version: string, minimum: string): boolean {
+	const a = version.split('.').map((n) => parseInt(n, 10) || 0);
+	const b = minimum.split('.').map((n) => parseInt(n, 10) || 0);
+	for (let i = 0; i < 3; i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0);
+	return true;
+}
+
+/** Whether this app can read a document (its minAppVersion isn't newer than us). */
+export function canReadDocument(d: { minAppVersion?: unknown } | null | undefined): boolean {
+	return typeof d?.minAppVersion !== 'string' || semverAtLeast(APP_SEMVER, d.minAppVersion);
+}
+
+export class NewerVaultError extends Error {
+	constructor() {
+		super('A device saved this vault with a newer Kurumi. Reload this device to update it, then sync again.');
+		this.name = 'NewerVaultError';
+	}
+}
+
 /**
  * Set a note's text field by diff (Automerge.updateText), so a save stores
  * the edit instead of a full new copy of the text. Assigning a string
@@ -962,8 +1144,10 @@ function setMemoryText(d: KurumiDocument, id: string, field: MemoryTextField, va
 	const memory = d.memoryObjects[id] as unknown as Record<string, unknown> | undefined;
 	if (!memory) return;
 	const current = memory[field];
-	if (current === value) return;
-	if (typeof current === 'string') Automerge.updateText(d, ['memoryObjects', id, field], value);
+	if (plainText(current) === value && current != null) return;
+	// Optimized vaults keep long fields as plain strings: replace, don't diff.
+	if (isPlainField(field) && isPlainFormat(d)) memory[field] = new Automerge.ImmutableString(value);
+	else if (typeof current === 'string') Automerge.updateText(d, ['memoryObjects', id, field], value);
 	else memory[field] = value;
 }
 
@@ -1097,7 +1281,7 @@ export function deleteVault(id: string): { success: boolean; error?: string } {
 		return { success: false, error: 'Cannot delete the last vault' };
 	}
 
-	const memoriesInVault = Object.values(doc.memoryObjects).filter((m) => m.vaultId === id);
+	const memoriesInVault = Object.values(memoriesView()).filter((m) => m.vaultId === id);
 	const foldersInVault = Object.values(doc.folders).filter((f) => f.vaultId === id);
 
 	if (memoriesInVault.length > 0 || foldersInVault.length > 0) {
@@ -1205,7 +1389,7 @@ export function addMemoryObject(
 		vaultId
 	});
 	updateDoc((d) => {
-		d.memoryObjects[memory.id] = memory;
+		d.memoryObjects[memory.id] = toStored(memory, d);
 	});
 	return memory;
 }
@@ -1235,7 +1419,7 @@ export function addImportedMemoryObject(options: {
 	memory.createdAt = memory.capturedAt = options.createdAt;
 	memory.updatedAt = options.updatedAt;
 	updateDoc((d) => {
-		d.memoryObjects[memory.id] = memory;
+		d.memoryObjects[memory.id] = toStored(memory, d);
 	});
 	return memory;
 }
@@ -1260,7 +1444,7 @@ export function addVoiceMemo(options: {
 	memory.rawAudioRef = options.rawAudioRef;
 	memory.processingState = 'pending';
 	updateDoc((d) => {
-		d.memoryObjects[memory.id] = memory;
+		d.memoryObjects[memory.id] = toStored(memory, d);
 	});
 	return memory;
 }
@@ -1301,7 +1485,7 @@ export function addMeetingMemo(options: {
 		followUpSuggestions: []
 	};
 	updateDoc((d) => {
-		d.memoryObjects[memory.id] = memory;
+		d.memoryObjects[memory.id] = toStored(memory, d);
 	});
 	return memory;
 }
@@ -1329,7 +1513,7 @@ export function addMeetingMemo(options: {
  * downloaded, network failed, app was on an older code version, etc.).
  */
 export async function retryMemoryProcessing(memoryId: string): Promise<void> {
-	const memory = doc?.memoryObjects[memoryId];
+	const memory = memoriesView()[memoryId];
 	if (!memory || !memory.rawAudioRef) {
 		return;
 	}
@@ -1398,7 +1582,7 @@ export async function transcribeMemoryAudio(
 		return;
 	}
 
-	const memoryType = doc?.memoryObjects[memoryId]?.type;
+	const memoryType = memoriesView()[memoryId]?.type;
 
 	// Entity extraction runs in parallel with summarization for both meeting
 	// and voice-memo paths. The pipeline degrades gracefully if no provider
@@ -1411,7 +1595,7 @@ export async function transcribeMemoryAudio(
 	// the memory's capturedAt so "tomorrow" resolves relative to when
 	// the memo was taken, not when we happen to process it.
 	const anchorDate = (() => {
-		const captured = doc?.memoryObjects[memoryId]?.capturedAt ?? Date.now();
+		const captured = memoriesView()[memoryId]?.capturedAt ?? Date.now();
 		return new Date(captured).toISOString().split('T')[0];
 	})();
 	const remindersPromise = runFirstSuccessful((p) =>
@@ -1549,7 +1733,7 @@ export async function extractRemindersFromMemory(
 	memoryId: string
 ): Promise<{ reminders: number; drafts: number }> {
 	if (!doc) return { reminders: -1, drafts: -1 };
-	const memory = doc.memoryObjects[memoryId];
+	const memory = memoriesView()[memoryId];
 	if (!memory) return { reminders: -1, drafts: -1 };
 
 	const text = (memory.transcript?.trim() || memory.bodyMarkdown?.trim()) ?? '';
@@ -1720,7 +1904,7 @@ async function runFirstSuccessful<T>(
 }
 
 export function getMemoryObject(id: string): MemoryObject | undefined {
-	return doc?.memoryObjects[id];
+	return memoriesView()[id];
 }
 
 export function updateMemoryObject(
@@ -1743,8 +1927,8 @@ export function updateMemoryObject(
 		if (updates.processingError !== undefined) memory.processingError = updates.processingError;
 		if (updates.summaryShort !== undefined) memory.summaryShort = updates.summaryShort;
 		// Written once by processing, and nullable: assigned, not diffed.
-		if (updates.summaryLong !== undefined) memory.summaryLong = updates.summaryLong;
-		if (updates.transcript !== undefined) memory.transcript = updates.transcript;
+		if (updates.summaryLong !== undefined) memory.summaryLong = storedText(d, updates.summaryLong) as string | null;
+		if (updates.transcript !== undefined) memory.transcript = storedText(d, updates.transcript) as string | null;
 		memory.updatedAt = Date.now();
 	});
 }
@@ -1938,7 +2122,7 @@ export function restoreFolder(id: string, restoreContents: boolean = true): void
 
 // Permanently delete a memory object (cannot be undone)
 export function permanentlyDeleteMemoryObject(id: string): void {
-	const memory = doc?.memoryObjects[id];
+	const memory = memoriesView()[id];
 	if (memory) {
 		deleteBlobsForMemory(memory);
 	}
@@ -1963,7 +2147,7 @@ export function permanentlyDeleteFolder(id: string): void {
 	};
 	collectSubfolders(id);
 
-	for (const memory of Object.values(doc.memoryObjects)) {
+	for (const memory of Object.values(memoriesView())) {
 		if (memory.folderId && folderIdsToDelete.has(memory.folderId)) {
 			deleteBlobsForMemory(memory);
 		}
@@ -2002,7 +2186,7 @@ export function permanentlyDeleteFolder(id: string): void {
 export function emptyTrash(): void {
 	const vaultId = getCurrentVaultId();
 	if (doc) {
-		for (const memory of Object.values(doc.memoryObjects)) {
+		for (const memory of Object.values(memoriesView())) {
 			if (memory.vaultId === vaultId && memory.deletedAt) {
 				deleteBlobsForMemory(memory);
 			}
@@ -2031,7 +2215,7 @@ export function cleanupOldTrash(): number {
 	let deletedCount = 0;
 
 	if (doc) {
-		for (const memory of Object.values(doc.memoryObjects)) {
+		for (const memory of Object.values(memoriesView())) {
 			if (memory.deletedAt && memory.deletedAt < thirtyDaysAgo) {
 				deleteBlobsForMemory(memory);
 			}
@@ -2096,7 +2280,7 @@ function isDescendantFolder(ancestorId: string, descendantId: string): boolean {
 export function getMemoryObjectsInFolder(folderId: string | null): MemoryObject[] {
 	if (!doc) return [];
 	const vaultId = getCurrentVaultId();
-	return Object.values(doc.memoryObjects)
+	return Object.values(memoriesView())
 		.filter((m) => m.folderId === folderId && m.vaultId === vaultId)
 		.sort((a, b) => b.updatedAt - a.updatedAt);
 }
@@ -2252,7 +2436,7 @@ export function mergePeople(sourceId: string, targetId: string): PeopleMergeSnap
 	const sourceEsc = source.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 	const scanRegex = new RegExp(`@${sourceEsc}(?![A-Za-z])`, 'g');
 	const lower = source.name.toLowerCase();
-	for (const memory of Object.values(doc.memoryObjects)) {
+	for (const memory of Object.values(memoriesView())) {
 		if (memory.vaultId !== target.vaultId) continue;
 		const bodyWillChange = scanRegex.test(memory.bodyMarkdown);
 		scanRegex.lastIndex = 0;
@@ -2297,7 +2481,7 @@ export function mergePeople(sourceId: string, targetId: string): PeopleMergeSnap
 			if (memory.vaultId !== tgt.vaultId) continue;
 
 			if (atRegex.test(memory.bodyMarkdown)) {
-				setMemoryText(d, memory.id, 'bodyMarkdown', memory.bodyMarkdown.replace(atRegex, `@${tgt.name}`));
+				setMemoryText(d, memory.id, 'bodyMarkdown', plainText(memory.bodyMarkdown).replace(atRegex, `@${tgt.name}`));
 				memory.updatedAt = Date.now();
 			}
 			atRegex.lastIndex = 0;
@@ -2543,7 +2727,7 @@ export function getOrCreateDailyNote(isoDate: string): MemoryObject {
 
 	// Look up by title within current vault (excludes soft-deleted).
 	if (doc?.memoryObjects) {
-		for (const m of Object.values(doc.memoryObjects)) {
+		for (const m of Object.values(memoriesView())) {
 			if (
 				m.vaultId === vaultId &&
 				!m.deletedAt &&
@@ -2915,7 +3099,7 @@ export function projectForMemory(memory: MemoryObject | undefined): Project | un
 /** Whether an action item belongs to a project, directly or via its source note. */
 export function actionItemInProject(item: ActionItem, project: Project): boolean {
 	if (item.projectId) return item.projectId === project.id;
-	const memory = item.memoryObjectId ? doc?.memoryObjects[item.memoryObjectId] : undefined;
+	const memory = item.memoryObjectId ? memoriesView()[item.memoryObjectId] : undefined;
 	return !!memory?.projects?.some((n) => sameName(n, project.name));
 }
 
@@ -2926,7 +3110,7 @@ export function actionItemInProject(item: ActionItem, project: Project): boolean
  */
 export function recordInProject(rec: { projectId: string | null; memoryId: string | null }, project: Project): boolean {
 	if (rec.projectId) return rec.projectId === project.id;
-	const memory = rec.memoryId ? doc?.memoryObjects[rec.memoryId] : undefined;
+	const memory = rec.memoryId ? memoriesView()[rec.memoryId] : undefined;
 	return !!memory?.projects?.some((n) => sameName(n, project.name));
 }
 
@@ -3031,7 +3215,7 @@ export function addDecision(options: {
 	projectId?: string | null;
 }): Decision {
 	const now = Date.now();
-	const memory = options.memoryId ? doc?.memoryObjects[options.memoryId] : undefined;
+	const memory = options.memoryId ? memoriesView()[options.memoryId] : undefined;
 	const decision: Decision = {
 		id: generateId(),
 		text: options.text.trim(),
@@ -3070,7 +3254,7 @@ export function addQuestion(options: {
 	projectId?: string | null;
 }): Question {
 	const now = Date.now();
-	const memory = options.memoryId ? doc?.memoryObjects[options.memoryId] : undefined;
+	const memory = options.memoryId ? memoriesView()[options.memoryId] : undefined;
 	const question: Question = {
 		id: generateId(),
 		text: options.text.trim(),
@@ -3130,7 +3314,7 @@ export function restoreRecord<T extends Decision | Question | MeetingSeries>(col
  * entries (each at most once per note, so re-processing doesn't duplicate).
  */
 export function promoteMeetingRecords(memoryId: string): void {
-	const memory = doc?.memoryObjects[memoryId];
+	const memory = memoriesView()[memoryId];
 	if (!memory) return;
 	const decided = new Set(Object.values(doc!.decisions ?? {}).filter((x) => x.memoryId === memoryId).map((x) => x.text));
 	const asked = new Set(Object.values(doc!.questions ?? {}).filter((x) => x.memoryId === memoryId).map((x) => x.text));
@@ -3256,7 +3440,7 @@ export function startSeriesMeeting(seriesId: string): MemoryObject | undefined {
 	if (project) memory.projects = [project.name];
 	memory.participants = [...series.people];
 	updateDoc((d) => {
-		d.memoryObjects[memory.id] = memory;
+		d.memoryObjects[memory.id] = toStored(memory, d);
 		const rec = d.meetingSeries[seriesId];
 		for (const item of rec.agenda) if (!item.meetingId) item.meetingId = memory.id;
 		rec.updatedAt = Date.now();
@@ -3266,7 +3450,7 @@ export function startSeriesMeeting(seriesId: string): MemoryObject | undefined {
 
 /** Meeting notes of a series, newest first. */
 export function seriesMeetings(seriesId: string): MemoryObject[] {
-	return Object.values(doc?.memoryObjects ?? {})
+	return Object.values(memoriesView())
 		.filter((m) => m.seriesId === seriesId && !m.deletedAt)
 		.sort((a, b) => b.createdAt - a.createdAt);
 }
@@ -3375,7 +3559,7 @@ export function gradeFlashcard(id: string, quality: number): void {
  */
 export function extractFlashcardsFromMemory(memoryId: string): number {
 	if (!doc) return 0;
-	const memory = doc.memoryObjects[memoryId];
+	const memory = memoriesView()[memoryId];
 	if (!memory) return 0;
 
 	const existing = new Set(
@@ -3521,7 +3705,7 @@ export function setMemoryCustomProp(memoryId: string, key: string, value: unknow
 }
 
 export function getMemoryCustomProp(memoryId: string, key: string): unknown {
-	return doc?.memoryObjects[memoryId]?.customProps?.[key] ?? null;
+	return memoriesView()[memoryId]?.customProps?.[key] ?? null;
 }
 
 // ============ ReminderProposal CRUD ============
@@ -3773,7 +3957,7 @@ function stashDraftProposals(
  */
 export function promoteDraftActionItems(memoryId: string): void {
 	if (!doc) return;
-	const memory = doc.memoryObjects[memoryId];
+	const memory = memoriesView()[memoryId];
 	if (!memory || !memory.meetingExtras) return;
 	const existingIds = new Set(memory.actionItems);
 	const existingTexts = new Set(
@@ -3928,193 +4112,71 @@ function deepCopy<T>(obj: T): T {
 	return JSON.parse(JSON.stringify(obj));
 }
 
-// Helper to pick the most recent version of an item.
-// Folders/Vaults/People/Events still use `modified`; MemoryObjects use `updatedAt`.
-function pickNewestBy<T>(
-	local: T | undefined,
-	remote: T | undefined,
-	getTime: (item: T) => number
-): T | undefined {
-	if (!local) return remote;
-	if (!remote) return local;
-	return getTime(local) >= getTime(remote) ? local : remote;
+/** A document as plain JSON: long text fields as strings, no Automerge objects. */
+function plainJSON(d: Automerge.Doc<KurumiDocument>): Record<string, unknown> {
+	return JSON.parse(JSON.stringify(d));
 }
 
-const byModified = <T extends { modified: number }>(item: T) => item.modified;
-const byUpdatedAt = <T extends { updatedAt: number }>(item: T) => item.updatedAt;
+// Top-level fields that aren't collections of records.
+const SCALAR_KEYS = new Set(['currentVaultId', 'version', 'syncEncrypted', 'epoch', 'textFormat', 'minAppVersion', 'notes']);
 
-// Manually merge all data from both documents, preferring newest versions
-function manualMerge(
-	baseDoc: Automerge.Doc<KurumiDocument>,
-	localDoc: Automerge.Doc<KurumiDocument>,
-	remoteDoc: Automerge.Doc<KurumiDocument>
-): Automerge.Doc<KurumiDocument> {
-	// Extract plain objects from Automerge docs to avoid reference issues
-	const localData = deepCopy({
-		vaults: localDoc.vaults || {},
-		folders: localDoc.folders || {},
-		memoryObjects: localDoc.memoryObjects || {},
-		people: localDoc.people || {},
-		events: localDoc.events || {},
-		actionItems: localDoc.actionItems || {},
-		reminderProposals: localDoc.reminderProposals || {},
-		draftProposals: localDoc.draftProposals || {}
-	});
-	const remoteData = deepCopy({
-		vaults: remoteDoc.vaults || {},
-		folders: remoteDoc.folders || {},
-		memoryObjects: remoteDoc.memoryObjects || {},
-		people: remoteDoc.people || {},
-		events: remoteDoc.events || {},
-		actionItems: remoteDoc.actionItems || {},
-		reminderProposals: remoteDoc.reminderProposals || {},
-		draftProposals: remoteDoc.draftProposals || {}
-	});
+/** When a record last changed, from whichever timestamps it has. */
+function recordStamp(record: unknown): number {
+	const r = record as Record<string, unknown>;
+	let stamp = 0;
+	for (const key of ['updatedAt', 'modified', 'decidedAt', 'createdAt', 'created', 'capturedAt']) {
+		const v = r?.[key];
+		if (typeof v === 'number' && v > stamp) stamp = v;
+	}
+	return stamp;
+}
 
-	return Automerge.change(baseDoc, (d) => {
-		// Merge vaults
-		const allVaultIds = new Set([
-			...Object.keys(localData.vaults),
-			...Object.keys(remoteData.vaults)
-		]);
-		for (const id of allVaultIds) {
-			const newest = pickNewestBy(localData.vaults[id], remoteData.vaults[id], byModified);
-			if (newest && !d.vaults[id]) {
-				d.vaults[id] = newest;
+/**
+ * Merge other documents into `target` record by record: every collection,
+ * union by id, the most recently changed version wins (target keeps ties).
+ * Used across history epochs (where a CRDT merge would mix two unrelated
+ * histories) and as the fallback when a CRDT merge loses records. Writes
+ * go in batches: one huge change can exceed Automerge's limits.
+ */
+function mergeRecords(target: Automerge.Doc<KurumiDocument>, others: Record<string, unknown>[]): Automerge.Doc<KurumiDocument> {
+	const own = plainJSON(target);
+	const writes: [string, string, unknown][] = [];
+	const chosen = new Map<string, unknown>();
+	for (const other of others) {
+		for (const [key, collection] of Object.entries(other)) {
+			if (SCALAR_KEYS.has(key) || !collection || typeof collection !== 'object' || Array.isArray(collection)) continue;
+			const ownCollection = (own[key] ?? {}) as Record<string, unknown>;
+			for (const [id, record] of Object.entries(collection as Record<string, unknown>)) {
+				const slot = `${key}\u0000${id}`;
+				const best = chosen.get(slot) ?? ownCollection[id];
+				if (best === undefined || recordStamp(record) > recordStamp(best)) chosen.set(slot, record);
 			}
 		}
-
-		// Merge folders
-		const allFolderIds = new Set([
-			...Object.keys(localData.folders),
-			...Object.keys(remoteData.folders)
-		]);
-		for (const id of allFolderIds) {
-			const newest = pickNewestBy(localData.folders[id], remoteData.folders[id], byModified);
-			if (newest) {
-				d.folders[id] = newest;
+	}
+	for (const [slot, record] of chosen) {
+		const [key, id] = slot.split('\u0000');
+		writes.push([key, id, record]);
+	}
+	let merged = target;
+	for (let i = 0; i < writes.length; i += 500) {
+		merged = Automerge.change(merged, (d) => {
+			const root = d as unknown as Record<string, Record<string, unknown>>;
+			for (const [key, id, record] of writes.slice(i, i + 500)) {
+				if (!root[key]) root[key] = {};
+				root[key][id] = key === 'memoryObjects' ? toStored(record as MemoryObject, d) : record;
 			}
-		}
+		});
+	}
+	return merged;
+}
 
-		// Merge memory objects - always keep all, use newest version for conflicts
-		const allMemoryIds = new Set([
-			...Object.keys(localData.memoryObjects),
-			...Object.keys(remoteData.memoryObjects)
-		]);
-		for (const id of allMemoryIds) {
-			const newest = pickNewestBy(
-				localData.memoryObjects[id],
-				remoteData.memoryObjects[id],
-				byUpdatedAt
-			);
-			if (newest) {
-				d.memoryObjects[id] = newest;
-			}
-		}
-
-		// Merge people
-		const allPeopleIds = new Set([
-			...Object.keys(localData.people),
-			...Object.keys(remoteData.people)
-		]);
-		for (const id of allPeopleIds) {
-			const newest = pickNewestBy(localData.people[id], remoteData.people[id], byModified);
-			if (newest && !d.people[id]) {
-				d.people[id] = newest;
-			}
-		}
-
-		// Merge events
-		const allEventIds = new Set([
-			...Object.keys(localData.events),
-			...Object.keys(remoteData.events)
-		]);
-		for (const id of allEventIds) {
-			const newest = pickNewestBy(localData.events[id], remoteData.events[id], byModified);
-			if (newest && !d.events[id]) {
-				d.events[id] = newest;
-			}
-		}
-
-		// Merge action items
-		if (!d.actionItems) d.actionItems = {};
-		const allActionIds = new Set([
-			...Object.keys(localData.actionItems),
-			...Object.keys(remoteData.actionItems)
-		]);
-		for (const id of allActionIds) {
-			const newest = pickNewestBy(
-				localData.actionItems[id],
-				remoteData.actionItems[id],
-				byUpdatedAt
-			);
-			if (newest) {
-				d.actionItems[id] = newest;
-			}
-		}
-
-		// Merge reminder proposals. These don't have updatedAt; use a
-		// preference for decided > pending (so an approval on one device
-		// wins over a still-pending copy on another), then fall back to
-		// createdAt.
-		if (!d.reminderProposals) d.reminderProposals = {};
-		const allProposalIds = new Set([
-			...Object.keys(localData.reminderProposals),
-			...Object.keys(remoteData.reminderProposals)
-		]);
-		for (const id of allProposalIds) {
-			const local = localData.reminderProposals[id];
-			const remote = remoteData.reminderProposals[id];
-			if (!local && remote) {
-				d.reminderProposals[id] = remote;
-			} else if (local && !remote) {
-				d.reminderProposals[id] = local;
-			} else if (local && remote) {
-				// Prefer the side that's been decided (has a non-null decidedAt).
-				const localDecided = local.decidedAt != null;
-				const remoteDecided = remote.decidedAt != null;
-				if (localDecided && !remoteDecided) {
-					d.reminderProposals[id] = local;
-				} else if (remoteDecided && !localDecided) {
-					d.reminderProposals[id] = remote;
-				} else if (localDecided && remoteDecided) {
-					d.reminderProposals[id] =
-						(local.decidedAt ?? 0) >= (remote.decidedAt ?? 0) ? local : remote;
-				} else {
-					d.reminderProposals[id] =
-						local.createdAt >= remote.createdAt ? local : remote;
-				}
-			}
-		}
-
-		// Merge draft proposals — same decided-wins strategy
-		if (!d.draftProposals) d.draftProposals = {};
-		const allDraftIds = new Set([
-			...Object.keys(localData.draftProposals),
-			...Object.keys(remoteData.draftProposals)
-		]);
-		for (const id of allDraftIds) {
-			const local = localData.draftProposals[id];
-			const remote = remoteData.draftProposals[id];
-			if (!local && remote) {
-				d.draftProposals[id] = remote;
-			} else if (local && !remote) {
-				d.draftProposals[id] = local;
-			} else if (local && remote) {
-				const localDecided = local.decidedAt != null;
-				const remoteDecided = remote.decidedAt != null;
-				if (localDecided && !remoteDecided) d.draftProposals[id] = local;
-				else if (remoteDecided && !localDecided) d.draftProposals[id] = remote;
-				else if (localDecided && remoteDecided) {
-					d.draftProposals[id] =
-						(local.decidedAt ?? 0) >= (remote.decidedAt ?? 0) ? local : remote;
-				} else {
-					d.draftProposals[id] =
-						local.createdAt >= remote.createdAt ? local : remote;
-				}
-			}
-		}
-	});
+const LEGACY_EPOCH = { id: 'legacy', createdAt: 0 };
+const epochOf = (d: KurumiDocument) => d.epoch ?? LEGACY_EPOCH;
+/** Whether `a` is a newer history than `b` (optimized later; ids break ties). */
+function newerEpoch(a: KurumiDocument, b: KurumiDocument): boolean {
+	const ea = epochOf(a);
+	const eb = epochOf(b);
+	return ea.createdAt !== eb.createdAt ? ea.createdAt > eb.createdAt : ea.id > eb.id;
 }
 
 // Merge with a remote document (for sync)
@@ -4146,6 +4208,10 @@ export async function mergeDoc(remoteBinary: Uint8Array): Promise<void> {
 		return;
 	}
 
+	// Saved by a newer Kurumi in a format this version doesn't know: don't
+	// merge it (that could mix formats); ask for an update instead.
+	if (!canReadDocument(remoteDoc)) throw new NewerVaultError();
+
 	// If local is empty but remote has content, adopt remote
 	if (isDocEmpty(doc) && !isDocEmpty(remoteDoc)) {
 		console.log('Local empty, adopting remote document');
@@ -4162,32 +4228,42 @@ export async function mergeDoc(remoteBinary: Uint8Array): Promise<void> {
 		return;
 	}
 
+	// Different histories (one device optimized the vault): never mix them.
+	// The newer history wins; the other one's records are merged into it.
+	if (epochOf(doc).id !== epochOf(remoteDoc).id) {
+		if (newerEpoch(remoteDoc, doc)) {
+			console.log('Remote has a newer history (optimized vault); adopting it');
+			doc = mergeRecords(Automerge.clone(remoteDoc), [plainJSON(doc)]);
+		} else {
+			console.log('Remote has an older history; merging its records into ours');
+			doc = mergeRecords(doc, [plainJSON(remoteDoc)]);
+		}
+		currentVaultIdStore.set(doc.currentVaultId || DEFAULT_VAULT_ID);
+		docStore.set(doc);
+		await saveDoc();
+		return;
+	}
+
 	// Try standard Automerge CRDT merge first
 	let mergedDoc: Automerge.Doc<KurumiDocument> | null = null;
 	try {
 		mergedDoc = Automerge.merge(doc, remoteDoc);
 	} catch (mergeError) {
-		console.warn('Automerge CRDT merge failed, falling back to manual merge:', mergeError);
+		console.warn('Automerge CRDT merge failed, falling back to record merge:', mergeError);
 	}
 
-	// If CRDT merge worked, check for data loss and recover if needed
-	if (mergedDoc) {
-		const localCount = Object.keys(doc.memoryObjects || {}).length;
-		const remoteCount = Object.keys(remoteDoc.memoryObjects || {}).length;
-		const mergedCount = Object.keys(mergedDoc.memoryObjects || {}).length;
-		const expectedMin = Math.max(localCount, remoteCount);
-
-		// If merge lost memories, do manual recovery
-		if (mergedCount < expectedMin) {
-			console.log(`CRDT merge lost data (${mergedCount} < ${expectedMin}), recovering...`);
-			doc = manualMerge(mergedDoc, doc, remoteDoc);
-		} else {
-			doc = mergedDoc;
-		}
+	// Two copies that never synced (independently created collections) merge
+	// with one side's collections hidden: recover record by record.
+	const localCount = Object.keys(doc.memoryObjects || {}).length;
+	const remoteCount = Object.keys(remoteDoc.memoryObjects || {}).length;
+	if (!mergedDoc) {
+		console.log('Performing a full record merge of local and remote data');
+		doc = mergeRecords(doc, [plainJSON(remoteDoc)]);
+	} else if (Object.keys(mergedDoc.memoryObjects || {}).length < Math.max(localCount, remoteCount)) {
+		console.log('CRDT merge lost records, recovering them');
+		doc = mergeRecords(mergedDoc, [plainJSON(doc), plainJSON(remoteDoc)]);
 	} else {
-		// CRDT merge failed completely, do full manual merge
-		console.log('Performing full manual merge of local and remote data');
-		doc = manualMerge(doc, doc, remoteDoc);
+		doc = mergedDoc;
 	}
 
 	// Update the vault ID store
@@ -4230,7 +4306,7 @@ export function applyGitImport(data: GitImportData): void {
 		for (const m of data.memories) {
 			const existing = d.memoryObjects[m.id];
 			if (!existing) {
-				d.memoryObjects[m.id] = deepCopy(m);
+				d.memoryObjects[m.id] = toStored(deepCopy(m), d);
 				continue;
 			}
 			if (m.updatedAt > existing.updatedAt) {
@@ -4287,7 +4363,7 @@ export function applyGitImport(data: GitImportData): void {
 // Export all memory objects as JSON (for backup) - legacy format
 export function exportMemoryObjectsJSON(): string {
 	if (!doc) return '[]';
-	return JSON.stringify(Object.values(doc.memoryObjects), null, 2);
+	return JSON.stringify(Object.values(memoriesView()), null, 2);
 }
 
 // Full export including vaults, folders, memory objects, people, and events
@@ -4338,7 +4414,7 @@ export function exportFullJSON(): string {
 		exportedAt: new Date().toISOString(),
 		vaults: Object.values(doc.vaults || {}),
 		folders: Object.values(doc.folders || {}),
-		memoryObjects: Object.values(doc.memoryObjects || {}),
+		memoryObjects: Object.values(memoriesView()),
 		people: Object.values(doc.people || {}),
 		events: Object.values(doc.events || {})
 	};
@@ -4569,15 +4645,15 @@ export async function importJSON(
 				// Check if memory already exists
 				if (d.memoryObjects[memory.id]) {
 					if (options.conflictResolution === 'overwrite') {
-						d.memoryObjects[memory.id] = { ...memory, vaultId: targetVaultId };
+						d.memoryObjects[memory.id] = toStored({ ...memory, vaultId: targetVaultId }, d);
 						importedMemories++;
 					} else if (options.conflictResolution === 'duplicate') {
 						const newId = generateId();
-						d.memoryObjects[newId] = { ...memory, id: newId, vaultId: targetVaultId };
+						d.memoryObjects[newId] = toStored({ ...memory, id: newId, vaultId: targetVaultId }, d);
 						importedMemories++;
 					}
 				} else {
-					d.memoryObjects[memory.id] = { ...memory, vaultId: targetVaultId };
+					d.memoryObjects[memory.id] = toStored({ ...memory, vaultId: targetVaultId }, d);
 					importedMemories++;
 				}
 			}
@@ -4660,7 +4736,7 @@ export function getAllTags(): { tag: string; count: number }[] {
 	const vaultId = getCurrentVaultId();
 	const tagCounts = new Map<string, number>();
 
-	for (const memory of Object.values(doc.memoryObjects)) {
+	for (const memory of Object.values(memoriesView())) {
 		if (memory.vaultId !== vaultId) continue;
 		const tags = extractTags(memory.bodyMarkdown);
 		for (const tag of tags) {
@@ -4679,7 +4755,7 @@ export function getMemoryObjectsByTag(tag: string): MemoryObject[] {
 	const vaultId = getCurrentVaultId();
 	const lowerTag = tag.toLowerCase();
 
-	return Object.values(doc.memoryObjects).filter((memory) => {
+	return Object.values(memoriesView()).filter((memory) => {
 		if (memory.vaultId !== vaultId) return false;
 		const tags = extractTags(memory.bodyMarkdown);
 		return tags.includes(lowerTag);
@@ -4715,7 +4791,7 @@ export function renameTag(oldTag: string, newTag: string): TagRenameSnapshot | n
 
 	// First pass: snapshot touched memories BEFORE mutating.
 	const snapshot: TagRenameSnapshot = { kind: 'tag', memories: [] };
-	for (const memory of Object.values(doc.memoryObjects)) {
+	for (const memory of Object.values(memoriesView())) {
 		if (memory.vaultId !== vaultId) continue;
 		const bodyHasTag = scanRegex.test(memory.bodyMarkdown);
 		scanRegex.lastIndex = 0;
@@ -4740,7 +4816,7 @@ export function renameTag(oldTag: string, newTag: string): TagRenameSnapshot | n
 				// markdown body — handle that below.
 			} else {
 				regex.lastIndex = 0;
-				setMemoryText(d, memory.id, 'bodyMarkdown', memory.bodyMarkdown.replace(regex, `$1#${to}`));
+				setMemoryText(d, memory.id, 'bodyMarkdown', plainText(memory.bodyMarkdown).replace(regex, `$1#${to}`));
 				memory.updatedAt = Date.now();
 			}
 
@@ -4864,7 +4940,7 @@ export function getAllPeople(): { name: string; count: number }[] {
 		}
 	};
 
-	for (const memory of Object.values(doc.memoryObjects)) {
+	for (const memory of Object.values(memoriesView())) {
 		if (memory.vaultId !== vaultId) continue;
 		// @-mentions in markdown
 		for (const person of extractPeople(memory.bodyMarkdown)) {
@@ -4886,7 +4962,7 @@ export function getMemoryObjectsByPerson(name: string): MemoryObject[] {
 	const vaultId = getCurrentVaultId();
 	const target = name.toLowerCase();
 
-	return Object.values(doc.memoryObjects).filter((memory) => {
+	return Object.values(memoriesView()).filter((memory) => {
 		if (memory.vaultId !== vaultId) return false;
 		const fromMarkdown = extractPeople(memory.bodyMarkdown).some(
 			(p) => p.toLowerCase() === target
@@ -4902,7 +4978,7 @@ export function getAllExtractedTopics(): { name: string; count: number }[] {
 	const vaultId = getCurrentVaultId();
 	const counts = new Map<string, { name: string; count: number }>();
 
-	for (const memory of Object.values(doc.memoryObjects)) {
+	for (const memory of Object.values(memoriesView())) {
 		if (memory.vaultId !== vaultId) continue;
 		for (const topic of memory.topics ?? []) {
 			const key = topic.toLowerCase();
@@ -4923,7 +4999,7 @@ export function getMemoryObjectsByTopic(topic: string): MemoryObject[] {
 	const vaultId = getCurrentVaultId();
 	const target = topic.toLowerCase();
 
-	return Object.values(doc.memoryObjects).filter((memory) => {
+	return Object.values(memoriesView()).filter((memory) => {
 		if (memory.vaultId !== vaultId) return false;
 		return (memory.topics ?? []).some((t) => t.toLowerCase() === target);
 	});
@@ -4975,7 +5051,7 @@ function renameStringInArrays(
 
 	const snapshot: StringArrayRenameSnapshot = { kind: field, memories: [] };
 	// First pass: capture the pre-change arrays of every memory we'll touch.
-	for (const memory of Object.values(doc.memoryObjects)) {
+	for (const memory of Object.values(memoriesView())) {
 		if (memory.vaultId !== vaultId) continue;
 		const arr = memory[field] as string[] | undefined;
 		if (!Array.isArray(arr)) continue;
@@ -5094,7 +5170,7 @@ export function getAllExtractedProjects(): { name: string; count: number }[] {
 	const vaultId = getCurrentVaultId();
 	const counts = new Map<string, { name: string; count: number }>();
 
-	for (const memory of Object.values(doc.memoryObjects)) {
+	for (const memory of Object.values(memoriesView())) {
 		if (memory.vaultId !== vaultId) continue;
 		for (const project of memory.projects ?? []) {
 			const key = project.toLowerCase();
@@ -5115,7 +5191,7 @@ export function getMemoryObjectsByProject(project: string): MemoryObject[] {
 	const vaultId = getCurrentVaultId();
 	const target = project.toLowerCase();
 
-	return Object.values(doc.memoryObjects).filter((memory) => {
+	return Object.values(memoriesView()).filter((memory) => {
 		if (memory.vaultId !== vaultId) return false;
 		return (memory.projects ?? []).some((p) => p.toLowerCase() === target);
 	});
@@ -5158,7 +5234,7 @@ export function getAllDates(): { date: string; count: number }[] {
 	const vaultId = getCurrentVaultId();
 	const dateCounts = new Map<string, number>();
 
-	for (const memory of Object.values(doc.memoryObjects)) {
+	for (const memory of Object.values(memoriesView())) {
 		if (memory.vaultId !== vaultId) continue;
 		const dates = extractDates(memory.bodyMarkdown);
 		for (const date of dates) {
@@ -5176,7 +5252,7 @@ export function getMemoryObjectsByDate(date: string): MemoryObject[] {
 	if (!doc) return [];
 	const vaultId = getCurrentVaultId();
 
-	return Object.values(doc.memoryObjects).filter((memory) => {
+	return Object.values(memoriesView()).filter((memory) => {
 		if (memory.vaultId !== vaultId) return false;
 		const dates = extractDates(memory.bodyMarkdown);
 		return dates.includes(date);
@@ -5213,7 +5289,7 @@ export function getAllLinks(): { url: string; domain: string; count: number }[] 
 	const vaultId = getCurrentVaultId();
 	const urlCounts = new Map<string, number>();
 
-	for (const memory of Object.values(doc.memoryObjects)) {
+	for (const memory of Object.values(memoriesView())) {
 		if (memory.vaultId !== vaultId) continue;
 		const urls = extractUrls(memory.bodyMarkdown);
 		for (const url of urls) {
@@ -5231,7 +5307,7 @@ export function getMemoryObjectsByLink(url: string): MemoryObject[] {
 	if (!doc) return [];
 	const vaultId = getCurrentVaultId();
 
-	return Object.values(doc.memoryObjects).filter((memory) => {
+	return Object.values(memoriesView()).filter((memory) => {
 		if (memory.vaultId !== vaultId) return false;
 		const urls = extractUrls(memory.bodyMarkdown);
 		return urls.includes(url);
@@ -5241,13 +5317,13 @@ export function getMemoryObjectsByLink(url: string): MemoryObject[] {
 // Find memories that link to a given memory (in current vault)
 export function findBacklinks(memoryId: string): MemoryObject[] {
 	if (!doc) return [];
-	const target = doc.memoryObjects[memoryId];
+	const target = memoriesView()[memoryId];
 	if (!target) return [];
 
 	const vaultId = target.vaultId;
 	const targetTitle = target.title.toLowerCase();
 
-	return Object.values(doc.memoryObjects).filter((memory) => {
+	return Object.values(memoriesView()).filter((memory) => {
 		if (memory.id === memoryId) return false;
 		if (memory.vaultId !== vaultId) return false;
 		const links = extractWikilinks(memory.bodyMarkdown);
@@ -5260,7 +5336,7 @@ export function findMemoryObjectByTitle(title: string): MemoryObject | undefined
 	if (!doc) return undefined;
 	const vaultId = getCurrentVaultId();
 	const lowerTitle = title.toLowerCase();
-	return Object.values(doc.memoryObjects).find(
+	return Object.values(memoriesView()).find(
 		(memory) => memory.vaultId === vaultId && memory.title.toLowerCase() === lowerTitle
 	);
 }
@@ -5286,7 +5362,7 @@ function stripWikilinks(content: string): string {
  */
 export function findUnlinkedMentions(memoryId: string): MemoryObject[] {
 	if (!doc) return [];
-	const target = doc.memoryObjects[memoryId];
+	const target = memoriesView()[memoryId];
 	if (!target) return [];
 
 	const title = (target.title ?? '').trim();
@@ -5295,7 +5371,7 @@ export function findUnlinkedMentions(memoryId: string): MemoryObject[] {
 	const lowerTitle = title.toLowerCase();
 	const mentionRe = wholeWordRegex(title);
 
-	return Object.values(doc.memoryObjects).filter((memory) => {
+	return Object.values(memoriesView()).filter((memory) => {
 		if (memory.id === memoryId) return false;
 		if (memory.vaultId !== vaultId) return false;
 		if (memory.deletedAt) return false;
@@ -5365,8 +5441,9 @@ export function getMemoryHistory(id: string): MemoryVersion[] {
 
 	history.forEach((state, index) => {
 		const snapshot = state.snapshot as KurumiDocument;
-		const mem = snapshot.memoryObjects?.[id];
-		if (!mem) return;
+		const stored = snapshot.memoryObjects?.[id];
+		if (!stored) return;
+		const mem = readMemory(stored);
 		const tags = [...(mem.tags ?? [])];
 		const signature = `${mem.title} ${mem.bodyMarkdown} ${tags.join(',')}`;
 		if (signature === lastSignature) return; // unchanged at this point
@@ -5453,7 +5530,7 @@ export function getAllPeopleWithMetadata(): PersonWithMetadata[] {
 	};
 
 	// First pass: collect mentions from both regex and extracted entities
-	for (const memory of Object.values(doc.memoryObjects)) {
+	for (const memory of Object.values(memoriesView())) {
 		if (memory.vaultId !== vaultId) continue;
 		for (const name of extractPeople(memory.bodyMarkdown)) {
 			addMention(name, memory);
@@ -5494,7 +5571,7 @@ export function getAllDatesWithEvents(): DateWithEvents[] {
 	const datesMap = new Map<string, DateWithEvents>();
 
 	// First pass: collect all date mentions from memories
-	for (const memory of Object.values(doc.memoryObjects)) {
+	for (const memory of Object.values(memoriesView())) {
 		if (memory.vaultId !== vaultId) continue;
 		const dates = extractDates(memory.bodyMarkdown);
 

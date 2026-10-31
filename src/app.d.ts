@@ -6,6 +6,8 @@
 declare global {
 	/** Package version · commit · build date (vite.config.ts). */
 	const __KURUMI_VERSION__: string;
+	/** package.json version alone, e.g. "0.4.0". */
+	const __KURUMI_SEMVER__: string;
 
 	namespace App {
 		// interface Error {}

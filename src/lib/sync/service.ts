@@ -12,9 +12,9 @@ import {
 import { setSyncing, setSyncSuccess, setSyncError, syncState } from './status';
 import { openFromSync, sealForSync, encryptingTransport, SyncLockedError, WrongPassphraseError } from './crypto';
 
-/** Encryption problems read as themselves, not as a failed download. */
+/** Encryption and version problems read as themselves, not as a failed transfer. */
 function lockMessage(err: unknown): string | null {
-	return err instanceof SyncLockedError || err instanceof WrongPassphraseError ? err.message : null;
+	return err instanceof SyncLockedError || err instanceof WrongPassphraseError || err instanceof NewerVaultError ? err.message : null;
 }
 import { get, derived, type Readable } from 'svelte/store';
 import {
@@ -64,7 +64,8 @@ import {
 	addFolder,
 	addVault,
 	addImportedMemoryObject,
-	batchUpdates
+	batchUpdates,
+	NewerVaultError
 } from '$lib/db';
 import { parseMarkdownFile, parseFrontMatter, noteToMarkdownFile } from '$lib/git/convert';
 import { generateSlug, vaultDirNames } from '$lib/utils/markdown-export';
@@ -355,10 +356,10 @@ async function syncR2(): Promise<{ success: boolean; error?: string }> {
 			try {
 				await mergeDoc(remoteBinary);
 			} catch (mergeErr) {
-				const message = mergeErr instanceof Error ? mergeErr.message : 'Merge failed';
 				console.error('Sync merge error:', mergeErr);
-				setSyncError(`Merge failed: ${message}`);
-				return { success: false, error: `Merge failed: ${message}` };
+				const message = lockMessage(mergeErr) ?? `Merge failed: ${mergeErr instanceof Error ? mergeErr.message : 'Merge failed'}`;
+				setSyncError(message);
+				return { success: false, error: message };
 			}
 		}
 
@@ -418,9 +419,9 @@ async function syncS3(): Promise<{ success: boolean; error?: string }> {
 			try {
 				await mergeDoc(remoteBinary);
 			} catch (mergeErr) {
-				const message = mergeErr instanceof Error ? mergeErr.message : 'Merge failed';
-				setSyncError(`S3 merge failed: ${message}`);
-				return { success: false, error: `S3 merge failed: ${message}` };
+				const message = lockMessage(mergeErr) ?? `S3 merge failed: ${mergeErr instanceof Error ? mergeErr.message : 'Merge failed'}`;
+				setSyncError(message);
+				return { success: false, error: message };
 			}
 		}
 

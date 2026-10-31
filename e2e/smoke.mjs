@@ -1081,6 +1081,155 @@ const scenarios = {
 		}
 	},
 
+	async 'optimize vault: fast format, nothing lost, undo'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const snapshot = `
+			const strip = (d) => JSON.parse(JSON.stringify(d), (k, v) => (k === 'epoch' || k === 'textFormat' || k === 'minAppVersion' ? undefined : v));
+			const doc = JSON.parse(db.exportFullJSON());
+			return { doc, optimized: db.isVaultOptimized() };
+		`;
+		await db(page, `
+			const words = 'falcon budget roadmap hiring launch review customer contract design meeting'.split(' ');
+			db.batchUpdates(() => {
+				for (let i = 0; i < 300; i++) {
+					const m = db.addMemoryObject('Note ' + i, Array.from({ length: 120 }, (_, k) => words[(i + k) % words.length]).join(' ') + ' @Sam Lee #draft');
+					if (i % 50 === 0) db.updateMemoryObject(m.id, { transcript: 'spoken words ' + i, summaryLong: 'summary ' + i });
+				}
+			});
+			const p = db.addProject('Falcon');
+			db.addActionItem({ text: 'Ship it', dueDate: '2026-11-02', projectId: p.id });
+			db.addDecision({ text: 'Go', projectId: p.id });
+			db.addQuestion({ text: 'Budget?', projectId: p.id });
+			db.addMeetingSeries({ name: 'Weekly', people: ['Sam Lee'], cadence: 'weekly' });
+		`);
+		await sleep(800);
+		const before = await db(page, snapshot);
+		assert.equal(before.optimized, false);
+		// Load time of the stored database, before
+		const loadMs = () =>
+			page.evaluate(async () => {
+				const find = (f) => performance.getEntriesByType('resource').map((e) => e.name).find((n) => n.includes(f));
+				const A = await import(find('@automerge_automerge') ?? find('automerge'));
+				const db = await import(find('/src/lib/db/store.ts'));
+				const bytes = db.getDocBinary();
+				const t = performance.now();
+				for (let i = 0; i < 3; i++) A.load(bytes);
+				return (performance.now() - t) / 3;
+			});
+		const slow = await loadMs();
+
+		await page.goto(`${BASE}/settings/offline`, { waitUntil: 'load' });
+		await page.waitForFunction(() => [...document.querySelectorAll('main button')].some((b) => b.textContent.trim() === 'Optimize'), { timeout: 15_000 });
+		await clickText(page, 'main button', 'Optimize');
+		await page.waitForFunction(() => document.querySelector('main').innerText.includes('Optimized:'), { timeout: 30_000 });
+		const after = await db(page, snapshot);
+		assert.equal(after.optimized, true);
+		// Every record, every collection, every field: unchanged
+		const records = (d) => Object.fromEntries(Object.entries(d).filter(([, v]) => v && typeof v === 'object' && !Array.isArray(v)));
+		assert.deepEqual(records(after.doc), records(before.doc));
+		const fast = await loadMs();
+		assert.ok(fast < slow / 2, `load ${slow.toFixed(0)} ms → ${fast.toFixed(0)} ms`);
+
+		// Reading, editing, searching, people and tag renames work on the new format
+		const checks = await db(page, `
+			let ms; db.memoryObjects.subscribe((v) => (ms = v))();
+			const n7 = ms.find((m) => m.title === 'Note 7');
+			const types = new Set(ms.flatMap((m) => [typeof m.bodyMarkdown, typeof (m.transcript ?? '')]));
+			db.updateMemoryObject(n7.id, { bodyMarkdown: n7.bodyMarkdown + ' appended' });
+			db.renameTag('draft', 'final');
+			const sam = db.addPerson('Sam Lee');
+			const samuel = db.addPerson('Samuel Lee');
+			db.mergePeople(sam.id, samuel.id);
+			db.memoryObjects.subscribe((v) => (ms = v))();
+			const edited = ms.find((m) => m.title === 'Note 7').bodyMarkdown;
+			const search = await import('/src/lib/search/index.ts');
+			search.syncIndex?.();
+			return { types: [...types], edited: edited.slice(-40), searchHits: search.search('appended').length };
+		`);
+		assert.deepEqual(checks.types, ['string']);
+		assert.match(checks.edited, /@Samuel Lee #final appended$/);
+		assert.ok(checks.searchHits >= 1, 'search misses optimized notes');
+
+		// A reload reads the new format, and the note opens in the editor
+		await sleep(800);
+		await page.reload({ waitUntil: 'load' });
+		await page.waitForSelector('aside');
+		const id = await db(page, `let ms; db.memoryObjects.subscribe((v) => (ms = v))(); return ms.find((m) => m.title === 'Note 7').id;`);
+		await page.goto(`${BASE}/memory/${id}`, { waitUntil: 'load' });
+		await page.waitForFunction(() => document.querySelector('main .ProseMirror')?.textContent.includes('appended'), { timeout: 15_000 });
+
+		// Undo: back to the previous format, keeping the edit made since
+		await page.goto(`${BASE}/settings/offline`, { waitUntil: 'load' });
+		await page.waitForFunction(() => [...document.querySelectorAll('main button')].some((b) => b.textContent.trim() === 'Undo'), { timeout: 15_000 });
+		await clickText(page, 'main button', 'Undo');
+		await page.waitForFunction(() => document.querySelector('main').innerText.includes('Back to the previous format'), { timeout: 30_000 });
+		const undone = await db(page, `let ms; db.memoryObjects.subscribe((v) => (ms = v))(); return { optimized: db.isVaultOptimized(), body: ms.find((m) => m.title === 'Note 7').bodyMarkdown.slice(-9), notes: ms.length };`);
+		assert.deepEqual(undone, { optimized: false, body: ' appended', notes: 300 });
+		assert.deepEqual(errors, []);
+	},
+
+	async 'sync across an optimize: other devices adopt the new format'(browser) {
+		const SERVER = `http://localhost:${PORT + 8}`;
+		const server = await startSyncServer(PORT + 8, BASE);
+		try {
+			const pair = async () => {
+				const device = await freshPage(browser);
+				return device;
+			};
+			// A claims the server; B joins with A's link; both have the notes
+			const a = await pair();
+			await a.page.goto(`${SERVER}/`, { waitUntil: 'load' });
+			await a.page.click('#connect');
+			await a.page.waitForFunction(() => document.querySelector('main')?.innerText.includes('Syncing with localhost'), { timeout: 15_000 });
+			await db(a.page, `db.addMemoryObject('Shared', 'from A'); db.addMemoryObject('Edited later', 'v1');`);
+			const syncOn = (p) => p.evaluate(async () => (await import('/src/lib/sync/index.ts')).sync());
+			assert.deepEqual(await syncOn(a.page), { success: true });
+			await clickText(a.page, 'main button', 'Show link');
+			const link = await a.page.$eval('input[aria-label="Pairing link"]', (i) => i.value);
+			const b = await pair();
+			await b.page.goto(link, { waitUntil: 'load' });
+			await b.page.waitForFunction(() => document.querySelector('main')?.innerText.includes('Syncing with localhost'), { timeout: 15_000 });
+			await sleep(1500);
+			assert.deepEqual(await syncOn(b.page), { success: true });
+
+			// B edits offline-from-sync, A optimizes and syncs
+			await db(b.page, `let ms; db.memoryObjects.subscribe((v) => (ms = v))(); db.updateMemoryObject(ms.find((m) => m.title === 'Edited later').id, { bodyMarkdown: 'v2 from B' }); db.addMemoryObject('B only', 'new on B');`);
+			await db(a.page, `await db.optimizeVault();`);
+			assert.deepEqual(await syncOn(a.page), { success: true });
+			// B syncs: adopts A's new history, keeps its own edits
+			assert.deepEqual(await syncOn(b.page), { success: true });
+			const onB = await db(b.page, `let ms; db.memoryObjects.subscribe((v) => (ms = v))(); return { optimized: db.isVaultOptimized(), notes: Object.fromEntries(ms.map((m) => [m.title, m.bodyMarkdown])) };`);
+			assert.deepEqual(onB, { optimized: true, notes: { Shared: 'from A', 'Edited later': 'v2 from B', 'B only': 'new on B' } });
+			// …and A gets them on its next sync, in the same history (a normal merge now)
+			assert.deepEqual(await syncOn(a.page), { success: true });
+			const onA = await db(a.page, `let ms; db.memoryObjects.subscribe((v) => (ms = v))(); return Object.fromEntries(ms.map((m) => [m.title, m.bodyMarkdown]));`);
+			assert.deepEqual(onA, { Shared: 'from A', 'Edited later': 'v2 from B', 'B only': 'new on B' });
+
+			// A copy saved by a newer Kurumi is refused, not mixed in
+			await b.page.evaluate(async () => {
+				const find = (f) => performance.getEntriesByType('resource').map((e) => e.name).find((n) => n.includes(f));
+				const A = await import(find('@automerge_automerge') ?? find('automerge'));
+				const db = await import(find('/src/lib/db/store.ts'));
+				const newer = A.change(A.load(db.getDocBinary()), (d) => { d.minAppVersion = '99.0.0'; });
+				window.__newer = A.save(newer);
+			});
+			const refused = await b.page.evaluate(async () => {
+				const find = (f) => performance.getEntriesByType('resource').map((e) => e.name).find((n) => n.includes(f));
+				const db = await import(find('/src/lib/db/store.ts'));
+				try {
+					await db.mergeDoc(window.__newer);
+					return 'merged';
+				} catch (err) {
+					return err.message;
+				}
+			});
+			assert.match(refused, /newer Kurumi\. Reload this device/);
+			assert.deepEqual([...a.errors, ...b.errors], []);
+		} finally {
+			await server.close();
+		}
+	},
+
 	async 'pasting formatted text keeps its markdown'(browser) {
 		const { page, errors } = await freshPage(browser);
 		const paste = (data) =>

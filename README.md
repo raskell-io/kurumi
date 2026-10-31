@@ -55,6 +55,7 @@ Kurumi (クルミ, "walnut" in Japanese — because it looks like a brain) is a 
 | **Web clipper** | Bookmarklet captures page title, URL, and selected text |
 | **Share target** | Share text, links, images, recordings and files from any app into Kurumi (installed app) |
 | **File attachments** | Paste or drop any file into a note; PDFs and documents show as chips that open or download |
+| **Optimize vault** | Settings → Offline & storage: a faster storage format for big vaults (10,000 notes: load 12 s → under 1 s), undoable |
 | **Offline app** | Installable, starts without a connection, icon shortcuts and due to-do badge, opens `.md` files |
 | **Daily notes** | Template-based daily journal with AI-generated reflection prompts |
 

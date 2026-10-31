@@ -8,8 +8,9 @@ import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
 // Shown in Settings → Offline & storage: package version, commit, build date.
+const semver: string = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version;
 const version = (() => {
-	const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version;
+	const pkg = semver;
 	let commit = '';
 	try {
 		commit = execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
@@ -21,7 +22,9 @@ const version = (() => {
 
 export default defineConfig({
 	define: {
-		__KURUMI_VERSION__: JSON.stringify(version)
+		__KURUMI_VERSION__: JSON.stringify(version),
+		// Compared with a vault's minAppVersion (src/lib/db/store.ts)
+		__KURUMI_SEMVER__: JSON.stringify(semver)
 	},
 	plugins: [
 		wasm(),
