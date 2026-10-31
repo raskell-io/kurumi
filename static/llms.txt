@@ -2,7 +2,7 @@
 
 > A local-first, AI-native second brain that runs in the browser and works offline.
 
-Kurumi (クルミ, "walnut" in Japanese) is a personal knowledge and memory app for people who want to keep notes, voice memos, links, and meetings in one place and find them again later. You write in a Markdown editor with wikilinks, tags, and mentions, and recall notes through backlinks, a graph view, full-text and semantic search, and an AI assistant that cites its sources. It is a progressive web app: there is no account and no server, all data is stored in your browser (IndexedDB) as Automerge CRDT documents, and everything works offline. Sync is optional, through storage you choose (Git, S3-compatible storage such as Cloudflare R2, Azure Blob, WebDAV, or a local folder). AI features run on-device where possible, with remote APIs such as OpenAI as an optional fallback using your own keys. It is free and open source under the MIT licence.
+Kurumi (クルミ, "walnut" in Japanese) is a personal knowledge and memory app for people who want to keep notes, voice memos, links, and meetings in one place and find them again later. You write in a Markdown editor with wikilinks, tags, and mentions, and recall notes through backlinks, a graph view, full-text and semantic search, and an AI assistant that cites its sources. It is a progressive web app: there is no account and no Kurumi server, all data is stored in your browser (IndexedDB) as an Automerge CRDT document, and everything works offline. Sync is optional, through storage you choose: your own sync server on a free Cloudflare account (one-click deploy), Git, S3-compatible storage, Azure Blob, WebDAV, or a local folder, with optional end-to-end encryption. AI features run on-device where possible, with remote APIs such as OpenAI as an optional fallback using your own keys. It is free and open source under the MIT licence.
 
 ## Links
 
@@ -13,5 +13,9 @@ Kurumi (クルミ, "walnut" in Japanese) is a personal knowledge and memory app 
 
 ## Optional
 
-- [Local-first architecture](https://github.com/raskell-io/kurumi/blob/main/docs/local-first-architecture.md): how storage and sync work
-- [Cloudflare sync setup](https://github.com/raskell-io/kurumi/blob/main/docs/cloudflare-sync-setup.md): setting up optional sync
+- [Documentation](https://github.com/raskell-io/kurumi/blob/main/docs/README.md): all guides
+- [Getting started](https://github.com/raskell-io/kurumi/blob/main/docs/getting-started.md): install, example vault, importing notes
+- [Sync](https://github.com/raskell-io/kurumi/blob/main/docs/sync.md): every sync method and how merging works
+- [Your own sync server](https://github.com/raskell-io/kurumi/blob/main/docs/sync-server.md): one-click setup on Cloudflare
+- [AI](https://github.com/raskell-io/kurumi/blob/main/docs/ai.md): on-device models, remote providers, what leaves the device
+- [Architecture](https://github.com/raskell-io/kurumi/blob/main/docs/architecture.md): how storage, merging and sync work

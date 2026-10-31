@@ -540,7 +540,16 @@ npm test             # unit tests (Vitest)
 npm run test:e2e     # browser smoke tests (e2e/smoke.mjs; starts vite dev,
                      # headless Chrome; set CHROME_PATH if needed)
 npm run test:pwa     # production build + service worker checks (e2e/pwa.mjs)
+npm run screenshots  # production build + docs/images/*.webp from the example
+                     # vault (e2e/screenshots.mjs; THEME=dark for *-dark.webp)
 ```
+
+**Docs:** README.md is the short overview; user and developer guides
+live in `docs/` (index: `docs/README.md`). A user-visible change updates
+the guide that covers it; a changed screen means re-running
+`npm run screenshots` (and `THEME=dark npm run screenshots`). Images are
+embedded with `<picture>` (light + dark). `static/llms.txt` links the
+main guides.
 
 CI (`.github/workflows/ci.yml`) runs svelte-check, unit tests and the
 build, plus a `browser` job with both browser suites: Chrome with

@@ -2312,7 +2312,7 @@
 									</p>
 								</div>
 								<span class="text-sm tabular-nums text-[var(--color-text-muted)]">
-									{formatBytes(storage.usage)}{#if storage.quota} of {formatBytes(storage.quota)}{/if}
+									{formatBytes(storage.usage)}{#if storage.quota}{` of ${formatBytes(storage.quota)}`}{/if}
 								</span>
 							</div>
 						{/if}

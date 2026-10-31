@@ -14,7 +14,8 @@
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:e2e": "node e2e/smoke.mjs",
-		"test:pwa": "vite build && node e2e/pwa.mjs"
+		"test:pwa": "vite build && node e2e/pwa.mjs",
+		"screenshots": "vite build && node e2e/screenshots.mjs"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-auto": "^7.0.0",
