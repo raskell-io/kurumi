@@ -518,6 +518,9 @@ export interface KurumiDocument {
 	meetingSeries: Record<string, MeetingSeries>;
 	currentVaultId: string;
 	version: number;
+	/** Sync end-to-end encryption is on (src/lib/sync/crypto.ts). In the
+	 * document so every device follows the choice; keys stay per device. */
+	syncEncrypted?: boolean;
 	[key: string]: unknown; // Required for Automerge compatibility
 }
 

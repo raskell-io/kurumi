@@ -280,6 +280,27 @@ OpenAI to MMS when the API key is missing.
   the local side. Databases with unrelated history are parked as
   `kurumi-sync.incoming-*.bin`, which the app merges via `mergeDoc` and
   deletes.
+- Kurumi sync server (`worker/`, method id `r2`, shown as "Kurumi
+  server"): Cloudflare Worker + R2. `GET /` is a setup page; `POST
+  /claim` works once (token stored as a SHA-256 hash under
+  `kurumi-config/`, out of reach of `?key=`); `SYNC_TOKEN` secret still
+  accepted. Deploy button: `deploy.workers.cloudflare.com/?url=…/tree/main/worker`.
+  Pairing links (`src/lib/sync/pairing.ts`): `/#/settings/sync?pair=<base64url {url, token}>`,
+  applied then removed from the address bar; "Add a device" makes one.
+  Worker tests: `worker/src/index.test.ts` (run by `npm test`); the e2e
+  scenario runs the real worker in Node behind an in-memory bucket
+- End-to-end encryption (`src/lib/sync/crypto.ts`), optional: R2/S3/
+  WebDAV/Azure documents and blobs are sealed ("KRMENC01" | salt | iv |
+  AES-256-GCM, PBKDF2-SHA-256 600k). On/off is `doc.syncEncrypted` (synced,
+  so every device follows it; a per-device flag made devices re-seal each
+  other's readable uploads); keys stay per device in IndexedDB. Not per
+  vault: the sync file holds all vaults. Turning on derives a fresh salt
+  and key (so a new passphrase really replaces the old); devices converge
+  on the salt of the copy they open. A typed passphrase is tried first and
+  its key stored only once it opens the copy (a typo can't lock a device
+  out); a stored key for that salt is the fallback. Turning off keeps keys
+  so the sealed copy can still be read once. Git and the local folder (the
+  agent merges its binary) are never sealed
 - Git sync: clones to IndexedDB, writes memories as markdown files +
   `.kurumi/metadata.json`, pulls/pushes via isomorphic-git through a
   CORS proxy, detects real conflicts (both sides changed since last

@@ -998,6 +998,22 @@ function getCurrentVaultId(): string {
 	return doc?.currentVaultId || DEFAULT_VAULT_ID;
 }
 
+// ============ Sync encryption setting ============
+
+/** Whether sync uploads are encrypted; synced, so all devices agree. */
+export const syncEncrypted: Readable<boolean> = derived(docStore, ($doc) => !!$doc?.syncEncrypted);
+
+export function getSyncEncrypted(): boolean {
+	return !!doc?.syncEncrypted;
+}
+
+export function setSyncEncrypted(on: boolean): void {
+	if (getSyncEncrypted() === on) return;
+	updateDoc((d) => {
+		d.syncEncrypted = on;
+	});
+}
+
 // ============ Vault Operations ============
 
 export function setCurrentVault(vaultId: string): void {

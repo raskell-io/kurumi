@@ -19,6 +19,7 @@ import assert from 'node:assert/strict';
 import puppeteer from 'puppeteer';
 import JSZip from 'jszip';
 import { writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
 
 const PORT = Number(process.env.E2E_PORT ?? 5299);
 const BASE = `http://localhost:${PORT}`;
@@ -187,6 +188,35 @@ const editorHtml = (page, selector = 'main .ProseMirror') =>
 
 const treeRowText = (page) =>
 	page.$$eval('.note-row', (rows) => rows.map((r) => r.textContent.replace(/\s+/g, ' ').trim()));
+
+// The real sync worker (worker/src/index.ts) behind a local HTTP server,
+// with an in-memory R2 bucket.
+async function startSyncServer(port, appUrl) {
+	const { default: worker } = await import('../worker/src/index.ts');
+	const objects = new Map();
+	const bucket = {
+		objects,
+		async get(key) {
+			const o = objects.get(key);
+			return o && { body: o.body, httpEtag: '"x"', httpMetadata: { contentType: o.contentType }, text: async () => new TextDecoder().decode(o.body) };
+		},
+		async put(key, value, opts) {
+			const body = typeof value === 'string' ? new TextEncoder().encode(value) : new Uint8Array(value);
+			objects.set(key, { body, contentType: opts?.httpMetadata?.contentType });
+		}
+	};
+	const env = { KURUMI_BUCKET: bucket, KURUMI_APP_URL: appUrl };
+	const server = createServer(async (req, res) => {
+		const chunks = [];
+		for await (const c of req) chunks.push(c);
+		const body = ['GET', 'HEAD', 'OPTIONS'].includes(req.method) ? undefined : Buffer.concat(chunks);
+		const response = await worker.fetch(new Request(`http://localhost:${port}${req.url}`, { method: req.method, headers: req.headers, body }), env);
+		res.writeHead(response.status, Object.fromEntries(response.headers));
+		res.end(Buffer.from(await response.arrayBuffer()));
+	});
+	await new Promise((r) => server.listen(port, r));
+	return { bucket, close: () => new Promise((r) => server.close(r)) };
+}
 
 // ------------------------------------------------------------ scenarios
 
@@ -964,6 +994,90 @@ const scenarios = {
 		const vaultsAfter = await db(page, `let v; db.vaults.subscribe((x) => (v = x))(); return v.filter((x) => x.name === 'Example').length;`);
 		assert.equal(vaultsAfter, 1);
 		assert.deepEqual(errors, []);
+	},
+
+	async 'sync server: claim, pair a second device, end-to-end encryption'(browser) {
+		const SERVER = `http://localhost:${PORT + 7}`;
+		const server = await startSyncServer(PORT + 7, BASE);
+		let a, b;
+		try {
+			// Device A: the server's page → Connect Kurumi → paired and synced
+			a = await freshPage(browser);
+			await a.page.goto(`${SERVER}/`, { waitUntil: 'load' });
+			await a.page.click('#connect');
+			await a.page.waitForFunction(() => location.hash.startsWith('#/settings/sync') && !location.hash.includes('pair='), { timeout: 15_000 });
+			await a.page.waitForFunction(() => document.querySelector('main').innerText.includes('Syncing with localhost'), { timeout: 15_000 });
+			assert.ok(server.bucket.objects.has('kurumi-config/tokens.json'));
+
+			// A note and an attachment, then encryption on
+			await db(a.page, `
+				const { storeAttachment } = await import('/src/lib/attachments.ts');
+				const file = await storeAttachment(new File(['%PDF budget sheet'], 'budget.pdf', { type: 'application/pdf' }));
+				db.addMemoryObject('Secret plan', 'Falcon budget is 120k. ' + file.markdown);
+			`);
+			await a.page.type('input[aria-label="Sync passphrase"]', 'walnut-tree-42');
+			await clickText(a.page, 'main button', 'Turn on');
+			await a.page.waitForFunction(() => document.querySelector('main').innerText.includes('Encrypted. Use the same passphrase'), { timeout: 20_000 });
+			const docBytes = server.bucket.objects.get('kurumi-doc.automerge').body;
+			assert.equal(new TextDecoder().decode(docBytes.slice(0, 8)), 'KRMENC01');
+			assert.ok(!Buffer.from(docBytes).includes('Falcon'), 'document uploaded in the clear');
+			const blobObjects = [...server.bucket.objects].filter(([k]) => k.startsWith('kurumi-blobs/'));
+			assert.ok(blobObjects.length >= 2, 'manifest and file uploaded');
+			for (const [key, o] of blobObjects) assert.equal(new TextDecoder().decode(o.body.slice(0, 8)), 'KRMENC01', `${key} not sealed`);
+
+			// Add a device: A's link
+			await clickText(a.page, 'main button', 'Show link');
+			const link = await a.page.$eval('input[aria-label="Pairing link"]', (i) => i.value);
+			assert.match(link, /#\/settings\/sync\?pair=/);
+
+			// Device B: opens the link, is asked for the passphrase
+			b = await freshPage(browser);
+			await b.page.goto(link, { waitUntil: 'load' });
+			await b.page.waitForFunction(() => document.querySelector('main').innerText.includes('The synced copy is encrypted'), { timeout: 20_000 });
+			await b.page.type('input[aria-label="Sync passphrase"]', 'wrong-passphrase');
+			await clickText(b.page, 'main button', 'Unlock');
+			await b.page.waitForFunction(() => document.querySelector('main').innerText.includes("doesn't open the synced copy"), { timeout: 20_000 });
+			await b.page.type('input[aria-label="Sync passphrase"]', 'walnut-tree-42');
+			await clickText(b.page, 'main button', 'Unlock');
+			await b.page.waitForFunction(() => document.querySelector('main').innerText.includes('Unlocked'), { timeout: 20_000 });
+			const synced = await db(b.page, `let ms; db.memoryObjects.subscribe((v) => (ms = v))(); return ms.find((m) => m.title === 'Secret plan')?.bodyMarkdown ?? null;`);
+			assert.match(synced, /Falcon budget is 120k/);
+			// The attachment came along and opens on B
+			const blob = await b.page.evaluate(async (ref) => {
+				const { getBlob } = await import('/src/lib/db/blob-store.ts');
+				const stored = await getBlob(ref);
+				return stored ? await stored.blob.text() : null;
+			}, synced.match(/blob:[0-9A-Za-z]+/)[0]);
+			assert.equal(blob, '%PDF budget sheet');
+			// Turning it off on A switches every device: B's next sync stays readable
+			await a.page.reload({ waitUntil: 'load' });
+			await a.page.waitForFunction(() => [...document.querySelectorAll('main button')].some((b) => b.textContent.trim() === 'Turn off'), { timeout: 15_000 });
+			await clickText(a.page, 'main button', 'Turn off');
+			await a.page.waitForFunction(() => document.querySelector('main').innerText.includes('The synced copy is readable again'), { timeout: 20_000 });
+			const syncB = await b.page.evaluate(async () => (await import('/src/lib/sync/index.ts')).sync());
+			assert.deepEqual(syncB, { success: true });
+			const after = server.bucket.objects.get('kurumi-doc.automerge').body;
+			assert.notEqual(new TextDecoder().decode(after.slice(0, 8)), 'KRMENC01', 'B sealed the copy again');
+			// On again with a new passphrase: B (old key only) is asked for the new one
+			await a.page.type('input[aria-label="Sync passphrase"]', 'second-walnut-77');
+			await clickText(a.page, 'main button', 'Turn on');
+			await a.page.waitForFunction(() => document.querySelector('main').innerText.includes('Encrypted. Use the same passphrase'), { timeout: 20_000 });
+			const lockedB = await b.page.evaluate(async () => (await import('/src/lib/sync/index.ts')).sync());
+			assert.match(lockedB.error, /encrypted\. Enter its passphrase/);
+			await b.page.reload({ waitUntil: 'load' });
+			await b.page.waitForSelector('#sync-title', { timeout: 15_000 });
+			await clickText(b.page, 'main button', 'Sync now');
+			await b.page.waitForFunction(() => [...document.querySelectorAll('main button')].some((x) => x.textContent.trim() === 'Unlock'), { timeout: 20_000 });
+			await b.page.type('input[aria-label="Sync passphrase"]', 'second-walnut-77');
+			await clickText(b.page, 'main button', 'Unlock');
+			await b.page.waitForFunction(() => document.querySelector('main').innerText.includes('Unlocked'), { timeout: 20_000 });
+			// The server's page no longer offers to connect
+			await b.page.goto(`${SERVER}/`, { waitUntil: 'load' });
+			assert.match(await b.page.$eval('body', (e) => e.innerText), /already|is connected/);
+			assert.deepEqual([...a.errors, ...b.errors], []);
+		} finally {
+			await server.close();
+		}
 	},
 
 	async 'pasting formatted text keeps its markdown'(browser) {

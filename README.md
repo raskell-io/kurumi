@@ -135,7 +135,8 @@ Kurumi (クルミ, "walnut" in Japanese — because it looks like a brain) is a 
 | Feature | Description |
 |---------|-------------|
 | **Git sync** | Push/pull via isomorphic-git to GitHub, GitLab, Codeberg through CORS proxy |
-| **Cloudflare R2** | S3-compatible sync |
+| **Kurumi sync server** | Your own server on a free Cloudflare account: one-click deploy, connect from its page, add devices with a link |
+| **End-to-end encryption** | Optional sync passphrase: notes and files are encrypted (AES-256-GCM) before upload |
 | **S3 / Azure Blob / WebDAV** | Additional sync targets |
 | **Local filesystem** | File System Access API for local folder sync, current vault or all vaults; markdown files and folders you add there are imported |
 | **Local git agent** | `agent/kurumi-agent.mjs` commits that folder and pulls/pushes it with your system git: no token in the browser, no CORS proxy |
@@ -260,16 +261,29 @@ In read mode, `/` focuses the filter; in flashcard review, `Space` reveals and `
 
 ## Sync
 
-Kurumi supports multiple sync backends. Configure in Settings:
+The easiest way: your own **Kurumi sync server** on a free Cloudflare
+account, no command line needed.
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/raskell-io/kurumi/tree/main/worker)
+
+Deploy it, open its page and click *Connect Kurumi*; other devices join
+with the link from Settings → Sync → *Add a device*. Details in
+[worker/README.md](worker/README.md).
+
+All backends (Settings → Sync):
 
 | Backend | Description |
 |---------|-------------|
+| **Kurumi sync server** | A Cloudflare Worker + R2 on your account ([worker/](worker/)) |
 | **Git** | Push/pull markdown + metadata to any Git host via CORS proxy |
-| **Cloudflare R2** | S3-compatible object storage (free tier is plenty) |
 | **AWS S3** | Standard S3 with signed requests |
 | **Azure Blob** | Azure cloud storage |
 | **WebDAV** | Nextcloud, Synology, or any WebDAV server |
 | **Local FS** | File System Access API for local folder sync |
+
+**End-to-end encryption** (Kurumi server, S3, Azure, WebDAV): set a sync
+passphrase and the storage only holds ciphertext. Git and the local
+folder stay plain markdown by design.
 
 To keep vaults in a GitHub repo without handing the browser a token, use
 Local FS together with the local agent; see [agent/README.md](agent/README.md).
@@ -326,7 +340,7 @@ Local FS together with the local agent; see [agent/README.md](agent/README.md).
 │   IndexedDB (doc + blobs + embeddings +    │
 │   model cache) + localStorage (settings)   │
 ├────────────────────────────────────────────┤
-│   Sync: Git · R2 · S3 · WebDAV · Azure    │
+│   Sync: Kurumi server · Git · S3 · WebDAV │
 └────────────────────────────────────────────┘
 ```
 

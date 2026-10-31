@@ -2,8 +2,13 @@ name = "kurumi-sync"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
 
-# Bind your R2 bucket
-# Make sure to create the bucket first: wrangler r2 bucket create kurumi-sync
+# Pairing links open Kurumi here (change it if you host Kurumi yourself)
+[vars]
+KURUMI_APP_URL = "https://kurumi.raskell.io"
+
+# The R2 bucket holding the sync copy and attachments. The Deploy to
+# Cloudflare button creates it; for a manual setup:
+# wrangler r2 bucket create kurumi-sync
 [[r2_buckets]]
 binding = "KURUMI_BUCKET"
 bucket_name = "kurumi-sync"

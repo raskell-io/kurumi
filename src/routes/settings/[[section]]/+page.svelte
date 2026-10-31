@@ -14,6 +14,7 @@
 		vaults,
 		currentVaultId,
 		getVaultContents,
+		syncEncrypted,
 		type ImportAnalysis,
 		type ConflictResolution
 	} from '$lib/db';
@@ -85,6 +86,9 @@
 		type ModelStatus
 	} from '$lib/inference';
 	import { TTS_MODEL } from '$lib/inference/providers/tts-local';
+	import { decodePairing, applyPairing, pairingLinkForThisDevice } from '$lib/sync/pairing';
+	import { enableEncryption, disableEncryption, unlockSync, isLockMessage } from '$lib/sync/crypto';
+	import { goto } from '$app/navigation';
 	import {
 		offlineInfo,
 		storageInfo,
@@ -597,9 +601,13 @@
 		document.documentElement.classList.add(`font-size-${s}`);
 	}
 
+	// Reactive copy of isR2SyncConfigured() (localStorage isn't tracked)
+	let r2Configured = $state(isR2SyncConfigured());
+
 	function saveSyncSettings() {
 		localStorage.setItem('kurumi-sync-token', syncToken);
 		localStorage.setItem('kurumi-sync-url', syncUrl);
+		r2Configured = isR2SyncConfigured();
 		showSaved = true;
 		setTimeout(() => (showSaved = false), 2000);
 	}
@@ -620,6 +628,59 @@
 	function handleSyncMethodChange(method: SyncMethod) {
 		syncMethod = method;
 		setSyncMethod(method);
+	}
+
+	// Pairing link opened (?pair=…, from the sync server's setup page or
+	// another device): use that server and sync right away.
+	let pairedWith = $state<string | null>(null);
+	let pairError = $state<string | null>(null);
+	onMount(() => {
+		const code = $page.url.searchParams.get('pair');
+		if (code === null) return;
+		const pairing = decodePairing(code);
+		if (pairing) {
+			applyPairing(pairing);
+			syncUrl = pairing.url;
+			syncToken = pairing.token;
+			syncMethod = 'r2';
+			r2Configured = true;
+			pairedWith = new URL(pairing.url).host;
+			void sync();
+		} else {
+			pairError = "That pairing link isn't valid. Copy it again from the device that already syncs.";
+		}
+		// The link holds the token: keep it out of the address bar and history.
+		goto('/settings/sync', { replaceState: true });
+	});
+
+	// Another device: this device's server and token as a link.
+	let deviceLink = $state<string | null>(null);
+	let deviceLinkCopied = $state(false);
+
+	// End-to-end encryption of the synced copy (object-storage methods)
+	const SEALABLE: SyncMethod[] = ['r2', 's3', 'webdav', 'azure-blob'];
+	// Synced setting (all devices follow it), see $lib/sync/crypto
+	let encOn = $derived($syncEncrypted);
+	let passphrase = $state('');
+	let encBusy = $state(false);
+	let encNote = $state<string | null>(null);
+	let encError = $state<string | null>(null);
+	let syncLocked = $derived($syncState.status === 'error' && isLockMessage($syncState.error));
+
+	async function runEncryption(step: () => Promise<void> | void, done: string) {
+		encBusy = true;
+		encError = encNote = null;
+		try {
+			await step();
+			passphrase = '';
+			const result = await sync();
+			if (result.success) encNote = done;
+			else encError = result.error ?? 'Sync failed';
+		} catch (err) {
+			encError = err instanceof Error ? err.message : String(err);
+		} finally {
+			encBusy = false;
+		}
 	}
 
 	// Git sync handlers
@@ -1090,7 +1151,7 @@
 							</div>
 							<div class="k-segmented flex-wrap" role="group" aria-labelledby="sync-method-label">
 								{#each [
-									{ id: 'r2', label: 'R2' },
+									{ id: 'r2', label: 'Kurumi server' },
 									{ id: 'git', label: 'Git' },
 									{ id: 's3', label: 'S3' },
 									{ id: 'webdav', label: 'WebDAV' },
@@ -1120,7 +1181,7 @@
 											aria-pressed={mirrorMethods.includes(method as SyncMethod)}
 											class="k-btn k-btn-sm chip"
 										>
-											{method === 'r2' ? 'R2' : method === 's3' ? 'S3' : method === 'webdav' ? 'WebDAV' : method === 'local-fs' ? 'Local FS' : 'Azure'}
+											{method === 'r2' ? 'Kurumi server' : method === 's3' ? 'S3' : method === 'webdav' ? 'WebDAV' : method === 'local-fs' ? 'Local FS' : 'Azure'}
 										</button>
 									{/if}
 								{/each}
@@ -1408,36 +1469,93 @@
 								</div>
 							{/if}
 						{:else}
-							<!-- R2 Sync Configuration -->
+							<!-- Kurumi sync server (Cloudflare Worker + R2, worker/) -->
 							<div class="set-block">
 								<div>
-									<div class="set-row-label">Cloudflare R2</div>
+									<div class="set-row-label">Kurumi sync server</div>
 									<p class="set-row-help">
-										Sync through your own Cloudflare Worker. See <em>Sync setup</em> under About for a
-										walkthrough.
+										Your own sync server on your free Cloudflare account, no command line needed:
+										deploy it, open its page, click <em>Connect Kurumi</em>. Other devices join with a
+										link from <em>Add a device</em> below.
 									</p>
+									{#if pairedWith}
+										<p class="mt-2 flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]" role="status">
+											<span class="k-badge k-badge-success"><Check class="h-3 w-3" />Paired</span>
+											Syncing with {pairedWith}
+										</p>
+									{:else if pairError}
+										<p class="mt-2 text-xs text-[var(--color-danger)]" role="alert">{pairError}</p>
+									{/if}
 								</div>
-								<div>
-									<label for="syncUrl" class="k-label">Worker URL</label>
-									<input id="syncUrl" type="url" bind:value={syncUrl} placeholder="https://kurumi-sync.your-domain.workers.dev/sync" class="k-input" />
-								</div>
-								<div>
-									<label for="syncToken" class="k-label">Sync token</label>
-									<input id="syncToken" type="password" bind:value={syncToken} placeholder="Your sync authentication token" class="k-input" />
-								</div>
-								<div class="set-actions">
-									<button onclick={saveSyncSettings} class="k-btn k-btn-primary">
-										{#if showSaved}<Check class="h-4 w-4" />Saved{:else}Save{/if}
-									</button>
-									<button onclick={handleTestConnection} disabled={isTesting || !syncUrl || !syncToken} class="k-btn">
-										{#if isTesting}{@render spinner()}{:else}<Wifi class="h-4 w-4" />{/if}
-										Test connection
-									</button>
-									{@render testResultLine(testResult, 'Connected')}
-								</div>
+								{#if !r2Configured}
+									<div class="set-actions">
+										<a
+											class="k-btn k-btn-primary"
+											href="https://deploy.workers.cloudflare.com/?url=https://github.com/raskell-io/kurumi/tree/main/worker"
+											target="_blank"
+											rel="noopener noreferrer"
+										>
+											<Cloud class="h-4 w-4" />
+											Deploy to Cloudflare
+										</a>
+									</div>
+								{/if}
+								<details class="text-sm">
+									<summary class="cursor-pointer text-[var(--color-text-muted)]">Enter a server address and token by hand</summary>
+									<div class="mt-3 grid gap-3">
+										<div>
+											<label for="syncUrl" class="k-label">Worker URL</label>
+											<input id="syncUrl" type="url" bind:value={syncUrl} placeholder="https://kurumi-sync.your-domain.workers.dev/sync" class="k-input" />
+										</div>
+										<div>
+											<label for="syncToken" class="k-label">Sync token</label>
+											<input id="syncToken" type="password" bind:value={syncToken} placeholder="Your sync authentication token" class="k-input" />
+										</div>
+										<div class="set-actions">
+											<button onclick={saveSyncSettings} class="k-btn k-btn-primary">
+												{#if showSaved}<Check class="h-4 w-4" />Saved{:else}Save{/if}
+											</button>
+											<button onclick={handleTestConnection} disabled={isTesting || !syncUrl || !syncToken} class="k-btn">
+												{#if isTesting}{@render spinner()}{:else}<Wifi class="h-4 w-4" />{/if}
+												Test connection
+											</button>
+											{@render testResultLine(testResult, 'Connected')}
+										</div>
+									</div>
+								</details>
 							</div>
 
-							{#if isR2SyncConfigured()}
+							{#if r2Configured}
+								<div class="set-row">
+									<div class="set-row-text">
+										<div class="set-row-label">Add a device</div>
+										<p class="set-row-help">
+											A link that sets up sync on another device in one step. It works like a key:
+											send it only to yourself. Your encryption passphrase isn't in it.
+										</p>
+										{#if deviceLink}
+											<div class="mt-2 flex gap-1.5">
+												<input class="k-input !h-8 font-mono !text-xs" readonly value={deviceLink} aria-label="Pairing link" onfocus={(e) => e.currentTarget.select()} />
+												<button
+													class="k-btn k-btn-sm"
+													onclick={async () => {
+														await navigator.clipboard.writeText(deviceLink!);
+														deviceLinkCopied = true;
+														setTimeout(() => (deviceLinkCopied = false), 1500);
+													}}
+												>
+													{#if deviceLinkCopied}<Check class="h-3.5 w-3.5" />Copied{:else}Copy{/if}
+												</button>
+											</div>
+										{/if}
+									</div>
+									{#if !deviceLink}
+										<button class="k-btn" onclick={() => (deviceLink = pairingLinkForThisDevice())}>Show link</button>
+									{/if}
+								</div>
+							{/if}
+
+							{#if r2Configured}
 								<div class="set-row">
 									<div class="set-row-text">
 										<div class="set-row-label flex flex-wrap items-center gap-2">
@@ -1464,6 +1582,58 @@
 									</button>
 								</div>
 							{/if}
+						{/if}
+
+						{#if SEALABLE.includes(syncMethod)}
+							<div class="set-row">
+								<div class="set-row-text">
+									<div class="set-row-label flex items-center gap-2">
+										End-to-end encryption
+										{#if encOn}<span class="k-badge k-badge-success"><Shield class="h-3 w-3" />On</span>{/if}
+									</div>
+									<p class="set-row-help">
+										{#if syncLocked}
+											The synced copy is encrypted. Enter its passphrase to read it on this device.
+										{:else if encOn}
+											Notes and files are encrypted on this device before upload; the storage only holds
+											ciphertext. Every device needs the same passphrase.
+										{:else}
+											Encrypt notes and files before they leave this device, with a passphrase only your
+											devices know. If the passphrase is lost, the synced copy can't be read (notes on
+											your devices are unaffected). Mirrors to the local folder and git stay readable.
+										{/if}
+									</p>
+									{#if !encOn || syncLocked}
+										<form
+											class="mt-2 flex flex-wrap gap-1.5"
+											onsubmit={(e) => {
+												e.preventDefault();
+												if (syncLocked && encOn) runEncryption(() => unlockSync(passphrase), 'Unlocked. This device can read the synced copy.');
+												else if (syncLocked) runEncryption(() => enableEncryption(passphrase), 'Unlocked and encrypted.');
+												else runEncryption(() => enableEncryption(passphrase), 'Encrypted. Use the same passphrase on your other devices.');
+											}}
+										>
+											<input
+												type="password"
+												class="k-input !h-8 sm:!w-64"
+												bind:value={passphrase}
+												placeholder={syncLocked ? 'Passphrase' : 'New passphrase (8+ characters)'}
+												aria-label="Sync passphrase"
+												autocomplete="new-password"
+											/>
+											<button class="k-btn k-btn-sm k-btn-primary" disabled={encBusy || passphrase.length < 8}>
+												{#if encBusy}{@render spinner()}{/if}
+												{syncLocked ? 'Unlock' : 'Turn on'}
+											</button>
+										</form>
+									{/if}
+									{#if encNote}<p class="mt-1.5 text-xs text-[var(--color-text-muted)]" role="status">{encNote}</p>{/if}
+									{#if encError}<p class="mt-1.5 text-xs text-[var(--color-danger)]" role="alert">{encError}</p>{/if}
+								</div>
+								{#if encOn && !syncLocked}
+									<button class="k-btn k-btn-sm" disabled={encBusy} onclick={() => runEncryption(disableEncryption, 'Off. The synced copy is readable again.')}>Turn off</button>
+								{/if}
+							</div>
 						{/if}
 					</div>
 				</section>
@@ -2157,37 +2327,21 @@
 						<details class="set-disclosure" bind:open={showSyncDocs}>
 							<summary>
 								<Cloud class="h-4 w-4 text-[var(--color-text-faint)]" />
-								<span class="flex-1">Sync setup (Cloudflare R2)</span>
+								<span class="flex-1">Sync setup (your own Kurumi server)</span>
 								<ChevronDown class="disclosure-chevron h-4 w-4 text-[var(--color-text-faint)]" />
 							</summary>
 							<div class="docs-content pb-4 pl-6 text-sm">
-								<h4>Prerequisites</h4>
-								<ul>
-									<li>A <a href="https://dash.cloudflare.com/sign-up" target="_blank" rel="noopener">Cloudflare account</a> (free)</li>
-									<li><a href="https://mise.jdx.dev/" target="_blank" rel="noopener">mise</a> installed (<code>brew install mise</code>)</li>
-								</ul>
-
-								<h4>Step 1: Enable R2</h4>
+								<p>A small server on your free Cloudflare account keeps your devices in sync. No command line needed.</p>
 								<ol>
-									<li>Go to <a href="https://dash.cloudflare.com" target="_blank" rel="noopener">Cloudflare Dashboard</a></li>
-									<li>Click <strong>R2 Object Storage</strong> in the sidebar</li>
-									<li>Click <strong>Get Started</strong> or <strong>Activate R2</strong></li>
-									<li>Accept the terms (no credit card required for free tier)</li>
+									<li>
+										<a href="https://deploy.workers.cloudflare.com/?url=https://github.com/raskell-io/kurumi/tree/main/worker" target="_blank" rel="noopener">Deploy to Cloudflare</a>:
+										sign in or create a free account and keep the suggested names.
+									</li>
+									<li>Open the server's address shown at the end (<code>https://kurumi-sync.&lt;you&gt;.workers.dev</code>) and click <strong>Connect Kurumi</strong>. Do this right away: the first to connect owns the server.</li>
+									<li>On each other device: <a href="/settings/sync"><strong>Settings → Sync → Add a device</strong></a> on a device that already syncs, then open the link on the new one.</li>
+									<li>Optional: turn on <strong>End-to-end encryption</strong> in Sync settings so the server only stores ciphertext.</li>
 								</ol>
-
-								<h4>Step 2: Deploy the Worker</h4>
-								<p>Clone the repo and run the setup command:</p>
-								<pre><code>git clone https://github.com/raskell-io/kurumi.git
-cd kurumi/worker
-mise run setup</code></pre>
-								<p>This will install dependencies, log you into Cloudflare, create the R2 bucket, generate a sync token, and deploy the worker.</p>
-
-								<h4>Step 3: Configure Kurumi</h4>
-								<ol>
-									<li>In <a href="/settings/sync"><strong>Settings → Sync</strong></a>, choose <strong>R2</strong> and enter your Worker URL</li>
-									<li>Enter the sync token from Step 2</li>
-									<li>Click <strong>Save</strong> then <strong>Test connection</strong></li>
-								</ol>
+								<p>Prefer the command line? <code>cd worker &amp;&amp; mise run setup</code>, then enter the address and token by hand in Sync settings.</p>
 
 								<h4>Cost</h4>
 								<p>Cloudflare's free tier includes:</p>
@@ -2218,6 +2372,7 @@ mise run setup</code></pre>
 								<ul>
 									<li><strong>HTTPS/TLS encrypted</strong> - All sync traffic is encrypted</li>
 									<li><strong>Bearer token auth</strong> - Only requests with your token can access your data</li>
+									<li><strong>Optional end-to-end encryption</strong> - With a sync passphrase, notes and files are encrypted (AES-256-GCM) before they leave your device</li>
 									<li><strong>Encrypted storage</strong> - R2 data is encrypted by Cloudflare</li>
 								</ul>
 
@@ -2802,18 +2957,5 @@ mise run setup</code></pre>
 		padding: 0.125rem 0.375rem;
 		border-radius: 0.25rem;
 		font-size: 0.85em;
-	}
-
-	.docs-content pre {
-		background: var(--color-bg-secondary);
-		padding: 0.75rem 1rem;
-		border-radius: var(--radius-md);
-		overflow-x: auto;
-		margin: 0.75rem 0;
-	}
-
-	.docs-content pre code {
-		background: none;
-		padding: 0;
 	}
 </style>

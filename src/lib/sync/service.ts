@@ -10,6 +10,12 @@ import {
 	actionItems
 } from '$lib/db';
 import { setSyncing, setSyncSuccess, setSyncError, syncState } from './status';
+import { openFromSync, sealForSync, encryptingTransport, SyncLockedError, WrongPassphraseError } from './crypto';
+
+/** Encryption problems read as themselves, not as a failed download. */
+function lockMessage(err: unknown): string | null {
+	return err instanceof SyncLockedError || err instanceof WrongPassphraseError ? err.message : null;
+}
 import { get, derived, type Readable } from 'svelte/store';
 import {
 	isGitSyncConfigured,
@@ -315,7 +321,7 @@ async function r2PutObject(
  */
 async function syncBlobsBestEffort(transport: ObjectTransport): Promise<void> {
 	try {
-		await syncBlobObjects(transport, get(currentVaultId), vaultMemories());
+		await syncBlobObjects(encryptingTransport(transport), get(currentVaultId), vaultMemories());
 	} catch (err) {
 		console.warn('Blob sync failed (notes still synced):', err);
 	}
@@ -337,10 +343,11 @@ async function syncR2(): Promise<{ success: boolean; error?: string }> {
 		let remoteBinary: Uint8Array | null;
 		try {
 			remoteBinary = await pullRemote(config);
+			if (remoteBinary) remoteBinary = await openFromSync(remoteBinary);
 		} catch (pullErr) {
-			const message = pullErr instanceof Error ? pullErr.message : 'Failed to pull';
-			setSyncError(`Pull failed: ${message}`);
-			return { success: false, error: `Pull failed: ${message}` };
+			const message = lockMessage(pullErr) ?? `Pull failed: ${pullErr instanceof Error ? pullErr.message : 'Failed to pull'}`;
+			setSyncError(message);
+			return { success: false, error: message };
 		}
 
 		// Step 2: Merge if remote exists
@@ -358,7 +365,7 @@ async function syncR2(): Promise<{ success: boolean; error?: string }> {
 		// Step 3: Get merged local state and push
 		try {
 			const localBinary = getDocBinary();
-			await pushToRemote(config, localBinary);
+			await pushToRemote(config, await sealForSync(localBinary));
 		} catch (pushErr) {
 			const message = pushErr instanceof Error ? pushErr.message : 'Failed to push';
 			setSyncError(`Push failed: ${message}`);
@@ -399,10 +406,11 @@ async function syncS3(): Promise<{ success: boolean; error?: string }> {
 		let remoteBinary: Uint8Array | null;
 		try {
 			remoteBinary = await s3Pull(config, vaultId);
+			if (remoteBinary) remoteBinary = await openFromSync(remoteBinary);
 		} catch (pullErr) {
-			const message = pullErr instanceof Error ? pullErr.message : 'Failed to pull';
-			setSyncError(`S3 pull failed: ${message}`);
-			return { success: false, error: `S3 pull failed: ${message}` };
+			const message = lockMessage(pullErr) ?? `S3 pull failed: ${pullErr instanceof Error ? pullErr.message : 'Failed to pull'}`;
+			setSyncError(message);
+			return { success: false, error: message };
 		}
 
 		// Merge
@@ -419,7 +427,7 @@ async function syncS3(): Promise<{ success: boolean; error?: string }> {
 		// Push
 		try {
 			const localBinary = getDocBinary();
-			await s3Push(config, vaultId, localBinary);
+			await s3Push(config, vaultId, await sealForSync(localBinary));
 		} catch (pushErr) {
 			const message = pushErr instanceof Error ? pushErr.message : 'Failed to push';
 			setSyncError(`S3 push failed: ${message}`);
@@ -450,9 +458,9 @@ async function syncWebDAV(): Promise<{ success: boolean; error?: string }> {
 	setSyncing();
 	try {
 		const remoteBinary = await webdavPull(config, vaultId);
-		if (remoteBinary) await mergeDoc(remoteBinary);
+		if (remoteBinary) await mergeDoc(await openFromSync(remoteBinary));
 		const localBinary = getDocBinary();
-		await webdavPush(config, vaultId, localBinary);
+		await webdavPush(config, vaultId, await sealForSync(localBinary));
 		await syncBlobsBestEffort({
 			get: (key) => webdavGetObject(config, key),
 			put: (key, data, ct) => webdavPutObject(config, key, data, ct)
@@ -738,9 +746,9 @@ async function syncAzureBlob(): Promise<{ success: boolean; error?: string }> {
 	setSyncing();
 	try {
 		const remoteBinary = await azureBlobPull(config, vaultId);
-		if (remoteBinary) await mergeDoc(remoteBinary);
+		if (remoteBinary) await mergeDoc(await openFromSync(remoteBinary));
 		const localBinary = getDocBinary();
-		await azureBlobPush(config, vaultId, localBinary);
+		await azureBlobPush(config, vaultId, await sealForSync(localBinary));
 		await syncBlobsBestEffort({
 			get: (key) => azureGetObject(config, key),
 			put: (key, data, ct) => azurePutObject(config, key, data, ct)
@@ -763,17 +771,17 @@ async function pushToMethod(method: SyncMethod, binary: Uint8Array): Promise<voi
 	switch (method) {
 		case 'r2': {
 			const config = getSyncConfig();
-			if (config) await pushToRemote(config, binary);
+			if (config) await pushToRemote(config, await sealForSync(binary));
 			break;
 		}
 		case 's3': {
 			const config = getS3Config();
-			if (config) await s3Push(config, vaultId, binary);
+			if (config) await s3Push(config, vaultId, await sealForSync(binary));
 			break;
 		}
 		case 'webdav': {
 			const config = getWebDAVConfig();
-			if (config) await webdavPush(config, vaultId, binary);
+			if (config) await webdavPush(config, vaultId, await sealForSync(binary));
 			break;
 		}
 		case 'local-fs': {
@@ -782,7 +790,7 @@ async function pushToMethod(method: SyncMethod, binary: Uint8Array): Promise<voi
 		}
 		case 'azure-blob': {
 			const config = getAzureBlobConfig();
-			if (config) await azureBlobPush(config, vaultId, binary);
+			if (config) await azureBlobPush(config, vaultId, await sealForSync(binary));
 			break;
 		}
 		// Git mirrors are not supported — git sync has its own round-trip
