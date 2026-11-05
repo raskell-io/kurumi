@@ -25,6 +25,8 @@ import {
 import { vaultDirNames } from '$lib/utils/markdown-export';
 import { refToId, importBlobPayloads, type BlobPayload } from './blobs';
 import agentGuide from './agent-guide.md?raw';
+import { hashText, resetFolderState, type FolderState } from './folder-state';
+import { readMetadataRecords, recordFingerprints } from './metadata-import';
 import type { MemoryObject, Folder, Vault, Person, Event, ActionItem } from '$lib/db/types';
 
 const IDB_KEY = 'kurumi-local-fs-handle';
@@ -94,6 +96,7 @@ export async function pickLocalFSDirectory(): Promise<boolean> {
 			showDirectoryPicker: (opts?: object) => Promise<FileSystemDirectoryHandle>;
 		}).showDirectoryPicker({ mode: 'readwrite' });
 		await set(IDB_KEY, handle);
+		await resetFolderState();
 		setConfiguredFlag(true);
 		return true;
 	} catch {
@@ -103,6 +106,7 @@ export async function pickLocalFSDirectory(): Promise<boolean> {
 
 export async function clearLocalFSHandle(): Promise<void> {
 	await del(IDB_KEY);
+	await resetFolderState();
 	setConfiguredFlag(false);
 }
 
@@ -111,14 +115,46 @@ export async function clearLocalFSHandle(): Promise<void> {
  * name, never its path. `granted` is false when the browser wants permission
  * again (after a restart, usually), which takes a click, e.g. on Sync now.
  */
-export async function getLocalFSFolder(): Promise<{ name: string; granted: boolean } | null> {
+export interface LocalFSFolderInfo {
+	name: string;
+	granted: boolean;
+	/** Top-level entries, directories with a trailing slash (when granted). */
+	entries: string[];
+	/** When Kurumi's metadata in this folder last changed (when granted). */
+	lastWrittenAt: number | null;
+}
+
+export async function getLocalFSFolder(): Promise<LocalFSFolderInfo | null> {
 	try {
 		const handle = (await get(IDB_KEY)) as FileSystemDirectoryHandle | undefined;
 		if (!handle) return null;
 		const permission = await (handle as FileSystemDirectoryHandle & {
 			queryPermission: (opts: object) => Promise<string>;
 		}).queryPermission({ mode: 'readwrite' });
-		return { name: handle.name, granted: permission === 'granted' };
+		const info: LocalFSFolderInfo = {
+			name: handle.name,
+			granted: permission === 'granted',
+			entries: [],
+			lastWrittenAt: null
+		};
+		if (!info.granted) return info;
+		const entries = (handle as FileSystemDirectoryHandle & {
+			values: () => AsyncIterableIterator<FileSystemHandle>;
+		}).values();
+		for await (const entry of entries) {
+			info.entries.push(entry.kind === 'directory' ? `${entry.name}/` : entry.name);
+		}
+		info.entries.sort();
+		try {
+			const metaDir = await handle.getDirectoryHandle(METADATA_DIR);
+			for (const name of [METADATA_FILE, VAULTS_INDEX_FILE]) {
+				const file = await metaDir.getFileHandle(name).then((h) => h.getFile()).catch(() => null);
+				if (file) info.lastWrittenAt = Math.max(info.lastWrittenAt ?? 0, file.lastModified);
+			}
+		} catch {
+			// Nothing written here yet.
+		}
+		return info;
 	} catch {
 		return null;
 	}
@@ -211,6 +247,62 @@ async function writeFile(
 	await writable.close();
 }
 
+/**
+ * One sync's view of the folder. `expected` holds what each file contained
+ * when the sync read it (keys lowercased); a file that differs by the time
+ * we'd overwrite it changed in between, so it's left alone for the next sync
+ * (`skipped`) instead of losing that change.
+ */
+export interface WriteSession {
+	expected: Map<string, string>;
+	state: FolderState;
+	skipped: boolean;
+	/** Files that couldn't be written (too long a path, a name Windows reserves, a lock). */
+	failed: string[];
+}
+
+async function readIfExists(dir: FileSystemDirectoryHandle, name: string): Promise<string | null> {
+	try {
+		return await (await (await dir.getFileHandle(name)).getFile()).text();
+	} catch {
+		return null;
+	}
+}
+
+// Write a file only if that changes it and doesn't overwrite something the
+// sync hasn't read. Leaving unchanged files alone also keeps their dates, so
+// watchers, cloud clients and git aren't woken up for nothing.
+async function writeGuarded(
+	dir: FileSystemDirectoryHandle,
+	name: string,
+	key: string,
+	content: string,
+	session: WriteSession
+): Promise<boolean> {
+	const lowered = key.toLowerCase();
+	const hash = hashText(content);
+	const disk = await readIfExists(dir, name);
+	if (disk !== null) {
+		const diskHash = hashText(disk);
+		if (diskHash !== hash && session.expected.get(lowered) !== diskHash) {
+			session.skipped = true;
+			return false;
+		}
+		if (diskHash === hash) {
+			session.state.files[lowered] = hash;
+			return true;
+		}
+	}
+	await writeFile(dir, name, content);
+	session.expected.set(lowered, hash);
+	session.state.files[lowered] = hash;
+	return true;
+}
+
+async function writeIfChanged(dir: FileSystemDirectoryHandle, name: string, content: string): Promise<void> {
+	if ((await readIfExists(dir, name)) !== content) await writeFile(dir, name, content);
+}
+
 // Walk/create a nested subdirectory path relative to `root`.
 async function getOrCreateDir(
 	root: FileSystemDirectoryHandle,
@@ -220,6 +312,15 @@ async function getOrCreateDir(
 	for (const part of parts) {
 		current = await current.getDirectoryHandle(part, { create: true });
 	}
+	return current;
+}
+
+async function getExistingDir(
+	root: FileSystemDirectoryHandle,
+	parts: string[]
+): Promise<FileSystemDirectoryHandle> {
+	let current = root;
+	for (const part of parts) current = await current.getDirectoryHandle(part);
 	return current;
 }
 
@@ -312,14 +413,15 @@ export async function localFSPushMarkdown(
 	people: Person[],
 	events: Event[],
 	actionItems: ActionItem[],
-	blobs: BlobPayload[] = [],
-	work?: GitMetadata['work']
+	blobs: BlobPayload[],
+	work: GitMetadata['work'],
+	session: WriteSession
 ): Promise<void> {
 	const dir = await getHandle();
 	if (!dir) throw new Error('Local folder not configured');
 	// Switching back from the all-vaults layout: clear its vault folders.
 	await pruneAllVaultsLayout(dir, new Set());
-	await writeVaultMarkdown(dir, { memories, folders, vault, people, events, actionItems, blobs, work });
+	await writeVaultMarkdown(dir, { memories, folders, vault, people, events, actionItems, blobs, work }, session, '');
 }
 
 export interface VaultMirror {
@@ -339,7 +441,7 @@ export interface VaultMirror {
  * single-vault mirror if one exists, and the folders of vaults that were
  * renamed or deleted since the last sync.
  */
-export async function localFSPushAllVaults(mirrors: VaultMirror[]): Promise<void> {
+export async function localFSPushAllVaults(mirrors: VaultMirror[], session: WriteSession): Promise<void> {
 	const dir = await getHandle();
 	if (!dir) throw new Error('Local folder not configured');
 
@@ -361,17 +463,13 @@ export async function localFSPushAllVaults(mirrors: VaultMirror[]): Promise<void
 	for (const mirror of mirrors) {
 		const name = dirNames.get(mirror.vault.id)!;
 		index[mirror.vault.id] = name;
-		await writeVaultMarkdown(await getOrCreateDir(dir, [name]), mirror);
+		await writeVaultMarkdown(await getOrCreateDir(dir, [name]), mirror, session, `${name}/`);
 	}
 	await pruneAllVaultsLayout(dir, new Set(Object.values(index)));
 
 	const metaDir = await getOrCreateDir(dir, [METADATA_DIR]);
-	await writeFile(
-		metaDir,
-		VAULTS_INDEX_FILE,
-		JSON.stringify({ version: 1, vaults: index }, null, 2) + '\n'
-	);
-	await writeFile(metaDir, AGENT_GUIDE_FILE, agentGuide);
+	await writeIfChanged(metaDir, VAULTS_INDEX_FILE, JSON.stringify({ version: 1, vaults: index }, null, 2) + '\n');
+	await writeIfChanged(metaDir, AGENT_GUIDE_FILE, agentGuide);
 }
 
 async function readVaultsIndex(dir: FileSystemDirectoryHandle): Promise<Record<string, string>> {
@@ -421,14 +519,34 @@ async function pruneAllVaultsLayout(
 }
 
 // Delete previously written note files that aren't in `keep`, then any
-// directories that pruning left empty.
+// directories that pruning left empty. With a session, a file that changed
+// since the sync read it stays (see WriteSession).
 async function pruneManagedFiles(
 	dir: FileSystemDirectoryHandle,
 	previousPaths: string[],
-	keep: Set<string>
+	keep: Set<string>,
+	session?: WriteSession,
+	prefix = ''
 ): Promise<void> {
 	for (const path of previousPaths) {
-		if (!keep.has(path)) await removeFileByPath(dir, path);
+		if (keep.has(path)) continue;
+		if (session) {
+			const parts = path.split('/').filter(Boolean);
+			const name = parts.pop()!;
+			const key = (prefix + path).toLowerCase();
+			let text: string | null = null;
+			try {
+				text = await readIfExists(parts.length ? await getExistingDir(dir, parts) : dir, name);
+			} catch {
+				// Directory gone: nothing to protect.
+			}
+			if (text !== null && session.expected.get(key) !== hashText(text)) {
+				session.skipped = true;
+				continue;
+			}
+			delete session.state.files[key];
+		}
+		await removeFileByPath(dir, path);
 	}
 
 	// Reclaim folders that Kurumi managed but no longer uses (e.g. a deleted
@@ -450,8 +568,14 @@ async function pruneManagedFiles(
 // pruning notes that a previous write put there but that no longer exist.
 async function writeVaultMarkdown(
 	dir: FileSystemDirectoryHandle,
-	{ memories, folders, vault, people, events, actionItems, blobs, work }: VaultMirror
+	{ memories, folders, vault, people, events, actionItems, blobs, work }: VaultMirror,
+	session: WriteSession,
+	prefix: string
 ): Promise<void> {
+	// First, so an agent finds it whatever happens to the rest.
+	const metaDir = await getOrCreateDir(dir, [METADATA_DIR]);
+	await writeIfChanged(metaDir, AGENT_GUIDE_FILE, agentGuide);
+
 	const files = notesToMarkdownFiles(memories, folders);
 	const newPaths = new Set(files.map((f) => f.path));
 	const previousPaths = await readManagedPaths(dir);
@@ -460,8 +584,15 @@ async function writeVaultMarkdown(
 		const parts = file.path.split('/').filter(Boolean);
 		const filename = parts.pop();
 		if (!filename) continue;
-		const targetDir = parts.length ? await getOrCreateDir(dir, parts) : dir;
-		await writeFile(targetDir, filename, file.content);
+		// One file that can't be written mustn't cost all the others, or the
+		// metadata below, which comes last.
+		try {
+			const targetDir = parts.length ? await getOrCreateDir(dir, parts) : dir;
+			await writeGuarded(targetDir, filename, prefix + file.path, file.content, session);
+		} catch (err) {
+			console.warn(`Couldn't write ${prefix + file.path}:`, err);
+			session.failed.push(prefix + file.path);
+		}
 	}
 
 	// Write referenced blob bytes under .kurumi/blobs/<id> and record mimes.
@@ -469,7 +600,14 @@ async function writeVaultMarkdown(
 	if (blobs.length > 0) {
 		const blobDir = await getOrCreateDir(dir, [METADATA_DIR, BLOBS_DIR]);
 		for (const blob of blobs) {
-			await writeFile(blobDir, refToId(blob.ref), toArrayBuffer(blob.bytes));
+			// Immutable: a blob that's there is the right one.
+			const present = await blobDir.getFileHandle(refToId(blob.ref)).then(() => true, () => false);
+			try {
+				if (!present) await writeFile(blobDir, refToId(blob.ref), toArrayBuffer(blob.bytes));
+			} catch (err) {
+				console.warn(`Couldn't write blob ${blob.ref}:`, err);
+				session.failed.push(`${prefix}${METADATA_DIR}/${BLOBS_DIR}/${refToId(blob.ref)}`);
+			}
 			blobMeta[blob.ref] = { mimeType: blob.mimeType };
 		}
 	}
@@ -484,12 +622,13 @@ async function writeVaultMarkdown(
 		blobMeta,
 		work
 	);
-	const metaDir = await getOrCreateDir(dir, [METADATA_DIR]);
-	await writeFile(metaDir, METADATA_FILE, serializeMetadata(metadata));
-	await writeFile(metaDir, AGENT_GUIDE_FILE, agentGuide);
+	const metadataKey = `${prefix}${METADATA_DIR}/${METADATA_FILE}`;
+	if (await writeGuarded(metaDir, METADATA_FILE, metadataKey, serializeMetadata(metadata), session)) {
+		session.state.records[vault.id] = recordFingerprints(readMetadataRecords(metadata, vault.id));
+	}
 
 	// Prune notes we previously wrote that no longer exist (rename/delete).
-	await pruneManagedFiles(dir, previousPaths, newPaths);
+	await pruneManagedFiles(dir, previousPaths, newPaths, session, prefix);
 }
 
 /**
@@ -626,34 +765,71 @@ export async function localFSManagedPaths(): Promise<Map<string, string>> {
 	return out;
 }
 
-/**
- * Every `.kurumi/metadata.json` in the folder (the root's and each vault
- * folder's). Files that don't parse are skipped.
- */
-export async function localFSReadMetadata(): Promise<GitMetadata[]> {
+export interface MetadataFile {
+	/** Path relative to the folder root. */
+	path: string;
+	text: string;
+	/** Null when it isn't valid JSON (yet). */
+	metadata: GitMetadata | null;
+}
+
+/** Every `.kurumi/metadata.json` in the folder (the root's and each vault folder's). */
+export async function localFSReadMetadata(): Promise<MetadataFile[]> {
 	const root = await getHandle();
 	if (!root) return [];
-	const dirs = [root];
+	const dirs: [FileSystemDirectoryHandle, string][] = [[root, '']];
 	for (const name of new Set(Object.values(await readVaultsIndex(root)))) {
 		try {
-			dirs.push(await root.getDirectoryHandle(name));
+			dirs.push([await root.getDirectoryHandle(name), `${name}/`]);
 		} catch {
 			// Vault folder missing.
 		}
 	}
-	const out: GitMetadata[] = [];
-	for (const dir of dirs) {
+	const out: MetadataFile[] = [];
+	for (const [dir, prefix] of dirs) {
 		try {
 			const metaDir = await dir.getDirectoryHandle(METADATA_DIR);
-			const handle = await metaDir.getFileHandle(METADATA_FILE);
-			const parsed = parseMetadata(await (await handle.getFile()).text());
-			if (parsed) out.push(parsed);
-			else console.warn(`Ignoring unreadable ${METADATA_DIR}/${METADATA_FILE} in "${dir.name}"`);
+			const text = await (await (await metaDir.getFileHandle(METADATA_FILE)).getFile()).text();
+			out.push({ path: `${prefix}${METADATA_DIR}/${METADATA_FILE}`, text, metadata: parseMetadata(text) });
 		} catch {
 			// No metadata here yet.
 		}
 	}
 	return out;
+}
+
+/**
+ * A fingerprint of the folder from names, sizes and dates only, cheap enough
+ * to compare every few seconds. Covers notes, Kurumi's metadata and blobs and
+ * the database; skips other hidden entries (`.git`, …) and `node_modules`.
+ */
+export async function localFSSignature(): Promise<string | null> {
+	const root = await getGrantedHandle();
+	if (!root) return null;
+	const parts: string[] = [];
+	const walk = async (dir: FileSystemDirectoryHandle, prefix: string): Promise<void> => {
+		const entries = (dir as FileSystemDirectoryHandle & {
+			values: () => AsyncIterableIterator<FileSystemHandle>;
+		}).values();
+		for await (const handle of entries) {
+			if (handle.name === 'node_modules') continue;
+			if (handle.name.startsWith('.') && handle.name !== METADATA_DIR) continue;
+			const path = `${prefix}${handle.name}`;
+			if (handle.kind === 'directory') await walk(handle as FileSystemDirectoryHandle, `${path}/`);
+			else if (handle.name !== AGENT_GUIDE_FILE) {
+				const file = await (handle as FileSystemFileHandle).getFile();
+				parts.push(`${path}:${file.size}:${file.lastModified}`);
+			}
+		}
+	};
+	await walk(root, '');
+	return hashText(parts.sort().join('\n'));
+}
+
+// The handle, without ever asking for permission (no click to ask from).
+async function getGrantedHandle(): Promise<FileSystemDirectoryHandle | null> {
+	const info = await getLocalFSFolder();
+	return info?.granted ? ((await get(IDB_KEY)) as FileSystemDirectoryHandle) : null;
 }
 
 /** The all-vaults index: vault id → folder name. */

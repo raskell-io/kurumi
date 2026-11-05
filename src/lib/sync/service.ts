@@ -44,7 +44,6 @@ import {
 	localFSPush,
 	localFSPushMarkdown,
 	localFSImportBlobs,
-	localFSReadMarkdown,
 	localFSTest,
 	localFSPushAllVaults,
 	isLocalFSAllVaults,
@@ -55,11 +54,22 @@ import {
 	localFSManagedPaths,
 	localFSVaultFolders,
 	localFSRemoveImported,
-	localFSExactFileExists
+	localFSExactFileExists,
+	localFSSignature,
+	type DiskMarkdownFile,
+	type DiskTree,
+	type MetadataFile,
+	type WriteSession
 } from './local-fs';
+import { hashText, loadFolderState, saveFolderState, type FolderState } from './folder-state';
+import { showNotice } from '$lib/stores/notice';
 import {
 	getMemoryObject,
 	updateMemoryObject,
+	deleteMemoryObject,
+	deleteRecords,
+	setMemoryIcon,
+	subscribeDocChanges,
 	applyGitImport,
 	applyWorkImport,
 	getVaultContents,
@@ -70,7 +80,7 @@ import {
 	batchUpdates,
 	NewerVaultError
 } from '$lib/db';
-import { parseMarkdownFile, parseFrontMatter, noteToMarkdownFile } from '$lib/git/convert';
+import { parseMarkdownFile, parseFrontMatter, noteToMarkdownFile, type GitMetadata } from '$lib/git/convert';
 import { readMetadataRecords, pickExternalChanges, hasRecords } from './metadata-import';
 import { generateSlug, vaultDirNames } from '$lib/utils/markdown-export';
 import {
@@ -494,6 +504,10 @@ function canonicalBody(body: string): string {
 		.trim();
 }
 
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+	return a.length === b.length && a.every((byte, i) => byte === b[i]);
+}
+
 function tagsEqual(a: string[], b: string[]): boolean {
 	if (a.length !== b.length) return false;
 	const sortedB = [...b].sort();
@@ -501,42 +515,70 @@ function tagsEqual(a: string[], b: string[]): boolean {
 }
 
 /**
- * Read user-edited .md files from disk and apply changes back into the store.
+ * Apply edits made to the .md files on disk, matched by frontmatter `id`:
+ * body, tags, title (`name`), emoji icon, and `deleted: true` (to the Trash).
  *
- * Scope (v1): only updates the BODY and TAGS of notes Kurumi itself wrote
- * (matched by the frontmatter `id`). Files without an id (hand-created),
- * disk deletions, and on-disk renames are intentionally ignored — those stay
- * app-driven to avoid data loss. Conflicts (both sides changed since the last
- * sync) keep the in-app version. `vaultId` limits the import to one vault;
- * null (all-vaults layout) accepts notes from any vault.
+ * A file is edited if it differs from what we last wrote there, and the note
+ * changed in the app if it differs from that too. If both happened and the
+ * text differs, the app's note stays and the file's version becomes a note of
+ * its own, so neither side is lost. Without a record of the last write (first
+ * sync after picking a folder), dates decide. `vaultId` limits the import to
+ * one vault; null (all-vaults layout) accepts notes from any vault.
  */
-async function importLocalFSEdits(vaultId: string | null, lastSyncedAt: number | null): Promise<void> {
-	const diskFiles = await localFSReadMarkdown();
-	for (const file of diskFiles) {
-		// Only adopt files that carry a Kurumi id — i.e. ones we wrote.
-		const { frontMatter } = parseFrontMatter(file.content);
+function importLocalFSEdits(
+	files: DiskMarkdownFile[],
+	vaultId: string | null,
+	lastSyncedAt: number | null,
+	state: FolderState
+): void {
+	for (const file of files) {
+		const content = file.content.replace(/\r\n?/g, '\n');
+		const { frontMatter } = parseFrontMatter(content);
 		if (typeof frontMatter.id !== 'string' || !frontMatter.id) continue;
 
-		const parsed = parseMarkdownFile(file.path, file.content);
+		const parsed = parseMarkdownFile(file.path, content);
 		const existing = getMemoryObject(parsed.id);
 		if (!existing || existing.deletedAt) continue;
 		if (vaultId !== null && existing.vaultId !== vaultId) continue;
 
-		const bodyChanged = canonicalBody(parsed.content) !== canonicalBody(existing.bodyMarkdown);
-		const tagsChanged = !tagsEqual(parsed.tags, existing.tags);
-		if (!bodyChanged && !tagsChanged) continue;
+		const base = state.files[file.path.toLowerCase()];
+		const fileChanged =
+			base !== undefined
+				? hashText(file.content) !== base
+				: lastSyncedAt == null || file.lastModified > lastSyncedAt;
+		if (!fileChanged) continue; // what's different, if anything, is newer in the app
 
-		const fileChanged = lastSyncedAt == null ? true : file.lastModified > lastSyncedAt;
-		const docChanged = lastSyncedAt == null ? false : existing.updatedAt > lastSyncedAt;
-
-		if (fileChanged && !docChanged) {
-			updateMemoryObject(parsed.id, { bodyMarkdown: parsed.content, tags: parsed.tags });
-		} else if (fileChanged && docChanged) {
-			// Both edited since last sync — keep the in-app version rather than
-			// silently dropping app edits. (No resolution UI for local FS yet.)
-			console.warn(`Local FS conflict on "${existing.title}" — kept in-app version`);
+		if (frontMatter.deleted === true || frontMatter.deleted === 'true') {
+			deleteMemoryObject(existing.id);
+			continue;
 		}
-		// else: in-app version is newer; it will be written back on push.
+
+		const bodyChanged = canonicalBody(parsed.content) !== canonicalBody(existing.bodyMarkdown);
+		const named = typeof frontMatter.name === 'string' && frontMatter.name.trim() ? parsed.title : existing.title;
+		const docChanged =
+			base !== undefined
+				? hashText(noteToMarkdownFile(existing, []).content) !== base
+				: lastSyncedAt != null && existing.updatedAt > lastSyncedAt;
+
+		if (docChanged && bodyChanged) {
+			addImportedMemoryObject({
+				title: `${existing.title || 'Untitled'} (edit from folder)`,
+				bodyMarkdown: parsed.content,
+				tags: parsed.tags,
+				folderId: existing.folderId,
+				vaultId: existing.vaultId,
+				createdAt: Date.now(),
+				updatedAt: Date.now()
+			});
+			continue;
+		}
+
+		const tagsChanged = !tagsEqual(parsed.tags, existing.tags);
+		if (bodyChanged || tagsChanged || named !== existing.title) {
+			updateMemoryObject(parsed.id, { bodyMarkdown: parsed.content, tags: parsed.tags, title: named });
+		}
+		const emoji = existing.icon?.startsWith('data:') ? existing.icon : (parsed.icon ?? null);
+		if (emoji !== (existing.icon ?? null)) setMemoryIcon(parsed.id, emoji);
 	}
 }
 
@@ -555,13 +597,15 @@ async function importLocalFSEdits(vaultId: string | null, lastSyncedAt: number |
  * has been written under Kurumi's own path for it (see syncLocalFS).
  */
 async function importNewLocalFiles(
+	{ files, emptyDirs }: DiskTree,
 	allVaults: boolean,
 	currentVaultId: string
 ): Promise<{ path: string; memoryId: string }[]> {
-	const { files, emptyDirs } = await localFSReadTree();
 	// Case-insensitive: on macOS a file Kurumi wrote as "work/a.md" may be
 	// listed under the name the user first gave it ("Work/A.md").
-	const managed = new Set([...(await localFSManagedPaths()).keys()].map((p) => p.toLowerCase()));
+	const managedPaths = await localFSManagedPaths();
+	const managed = new Set([...managedPaths.keys()].map((p) => p.toLowerCase()));
+	const onDisk = new Set(files.map((f) => f.path.toLowerCase()));
 
 	// Top-level directory → vault (all-vaults layout).
 	const dirToVault = new Map<string, string>();
@@ -611,9 +655,19 @@ async function importNewLocalFiles(
 			if (managed.has(file.path.toLowerCase())) continue; // one Kurumi wrote
 			const { frontMatter, body } = parseFrontMatter(file.content.replace(/\r\n?/g, '\n'));
 			const id = typeof frontMatter.id === 'string' && frontMatter.id ? frontMatter.id : undefined;
-			if (id && getMemoryObject(id)) continue; // a known note (edits are handled separately)
-
 			const { vaultId, dirs } = locate(file.path, false);
+			const known = id ? getMemoryObject(id) : undefined;
+			if (known) {
+				// Edits are handled separately. A known note here and not at the
+				// path we wrote it to has been moved.
+				const previous = [...managedPaths].find(([, noteId]) => noteId === id)?.[0];
+				if (!known.deletedAt && known.vaultId === vaultId && previous && !onDisk.has(previous.toLowerCase())) {
+					updateMemoryObject(known.id, { folderId: ensureFolder(vaultId, dirs) });
+					imported.push({ path: file.path, memoryId: known.id });
+				}
+				continue;
+			}
+
 			const fileName = file.path.split('/').pop()!.replace(/\.(md|markdown)$/i, '');
 			const named = [frontMatter.name, frontMatter.title].find((v) => typeof v === 'string' && v.trim());
 			const created = typeof frontMatter.created === 'string' ? Date.parse(frontMatter.created) : NaN;
@@ -638,21 +692,30 @@ async function importNewLocalFiles(
  * Records added to or edited in `.kurumi/metadata.json` from outside Kurumi
  * (see agent-guide.md). Must run before the mirror is rewritten.
  */
-async function importMetadataRecords(lastSyncedAt: number | null): Promise<void> {
-	for (const metadata of await localFSReadMetadata()) {
-		const vaultId = metadata.vault?.id;
-		if (!get(vaults).some((v) => v.id === vaultId)) continue;
+function importMetadataRecords(files: MetadataFile[], lastSyncedAt: number | null, state: FolderState): void {
+	for (const { metadata } of files) {
+		const vaultId = metadata?.vault?.id;
+		if (!metadata || !vaultId || !get(vaults).some((v) => v.id === vaultId)) continue;
 		const contents = getVaultContents(vaultId);
-		const changes = pickExternalChanges(
+		const { changes, deletions } = pickExternalChanges(
 			readMetadataRecords(metadata, vaultId),
-			{
-				people: contents.people,
-				events: contents.events,
-				actionItems: contents.actionItems,
-				work: getVaultWorkRecords(vaultId)
-			},
+			// Through the same reader, so both sides compare field for field.
+			readMetadataRecords(
+				{
+					...metadata,
+					people: contents.people,
+					events: contents.events,
+					actionItems: contents.actionItems,
+					work: getVaultWorkRecords(vaultId)
+				} as unknown as GitMetadata,
+				vaultId
+			),
+			state.records[vaultId],
 			lastSyncedAt
 		);
+		if (deletions.length > 0) {
+			deleteRecords(deletions);
+		}
 		if (!hasRecords(changes)) continue;
 		batchUpdates(() => {
 			applyGitImport({
@@ -691,7 +754,24 @@ async function removeImportedOriginals(
 /**
  * Local filesystem sync implementation
  */
+let localFSRun: Promise<unknown> | null = null;
+
+// One at a time, and a call during a run gets a run of its own afterwards,
+// so it sees everything that was in the folder when it was made.
 async function syncLocalFS(): Promise<{ success: boolean; error?: string }> {
+	while (localFSRun) await localFSRun.catch(() => {});
+	const run = runLocalFSSync();
+	localFSRun = run;
+	try {
+		return await run;
+	} finally {
+		localFSRun = null;
+	}
+}
+
+let reportedBadMetadata = '';
+
+async function runLocalFSSync(): Promise<{ success: boolean; error?: string }> {
 	setSyncing();
 	try {
 		const remoteBinary = await localFSPull();
@@ -712,10 +792,29 @@ async function syncLocalFS(): Promise<{ success: boolean; error?: string }> {
 		const vaultId = get(currentVaultId);
 		const allVaults = isLocalFSAllVaults();
 
-		// Pull in edits made directly to the .md files on disk before we
-		// overwrite them on push.
+		// Everything is read once, here. What differs from this by the time
+		// we write changed mid-sync and is left for the next one.
+		const session: WriteSession = { expected: new Map(), state: await loadFolderState(), skipped: false, failed: [] };
+		const tree = await localFSReadTree();
+		for (const file of tree.files) session.expected.set(file.path.toLowerCase(), hashText(file.content));
+		const metadataFiles = await localFSReadMetadata();
+		for (const file of metadataFiles) {
+			if (file.metadata) {
+				session.expected.set(file.path.toLowerCase(), hashText(file.text));
+			} else {
+				// Not valid JSON, maybe half written: never overwritten, so a
+				// hand edit in it can still be finished or fixed.
+				const fingerprint = hashText(file.text);
+				if (reportedBadMetadata !== fingerprint) {
+					reportedBadMetadata = fingerprint;
+					showNotice(`${file.path} isn't valid JSON. Kurumi leaves it alone until it's fixed.`);
+				}
+			}
+		}
+
+		// Pull in edits made directly to the .md files on disk.
 		try {
-			await importLocalFSEdits(allVaults ? null : vaultId, get(syncState).lastSyncedAt);
+			importLocalFSEdits(tree.files, allVaults ? null : vaultId, get(syncState).lastSyncedAt, session.state);
 		} catch (importErr) {
 			console.warn('Local FS markdown import failed:', importErr);
 		}
@@ -723,20 +822,30 @@ async function syncLocalFS(): Promise<{ success: boolean; error?: string }> {
 		// New files and folders added to the folder from outside Kurumi.
 		let imported: { path: string; memoryId: string }[] = [];
 		try {
-			imported = await importNewLocalFiles(allVaults, vaultId);
+			imported = await importNewLocalFiles(tree, allVaults, vaultId);
 		} catch (importErr) {
 			console.warn('Local FS new-file import failed:', importErr);
 		}
 
 		// Records (to-dos, people, projects, …) added to metadata.json.
 		try {
-			await importMetadataRecords(get(syncState).lastSyncedAt);
+			importMetadataRecords(metadataFiles, get(syncState).lastSyncedAt, session.state);
 		} catch (importErr) {
 			console.warn('Local FS metadata import failed:', importErr);
 		}
 
+		// The database file may have been replaced since we read it (the sync
+		// agent merging a pull): merge that in rather than overwrite it.
+		const latestBinary = await localFSPull();
+		if (latestBinary && remoteBinary && !sameBytes(latestBinary, remoteBinary)) await mergeDoc(latestBinary);
 		const localBinary = getDocBinary();
-		await localFSPush(localBinary);
+		// A locked database file mustn't keep the notes and metadata from being written.
+		try {
+			await localFSPush(localBinary);
+		} catch (err) {
+			console.warn('Could not write kurumi-sync.bin:', err);
+			session.failed.push('kurumi-sync.bin');
+		}
 
 		// Also write a human-readable markdown mirror (one .md per note,
 		// mirroring the folder tree) of the current vault, or of every vault
@@ -751,7 +860,7 @@ async function syncLocalFS(): Promise<{ success: boolean; error?: string }> {
 					return { vault: v, ...contents, blobs, work: getVaultWorkRecords(v.id) };
 				})
 			);
-			await localFSPushAllVaults(mirrors);
+			await localFSPushAllVaults(mirrors, session);
 		} else if (vault) {
 			const vaultMems = get(memoryObjects).filter((m) => m.vaultId === vaultId);
 			const blobs = await gatherBlobPayloads(collectBlobRefs(vaultMems));
@@ -763,7 +872,8 @@ async function syncLocalFS(): Promise<{ success: boolean; error?: string }> {
 				get(events).filter((e) => e.vaultId === vaultId),
 				get(actionItems).filter((a) => a.vaultId === vaultId),
 				blobs,
-				getVaultWorkRecords(vaultId)
+				getVaultWorkRecords(vaultId),
+				session
 			);
 		}
 
@@ -771,6 +881,18 @@ async function syncLocalFS(): Promise<{ success: boolean; error?: string }> {
 			await removeImportedOriginals(imported, allVaults);
 		} catch (cleanupErr) {
 			console.warn('Local FS cleanup of imported files failed:', cleanupErr);
+		}
+
+		// Something left for the next run: no signature makes the watch start it.
+		session.state.signature = session.skipped ? null : await localFSSignature();
+		await saveFolderState(session.state);
+
+		if (session.failed.length > 0) {
+			const named = session.failed.slice(0, 3).join(', ');
+			const more = session.failed.length > 3 ? ` and ${session.failed.length - 3} more` : '';
+			const msg = `Everything else is synced, but these couldn't be written: ${named}${more}`;
+			setSyncError(msg);
+			return { success: false, error: msg };
 		}
 
 		setSyncSuccess();
@@ -1054,17 +1176,57 @@ export function setupAutoSync(): void {
 	if (autoSyncStarted) return;
 	autoSyncStarted = true;
 	let first = true;
-	autoSyncUnsub = memoryObjects.subscribe(() => {
-		if (first) {
-			first = false;
-			return;
-		}
+	const schedule = (delay: number) => {
 		if (autoSyncTimer) clearTimeout(autoSyncTimer);
 		autoSyncTimer = setTimeout(() => {
 			autoSyncTimer = null;
 			if (shouldSync()) sync().catch(console.error);
-		}, AUTO_SYNC_DEBOUNCE_MS);
-	});
+			// Too soon after the last sync: try again, or this edit would wait
+			// for the next one to go out.
+			else if (isSyncConfigured()) schedule(MIN_SYNC_INTERVAL_MS);
+		}, delay);
+	};
+	// Any change, not only to notes: to-dos and projects have to go out too.
+	autoSyncUnsub = subscribeDocChanges(() => schedule(AUTO_SYNC_DEBOUNCE_MS));
+	scheduleFolderWatch(FOLDER_WATCH_MS);
+}
+
+// ---------------------------------------------------------------------------
+// Watching the local folder, so outside changes arrive without a click
+// ---------------------------------------------------------------------------
+
+const FOLDER_WATCH_MS = 5000;
+let folderWatchTimer: ReturnType<typeof setTimeout> | null = null;
+let settlingSignature: string | null = null;
+
+function scheduleFolderWatch(delay: number): void {
+	folderWatchTimer = setTimeout(async () => {
+		const started = Date.now();
+		try {
+			await checkFolderForChanges();
+		} catch (err) {
+			console.warn('Watching the local folder failed:', err);
+		}
+		// Very large folders: spend at most about 5% of the time looking.
+		if (autoSyncStarted) scheduleFolderWatch(Math.max(FOLDER_WATCH_MS, (Date.now() - started) * 20));
+	}, delay);
+}
+
+async function checkFolderForChanges(): Promise<void> {
+	if (getSyncMethod() !== 'local-fs' || localFSRun) return;
+	const signature = await localFSSignature(); // null without permission: that needs a click
+	if (signature === null) return;
+	if (signature === (await loadFolderState()).signature) {
+		settlingSignature = null;
+		return;
+	}
+	// Still being written to? Wait until it looks the same twice.
+	if (signature !== settlingSignature) {
+		settlingSignature = signature;
+		return;
+	}
+	settlingSignature = null;
+	if (shouldSync()) await sync();
 }
 
 export function teardownAutoSync(): void {
@@ -1075,6 +1237,10 @@ export function teardownAutoSync(): void {
 	if (autoSyncUnsub) {
 		autoSyncUnsub();
 		autoSyncUnsub = null;
+	}
+	if (folderWatchTimer) {
+		clearTimeout(folderWatchTimer);
+		folderWatchTimer = null;
 	}
 	autoSyncStarted = false;
 }

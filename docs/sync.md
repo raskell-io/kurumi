@@ -92,7 +92,9 @@ branch, and a personal access token with read/write access to that repo.
 Settings → Sync → Local: choose a folder (Chrome and Edge). Kurumi writes
 `kurumi-sync.bin` (the database) and a Markdown copy of the vault; turn on
 **Write all vaults** for one subfolder per vault. The panel shows the
-folder's name; browsers don't reveal its full path.
+folder's name, when Kurumi last wrote there and what it contains; browsers
+don't reveal its full path. If a file can't be written (on Windows, a path that's
+too long or a reserved name like `con`), the rest still syncs and the panel names it.
 
 Kurumi also reads the folder back:
 
@@ -116,9 +118,12 @@ describing the file formats and what can and can't be done from files.
 Agents don't load a guide from `.kurumi/` by themselves, so point yours at
 it: *"Read `.kurumi/AGENTS.md`, then add a to-do for…"*.
 
-Changes arrive at Kurumi's next sync, which needs the app to be open: it
-syncs on start, when its tab comes back into view, after an edit, and from
-the sync button.
+While Kurumi is open it notices changes in a local folder within about 15
+seconds, and writes its own there just as quickly, so you and an agent can work
+at the same time. If both edit the same note, the agent's text becomes a
+separate note rather than being lost. When Kurumi was closed it catches up on
+opening, though the browser may first want a click on **Sync now** to allow the
+folder again. With Git, changes arrive at the next pull.
 
 ### S3, WebDAV, Azure
 

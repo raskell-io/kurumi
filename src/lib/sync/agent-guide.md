@@ -13,27 +13,33 @@ Kurumi writes this file on every sync; edits to it are overwritten.
   binary database.
 - Never edit `noteIds`, `notes` or `vault` in `metadata.json`. They are
   regenerated.
-- Don't rename, move or delete note files, and don't remove records from
-  `metadata.json`. Kurumi doesn't read those as changes and writes the
-  originals back. Ask the user to do it in the app.
-- To finish a to-do, set its status (see below) rather than removing it.
-- Keep `metadata.json` valid JSON. An unparseable file is ignored and then
-  overwritten, which loses your additions.
+- Write files as UTF-8. On Windows PowerShell 5, `Out-File` and `>` write
+  UTF-16: use `Set-Content -Encoding utf8` or a script instead.
+- Keep `metadata.json` valid JSON. While it isn't, Kurumi neither reads nor
+  overwrites it, and tells the user.
+- To delete something, mark it (see below). Removing a file or a record does
+  nothing: Kurumi writes it back, so that an unmounted disk or a bad merge
+  can't delete anything.
 
 ## Which setup is this?
 
 | You see | Setup | How your change reaches Kurumi |
 |---------|-------|--------------------------------|
-| `kurumi-sync.bin` at the top | Local folder | Save the files. Kurumi reads them at its next sync. |
+| `kurumi-sync.bin` at the top | Local folder | Save the files. |
 | No `kurumi-sync.bin` | Git sync | Commit and push. Kurumi reads them at its next pull. |
 
 A local folder may also be a git checkout run by the Kurumi sync agent. You
 don't need to commit there, the sync agent does.
 
-Kurumi only syncs while it is open: when it starts, when its tab comes back
-into view, a few seconds after an edit in the app, or from the sync button.
-Nothing happens until then, so tell the user if they need to see the result
-right away.
+**Local folder:** while Kurumi is open it looks for changes every few seconds
+and picks yours up within about 15 seconds, and it writes its own changes here
+just as quickly. You can work at the same time as the user: Kurumi doesn't
+overwrite a file that changed after it read it, and takes it next time. Closed,
+it catches up the next time it opens, once the browser has permission for the
+folder (that can take one click on *Sync now*).
+
+Kurumi rewrites a note's frontmatter when its dates change, so read a file
+again before editing it if some time has passed.
 
 ## Layout
 
@@ -53,11 +59,13 @@ Each has its own `.kurumi/metadata.json` and `.kurumi/blobs/`. Always use the
 
 ## Ids and timestamps
 
-- Ids are letters and digits only: `openssl rand -hex 8`.
+- Ids are letters and digits only, about 16 of them, for example from
+  `node -e "console.log(require('crypto').randomBytes(8).toString('hex'))"`.
 - Timestamps in `metadata.json` are milliseconds since the epoch:
-  `date +%s000`. Take the time when you write the file, not earlier. A new
-  record stamped before Kurumi's last sync is treated as one the user deleted
-  and is dropped, and an edited record only applies if its stamp is newer.
+  `node -e "console.log(Date.now())"`, in PowerShell
+  `[DateTimeOffset]::Now.ToUnixTimeMilliseconds()`, in a Unix shell
+  `date +%s000`. Git sync needs them correct: there, an edit only applies if
+  its stamp is newer. In a local folder Kurumi compares contents.
 
 ## Notes
 
@@ -82,8 +90,8 @@ The body is Markdown.
   named after it, so two notes with the same title share one file.
 - The file name should be the slugged title (`my-note.md`). In a local folder
   Kurumi renames it to that if it isn't.
-- Frontmatter is deliberately simple: LF line endings, `---` on the very first
-  line, one `key: value` per line, tags inline as above (no YAML block lists).
+- Frontmatter is deliberately simple: `---` on the very first line (LF line
+  endings for git sync), one `key: value` per line, tags inline as above (no YAML block lists).
 - Links have no alias form: `[[Title]]`, never `[[Title|text]]`.
 - A new directory becomes a folder. With all vaults on, a new top-level
   directory becomes a new vault.
@@ -91,10 +99,14 @@ The body is Markdown.
   (`client-x/kickoff.md`). Kurumi doesn't remove the original there, so any
   other name leaves a second copy of the file behind.
 
-To edit a note, change its body or `tags` and update `modified` to now. Only
-those are read back. If the note was also edited in the app since the last
-sync, the app's version wins and your edit is overwritten. A title change has
-to be made in the app.
+To edit a note in a local folder, change its body, `tags`, `name` or emoji
+`icon`. To move it, move the file. To delete it (to the Trash), add
+`deleted: true` to its frontmatter. If the note was edited in the app at the
+same time, the app's text stays on the note and yours becomes a new note titled
+"… (edit from folder)", so nothing is lost.
+
+With git sync, change the body, `tags` or `name` and update `modified` to now.
+Moving and `deleted` are local folder only.
 
 ## Images, audio and files
 
@@ -158,7 +170,9 @@ Dates like `dueDate` are `YYYY-MM-DD`.
 - `memoryObjectId`: id of the note it came from.
 
 To change an existing record, edit it and set `updatedAt` (`modified` for
-people and events) to now.
+people and events) to now. To delete any record, add `"deleted": true` to it
+(local folder only). If the app changed the same record too, the newer
+timestamp wins.
 
 ### People and events (`people`, `events`, keyed by id)
 
@@ -280,9 +294,9 @@ These two use `created` and `modified` as their timestamps.
 After Kurumi has synced, look at the files again:
 
 - Local folder: a record you added is still in `metadata.json`, with any
-  missing fields filled in. If it's gone, it was dropped (a required field
-  missing, or a stamp older than the last sync). Add it again with a fresh
-  timestamp.
+  missing fields filled in. If it's gone, a required field was missing.
 - A new note has moved to its slugged file name and gained an `id` if it had
   none.
 - A blob still listed under `blobs` with your mime type is in Kurumi.
+- If nothing changes, Kurumi may be closed or waiting for folder permission.
+  Ask the user to look at Settings → Sync.

@@ -295,9 +295,13 @@ OpenAI to MMS when the API key is missing.
   from `sync/agent-guide.md`. **Change that guide when the on-disk format or
   what's read back changes**; a unit test runs its JSON examples through the
   importer. Records in `metadata.json` are read back by
-  `sync/metadata-import.ts`: newer `updatedAt`/`modified` wins, and an unknown
-  id only counts if stamped after the last sync, otherwise a record deleted in
-  the app would return from the not-yet-rewritten file.
+  `sync/metadata-import.ts` as a three-way merge against what this device last
+  wrote (`sync/folder-state.ts`), by content, not clocks. Writes are guarded
+  (`WriteSession`): a file that changed since the sync read it is left for the
+  next run, unchanged files aren't rewritten, and one file that can't be written
+  doesn't stop the rest. While open the app watches the folder every 5 s.
+  Removing a file or record never deletes (an unmounted disk mustn't); `deleted:
+  true` does.
 - Pasting (`editor/pasteMarkdown.ts`): structured HTML (chat output, web,
   Google Docs) → cleaned → markdown via hast-util-to-mdast → editor
   parser; unstructured HTML (editors) uses the text/plain markdown; VS

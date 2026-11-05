@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import guide from '../sync/agent-guide.md?raw';
-import { readMetadataRecords, pickExternalChanges, hasRecords } from '../sync/metadata-import';
+import { readMetadataRecords, pickExternalChanges, hasRecords, recordFingerprints } from '../sync/metadata-import';
 import type { GitMetadata } from '../git/convert';
 
 const LAST_SYNC = 2_000_000_000_000;
@@ -92,35 +92,57 @@ describe('readMetadataRecords', () => {
 describe('pickExternalChanges', () => {
 	const read = (items: Record<string, object>) =>
 		readMetadataRecords(metadata({ actionItems: items as never }), 'v1');
+	const pick = (file: object, known: object, base?: object, since: number | null = LAST_SYNC) =>
+		pickExternalChanges(
+			read(file as never),
+			read(known as never),
+			base ? recordFingerprints(read(base as never)) : undefined,
+			since
+		);
+	const a = (stamp: number, extra: object = {}) => ({ a: todo('a', stamp, extra) });
 
-	it('takes a new record written since the last sync', () => {
-		const changes = pickExternalChanges(read({ a: todo('a', LAST_SYNC + 1) }), none, LAST_SYNC);
-		expect(changes.actionItems.map((a) => a.id)).toEqual(['a']);
+	it('takes a new record whatever its timestamp', () => {
+		expect(pick(a(5), {}, {}).changes.actionItems).toHaveLength(1);
 	});
 
 	it('does not bring back a record deleted in the app', () => {
-		// Still in the file from the previous sync, gone from the database.
-		const changes = pickExternalChanges(read({ a: todo('a', LAST_SYNC - 1) }), none, LAST_SYNC);
+		expect(hasRecords(pick(a(5), {}, a(5)).changes)).toBe(false);
+	});
+
+	it('sees nothing in an untouched file, or a reordered one', () => {
+		expect(hasRecords(pick(a(5), a(5), a(5)).changes)).toBe(false);
+		const reordered = { a: { updatedAt: 5, text: 'a', id: 'a' } };
+		expect(hasRecords(pick(reordered, a(5), a(5)).changes)).toBe(false);
+	});
+
+	it('takes an outside edit with an old stamp, and bumps it past the local copy', () => {
+		const { changes } = pick(a(5, { status: 'done' }), a(5), a(5));
+		expect(changes.actionItems[0].status).toBe('done');
+		expect(changes.actionItems[0].updatedAt).toBe(5001); // small numbers read as seconds
+	});
+
+	it('keeps an app edit when the file still has the old version', () => {
+		expect(hasRecords(pick(a(5), a(9, { status: 'done' }), a(5)).changes)).toBe(false);
+	});
+
+	it('lets the newer stamp win when both sides changed', () => {
+		const both = (fileStamp: number) =>
+			pick(a(fileStamp, { status: 'done' }), a(9, { status: 'cancelled' }), a(5)).changes.actionItems;
+		expect(both(8)).toHaveLength(0);
+		expect(both(10)[0].status).toBe('done');
+	});
+
+	it('reports records marked deleted', () => {
+		const { deletions, changes } = pick(a(5, { deleted: true }), a(5), a(5));
+		expect(deletions).toEqual([{ section: 'actionItems', id: 'a' }]);
 		expect(hasRecords(changes)).toBe(false);
 	});
 
-	it('takes everything unknown on a first sync', () => {
-		const changes = pickExternalChanges(read({ a: todo('a', 5) }), none, null);
-		expect(changes.actionItems).toHaveLength(1);
-	});
-
-	it('takes an edit only when newer than the local copy', () => {
-		const known = read({ a: todo('a', LAST_SYNC) });
-		const same = pickExternalChanges(read({ a: todo('a', LAST_SYNC) }), known, LAST_SYNC);
-		const older = pickExternalChanges(read({ a: todo('a', LAST_SYNC - 1) }), known, LAST_SYNC);
-		const newer = pickExternalChanges(
-			read({ a: todo('a', LAST_SYNC + 1, { status: 'done' }) }),
-			known,
-			LAST_SYNC
-		);
-		expect(hasRecords(same)).toBe(false);
-		expect(hasRecords(older)).toBe(false);
-		expect(newer.actionItems[0].status).toBe('done');
+	it('falls back to timestamps without a record of the last write', () => {
+		expect(pick(a(LAST_SYNC + 1), {}).changes.actionItems).toHaveLength(1);
+		expect(hasRecords(pick(a(LAST_SYNC - 1), {}).changes)).toBe(false);
+		expect(pick(a(5), {}, undefined, null).changes.actionItems).toHaveLength(1);
+		expect(pick(a(LAST_SYNC - 1), a(5)).changes.actionItems).toHaveLength(1);
 	});
 });
 

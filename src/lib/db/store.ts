@@ -307,6 +307,31 @@ export function applyWorkImport(work: Partial<WorkRecords>): void {
 	});
 }
 
+/** Remove records by collection and id (a `"deleted": true` from the sync folder). */
+export function deleteRecords(items: { section: string; id: string }[]): void {
+	updateDoc((d) => {
+		for (const { section, id } of items) {
+			const target = (d as Record<string, unknown>)[section] as Record<string, unknown> | undefined;
+			if (target) delete target[id];
+		}
+	});
+}
+
+/**
+ * Called when the document really changed, anywhere in it. A merge or a
+ * refresh that brings nothing new doesn't count, so syncing can't trigger
+ * itself.
+ */
+export function subscribeDocChanges(callback: () => void): () => void {
+	let heads: string | null = null;
+	return docStore.subscribe((current) => {
+		if (!current) return;
+		const next = Automerge.getHeads(current).join();
+		if (heads !== null && next !== heads) callback();
+		heads = next;
+	});
+}
+
 // Trash: deleted memory objects in current vault (sorted by deletedAt, newest first)
 export const trashedMemoryObjects: Readable<MemoryObject[]> = derived(
 	[docStore, currentVaultId],

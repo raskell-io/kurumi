@@ -50,7 +50,8 @@
 		pickLocalFSDirectory,
 		clearLocalFSHandle,
 		isLocalFSAllVaults,
-		setLocalFSAllVaults
+		setLocalFSAllVaults,
+		type LocalFSFolderInfo
 	} from '$lib/sync/local-fs';
 	import { getAzureBlobConfig, saveAzureBlobConfig, isAzureBlobConfigured } from '$lib/sync/azure-blob';
 	import {
@@ -175,10 +176,18 @@
 	// Local FS state
 	let localFSAvailable = $state(false);
 	let localFSConfigured = $state(false);
-	let localFSFolder = $state<{ name: string; granted: boolean } | null>(null);
+	let localFSFolder = $state<LocalFSFolderInfo | null>(null);
 	let localFSTesting = $state(false);
 	let localFSTestResult = $state<{ success: boolean; error?: string; folder?: string } | null>(null);
 	let localFSAllVaults = $state(false);
+
+	// Keep the folder details current through syncs, automatic ones too (a
+	// sync is also what asks for the folder permission again).
+	$effect(() => {
+		if ($syncState.status !== 'syncing' && localFSConfigured) {
+			void getLocalFSFolder().then((folder) => (localFSFolder = folder));
+		}
+	});
 
 	async function loadLocalFSState() {
 		localFSAvailable = isLocalFSSupported();
@@ -677,8 +686,6 @@
 
 	async function handleSync() {
 		await sync();
-		// Syncing is what asks for the folder permission again.
-		if (localFSConfigured) localFSFolder = await getLocalFSFolder();
 	}
 
 	// Sync method handlers
@@ -1297,18 +1304,35 @@
 										The File System Access API isn't available in this browser. Use Chrome or Edge.
 									</p>
 								{:else if localFSConfigured}
+									{#if localFSFolder}
+										<div class="text-sm" data-testid="local-folder">
+											<div>
+												Selected folder:
+												<strong data-testid="local-folder-name">{localFSFolder.name}</strong>
+											</div>
+											{#if localFSFolder.granted}
+												<div class="text-xs text-[var(--color-text-faint)]">
+													{localFSFolder.lastWrittenAt
+														? `Kurumi last wrote here ${formatTimestamp(localFSFolder.lastWrittenAt).toLowerCase()}`
+														: 'Kurumi has not written here yet'}
+												</div>
+												<div class="text-xs text-[var(--color-text-faint)]" data-testid="local-folder-entries">
+													{localFSFolder.entries.length
+														? `Contains ${localFSFolder.entries.slice(0, 8).join(', ')}${localFSFolder.entries.length > 8 ? ` and ${localFSFolder.entries.length - 8} more` : ''}`
+														: 'Empty'}
+												</div>
+											{/if}
+											<div class="text-xs text-[var(--color-text-faint)]">
+												Browsers show Kurumi a folder's name but never where it is, so its full
+												path can't be displayed. The details above tell it apart from another
+												folder with the same name.
+											</div>
+										</div>
+									{/if}
 									<div class="set-actions">
-										{#if localFSFolder}
-											<span
-												class="k-badge {localFSFolder.granted ? 'k-badge-success' : ''}"
-												title="Browsers only show a folder's name, not where it is"
-												data-testid="local-folder-name"
-											>
-												{localFSFolder.name}
-											</span>
-										{:else}
-											<span class="k-badge k-badge-success">Folder selected</span>
-										{/if}
+										<span class="k-badge {localFSFolder?.granted ? 'k-badge-success' : ''}">
+											{localFSFolder?.granted === false ? 'Needs permission' : 'Connected'}
+										</span>
 										<button onclick={handleLocalFSTest} disabled={localFSTesting} class="k-btn k-btn-sm">
 											{#if localFSTesting}{@render spinner()}{/if}
 											Test

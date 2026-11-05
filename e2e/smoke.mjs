@@ -1466,6 +1466,165 @@ const scenarios = {
 		assert.equal(out.done, 'done');
 		assert.deepEqual(errors, []);
 	},
+	async 'local folder sync is two-way and safe to edit during'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const out = await page.evaluate(async () => {
+			const find = (frag) => performance.getEntriesByType('resource').map((e) => e.name).find((n) => n.includes(frag));
+			const db = await import(find('/src/lib/db/store.ts'));
+			const svc = await import(find('/src/lib/sync/service.ts'));
+			const kv = await import('/node_modules/idb-keyval/dist/index.js');
+			const root = await navigator.storage.getDirectory();
+			const dir = await root.getDirectoryHandle('e2e-twoway-' + Date.now(), { create: true });
+			await kv.set('kurumi-local-fs-handle', dir);
+			localStorage.setItem('kurumi-local-fs-configured', '1');
+			localStorage.setItem('kurumi-sync-method', 'local-fs');
+			const write = async (d, name, data) => {
+				const w = await (await d.getFileHandle(name, { create: true })).createWritable();
+				await w.write(data);
+				await w.close();
+			};
+			const read = async (d, name) => (await (await d.getFileHandle(name)).getFile()).text();
+			const stamp = async (d, name) => (await (await d.getFileHandle(name)).getFile()).lastModified;
+			const items = () => { let v; db.actionItems.subscribe((x) => (v = x))(); return v; };
+			const res = {};
+
+			const note = db.addMemoryObject('Shared note', 'original');
+			db.addMemoryObject('Other note', 'other');
+			await svc.sync();
+			const kurumi = await dir.getDirectoryHandle('.kurumi');
+
+			// Nothing changed: files aren't rewritten.
+			const before = await stamp(dir, 'other-note.md');
+			await new Promise((r) => setTimeout(r, 50));
+			await svc.sync();
+			res.untouched = before === (await stamp(dir, 'other-note.md'));
+
+			// A record with a stale stamp, and an edit without a bump, still count.
+			const m = JSON.parse(await read(kurumi, 'metadata.json'));
+			m.actionItems.old1 = { id: 'old1', text: 'Stale stamp', vaultId: m.vault.id, createdAt: 1000, updatedAt: 1000 };
+			await write(kurumi, 'metadata.json', JSON.stringify(m));
+			await svc.sync();
+			res.staleAccepted = items().some((a) => a.id === 'old1');
+			const m2 = JSON.parse(await read(kurumi, 'metadata.json'));
+			m2.actionItems.old1.status = 'done';
+			await write(kurumi, 'metadata.json', JSON.stringify(m2));
+			await svc.sync();
+			res.noBumpApplied = items().find((a) => a.id === 'old1')?.status;
+
+			// Half-written JSON is neither read nor overwritten.
+			await write(kurumi, 'metadata.json', '{ "half": ');
+			await svc.sync();
+			res.badJsonKept = (await read(kurumi, 'metadata.json')) === '{ "half": ';
+			await write(kurumi, 'metadata.json', JSON.stringify(m2));
+			await svc.sync();
+
+			// Title and tags edited in the file; then a move; then deleted.
+			const shared = await read(dir, 'shared-note.md');
+			await write(dir, 'shared-note.md', shared.replace('name: "Shared note"', 'name: "Renamed note"').replace('original', 'edited in file'));
+			await svc.sync();
+			const renamed = db.getMemoryObject(note.id);
+			res.renamed = [renamed.title, renamed.bodyMarkdown.trim()];
+			res.renamedFile = (await read(dir, 'renamed-note.md')).includes('edited in file');
+			res.oldGone = await dir.getFileHandle('shared-note.md').then(() => false, () => true);
+
+			const text = await read(dir, 'renamed-note.md');
+			await dir.removeEntry('renamed-note.md');
+			const area = await dir.getDirectoryHandle('area', { create: true });
+			await write(area, 'renamed-note.md', text);
+			await svc.sync();
+			const moved = db.getMemoryObject(note.id);
+			res.movedInto = moved.folderId ? 'folder' : 'top';
+			res.movedOnDisk = (await read(area, 'renamed-note.md')).includes('edited in file');
+
+			// Edited on both sides: neither is lost.
+			const onDisk = await read(area, 'renamed-note.md');
+			db.updateMemoryObject(note.id, { bodyMarkdown: 'edited in app' });
+			await write(area, 'renamed-note.md', onDisk.replace('edited in file', 'edited by agent'));
+			await svc.sync();
+			let all; db.memoryObjects.subscribe((v) => (all = v))();
+			res.conflict = {
+				note: db.getMemoryObject(note.id).bodyMarkdown.trim(),
+				copy: all.find((n) => n.title === 'Renamed note (edit from folder)')?.bodyMarkdown.trim()
+			};
+
+			// deleted: true goes to the Trash.
+			const del = await read(dir, 'other-note.md');
+			await write(dir, 'other-note.md', del.replace('---\n', '---\ndeleted: true\n'));
+			await svc.sync();
+			db.memoryObjects.subscribe((v) => (all = v))();
+			res.trashed = !all.some((n) => n.title === 'Other note');
+
+			// A note whose file can't be written: the rest still syncs, and says so.
+			// (a directory in its place stands in for a path Windows refuses)
+			await dir.getDirectoryHandle('blocked-note.md', { create: true });
+			db.addMemoryObject('Blocked note', 'cannot be written');
+			const after = db.addMemoryObject('After the long one', 'written');
+			const failed = await svc.sync();
+			res.failed = failed.error ?? '';
+			res.restWritten = (await read(dir, 'after-the-long-one.md')).includes('written');
+			res.metaWritten = JSON.parse(await read(kurumi, 'metadata.json')).noteIds['after-the-long-one.md'] === after.id;
+			res.guide = (await read(kurumi, 'AGENTS.md')).includes('## Rules');
+			return res;
+		});
+		assert.equal(out.untouched, true, 'unchanged file rewritten');
+		assert.equal(out.staleAccepted, true, 'new record with an old stamp dropped');
+		assert.equal(out.noBumpApplied, 'done', 'edit without a timestamp bump ignored');
+		assert.equal(out.badJsonKept, true, 'invalid metadata overwritten');
+		assert.deepEqual(out.renamed, ['Renamed note', 'edited in file']);
+		assert.ok(out.renamedFile && out.oldGone, 'file not moved to the new title');
+		assert.equal(out.movedInto, 'folder');
+		assert.ok(out.movedOnDisk, 'moved file not kept');
+		assert.deepEqual(out.conflict, { note: 'edited in app', copy: 'edited by agent' });
+		assert.ok(out.trashed, 'deleted: true ignored');
+		assert.match(out.failed, /couldn't be written/);
+		assert.ok(out.restWritten && out.metaWritten && out.guide, JSON.stringify(out));
+		assert.deepEqual(errors, []);
+	},
+
+	async 'the open app picks up folder changes by itself, both ways'(browser) {
+		const { page, errors } = await freshPage(browser);
+		await page.evaluate(async () => {
+			const kv = await import('/node_modules/idb-keyval/dist/index.js');
+			const root = await navigator.storage.getDirectory();
+			const dir = await root.getDirectoryHandle('e2e-watch', { create: true });
+			await kv.set('kurumi-local-fs-handle', dir);
+			localStorage.setItem('kurumi-local-fs-configured', '1');
+			localStorage.setItem('kurumi-sync-method', 'local-fs');
+		});
+		await page.reload({ waitUntil: 'load' });
+		await page.waitForFunction(() => performance.getEntriesByType('resource').some((e) => e.name.includes('/src/lib/db/store.ts')), { timeout: 30000 });
+		const seen = await page.evaluate(async () => {
+			const find = (frag) => performance.getEntriesByType('resource').map((e) => e.name).find((n) => n.includes(frag));
+			const db = await import(find('/src/lib/db/store.ts'));
+			const root = await navigator.storage.getDirectory();
+			const dir = await root.getDirectoryHandle('e2e-watch');
+			const until = async (check) => {
+				const end = Date.now() + 45000;
+				while (Date.now() < end) {
+					if (await check()) return true;
+					await new Promise((r) => setTimeout(r, 500));
+				}
+				return false;
+			};
+			// Started by the watch alone: it writes the folder on opening.
+			const kurumi = await until(() => dir.getDirectoryHandle('.kurumi').then((d) => d.getFileHandle('AGENTS.md')).then(() => true, () => false));
+			const w = await (await dir.getFileHandle('from-agent.md', { create: true })).createWritable();
+			await w.write('---\nid: watched1\nname: "From agent"\n---\nhello\n');
+			await w.close();
+			const inbound = await until(() => !!db.getMemoryObject('watched1'));
+			// A to-do made in the app reaches the file without a click.
+			db.addActionItem({ text: 'From app' });
+			const outbound = await until(async () => {
+				const d = await dir.getDirectoryHandle('.kurumi');
+				const text = await (await (await d.getFileHandle('metadata.json')).getFile()).text();
+				return text.includes('From app');
+			});
+			return { kurumi, inbound, outbound };
+		});
+		assert.deepEqual([seen.kurumi, seen.inbound, seen.outbound], [true, true, true], JSON.stringify(seen));
+		assert.deepEqual(errors, []);
+	},
+
 	async 'settings show the selected local folder'(browser) {
 		const { page, errors } = await freshPage(browser);
 		const name = await page.evaluate(async () => {
@@ -1481,6 +1640,7 @@ const scenarios = {
 		await page.waitForSelector('[data-testid="local-folder-name"]', { timeout: 15000 });
 		const shown = await page.$eval('[data-testid="local-folder-name"]', (el) => el.textContent.trim());
 		assert.equal(shown, name);
+		await page.waitForFunction(() => document.querySelector('[data-testid="local-folder-entries"]')?.textContent.includes('.kurumi/'), { timeout: 30000 });
 		assert.deepEqual(errors, []);
 	}
 };

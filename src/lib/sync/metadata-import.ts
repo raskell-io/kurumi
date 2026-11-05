@@ -9,6 +9,7 @@
  */
 
 import type { GitMetadata } from '$lib/git/convert';
+import { canonicalJSON, hashText } from './folder-state';
 import type {
 	ActionItem,
 	Decision,
@@ -160,43 +161,105 @@ export function readMetadataRecords(metadata: GitMetadata, fallbackVaultId: stri
 	};
 }
 
-// Newer than the local copy; or, with no local copy, written since the last
-// sync. Without that second condition a record deleted in the app would come
-// back from the file, which still lists it until this sync rewrites it.
-function pick<T extends { id: string }>(
-	incoming: T[],
-	known: T[],
-	since: number | null,
-	stampOf: (record: T) => number
-): T[] {
-	const byId = new Map(known.map((record) => [record.id, record]));
-	return incoming.filter((record) => {
-		const local = byId.get(record.id);
-		if (local) return stampOf(record) > stampOf(local);
-		return since === null || stampOf(record) > since;
-	});
+type Section = 'people' | 'events' | 'actionItems' | keyof MetadataRecords['work'];
+
+// Every list with its section name, for walking the records generically.
+function sections(records: MetadataRecords): [Section, { id: string }[]][] {
+	return [
+		['people', records.people],
+		['events', records.events],
+		['actionItems', records.actionItems],
+		['projects', records.work.projects],
+		['decisions', records.work.decisions],
+		['questions', records.work.questions],
+		['meetingSeries', records.work.meetingSeries]
+	];
 }
 
-const updatedAt = (record: { updatedAt: number }) => record.updatedAt;
-const modified = (record: { modified: number }) => record.modified;
+const stampKey = (section: Section) => (section === 'people' || section === 'events' ? 'modified' : 'updatedAt');
 
-/** What a metadata file changes compared with the database (local folder). */
+function fingerprint(record: object): string {
+	return hashText(canonicalJSON(record));
+}
+
+/** `<section>:<id>` → fingerprint, to compare a later file against. */
+export function recordFingerprints(records: MetadataRecords): Record<string, string> {
+	const out: Record<string, string> = {};
+	for (const [section, list] of sections(records)) {
+		for (const record of list) out[`${section}:${record.id}`] = fingerprint(record);
+	}
+	return out;
+}
+
+export interface ExternalChanges {
+	changes: MetadataRecords;
+	/** Records marked `"deleted": true` in the file. */
+	deletions: { section: Section; id: string }[];
+}
+
+/**
+ * What a metadata file changes compared with the database, as a three-way
+ * merge against `base`, the fingerprints of what we last wrote there:
+ *
+ * - not in the database, but in base: deleted in the app, stays deleted;
+ * - not in the database or base: new from outside;
+ * - same as base or the database: nothing happened;
+ * - differs, database unchanged since base: edited outside, whatever its
+ *   timestamp says (it's bumped so it wins everywhere else too);
+ * - differs on both sides: the newer timestamp wins, the app on a tie.
+ *
+ * Without a base (first sync after picking a folder) timestamps decide: newer
+ * than the local copy, or for an unknown record newer than the last sync.
+ */
 export function pickExternalChanges(
 	incoming: MetadataRecords,
 	known: MetadataRecords,
+	base: Record<string, string> | undefined,
 	since: number | null
-): MetadataRecords {
-	return {
-		people: pick(incoming.people, known.people, since, modified),
-		events: pick(incoming.events, known.events, since, modified),
-		actionItems: pick(incoming.actionItems, known.actionItems, since, updatedAt),
+): ExternalChanges {
+	const knownBySection = new Map(sections(known));
+	const deletions: ExternalChanges['deletions'] = [];
+
+	const pick = <T extends { id: string }>(section: Section, list: T[]): T[] => {
+		const key = stampKey(section);
+		const stampOf = (record: T) => (record as unknown as Record<string, number>)[key];
+		const locals = new Map((knownBySection.get(section) as T[]).map((r) => [r.id, r]));
+		const out: T[] = [];
+		for (const record of list) {
+			const local = locals.get(record.id);
+			if ((record as Record<string, unknown>).deleted === true) {
+				if (local) deletions.push({ section, id: record.id });
+				continue;
+			}
+			const seen = base?.[`${section}:${record.id}`];
+			if (!base) {
+				if (local ? stampOf(record) > stampOf(local) : since === null || stampOf(record) > since) out.push(record);
+			} else if (!local) {
+				if (seen === undefined) out.push(record);
+			} else {
+				const print = fingerprint(record);
+				const localPrint = fingerprint(local);
+				if (print === seen || print === localPrint) continue;
+				if (localPrint === seen || stampOf(record) > stampOf(local)) {
+					out.push({ ...record, [key]: Math.max(stampOf(record), stampOf(local) + 1) });
+				}
+			}
+		}
+		return out;
+	};
+
+	const changes: MetadataRecords = {
+		people: pick('people', incoming.people),
+		events: pick('events', incoming.events),
+		actionItems: pick('actionItems', incoming.actionItems),
 		work: {
-			projects: pick(incoming.work.projects, known.work.projects, since, updatedAt),
-			decisions: pick(incoming.work.decisions, known.work.decisions, since, updatedAt),
-			questions: pick(incoming.work.questions, known.work.questions, since, updatedAt),
-			meetingSeries: pick(incoming.work.meetingSeries, known.work.meetingSeries, since, updatedAt)
+			projects: pick('projects', incoming.work.projects),
+			decisions: pick('decisions', incoming.work.decisions),
+			questions: pick('questions', incoming.work.questions),
+			meetingSeries: pick('meetingSeries', incoming.work.meetingSeries)
 		}
 	};
+	return { changes, deletions };
 }
 
 export function hasRecords(records: MetadataRecords): boolean {

@@ -121,8 +121,7 @@ Records work the same way: to-dos, people, events, projects, decisions,
 questions and meetings added to a `.kurumi/metadata.json` are read back,
 and so are files added to `.kurumi/blobs/`. `.kurumi/AGENTS.md`, written on
 every sync, has the formats, for coding agents working in the checkout. If
-git reports a conflict in `metadata.json`, this machine's version is kept,
-so an uncommitted hand edit there can be lost.
+git reports a conflict in `metadata.json`, this machine's version is kept.
 
 Renaming or deleting notes should happen in Kurumi.
 
