@@ -122,8 +122,10 @@ it: *"Read `.kurumi/AGENTS.md`, then add a to-do for…"*.
 
 While Kurumi is open it notices changes in a local folder within about 15
 seconds, and writes its own there just as quickly, so you and an agent can work
-at the same time. If both edit the same note, the agent's text becomes a
-separate note rather than being lost. When Kurumi was closed it catches up on
+at the same time. If both edit a note, changes to different lines are merged; if
+both change the same lines, the agent's text becomes a separate note. Sync never
+deletes a file: one it has to remove, like the old name of a renamed note, moves
+to `.kurumi/archive/`. When Kurumi was closed it catches up on
 opening, though the browser may first want a click on **Sync now** to allow the
 folder again. With Git, changes arrive at the next pull.
 

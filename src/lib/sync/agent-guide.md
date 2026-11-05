@@ -53,6 +53,9 @@ Before you add anything:
 - To delete something, mark it (see below). Removing a file or a record does
   nothing: Kurumi writes it back, so that an unmounted disk or a bad merge
   can't delete anything.
+- Kurumi never deletes a file. When a file has to go (a note renamed in the app,
+  say), it moves to `.kurumi/archive/` first. That's where to look for anything
+  that seems to have disappeared.
 
 ## Which setup is this?
 
@@ -119,8 +122,8 @@ The body is Markdown.
 - A person: @Dana Reyes, a date: //2026-11-20
 ```
 
-- `name` is the title. Pick one no other note in the folder uses: the file is
-  named after it, so two notes with the same title share one file.
+- `name` is the title, and the file is named after it. Notes with the same title
+  in one folder get separate files, the newer with its id added.
 - The file name should be the slugged title (`my-note.md`). In a local folder
   Kurumi renames it to that if it isn't.
 - Frontmatter is deliberately simple: `---` on the very first line (LF line
@@ -141,10 +144,13 @@ directories. **Finding a note's id:** its frontmatter, or `noteIds` in
 `metadata.json` (path to id).
 
 To edit a note in a local folder, change its body, `tags`, `name` or emoji
-`icon`. To move it, move the file. To delete it (to the Trash), add
+`icon`. Keep the frontmatter if you can. A file rewritten without it still
+updates that note, and keeps its title and tags. An emptied file is ignored.
+Writing a different `id` to an existing path makes a new note. To move it, move the file. To delete it (to the Trash), add
 `deleted: true` to its frontmatter. If the note was edited in the app at the
-same time, the app's text stays on the note and yours becomes a new note titled
-"… (edit from folder)", so nothing is lost.
+same time, the two are merged where they touch different lines. If you changed
+the same lines, the app's text stays on the note and yours becomes a new note
+titled "… (edit from folder)", so nothing is lost.
 
 With git sync, change the body, `tags` or `name` and update `modified` to now.
 Moving and `deleted` are local folder only.
@@ -214,8 +220,8 @@ Dates like `dueDate` are `YYYY-MM-DD`.
 
 To change an existing record, edit it and set `updatedAt` (`modified` for
 people and events) to now. To delete any record, add `"deleted": true` to it
-(local folder only). If the app changed the same record too, the newer
-timestamp wins.
+(local folder only). If the app changed the same record too, changes to
+different fields both apply; for the same field, the newer timestamp wins.
 
 ### People and events (`people`, `events`, keyed by id)
 
@@ -397,5 +403,7 @@ After Kurumi has synced, look at the files again:
 - A new note has moved to its slugged file name and gained an `id` if it had
   none.
 - A blob still listed under `blobs` with your mime type is in Kurumi.
+- `.kurumi/rescued/` holds copies of changed files Kurumi had to replace without
+  having taken in their content. Tell the user if anything appears there.
 - If nothing changes, Kurumi may be closed or waiting for folder permission.
   Ask the user to look at Settings → Sync.

@@ -162,14 +162,11 @@ export function parseFrontMatter(content: string): { frontMatter: Record<string,
 /**
  * Convert a memory to a markdown file
  */
-export function noteToMarkdownFile(memory: MemoryObject, folders: Folder[]): MarkdownFile {
-	const folderPath = buildFolderPath(memory, folders);
-	const slug = generateSlug(memory.title || 'untitled');
-	const filename = `${slug}.md`;
-
-	const pathParts = [...folderPath, filename];
-	const path = pathParts.join('/');
-
+export function noteToMarkdownFile(
+	memory: MemoryObject,
+	folders: Folder[],
+	path: string = [...buildFolderPath(memory, folders), `${generateSlug(memory.title || 'untitled')}.md`].join('/')
+): MarkdownFile {
 	const frontMatter = generateFrontMatter(memory);
 	const content = frontMatter + memory.bodyMarkdown;
 
@@ -180,7 +177,32 @@ export function noteToMarkdownFile(memory: MemoryObject, folders: Folder[]): Mar
  * Convert all memories to markdown files
  */
 export function notesToMarkdownFiles(memories: MemoryObject[], folders: Folder[]): MarkdownFile[] {
-	return memories.map((memory) => noteToMarkdownFile(memory, folders));
+	const paths = noteFilePaths(memories, folders);
+	return memories.map((memory) => noteToMarkdownFile(memory, folders, paths.get(memory.id)));
+}
+
+/**
+ * The file each note is written to, one per note: of notes that would share a
+ * path (same title and folder), the oldest keeps it and the others get their
+ * id added, so none overwrites another's file. Compared case-insensitively,
+ * as many disks are.
+ */
+export function noteFilePaths(memories: MemoryObject[], folders: Folder[]): Map<string, string> {
+	const paths = new Map<string, string>();
+	const taken = new Set<string>();
+	const oldestFirst = [...memories].sort(
+		(a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+	);
+	for (const memory of oldestFirst) {
+		const plain = noteToMarkdownFile(memory, folders).path;
+		const stem = plain.slice(0, -'.md'.length);
+		let path = plain;
+		if (taken.has(path.toLowerCase())) path = `${stem}-${memory.id.slice(0, 8)}.md`;
+		if (taken.has(path.toLowerCase())) path = `${stem}-${memory.id}.md`;
+		taken.add(path.toLowerCase());
+		paths.set(memory.id, path);
+	}
+	return paths;
 }
 
 /**
@@ -232,9 +254,9 @@ export function createMetadata(
 
 	const noteIds: Record<string, string> = {};
 	const notes: Record<string, NoteExtras> = {};
+	const paths = noteFilePaths(memories, folders);
 	for (const memory of memories) {
-		const file = noteToMarkdownFile(memory, folders);
-		noteIds[file.path] = memory.id;
+		noteIds[paths.get(memory.id)!] = memory.id;
 		const extras: NoteExtras = {
 			...(memory.icon?.startsWith('data:') ? { icon: memory.icon } : {}),
 			...(memory.favoritedAt ? { favoritedAt: memory.favoritedAt } : {}),

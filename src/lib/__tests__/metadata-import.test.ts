@@ -132,6 +132,18 @@ describe('pickExternalChanges', () => {
 		expect(both(10)[0].status).toBe('done');
 	});
 
+	it('merges changes to different fields when both sides changed', () => {
+		const record = (extra: object) => ({ a: todo('a', 2_000_000_000_000, extra) });
+		const merged = pickExternalChanges(
+			read(record({ status: 'done' }) as never),
+			read({ a: todo('a', 2_000_000_000_001, { dueDate: '2030-01-01' }) } as never),
+			recordFingerprints(read(record({}) as never)),
+			LAST_SYNC,
+			read(record({}) as never)
+		).changes.actionItems[0];
+		expect([merged.status, merged.dueDate]).toEqual(['done', '2030-01-01']);
+	});
+
 	it('reports records marked deleted', () => {
 		const { deletions, changes } = pick(a(5, { deleted: true }), a(5), a(5));
 		expect(deletions).toEqual([{ section: 'actionItems', id: 'a' }]);

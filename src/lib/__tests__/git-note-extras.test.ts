@@ -6,7 +6,7 @@ vi.mock('../git/fs', () => ({}));
 vi.mock('isomorphic-git', () => ({ default: {} }));
 vi.mock('isomorphic-git/http/web', () => ({ default: {} }));
 
-import { createMetadata, noteToMarkdownFile, parseMarkdownFile } from '../git/convert';
+import { createMetadata, noteToMarkdownFile, notesToMarkdownFiles, parseMarkdownFile } from '../git/convert';
 import { parseNotesFromFiles, mergeMemoryLists } from '../git/service';
 import type { MemoryObject, Vault } from '../db/types';
 
@@ -53,6 +53,17 @@ describe('folders of notes pulled from git', () => {
 		metadata.folders.loop = folder('Loop', 'loop');
 		expect(parse('kickoff.md').memories).toHaveLength(1);
 		delete metadata.folders.loop;
+	});
+});
+
+describe('note files', () => {
+	it('gives notes with the same title a file each, the oldest the plain name', () => {
+		const older = note({ id: 'olderNoteId', createdAt: 1 });
+		const newer = note({ id: 'NewerNoteId9', createdAt: 2 });
+		const files = notesToMarkdownFiles([newer, older], []);
+		expect(files.map((f) => f.path)).toEqual(['plan-NewerNot.md', 'plan.md']);
+		const metadata = createMetadata(vault, [], [newer, older], [], []);
+		expect(metadata.noteIds).toEqual({ 'plan.md': 'olderNoteId', 'plan-NewerNot.md': 'NewerNoteId9' });
 	});
 });
 

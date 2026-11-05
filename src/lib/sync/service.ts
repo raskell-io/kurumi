@@ -61,7 +61,8 @@ import {
 	type MetadataFile,
 	type WriteSession
 } from './local-fs';
-import { hashText, loadFolderState, saveFolderState, type FolderState } from './folder-state';
+import { hashText, loadBaseText, loadFolderState, saveFolderState, type FolderState } from './folder-state';
+import { mergeText } from './text-merge';
 import { showNotice } from '$lib/stores/notice';
 import {
 	getMemoryObject,
@@ -80,7 +81,7 @@ import {
 	batchUpdates,
 	NewerVaultError
 } from '$lib/db';
-import { parseMarkdownFile, parseFrontMatter, noteToMarkdownFile, type GitMetadata } from '$lib/git/convert';
+import { parseMarkdownFile, parseFrontMatter, parseMetadata, noteToMarkdownFile, noteFilePaths, type GitMetadata } from '$lib/git/convert';
 import { readMetadataRecords, pickExternalChanges, hasRecords } from './metadata-import';
 import { generateSlug, vaultDirNames } from '$lib/utils/markdown-export';
 import {
@@ -514,71 +515,110 @@ function tagsEqual(a: string[], b: string[]): boolean {
 	return [...a].sort().every((tag, i) => tag === sortedB[i]);
 }
 
+// Did this file change from outside since we wrote it? Without a record of
+// that (first sync after picking a folder), its date decides.
+function changedOnDisk(file: DiskMarkdownFile, state: FolderState, lastSyncedAt: number | null): boolean {
+	const base = state.files[file.path.toLowerCase()];
+	return base !== undefined
+		? hashText(file.content) !== base
+		: lastSyncedAt == null || file.lastModified > lastSyncedAt;
+}
+
+// No record of our last write (cleared browser data, a new device): did this
+// file's copy of the note predate the note's latest edit? Then both changed,
+// and a stale file can't simply replace newer text.
+function writtenBefore(modified: unknown, updatedAt: number): boolean {
+	const written = typeof modified === 'string' ? Date.parse(modified) : NaN;
+	return !Number.isNaN(written) && written < updatedAt;
+}
+
 /**
- * Apply edits made to the .md files on disk, matched by frontmatter `id`:
- * body, tags, title (`name`), emoji icon, and `deleted: true` (to the Trash).
+ * Apply edits made to the .md files on disk: body, tags, title (`name`), emoji
+ * icon, and `deleted: true` (to the Trash). The note is the one named by the
+ * frontmatter `id`, or for a file without one (an agent rewriting the whole
+ * file), the note Kurumi last wrote to that path. An empty file is ignored:
+ * more likely a write in progress than a wish to erase the note.
  *
  * A file is edited if it differs from what we last wrote there, and the note
- * changed in the app if it differs from that too. If both happened and the
- * text differs, the app's note stays and the file's version becomes a note of
- * its own, so neither side is lost. Without a record of the last write (first
- * sync after picking a folder), dates decide. `vaultId` limits the import to
- * one vault; null (all-vaults layout) accepts notes from any vault.
+ * changed in the app if it differs from that too. If both happened, the two
+ * are merged where they touch different lines; otherwise the app's note stays
+ * and the file's version becomes a note of its own. Neither side is lost. `vaultId` limits the import to one vault;
+ * null (all-vaults layout) accepts notes from any vault.
  */
-function importLocalFSEdits(
+async function importLocalFSEdits(
 	files: DiskMarkdownFile[],
 	vaultId: string | null,
 	lastSyncedAt: number | null,
-	state: FolderState
-): void {
+	session: WriteSession,
+	managed: Map<string, string>
+): Promise<void> {
+	const { state, consumed } = session;
 	for (const file of files) {
 		const content = file.content.replace(/\r\n?/g, '\n');
+		if (!content.trim()) continue;
 		const { frontMatter } = parseFrontMatter(content);
-		if (typeof frontMatter.id !== 'string' || !frontMatter.id) continue;
+		const ownId = typeof frontMatter.id === 'string' && frontMatter.id ? frontMatter.id : null;
+		const lowered = file.path.toLowerCase();
+		const id = ownId ?? managed.get(lowered);
+		if (!id) continue;
 
-		const parsed = parseMarkdownFile(file.path, content);
-		const existing = getMemoryObject(parsed.id);
-		if (!existing || existing.deletedAt) continue;
+		const existing = getMemoryObject(id);
+		if (!existing || existing.deletedAt) continue; // importNewLocalFiles' case
 		if (vaultId !== null && existing.vaultId !== vaultId) continue;
-
-		const base = state.files[file.path.toLowerCase()];
-		const fileChanged =
-			base !== undefined
-				? hashText(file.content) !== base
-				: lastSyncedAt == null || file.lastModified > lastSyncedAt;
-		if (!fileChanged) continue; // what's different, if anything, is newer in the app
+		if (!changedOnDisk(file, state, lastSyncedAt)) continue; // what differs, if anything, is newer in the app
+		consumed.add(lowered);
 
 		if (frontMatter.deleted === true || frontMatter.deleted === 'true') {
 			deleteMemoryObject(existing.id);
 			continue;
 		}
 
+		const parsed = parseMarkdownFile(file.path, content);
+		// No id: not our frontmatter, so what it leaves out says nothing.
+		const tags = ownId || Array.isArray(frontMatter.tags) ? parsed.tags : existing.tags;
 		const bodyChanged = canonicalBody(parsed.content) !== canonicalBody(existing.bodyMarkdown);
 		const named = typeof frontMatter.name === 'string' && frontMatter.name.trim() ? parsed.title : existing.title;
+		const base = state.files[lowered];
 		const docChanged =
 			base !== undefined
 				? hashText(noteToMarkdownFile(existing, []).content) !== base
-				: lastSyncedAt != null && existing.updatedAt > lastSyncedAt;
+				: writtenBefore(frontMatter.modified, existing.updatedAt);
 
+		let body = parsed.content;
+		let finalTags = tags;
+		let finalTitle = named;
 		if (docChanged && bodyChanged) {
-			addImportedMemoryObject({
-				title: `${existing.title || 'Untitled'} (edit from folder)`,
-				bodyMarkdown: parsed.content,
-				tags: parsed.tags,
-				folderId: existing.folderId,
-				vaultId: existing.vaultId,
-				createdAt: Date.now(),
-				updatedAt: Date.now()
-			});
-			continue;
+			// Both edited. Different parts merge; the same lines can't, and then
+			// the app's note stays and the file's text becomes a note of its own.
+			const baseText = await loadBaseText(lowered);
+			const baseFile = baseText === undefined ? null : parseFrontMatter(baseText.replace(/\r\n?/g, '\n'));
+			const merged = baseFile ? mergeText(baseFile.body, existing.bodyMarkdown, parsed.content) : null;
+			if (merged === null) {
+				addImportedMemoryObject({
+					title: `${existing.title || 'Untitled'} (edit from folder)`,
+					bodyMarkdown: parsed.content,
+					tags,
+					folderId: existing.folderId,
+					vaultId: existing.vaultId,
+					createdAt: Date.now(),
+					updatedAt: Date.now()
+				});
+				continue;
+			}
+			body = merged;
+			// The file's title and tags only if it really changed them.
+			const baseTags = Array.isArray(baseFile!.frontMatter.tags) ? baseFile!.frontMatter.tags.map(String) : [];
+			if (tagsEqual(tags, baseTags)) finalTags = existing.tags;
+			if (baseFile!.frontMatter.name === frontMatter.name) finalTitle = existing.title;
 		}
 
-		const tagsChanged = !tagsEqual(parsed.tags, existing.tags);
-		if (bodyChanged || tagsChanged || named !== existing.title) {
-			updateMemoryObject(parsed.id, { bodyMarkdown: parsed.content, tags: parsed.tags, title: named });
+		if (canonicalBody(body) !== canonicalBody(existing.bodyMarkdown) || !tagsEqual(finalTags, existing.tags) || finalTitle !== existing.title) {
+			updateMemoryObject(existing.id, { bodyMarkdown: body, tags: [...finalTags], title: finalTitle });
 		}
-		const emoji = existing.icon?.startsWith('data:') ? existing.icon : (parsed.icon ?? null);
-		if (emoji !== (existing.icon ?? null)) setMemoryIcon(parsed.id, emoji);
+		if (ownId) {
+			const emoji = existing.icon?.startsWith('data:') ? existing.icon : (parsed.icon ?? null);
+			if (emoji !== (existing.icon ?? null)) setMemoryIcon(existing.id, emoji);
+		}
 	}
 }
 
@@ -599,12 +639,15 @@ function importLocalFSEdits(
 async function importNewLocalFiles(
 	{ files, emptyDirs }: DiskTree,
 	allVaults: boolean,
-	currentVaultId: string
+	currentVaultId: string,
+	session: WriteSession,
+	lastSyncedAt: number | null
 ): Promise<{ path: string; memoryId: string }[]> {
 	// Case-insensitive: on macOS a file Kurumi wrote as "work/a.md" may be
 	// listed under the name the user first gave it ("Work/A.md").
 	const managedPaths = await localFSManagedPaths();
 	const managed = new Set([...managedPaths.keys()].map((p) => p.toLowerCase()));
+	const managedLowered = new Map([...managedPaths].map(([path, noteId]) => [path.toLowerCase(), noteId]));
 	const onDisk = new Set(files.map((f) => f.path.toLowerCase()));
 
 	// Top-level directory → vault (all-vaults layout).
@@ -652,10 +695,41 @@ async function importNewLocalFiles(
 	// One store refresh and save for everything found (see batchUpdates).
 	batchUpdates(() => {
 		for (const file of files) {
-			if (managed.has(file.path.toLowerCase())) continue; // one Kurumi wrote
-			const { frontMatter, body } = parseFrontMatter(file.content.replace(/\r\n?/g, '\n'));
-			const id = typeof frontMatter.id === 'string' && frontMatter.id ? frontMatter.id : undefined;
+			const lowered = file.path.toLowerCase();
+			const content = file.content.replace(/\r\n?/g, '\n');
+			const { frontMatter, body } = parseFrontMatter(content);
+			let id = typeof frontMatter.id === 'string' && frontMatter.id ? frontMatter.id : undefined;
+			const changed = changedOnDisk(file, session.state, lastSyncedAt);
+			// Handled as an edit: on its way to the Trash, not a new note.
+			if (frontMatter.deleted === true || frontMatter.deleted === 'true') continue;
+			const isGone = (noteId: string | undefined) => {
+				const note = noteId ? getMemoryObject(noteId) : undefined;
+				return !note || !!note.deletedAt;
+			};
+			if (managed.has(lowered)) {
+				// A path Kurumi wrote. Still a new note if something else was
+				// put there: another id, or text after its note went to the Trash.
+				if (!changed || !content.trim()) continue;
+				const owner = managedLowered.get(lowered);
+				if (!(id ? isGone(id) : isGone(owner))) continue;
+			}
+			// An edit of a note in the Trash can't apply to it, but mustn't vanish.
+			if (id && changed && getMemoryObject(id)?.deletedAt) id = undefined;
 			const { vaultId, dirs } = locate(file.path, false);
+			// Without an id, the same title and text in this vault is that note
+			// again (a restored backup, a copy): nothing to add.
+			if (!id && changed) {
+				const named = [frontMatter.name, frontMatter.title].find((v) => typeof v === 'string' && v.trim()) as string | undefined;
+				const title = named?.trim() ?? file.path.split('/').pop()!.replace(/\.(md|markdown)$/i, '');
+				const match = getVaultContents(vaultId).memories.find(
+					(m) => m.title.toLowerCase() === title.toLowerCase().replace(/-/g, ' ') && canonicalBody(m.bodyMarkdown) === canonicalBody(body)
+				);
+				if (match) {
+					session.consumed.add(lowered);
+					imported.push({ path: file.path, memoryId: match.id });
+					continue;
+				}
+			}
 			const known = id ? getMemoryObject(id) : undefined;
 			if (known) {
 				// Edits are handled separately. A known note here and not at the
@@ -664,9 +738,11 @@ async function importNewLocalFiles(
 				if (!known.deletedAt && known.vaultId === vaultId && previous && !onDisk.has(previous.toLowerCase())) {
 					updateMemoryObject(known.id, { folderId: ensureFolder(vaultId, dirs) });
 					imported.push({ path: file.path, memoryId: known.id });
+					session.consumed.add(lowered);
 				}
 				continue;
 			}
+			session.consumed.add(lowered);
 
 			const fileName = file.path.split('/').pop()!.replace(/\.(md|markdown)$/i, '');
 			const named = [frontMatter.name, frontMatter.title].find((v) => typeof v === 'string' && v.trim());
@@ -692,11 +768,13 @@ async function importNewLocalFiles(
  * Records added to or edited in `.kurumi/metadata.json` from outside Kurumi
  * (see agent-guide.md). Must run before the mirror is rewritten.
  */
-function importMetadataRecords(files: MetadataFile[], lastSyncedAt: number | null, state: FolderState): void {
-	for (const { metadata } of files) {
+async function importMetadataRecords(files: MetadataFile[], lastSyncedAt: number | null, state: FolderState): Promise<void> {
+	for (const { metadata, path } of files) {
 		const vaultId = metadata?.vault?.id;
 		if (!metadata || !vaultId || !get(vaults).some((v) => v.id === vaultId)) continue;
 		const contents = getVaultContents(vaultId);
+		const baseText = await loadBaseText(path.toLowerCase());
+		const baseMetadata = baseText ? parseMetadata(baseText) : null;
 		const { changes, deletions } = pickExternalChanges(
 			readMetadataRecords(metadata, vaultId),
 			// Through the same reader, so both sides compare field for field.
@@ -711,7 +789,8 @@ function importMetadataRecords(files: MetadataFile[], lastSyncedAt: number | nul
 				vaultId
 			),
 			state.records[vaultId],
-			lastSyncedAt
+			lastSyncedAt,
+			baseMetadata ? readMetadataRecords(baseMetadata, vaultId) : undefined
 		);
 		if (deletions.length > 0) {
 			deleteRecords(deletions);
@@ -739,13 +818,28 @@ async function removeImportedOriginals(
 	allVaults: boolean
 ): Promise<void> {
 	const dirNames = vaultDirNames(get(vaults));
+	const mirrored = allVaults ? get(vaults).map((v) => v.id) : [get(currentVaultId)];
+	// Where each note in the mirror now lives, and the paths that are taken.
+	const canonicalOf = new Map<string, string>();
+	for (const vaultId of mirrored) {
+		const { memories, folders } = getVaultContents(vaultId);
+		const prefix = allVaults ? `${dirNames.get(vaultId)}/` : '';
+		for (const [id, path] of noteFilePaths(memories, folders)) canonicalOf.set(id, prefix + path);
+	}
+	const taken = new Set([...canonicalOf.values()].map((p) => p.toLowerCase()));
+
 	const remove: string[] = [];
 	for (const { path, memoryId } of imported) {
 		const memory = getMemoryObject(memoryId);
 		if (!memory) continue;
-		const relative = noteToMarkdownFile(memory, getVaultContents(memory.vaultId).folders).path;
-		const canonical = allVaults ? `${dirNames.get(memory.vaultId)}/${relative}` : relative;
-		if (canonical === path) continue;
+		// Taken in for a vault that isn't the one being mirrored: it's safe in
+		// the database, and left here it would be imported again.
+		const canonical = canonicalOf.get(memoryId);
+		if (!canonical) {
+			remove.push(path);
+			continue;
+		}
+		if (canonical === path || taken.has(path.toLowerCase())) continue; // another note's file now
 		if ((await localFSExactFileExists(canonical)) && (await localFSExactFileExists(path))) remove.push(path);
 	}
 	await localFSRemoveImported(remove);
@@ -794,13 +888,22 @@ async function runLocalFSSync(): Promise<{ success: boolean; error?: string }> {
 
 		// Everything is read once, here. What differs from this by the time
 		// we write changed mid-sync and is left for the next one.
-		const session: WriteSession = { expected: new Map(), state: await loadFolderState(), skipped: false, failed: [] };
+		const session: WriteSession = {
+			expected: new Map(),
+			state: await loadFolderState(),
+			skipped: false,
+			failed: [],
+			consumed: new Set(),
+			rescued: []
+		};
+		const lastSyncedAt = get(syncState).lastSyncedAt;
 		const tree = await localFSReadTree();
 		for (const file of tree.files) session.expected.set(file.path.toLowerCase(), hashText(file.content));
 		const metadataFiles = await localFSReadMetadata();
 		for (const file of metadataFiles) {
 			if (file.metadata) {
 				session.expected.set(file.path.toLowerCase(), hashText(file.text));
+				session.consumed.add(file.path.toLowerCase());
 			} else {
 				// Not valid JSON, maybe half written: never overwritten, so a
 				// hand edit in it can still be finished or fixed.
@@ -812,9 +915,21 @@ async function runLocalFSSync(): Promise<{ success: boolean; error?: string }> {
 			}
 		}
 
+		// Without metadata we don't know which file belongs to which note, so
+		// the folder is left exactly as it is until it can be read again.
+		const metadataReadable = metadataFiles.every((file) => file.metadata);
+		if (!metadataReadable) session.skipped = true;
+		const managed = new Map(
+			[...(await localFSManagedPaths())].map(([path, id]) => [path.toLowerCase(), id])
+		);
+		// In the single-vault layout the folder holds the vault it says it does,
+		// which may no longer be the selected one.
+		const folderVaultId = metadataFiles[0]?.metadata?.vault?.id;
+		const folderVault = folderVaultId && get(vaults).some((v) => v.id === folderVaultId) ? folderVaultId : vaultId;
+
 		// Pull in edits made directly to the .md files on disk.
 		try {
-			importLocalFSEdits(tree.files, allVaults ? null : vaultId, get(syncState).lastSyncedAt, session.state);
+			await importLocalFSEdits(tree.files, allVaults ? null : folderVault, lastSyncedAt, session, managed);
 		} catch (importErr) {
 			console.warn('Local FS markdown import failed:', importErr);
 		}
@@ -822,14 +937,14 @@ async function runLocalFSSync(): Promise<{ success: boolean; error?: string }> {
 		// New files and folders added to the folder from outside Kurumi.
 		let imported: { path: string; memoryId: string }[] = [];
 		try {
-			imported = await importNewLocalFiles(tree, allVaults, vaultId);
+			if (metadataReadable) imported = await importNewLocalFiles(tree, allVaults, folderVault, session, lastSyncedAt);
 		} catch (importErr) {
 			console.warn('Local FS new-file import failed:', importErr);
 		}
 
 		// Records (to-dos, people, projects, …) added to metadata.json.
 		try {
-			importMetadataRecords(metadataFiles, get(syncState).lastSyncedAt, session.state);
+			await importMetadataRecords(metadataFiles, lastSyncedAt, session.state);
 		} catch (importErr) {
 			console.warn('Local FS metadata import failed:', importErr);
 		}
@@ -852,7 +967,9 @@ async function runLocalFSSync(): Promise<{ success: boolean; error?: string }> {
 		// in its own subfolder. The binary above stays the source of truth
 		// for pull/merge.
 		const vault = get(vaults).find((v) => v.id === vaultId);
-		if (allVaults) {
+		if (!metadataReadable) {
+			// See above: wait for the file to be fixed.
+		} else if (allVaults) {
 			const mirrors = await Promise.all(
 				get(vaults).map(async (v) => {
 					const contents = getVaultContents(v.id);
@@ -881,6 +998,10 @@ async function runLocalFSSync(): Promise<{ success: boolean; error?: string }> {
 			await removeImportedOriginals(imported, allVaults);
 		} catch (cleanupErr) {
 			console.warn('Local FS cleanup of imported files failed:', cleanupErr);
+		}
+
+		if (session.rescued.length > 0) {
+			showNotice(`Kept a copy of ${session.rescued.length} changed file(s) in .kurumi/rescued`);
 		}
 
 		// Something left for the next run: no signature makes the watch start it.

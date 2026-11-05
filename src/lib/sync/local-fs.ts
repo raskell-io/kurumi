@@ -25,7 +25,7 @@ import {
 import { vaultDirNames } from '$lib/utils/markdown-export';
 import { refToId, importBlobPayloads, type BlobPayload } from './blobs';
 import agentGuide from './agent-guide.md?raw';
-import { hashText, resetFolderState, type FolderState } from './folder-state';
+import { hashText, resetFolderState, saveBaseText, type FolderState } from './folder-state';
 import { readMetadataRecords, recordFingerprints } from './metadata-import';
 import type { MemoryObject, Folder, Vault, Person, Event, ActionItem } from '$lib/db/types';
 
@@ -36,6 +36,10 @@ const METADATA_FILE = 'metadata.json';
 // How to add things by editing the folder, for coding agents working in it.
 const AGENT_GUIDE_FILE = 'AGENTS.md';
 const BLOBS_DIR = 'blobs';
+const RESCUED_DIR = 'rescued';
+// Where files go instead of being deleted. The sync never deletes a file: it
+// copies it here first, and leaves it where it is if that fails.
+const ARCHIVE_DIR = 'archive';
 // All-vaults layout index: which subfolder each vault was last written to,
 // so a renamed (or removed) vault's old folder can be cleaned up.
 const VAULTS_INDEX_FILE = 'vaults.json';
@@ -259,6 +263,25 @@ export interface WriteSession {
 	skipped: boolean;
 	/** Files that couldn't be written (too long a path, a name Windows reserves, a lock). */
 	failed: string[];
+	/** Lowercased paths whose outside changes the sync has taken in. */
+	consumed: Set<string>;
+	/** Copies saved under `.kurumi/rescued/` this run. */
+	rescued: string[];
+}
+
+// The last line of defence. About to replace or remove a file that was changed
+// from outside, and nothing took that change in: keep a copy. The importers
+// should have handled it; if one ever doesn't, this makes that recoverable.
+async function rescueIfUnread(key: string, text: string, session: WriteSession): Promise<void> {
+	const lowered = key.toLowerCase();
+	const base = session.state.files[lowered];
+	if (base === undefined || hashText(text) === base || session.consumed.has(lowered)) return;
+	const root = await getHandle();
+	if (!root) return;
+	const dir = await getOrCreateDir(root, [METADATA_DIR, RESCUED_DIR]);
+	const name = `${Date.now()}-${key.replace(/[\\/]/g, '__')}`;
+	await writeFile(dir, name, text);
+	session.rescued.push(`${METADATA_DIR}/${RESCUED_DIR}/${name}`);
 }
 
 async function readIfExists(dir: FileSystemDirectoryHandle, name: string): Promise<string | null> {
@@ -289,11 +312,14 @@ async function writeGuarded(
 			return false;
 		}
 		if (diskHash === hash) {
+			if (session.state.files[lowered] !== hash) await saveBaseText(lowered, content);
 			session.state.files[lowered] = hash;
 			return true;
 		}
+		await rescueIfUnread(key, disk, session);
 	}
 	await writeFile(dir, name, content);
+	await saveBaseText(lowered, content);
 	session.expected.set(lowered, hash);
 	session.state.files[lowered] = hash;
 	return true;
@@ -324,9 +350,28 @@ async function getExistingDir(
 	return current;
 }
 
-// Remove a file at a relative path without creating any directories. Best
-// effort: missing dirs/files are ignored (the goal is pruning stale notes).
-async function removeFileByPath(root: FileSystemDirectoryHandle, path: string): Promise<void> {
+// Move a file out of the way, which is the only way the sync ever removes one:
+// into `.kurumi/archive/`, named by content (so a note that keeps moving back
+// and forth is stored once), and only once that copy is safely written.
+async function archiveFile(dir: FileSystemDirectoryHandle, filename: string, label: string): Promise<void> {
+	const handle = await dir.getFileHandle(filename);
+	const file = await handle.getFile();
+	const bytes = await file.arrayBuffer();
+	const textual = /\.(md|markdown|json)$/i.test(filename);
+	const tag = textual ? hashText(new TextDecoder().decode(bytes)) : `${file.size}`;
+	const root = await getHandle();
+	if (!root) throw new Error('Local folder not available');
+	const archive = await getOrCreateDir(root, [METADATA_DIR, ARCHIVE_DIR]);
+	const name = `${tag}-${label.replace(/[\\/]/g, '__')}`;
+	const present = await archive.getFileHandle(name).then(() => true, () => false);
+	if (!present) await writeFile(archive, name, bytes);
+	await dir.removeEntry(filename);
+}
+
+// Archive a file at a relative path without creating any directories. Best
+// effort: a file that's already gone is fine, and one that can't be archived
+// stays where it is.
+async function removeFileByPath(root: FileSystemDirectoryHandle, path: string, prefix = ''): Promise<void> {
 	const parts = path.split('/').filter(Boolean);
 	const filename = parts.pop();
 	if (!filename) return;
@@ -335,10 +380,28 @@ async function removeFileByPath(root: FileSystemDirectoryHandle, path: string): 
 		for (const part of parts) {
 			current = await current.getDirectoryHandle(part);
 		}
-		await current.removeEntry(filename);
-	} catch {
-		// Already gone or directory missing — nothing to prune.
+		await archiveFile(current, filename, prefix + path);
+	} catch (err) {
+		if (!(err instanceof DOMException && err.name === 'NotFoundError')) {
+			console.warn(`Left ${prefix + path} in place, couldn't archive it:`, err);
+		}
 	}
+}
+
+// Archive everything in a directory (a removed vault's `.kurumi`), then remove
+// the directory if all of it made it.
+async function archiveTree(parent: FileSystemDirectoryHandle, name: string, prefix: string): Promise<void> {
+	const dir = await parent.getDirectoryHandle(name);
+	const entries = (dir as FileSystemDirectoryHandle & {
+		values: () => AsyncIterableIterator<FileSystemHandle>;
+	}).values();
+	const handles: FileSystemHandle[] = [];
+	for await (const handle of entries) handles.push(handle);
+	for (const handle of handles) {
+		if (handle.kind === 'directory') await archiveTree(dir, handle.name, `${prefix}${name}/`);
+		else await archiveFile(dir, handle.name, `${prefix}${name}/${handle.name}`);
+	}
+	await parent.removeEntry(name);
 }
 
 // Every directory prefix implied by a set of file paths (e.g. "a/b/note.md"
@@ -420,7 +483,7 @@ export async function localFSPushMarkdown(
 	const dir = await getHandle();
 	if (!dir) throw new Error('Local folder not configured');
 	// Switching back from the all-vaults layout: clear its vault folders.
-	await pruneAllVaultsLayout(dir, new Set());
+	await pruneAllVaultsLayout(dir, new Set(), session);
 	await writeVaultMarkdown(dir, { memories, folders, vault, people, events, actionItems, blobs, work }, session, '');
 }
 
@@ -449,10 +512,9 @@ export async function localFSPushAllVaults(mirrors: VaultMirror[], session: Writ
 	// and their index (blobs stay; they're harmless and may be shared).
 	const rootPaths = await readManagedPaths(dir);
 	if (rootPaths.length > 0) {
-		await pruneManagedFiles(dir, rootPaths, new Set());
+		await pruneManagedFiles(dir, rootPaths, new Set(), session);
 		try {
-			const metaDir = await dir.getDirectoryHandle(METADATA_DIR);
-			await metaDir.removeEntry(METADATA_FILE);
+			await archiveFile(await dir.getDirectoryHandle(METADATA_DIR), METADATA_FILE, `${METADATA_DIR}/${METADATA_FILE}`);
 		} catch {
 			// Already gone.
 		}
@@ -465,7 +527,7 @@ export async function localFSPushAllVaults(mirrors: VaultMirror[], session: Writ
 		index[mirror.vault.id] = name;
 		await writeVaultMarkdown(await getOrCreateDir(dir, [name]), mirror, session, `${name}/`);
 	}
-	await pruneAllVaultsLayout(dir, new Set(Object.values(index)));
+	await pruneAllVaultsLayout(dir, new Set(Object.values(index)), session);
 
 	const metaDir = await getOrCreateDir(dir, [METADATA_DIR]);
 	await writeIfChanged(metaDir, VAULTS_INDEX_FILE, JSON.stringify({ version: 1, vaults: index }, null, 2) + '\n');
@@ -489,7 +551,8 @@ async function readVaultsIndex(dir: FileSystemDirectoryHandle): Promise<Record<s
 // this tears the whole layout down, index included.
 async function pruneAllVaultsLayout(
 	dir: FileSystemDirectoryHandle,
-	keep: Set<string>
+	keep: Set<string>,
+	session: WriteSession
 ): Promise<void> {
 	const index = await readVaultsIndex(dir);
 	for (const name of new Set(Object.values(index))) {
@@ -500,9 +563,9 @@ async function pruneAllVaultsLayout(
 		} catch {
 			continue;
 		}
-		await pruneManagedFiles(vaultDir, await readManagedPaths(vaultDir), new Set());
+		await pruneManagedFiles(vaultDir, await readManagedPaths(vaultDir), new Set(), session, `${name}/`);
 		try {
-			await vaultDir.removeEntry(METADATA_DIR, { recursive: true });
+			await archiveTree(vaultDir, METADATA_DIR, `${name}/`);
 		} catch {
 			// No metadata dir.
 		}
@@ -510,8 +573,7 @@ async function pruneAllVaultsLayout(
 	}
 	if (keep.size === 0 && Object.keys(index).length > 0) {
 		try {
-			const metaDir = await dir.getDirectoryHandle(METADATA_DIR);
-			await metaDir.removeEntry(VAULTS_INDEX_FILE);
+			await archiveFile(await dir.getDirectoryHandle(METADATA_DIR), VAULTS_INDEX_FILE, `${METADATA_DIR}/${VAULTS_INDEX_FILE}`);
 		} catch {
 			// Already gone.
 		}
@@ -544,9 +606,10 @@ async function pruneManagedFiles(
 				session.skipped = true;
 				continue;
 			}
+			if (text !== null) await rescueIfUnread(prefix + path, text, session);
 			delete session.state.files[key];
 		}
-		await removeFileByPath(dir, path);
+		await removeFileByPath(dir, path, prefix);
 	}
 
 	// Reclaim folders that Kurumi managed but no longer uses (e.g. a deleted
@@ -815,6 +878,8 @@ export async function localFSSignature(): Promise<string | null> {
 			if (handle.name === 'node_modules') continue;
 			if (handle.name.startsWith('.') && handle.name !== METADATA_DIR) continue;
 			const path = `${prefix}${handle.name}`;
+			// Only Kurumi writes those, and they can get long.
+			if (path === `${METADATA_DIR}/${ARCHIVE_DIR}` || path === `${METADATA_DIR}/${RESCUED_DIR}`) continue;
 			if (handle.kind === 'directory') await walk(handle as FileSystemDirectoryHandle, `${path}/`);
 			else if (handle.name !== AGENT_GUIDE_FILE) {
 				const file = await (handle as FileSystemFileHandle).getFile();

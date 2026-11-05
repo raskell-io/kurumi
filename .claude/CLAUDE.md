@@ -299,7 +299,14 @@ OpenAI to MMS when the API key is missing.
   wrote (`sync/folder-state.ts`), by content, not clocks. Writes are guarded
   (`WriteSession`): a file that changed since the sync read it is left for the
   next run, unchanged files aren't rewritten, and one file that can't be written
-  doesn't stop the rest. While open the app watches the folder every 5 s.
+  doesn't stop the rest. **The sync never deletes a file:** `removeFileByPath`
+  and friends move it to `.kurumi/archive/` (named by content, removed only once
+  the copy is written). Both-sides edits merge (`sync/text-merge.ts` for bodies,
+  `mergeFields` for records); only same-line clashes become a copy. Outside
+  changes nothing took in are copied to
+  `.kurumi/rescued/` before being replaced (`rescueIfUnread`). Note paths come
+  from `noteFilePaths`, never `noteToMarkdownFile` alone: same-titled notes get
+  separate files. While open the app watches the folder every 5 s.
   Removing a file or record never deletes (an unmounted disk mustn't); `deleted:
   true` does.
 - Pasting (`editor/pasteMarkdown.ts`): structured HTML (chat output, web,

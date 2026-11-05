@@ -1635,6 +1635,193 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
+	async 'local folder sync never loses what an agent wrote'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const out = await page.evaluate(async () => {
+			const find = (frag) => performance.getEntriesByType('resource').map((e) => e.name).find((n) => n.includes(frag));
+			const db = await import(find('/src/lib/db/store.ts'));
+			const svc = await import(find('/src/lib/sync/service.ts'));
+			const kv = await import('/node_modules/idb-keyval/dist/index.js');
+			const root = await navigator.storage.getDirectory();
+			const dir = await root.getDirectoryHandle('e2e-noloss-' + Date.now(), { create: true });
+			await kv.set('kurumi-local-fs-handle', dir);
+			localStorage.setItem('kurumi-local-fs-configured', '1');
+			localStorage.setItem('kurumi-sync-method', 'local-fs');
+			const write = async (d, name, data) => { const w = await (await d.getFileHandle(name, { create: true })).createWritable(); await w.write(data); await w.close(); };
+			const read = (d, name) => d.getFileHandle(name).then((h) => h.getFile()).then((f) => f.text()).catch(() => null);
+			const notes = () => JSON.parse(db.exportFullJSON()).memoryObjects;
+			const withText = (t) => notes().filter((m) => !m.deletedAt && (m.bodyMarkdown || '').includes(t));
+			const res = {};
+
+			const rewrite = db.addMemoryObject('Rewrite me', 'old body');
+			db.updateMemoryObject(rewrite.id, { tags: ['keep'] });
+			const trash = db.addMemoryObject('Trash me', 'to trash');
+			const first = db.addMemoryObject('Same Title', 'first with this title');
+			await svc.sync();
+
+			// Rewritten without frontmatter: an edit of that note.
+			await write(dir, 'rewrite-me.md', 'REWRITTEN\n');
+			await svc.sync();
+			const r1 = db.getMemoryObject(rewrite.id);
+			res.noFrontmatter = [r1.title, r1.bodyMarkdown.trim(), r1.tags.join()];
+			res.noFrontmatterCount = withText('REWRITTEN').length;
+			res.noFrontmatterFile = (await read(dir, 'rewrite-me.md')).includes('REWRITTEN');
+
+			// Emptied: ignored, the file comes back.
+			await write(dir, 'rewrite-me.md', '');
+			await svc.sync();
+			res.emptied = db.getMemoryObject(rewrite.id).bodyMarkdown.trim();
+			res.emptiedFile = (await read(dir, 'rewrite-me.md')).includes('REWRITTEN');
+
+			// Another id at that path: a new note, and the old note keeps its file.
+			await write(dir, 'rewrite-me.md', '---\nid: otherid01\nname: "Different"\n---\nOTHERID\n');
+			await svc.sync();
+			res.otherId = withText('OTHERID').map((m) => [m.id, m.title]);
+			res.otherIdOwnFile = (await read(dir, 'different.md'))?.includes('OTHERID');
+			res.otherIdOldFile = (await read(dir, 'rewrite-me.md'))?.includes('REWRITTEN');
+			res.oldNoteKept = db.getMemoryObject(rewrite.id).bodyMarkdown.trim();
+
+			// Written to the path of a note just trashed: a new note, file stays.
+			db.deleteMemoryObject(trash.id);
+			await write(dir, 'trash-me.md', 'AFTERTRASH\n');
+			await svc.sync();
+			res.afterTrash = withText('AFTERTRASH').length;
+			res.afterTrashFile = (await read(dir, 'trash-me.md'))?.includes('AFTERTRASH');
+			res.trashStays = !!JSON.parse(db.exportFullJSON()).memoryObjects.find((m) => m.id === trash.id).deletedAt;
+
+			// Same title: a file each, and it stays that way.
+			await write(dir, 'collide.md', '---\nid: collide01\nname: "Same Title"\n---\nCOLLIDE\n');
+			await svc.sync();
+			await svc.sync();
+			res.firstFile = (await read(dir, 'same-title.md'))?.includes('first with this title');
+			res.collideFile = (await read(dir, 'same-title-collide0.md'))?.includes('COLLIDE');
+			res.collideOriginal = await read(dir, 'collide.md');
+			res.notDuplicated = [withText('COLLIDE').length, withText('first with this title').length];
+
+			// A note edited after the app switched vaults: applied to its own vault.
+			const vaultA = db.addMemoryObject('Vault A note', 'vault a body');
+			const home = vaultA.vaultId;
+			await svc.sync();
+			const text = await read(dir, 'vault-a-note.md');
+			const other = db.addVault('Vault B');
+			db.setCurrentVault(other.id);
+			await write(dir, 'vault-a-note.md', text.replace('vault a body', 'VAULTEDIT'));
+			await write(dir, 'added-then.md', '---\nname: "Added then"\n---\nADDEDTHEN\n');
+			await svc.sync();
+			res.vaultEdit = db.getMemoryObject(vaultA.id).bodyMarkdown.trim();
+			res.addedThen = withText('ADDEDTHEN').map((m) => m.vaultId === home);
+			res.addedThenGone = await read(dir, 'added-then.md');
+			await svc.sync();
+			res.addedOnce = withText('ADDEDTHEN').length;
+
+			// Invalid metadata: the folder stays exactly as it is meanwhile.
+			const kurumi = await dir.getDirectoryHandle('.kurumi');
+			const good = await read(kurumi, 'metadata.json');
+			db.setCurrentVault(home);
+			await svc.sync();
+			const fresh = await read(kurumi, 'metadata.json');
+			await write(dir, 'rewrite-me.md', 'WHILEBROKEN\n');
+			await write(kurumi, 'metadata.json', '{ "half": ');
+			await svc.sync();
+			res.heldWhileBroken = (await read(dir, 'rewrite-me.md')) === 'WHILEBROKEN\n';
+			await write(kurumi, 'metadata.json', fresh);
+			await svc.sync();
+			res.appliedAfterFix = db.getMemoryObject(rewrite.id).bodyMarkdown.trim();
+
+			// Both edit different lines: merged, no copy.
+			const merging = db.addMemoryObject('Merging note', 'line one\nline two\nline three\nline four\n');
+			await svc.sync();
+			const mergeFile = await read(dir, 'merging-note.md');
+			db.updateMemoryObject(merging.id, { bodyMarkdown: 'LINE ONE IN APP\nline two\nline three\nline four\n' });
+			await write(dir, 'merging-note.md', mergeFile.replace('line four', 'LINE FOUR FROM AGENT'));
+			await svc.sync();
+			res.merged = db.getMemoryObject(merging.id).bodyMarkdown;
+			res.mergedNoCopy = !notes().some((m) => m.title.startsWith('Merging note (edit'));
+
+			// Sync removes nothing outright: a renamed note's old file is archived.
+			const renaming = db.addMemoryObject('Before rename', 'ARCHIVEME');
+			await svc.sync();
+			db.updateMemoryObject(renaming.id, { title: 'After rename' });
+			await svc.sync();
+			res.renamedAway = await read(dir, 'before-rename.md');
+			const archive = await kurumi.getDirectoryHandle('archive');
+			const archived = [];
+			for await (const h of archive.values()) archived.push(await (await h.getFile()).text());
+			res.archivedOld = archived.some((c) => c.includes('ARCHIVEME') && c.includes('Before rename'));
+
+			// A file that repeats a note, without an id: recognised, not doubled.
+			await write(dir, 'After rename.md', 'ARCHIVEME\n');
+			await svc.sync();
+			res.notDoubled = withText('ARCHIVEME').length;
+
+			// Changed, and nothing can take it in: a copy is kept.
+			const b = db.addVault('Vault C');
+			db.setCurrentVault(b.id);
+			const foreign = db.addMemoryObject('Other vault note', 'x');
+			db.setCurrentVault(home);
+			await svc.sync();
+			await write(dir, 'same-title.md', `---\nid: ${foreign.id}\nname: "Other vault note"\n---\nSTRANDED\n`);
+			await svc.sync();
+			const rescued = await kurumi.getDirectoryHandle('rescued').catch(() => null);
+			const copies = [];
+			if (rescued) for await (const h of rescued.values()) copies.push(await (await h.getFile()).text());
+			res.rescued = copies.some((c) => c.includes('STRANDED'));
+			res.firstRestored = (await read(dir, 'same-title.md'))?.includes('first with this title');
+			res.firstUntouched = db.getMemoryObject(first.id).bodyMarkdown.trim();
+
+			// Switching layouts there and back: everything moved, nothing deleted.
+			localStorage.setItem('kurumi-local-fs-all-vaults', '1');
+			res.toAll = await svc.sync();
+			const index = JSON.parse(await read(kurumi, 'vaults.json')).vaults;
+			const vaultDirs = Object.values(index);
+			localStorage.removeItem('kurumi-local-fs-all-vaults');
+			res.toSingle = await svc.sync();
+			const names = [];
+			for await (const h of dir.values()) names.push(h.name);
+			res.vaultDirsGone = vaultDirs.filter((d) => names.includes(d));
+			const archivedNames = [];
+			for await (const h of (await kurumi.getDirectoryHandle('archive')).values()) archivedNames.push(h.name);
+			res.vaultMetaArchived = vaultDirs.every((d) => archivedNames.some((n) => n.includes(`${d}__.kurumi__metadata.json`)));
+			res.notesBack = (await read(dir, 'merging-note.md'))?.includes('LINE FOUR FROM AGENT');
+			return res;
+		});
+		assert.deepEqual(out.noFrontmatter, ['Rewrite me', 'REWRITTEN', 'keep']);
+		assert.equal(out.noFrontmatterCount, 1);
+		assert.ok(out.noFrontmatterFile);
+		assert.equal(out.emptied, 'REWRITTEN');
+		assert.ok(out.emptiedFile, 'emptied file not restored');
+		assert.deepEqual(out.otherId, [['otherid01', 'Different']]);
+		assert.ok(out.otherIdOwnFile && out.otherIdOldFile, JSON.stringify(out));
+		assert.equal(out.oldNoteKept, 'REWRITTEN');
+		assert.equal(out.afterTrash, 1);
+		assert.ok(out.afterTrashFile, 'file at trashed path deleted');
+		assert.ok(out.trashStays);
+		assert.ok(out.firstFile && out.collideFile, JSON.stringify(out));
+		assert.equal(out.collideOriginal, null);
+		assert.deepEqual(out.notDuplicated, [1, 1]);
+		assert.equal(out.vaultEdit, 'VAULTEDIT');
+		assert.deepEqual(out.addedThen, [true]);
+		assert.equal(out.addedThenGone, null);
+		assert.equal(out.addedOnce, 1);
+		assert.ok(out.heldWhileBroken, 'folder written while metadata invalid');
+		assert.equal(out.appliedAfterFix, 'WHILEBROKEN');
+		assert.match(out.merged, /LINE ONE IN APP/);
+		assert.match(out.merged, /LINE FOUR FROM AGENT/);
+		assert.ok(out.mergedNoCopy, 'made a copy instead of merging');
+		assert.equal(out.renamedAway, null);
+		assert.ok(out.archivedOld, 'old file not in the archive');
+		assert.equal(out.notDoubled, 1);
+		assert.ok(out.rescued, 'stranded change not rescued');
+		assert.ok(out.firstRestored);
+		assert.equal(out.firstUntouched, 'first with this title');
+		assert.deepEqual(out.toAll, { success: true });
+		assert.deepEqual(out.toSingle, { success: true });
+		assert.deepEqual(out.vaultDirsGone, []);
+		assert.ok(out.vaultMetaArchived, 'vault metadata not archived');
+		assert.ok(out.notesBack, 'notes not back at the top level');
+		assert.deepEqual(errors, []);
+	},
+
 	async 'settings show the selected local folder'(browser) {
 		const { page, errors } = await freshPage(browser);
 		const name = await page.evaluate(async () => {

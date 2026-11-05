@@ -5,9 +5,20 @@
  * remembering to bump a timestamp.
  */
 
-import { get, set, del } from 'idb-keyval';
+import { get, set, del, clear, createStore } from 'idb-keyval';
 
 const KEY = 'kurumi-local-fs-state';
+// The text of what we last wrote, kept apart from the hashes above as it's only
+// read to merge a file edited on both sides.
+const baseTexts = () => createStore('kurumi-local-fs-base', 'texts');
+
+export async function saveBaseText(key: string, text: string): Promise<void> {
+	await set(key, text, baseTexts());
+}
+
+export async function loadBaseText(key: string): Promise<string | undefined> {
+	return get<string>(key, baseTexts());
+}
 
 export interface FolderState {
 	/** Lowercased path (disks may be case-insensitive) → hash of the file we wrote. */
@@ -35,6 +46,7 @@ export async function saveFolderState(state: FolderState): Promise<void> {
 /** A different folder means nothing we remember applies to it. */
 export async function resetFolderState(): Promise<void> {
 	await del(KEY);
+	await clear(baseTexts());
 }
 
 /** cyrb53: fast, and collisions are no concern for comparing a file with itself. */

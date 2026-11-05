@@ -236,6 +236,21 @@ export function recordFingerprints(records: MetadataRecords): Record<string, str
 	return out;
 }
 
+// Three-way, field by field: each side's changes survive unless both changed
+// the same field.
+function mergeFields<T extends object>(base: T, ours: T, theirs: T, theirsIsNewer: boolean): T {
+	const out = { ...ours } as unknown as Record<string, unknown>;
+	const b = base as unknown as Record<string, unknown>;
+	const o = ours as unknown as Record<string, unknown>;
+	const t = theirs as unknown as Record<string, unknown>;
+	for (const field of new Set([...Object.keys(o), ...Object.keys(t)])) {
+		const theirsChanged = canonicalJSON(t[field]) !== canonicalJSON(b[field]);
+		const oursChanged = canonicalJSON(o[field]) !== canonicalJSON(b[field]);
+		if (theirsChanged && (!oursChanged || theirsIsNewer) && t[field] !== undefined) out[field] = t[field];
+	}
+	return out as T;
+}
+
 export interface ExternalChanges {
 	changes: MetadataRecords;
 	/** Records marked `"deleted": true` in the file. */
@@ -251,7 +266,8 @@ export interface ExternalChanges {
  * - same as base or the database: nothing happened;
  * - differs, database unchanged since base: edited outside, whatever its
  *   timestamp says (it's bumped so it wins everywhere else too);
- * - differs on both sides: the newer timestamp wins, the app on a tie.
+ * - differs on both sides: merged field by field; a field both changed goes to
+ *   the newer timestamp, the app on a tie.
  *
  * Without a base (first sync after picking a folder) timestamps decide: newer
  * than the local copy, or for an unknown record newer than the last sync.
@@ -260,9 +276,11 @@ export function pickExternalChanges(
 	incoming: MetadataRecords,
 	known: MetadataRecords,
 	base: Record<string, string> | undefined,
-	since: number | null
+	since: number | null,
+	baseRecords?: MetadataRecords
 ): ExternalChanges {
 	const knownBySection = new Map(sections(known));
+	const baseBySection = new Map(baseRecords ? sections(baseRecords) : []);
 	const deletions: ExternalChanges['deletions'] = [];
 
 	const pick = <T extends { id: string }>(section: Section, list: T[]): T[] => {
@@ -285,8 +303,15 @@ export function pickExternalChanges(
 				const print = fingerprint(record);
 				const localPrint = fingerprint(local);
 				if (print === seen || print === localPrint) continue;
-				if (localPrint === seen || stampOf(record) > stampOf(local)) {
-					out.push({ ...record, [key]: Math.max(stampOf(record), stampOf(local) + 1) });
+				const bumped = Math.max(stampOf(record), stampOf(local) + 1);
+				const ancestor = (baseBySection.get(section) as T[] | undefined)?.find((r) => r.id === record.id);
+				if (localPrint === seen) {
+					out.push({ ...record, [key]: bumped });
+				} else if (ancestor) {
+					const merged = mergeFields(ancestor, local, record, stampOf(record) > stampOf(local));
+					if (fingerprint(merged) !== localPrint) out.push({ ...merged, [key]: bumped });
+				} else if (stampOf(record) > stampOf(local)) {
+					out.push({ ...record, [key]: bumped });
 				}
 			}
 		}
