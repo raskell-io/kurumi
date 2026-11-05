@@ -1365,7 +1365,107 @@ const scenarios = {
 			assert.ok(tree.files.includes(f), `missing ${f} in ${tree.files.join(', ')}`);
 		}
 		assert.deepEqual(errors, []);
-	}
+	},
+
+	async 'a coding agent can add records, notes and files through the folder'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const out = await page.evaluate(async () => {
+			const find = (frag) => performance.getEntriesByType('resource').map((e) => e.name).find((n) => n.includes(frag));
+			const db = await import(find('/src/lib/db/store.ts'));
+			const svc = await import(find('/src/lib/sync/service.ts'));
+			const blobs = await import(find('/src/lib/db/blob-store.ts'));
+			const kv = await import('/node_modules/idb-keyval/dist/index.js');
+			const root = await navigator.storage.getDirectory();
+			const dir = await root.getDirectoryHandle('e2e-agent-' + Date.now(), { create: true });
+			await kv.set('kurumi-local-fs-handle', dir);
+			localStorage.setItem('kurumi-local-fs-configured', '1');
+			localStorage.setItem('kurumi-sync-method', 'local-fs');
+
+			const items = () => { let v; db.actionItems.subscribe((x) => (v = x))(); return v; };
+			const write = async (d, name, data) => {
+				const w = await (await d.getFileHandle(name, { create: true })).createWritable();
+				await w.write(data);
+				await w.close();
+			};
+			const sync = async () => {
+				// The sync guards are for automatic runs; a stamp after the last
+				// sync needs the clock to have moved on.
+				await new Promise((r) => setTimeout(r, 20));
+				const res = await svc.sync();
+				await new Promise((r) => setTimeout(r, 20));
+				return res;
+			};
+			const first = await sync();
+			const kurumi = await dir.getDirectoryHandle('.kurumi');
+			const guide = await (await (await kurumi.getFileHandle('AGENTS.md')).getFile()).text();
+			const readMeta = async () => JSON.parse(await (await (await kurumi.getFileHandle('metadata.json')).getFile()).text());
+
+			// What an agent following the guide does.
+			const m = await readMeta();
+			const now = Date.now();
+			m.actionItems.agenttodo1 = { id: 'agenttodo1', text: 'From the agent', dueDate: '2030-01-02', vaultId: m.vault.id, createdAt: now, updatedAt: now };
+			m.work.projects.push({ id: 'agentproj1', name: 'Agent project', vaultId: m.vault.id, createdAt: now, updatedAt: now });
+			m.people.agentperson = { id: 'agentperson', name: 'Dana Reyes', vaultId: m.vault.id, created: now, modified: now };
+			m.blobs['blob:agentblob1'] = { mimeType: 'image/png' };
+			await write(kurumi, 'metadata.json', JSON.stringify(m));
+			await write(await kurumi.getDirectoryHandle('blobs', { create: true }), 'agentblob1', new Uint8Array([137, 80, 78, 71]));
+			await write(dir, 'agent-note.md', '---\nid: agentnote1\nname: "Agent note"\ntags: ["from-agent"]\n---\n![Photo](blob:agentblob1)\n');
+			const second = await sync();
+
+			const after = await readMeta();
+			const stored = await blobs.getBlob('blob:agentblob1');
+			const note = db.getMemoryObject('agentnote1');
+			const added = {
+				todo: items().find((a) => a.id === 'agenttodo1'),
+				fileTodoStatus: after.actionItems.agenttodo1?.status,
+				fileProject: after.work.projects.map((p) => p.name),
+				filePerson: after.people.agentperson?.name,
+				blobMime: stored?.mimeType,
+				fileBlobMime: after.blobs['blob:agentblob1']?.mimeType,
+				blobKept: !!(await (await kurumi.getDirectoryHandle('blobs')).getFileHandle('agentblob1')),
+				noteTitle: note?.title,
+				noteTags: note?.tags
+			};
+
+			// Deleted in the app: the file still lists it, and it stays deleted.
+			db.deleteActionItem('agenttodo1');
+			const third = await sync();
+			const deleted = {
+				gone: !items().some((a) => a.id === 'agenttodo1'),
+				goneFromFile: !(await readMeta()).actionItems.agenttodo1
+			};
+
+			// An edit with a fresh stamp applies; an agent marking a to-do done.
+			const m2 = await readMeta();
+			const later = Date.now();
+			m2.actionItems.agenttodo2 = { id: 'agenttodo2', text: 'Second', vaultId: m2.vault.id, createdAt: later, updatedAt: later };
+			await write(kurumi, 'metadata.json', JSON.stringify(m2));
+			await sync();
+			const m3 = await readMeta();
+			m3.actionItems.agenttodo2.status = 'done';
+			m3.actionItems.agenttodo2.updatedAt = Date.now();
+			await write(kurumi, 'metadata.json', JSON.stringify(m3));
+			await sync();
+			const done = items().find((a) => a.id === 'agenttodo2')?.status;
+
+			return { results: [first, second, third], guideHasRules: guide.includes('## Rules'), added, deleted, done };
+		});
+		for (const r of out.results) assert.deepEqual(r, { success: true });
+		assert.ok(out.guideHasRules, 'AGENTS.md not written');
+		assert.equal(out.added.todo?.text, 'From the agent');
+		assert.equal(out.added.todo?.dueDate, '2030-01-02');
+		assert.equal(out.added.fileTodoStatus, 'open', 'defaults written back to the file');
+		assert.deepEqual(out.added.fileProject, ['Agent project']);
+		assert.equal(out.added.filePerson, 'Dana Reyes');
+		assert.equal(out.added.blobMime, 'image/png');
+		assert.equal(out.added.fileBlobMime, 'image/png');
+		assert.ok(out.added.blobKept);
+		assert.equal(out.added.noteTitle, 'Agent note');
+		assert.deepEqual(out.added.noteTags, ['from-agent']);
+		assert.deepEqual(out.deleted, { gone: true, goneFromFile: true });
+		assert.equal(out.done, 'done');
+		assert.deepEqual(errors, []);
+	},
 };
 
 // ------------------------------------------------------------ main

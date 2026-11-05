@@ -19,16 +19,20 @@ import {
 	notesToMarkdownFiles,
 	createMetadata,
 	serializeMetadata,
-	parseMetadata
+	parseMetadata,
+	type GitMetadata
 } from '$lib/git/convert';
 import { vaultDirNames } from '$lib/utils/markdown-export';
 import { refToId, importBlobPayloads, type BlobPayload } from './blobs';
+import agentGuide from './agent-guide.md?raw';
 import type { MemoryObject, Folder, Vault, Person, Event, ActionItem } from '$lib/db/types';
 
 const IDB_KEY = 'kurumi-local-fs-handle';
 const FILENAME = 'kurumi-sync.bin';
 const METADATA_DIR = '.kurumi';
 const METADATA_FILE = 'metadata.json';
+// How to add things by editing the folder, for coding agents working in it.
+const AGENT_GUIDE_FILE = 'AGENTS.md';
 const BLOBS_DIR = 'blobs';
 // All-vaults layout index: which subfolder each vault was last written to,
 // so a renamed (or removed) vault's old folder can be cleaned up.
@@ -279,8 +283,9 @@ async function readManagedPaths(dir: FileSystemDirectoryHandle): Promise<string[
  *
  * The binary `kurumi-sync.bin` remains the source of truth for cross-device
  * merge. Text edits to these `.md` files are read back on the next sync (see
- * localFSReadMarkdown / importLocalFSEdits); structural changes (create,
- * rename, delete) stay app-driven.
+ * localFSReadMarkdown / importLocalFSEdits); so are new files and records
+ * added to `metadata.json` (see agent-guide.md). Renames and deletes stay
+ * app-driven.
  */
 export async function localFSPushMarkdown(
 	memories: MemoryObject[],
@@ -289,13 +294,14 @@ export async function localFSPushMarkdown(
 	people: Person[],
 	events: Event[],
 	actionItems: ActionItem[],
-	blobs: BlobPayload[] = []
+	blobs: BlobPayload[] = [],
+	work?: GitMetadata['work']
 ): Promise<void> {
 	const dir = await getHandle();
 	if (!dir) throw new Error('Local folder not configured');
 	// Switching back from the all-vaults layout: clear its vault folders.
 	await pruneAllVaultsLayout(dir, new Set());
-	await writeVaultMarkdown(dir, { memories, folders, vault, people, events, actionItems, blobs });
+	await writeVaultMarkdown(dir, { memories, folders, vault, people, events, actionItems, blobs, work });
 }
 
 export interface VaultMirror {
@@ -306,6 +312,7 @@ export interface VaultMirror {
 	events: Event[];
 	actionItems: ActionItem[];
 	blobs: BlobPayload[];
+	work?: GitMetadata['work'];
 }
 
 /**
@@ -346,6 +353,7 @@ export async function localFSPushAllVaults(mirrors: VaultMirror[]): Promise<void
 		VAULTS_INDEX_FILE,
 		JSON.stringify({ version: 1, vaults: index }, null, 2) + '\n'
 	);
+	await writeFile(metaDir, AGENT_GUIDE_FILE, agentGuide);
 }
 
 async function readVaultsIndex(dir: FileSystemDirectoryHandle): Promise<Record<string, string>> {
@@ -424,7 +432,7 @@ async function pruneManagedFiles(
 // pruning notes that a previous write put there but that no longer exist.
 async function writeVaultMarkdown(
 	dir: FileSystemDirectoryHandle,
-	{ memories, folders, vault, people, events, actionItems, blobs }: VaultMirror
+	{ memories, folders, vault, people, events, actionItems, blobs, work }: VaultMirror
 ): Promise<void> {
 	const files = notesToMarkdownFiles(memories, folders);
 	const newPaths = new Set(files.map((f) => f.path));
@@ -455,10 +463,12 @@ async function writeVaultMarkdown(
 		people,
 		events,
 		actionItems,
-		blobMeta
+		blobMeta,
+		work
 	);
 	const metaDir = await getOrCreateDir(dir, [METADATA_DIR]);
 	await writeFile(metaDir, METADATA_FILE, serializeMetadata(metadata));
+	await writeFile(metaDir, AGENT_GUIDE_FILE, agentGuide);
 
 	// Prune notes we previously wrote that no longer exist (rename/delete).
 	await pruneManagedFiles(dir, previousPaths, newPaths);
@@ -593,6 +603,36 @@ export async function localFSManagedPaths(): Promise<Map<string, string>> {
 			await add(await root.getDirectoryHandle(name), `${name}/`);
 		} catch {
 			// Vault folder missing.
+		}
+	}
+	return out;
+}
+
+/**
+ * Every `.kurumi/metadata.json` in the folder (the root's and each vault
+ * folder's). Files that don't parse are skipped.
+ */
+export async function localFSReadMetadata(): Promise<GitMetadata[]> {
+	const root = await getHandle();
+	if (!root) return [];
+	const dirs = [root];
+	for (const name of new Set(Object.values(await readVaultsIndex(root)))) {
+		try {
+			dirs.push(await root.getDirectoryHandle(name));
+		} catch {
+			// Vault folder missing.
+		}
+	}
+	const out: GitMetadata[] = [];
+	for (const dir of dirs) {
+		try {
+			const metaDir = await dir.getDirectoryHandle(METADATA_DIR);
+			const handle = await metaDir.getFileHandle(METADATA_FILE);
+			const parsed = parseMetadata(await (await handle.getFile()).text());
+			if (parsed) out.push(parsed);
+			else console.warn(`Ignoring unreadable ${METADATA_DIR}/${METADATA_FILE} in "${dir.name}"`);
+		} catch {
+			// No metadata here yet.
 		}
 	}
 	return out;

@@ -29,7 +29,9 @@ import {
 	type GitSyncConfig,
 	type MemoryConflict
 } from './status';
-import { getVaultWorkRecords, applyWorkImport, type WorkRecords } from '$lib/db';
+import { getVaultWorkRecords, applyWorkImport } from '$lib/db';
+import { readMetadataRecords } from '../sync/metadata-import';
+import agentGuide from '../sync/agent-guide.md?raw';
 import type { MemoryObject, Folder, Vault, Person, Event, ActionItem } from '../db/types';
 import {
 	collectBlobRefs,
@@ -42,6 +44,7 @@ import {
 const REPO_DIR = '/repo';
 const METADATA_PATH = '.kurumi/metadata.json';
 const BLOBS_DIR = '.kurumi/blobs';
+const AGENT_GUIDE_PATH = '.kurumi/AGENTS.md';
 
 /**
  * Progress callback for git operations
@@ -250,6 +253,7 @@ export async function writeNotesToRepo(
 	// Write metadata file
 	await ensureDir(`${REPO_DIR}/.kurumi`);
 	await pfs.writeFile(`${REPO_DIR}/${METADATA_PATH}`, metadataJson, 'utf8');
+	await pfs.writeFile(`${REPO_DIR}/${AGENT_GUIDE_PATH}`, agentGuide, 'utf8');
 
 	// Write markdown files
 	for (const file of markdownFiles) {
@@ -584,11 +588,11 @@ export async function syncGit(
 		);
 
 		// Get people, events, and action items from metadata
-		const remotePeople = metadata ? Object.values(metadata.people) : [];
-		const remoteEvents = metadata ? Object.values(metadata.events) : [];
-		const remoteActionItems = metadata?.actionItems
-			? Object.values(metadata.actionItems)
-			: [];
+		// (the file can be edited by hand, see sync/agent-guide.md)
+		const remote = metadata ? readMetadataRecords(metadata, vault.id) : null;
+		const remotePeople = remote?.people ?? [];
+		const remoteEvents = remote?.events ?? [];
+		const remoteActionItems = remote?.actionItems ?? [];
 
 		// Detect real conflicts before merging: anything touched on both
 		// sides since the last sync is surfaced to the user instead of
@@ -607,7 +611,7 @@ export async function syncGit(
 		const mergedActionItems = mergeActionItemLists(localActionItems, remoteActionItems);
 
 		// Projects, decisions, questions and meeting series from the remote.
-		if (metadata?.work) applyWorkImport(metadata.work as Partial<WorkRecords>);
+		if (remote && metadata?.work) applyWorkImport(remote.work);
 
 		// Import merged data
 		await onImport(

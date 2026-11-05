@@ -97,11 +97,27 @@ Kurumi also reads the folder back:
 
 - editing a note's text or tags in the `.md` file changes the note;
 - a new `.md` file becomes a note, a new folder becomes a folder, and with
-  *Write all vaults* a new top-level folder becomes a vault.
+  *Write all vaults* a new top-level folder becomes a vault;
+- to-dos, people, events, projects, decisions, questions and meetings added
+  to `.kurumi/metadata.json`, and files added to `.kurumi/blobs/`, are
+  picked up too.
 
 The [sync agent](../agent/README.md) commits that folder and pushes and
 pulls it with your machine's git. It merges `kurumi-sync.bin` with the
 same CRDT merge, so edits from several computers survive.
+
+### Working with coding agents
+
+With the local folder or Git, a coding agent such as Claude Code or Codex
+can add notes, images, files, to-dos and everything else without opening
+Kurumi. Every sync writes `.kurumi/AGENTS.md` next to `metadata.json`,
+describing the file formats and what can and can't be done from files.
+Agents don't load a guide from `.kurumi/` by themselves, so point yours at
+it: *"Read `.kurumi/AGENTS.md`, then add a to-do for…"*.
+
+Changes arrive at Kurumi's next sync, which needs the app to be open: it
+syncs on start, when its tab comes back into view, after an edit, and from
+the sync button.
 
 ### S3, WebDAV, Azure
 

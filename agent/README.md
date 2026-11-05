@@ -83,6 +83,7 @@ not an option. With the agent:
 ```
 kurumi-sync.bin              # the whole database (all vaults), Automerge binary
 .kurumi/vaults.json          # vault id → folder
+.kurumi/AGENTS.md            # how coding agents add things through files
 work/                        # one folder per vault, named after it
   .kurumi/metadata.json      # folder tree, people, events, action items
   .kurumi/blobs/             # images and audio referenced by notes
@@ -115,6 +116,13 @@ top-level directory becomes a vault. Kurumi then writes the note under
 its own file name (`Client X/Kickoff.md` → `client-x/kickoff.md`) and
 removes the original, so the agent commits that as a rename. Files that
 aren't markdown are left alone.
+
+Records work the same way: to-dos, people, events, projects, decisions,
+questions and meetings added to a `.kurumi/metadata.json` are read back,
+and so are files added to `.kurumi/blobs/`. `.kurumi/AGENTS.md`, written on
+every sync, has the formats, for coding agents working in the checkout. If
+git reports a conflict in `metadata.json`, this machine's version is kept,
+so an uncommitted hand edit there can be lost.
 
 Renaming or deleting notes should happen in Kurumi.
 

@@ -10,6 +10,63 @@ import { createMetadata, noteToMarkdownFile, parseMarkdownFile } from '../git/co
 import { parseNotesFromFiles, mergeMemoryLists } from '../git/service';
 import type { MemoryObject, Vault } from '../db/types';
 
+describe('folders of notes pulled from git', () => {
+	const folder = (name: string, parentId: string | null = null) => ({ name, parentId });
+	const metadata = createMetadata(vault, [], [], [], []);
+	metadata.folders = { f1: folder('Client X'), f2: folder('Call Notes', 'f1') };
+	const parse = (path: string) => {
+		const files = new Map([[path, '---\nid: n1\n---\nbody']]);
+		return parseNotesFromFiles(files, metadata, 'v1');
+	};
+
+	it('puts a new note in the folder its directory stands for', () => {
+		expect(parse('client-x/kickoff.md').memories[0].folderId).toBe('f1');
+		expect(parse('client-x/call-notes/kickoff.md').memories[0].folderId).toBe('f2');
+		expect(parse('kickoff.md').memories[0].folderId).toBeNull();
+	});
+
+	it('adds no folder for a directory it knows', () => {
+		expect(parse('client-x/call-notes/kickoff.md').folders.map((f) => f.id).sort()).toEqual(['f1', 'f2']);
+	});
+
+	it('makes a new directory a folder, the same one on every pull', () => {
+		const first = parse('client-x/new-area/kickoff.md');
+		const again = parse('client-x/new-area/kickoff.md');
+		const added = first.folders.find((f) => f.name === 'New Area');
+		expect(added?.parentId).toBe('f1');
+		expect(added?.vaultId).toBe('v1');
+		expect(first.memories[0].folderId).toBe(added?.id);
+		expect(again.memories[0].folderId).toBe(added?.id);
+	});
+
+	it('matches a folder under one whose name has no slug', () => {
+		metadata.folders.jp = folder('日本語');
+		metadata.folders.sub = folder('Sub', 'jp');
+		const parsed = parse('sub/kickoff.md');
+		expect(parsed.memories[0].folderId).toBe('sub');
+		expect(parsed.folders).toHaveLength(4);
+		delete metadata.folders.jp;
+		delete metadata.folders.sub;
+	});
+
+	it('survives a folder that is its own ancestor in a hand-edited file', () => {
+		metadata.folders.loop = folder('Loop', 'loop');
+		expect(parse('kickoff.md').memories).toHaveLength(1);
+		delete metadata.folders.loop;
+	});
+});
+
+describe('agent guide in a git repo', () => {
+	it('is not read as a note', () => {
+		const files = new Map([
+			['.kurumi/AGENTS.md', '# guide'],
+			['plan.md', '---\nid: n1\n---\nbody']
+		]);
+		const { memories } = parseNotesFromFiles(files, null, 'v1');
+		expect(memories.map((m) => m.id)).toEqual(['n1']);
+	});
+});
+
 const vault: Vault = { id: 'v1', name: 'Work', created: 1, modified: 1 };
 
 function note(overrides: Partial<MemoryObject>): MemoryObject {

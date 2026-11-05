@@ -51,6 +51,7 @@ import {
 	localFSReadIncoming,
 	localFSRemoveIncoming,
 	localFSReadTree,
+	localFSReadMetadata,
 	localFSManagedPaths,
 	localFSVaultFolders,
 	localFSRemoveImported,
@@ -60,7 +61,9 @@ import {
 	getMemoryObject,
 	updateMemoryObject,
 	applyGitImport,
+	applyWorkImport,
 	getVaultContents,
+	getVaultWorkRecords,
 	addFolder,
 	addVault,
 	addImportedMemoryObject,
@@ -68,6 +71,7 @@ import {
 	NewerVaultError
 } from '$lib/db';
 import { parseMarkdownFile, parseFrontMatter, noteToMarkdownFile } from '$lib/git/convert';
+import { readMetadataRecords, pickExternalChanges, hasRecords } from './metadata-import';
 import { generateSlug, vaultDirNames } from '$lib/utils/markdown-export';
 import {
 	getAzureBlobConfig,
@@ -630,6 +634,39 @@ async function importNewLocalFiles(
 	return imported;
 }
 
+/**
+ * Records added to or edited in `.kurumi/metadata.json` from outside Kurumi
+ * (see agent-guide.md). Must run before the mirror is rewritten.
+ */
+async function importMetadataRecords(lastSyncedAt: number | null): Promise<void> {
+	for (const metadata of await localFSReadMetadata()) {
+		const vaultId = metadata.vault?.id;
+		if (!get(vaults).some((v) => v.id === vaultId)) continue;
+		const contents = getVaultContents(vaultId);
+		const changes = pickExternalChanges(
+			readMetadataRecords(metadata, vaultId),
+			{
+				people: contents.people,
+				events: contents.events,
+				actionItems: contents.actionItems,
+				work: getVaultWorkRecords(vaultId)
+			},
+			lastSyncedAt
+		);
+		if (!hasRecords(changes)) continue;
+		batchUpdates(() => {
+			applyGitImport({
+				memories: [],
+				folders: [],
+				people: changes.people,
+				events: changes.events,
+				actionItems: changes.actionItems
+			});
+			applyWorkImport(changes.work);
+		});
+	}
+}
+
 // After the mirror has been written, drop each imported file whose note
 // now lives under a different (Kurumi-named) path, so it isn't imported
 // twice. Only when both exist as separate files: on a case-insensitive
@@ -691,6 +728,13 @@ async function syncLocalFS(): Promise<{ success: boolean; error?: string }> {
 			console.warn('Local FS new-file import failed:', importErr);
 		}
 
+		// Records (to-dos, people, projects, …) added to metadata.json.
+		try {
+			await importMetadataRecords(get(syncState).lastSyncedAt);
+		} catch (importErr) {
+			console.warn('Local FS metadata import failed:', importErr);
+		}
+
 		const localBinary = getDocBinary();
 		await localFSPush(localBinary);
 
@@ -704,7 +748,7 @@ async function syncLocalFS(): Promise<{ success: boolean; error?: string }> {
 				get(vaults).map(async (v) => {
 					const contents = getVaultContents(v.id);
 					const blobs = await gatherBlobPayloads(collectBlobRefs(contents.memories));
-					return { vault: v, ...contents, blobs };
+					return { vault: v, ...contents, blobs, work: getVaultWorkRecords(v.id) };
 				})
 			);
 			await localFSPushAllVaults(mirrors);
@@ -718,7 +762,8 @@ async function syncLocalFS(): Promise<{ success: boolean; error?: string }> {
 				get(people).filter((p) => p.vaultId === vaultId),
 				get(events).filter((e) => e.vaultId === vaultId),
 				get(actionItems).filter((a) => a.vaultId === vaultId),
-				blobs
+				blobs,
+				getVaultWorkRecords(vaultId)
 			);
 		}
 

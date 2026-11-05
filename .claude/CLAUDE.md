@@ -291,6 +291,13 @@ OpenAI to MMS when the API key is missing.
   all-vaults layout. After the mirror is written, imported originals are
   removed if their canonical path is a different file (exact-name check;
   case-insensitive disks make `A.md`/`a.md` one file).
+- Coding agents: `.kurumi/AGENTS.md` is written beside every `metadata.json`
+  from `sync/agent-guide.md`. **Change that guide when the on-disk format or
+  what's read back changes**; a unit test runs its JSON examples through the
+  importer. Records in `metadata.json` are read back by
+  `sync/metadata-import.ts`: newer `updatedAt`/`modified` wins, and an unknown
+  id only counts if stamped after the last sync, otherwise a record deleted in
+  the app would return from the not-yet-rewritten file.
 - Pasting (`editor/pasteMarkdown.ts`): structured HTML (chat output, web,
   Google Docs) → cleaned → markdown via hast-util-to-mdast → editor
   parser; unstructured HTML (editors) uses the text/plain markdown; VS

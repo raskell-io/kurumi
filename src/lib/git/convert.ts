@@ -303,7 +303,9 @@ export function mergeNotes(local: ParsedNote, remote: ParsedNote): ParsedNote {
 }
 
 /**
- * Reconstruct folder structure from file paths
+ * Reconstruct folder structure from file paths. Directories are matched to
+ * the folders in the metadata by the slug path Kurumi writes them under; a
+ * directory the metadata doesn't list (added by hand) becomes a new folder.
  */
 export function reconstructFolders(
 	paths: string[],
@@ -312,10 +314,13 @@ export function reconstructFolders(
 	const folders: Folder[] = [];
 	const pathToFolderId: Record<string, string> = {};
 	const now = Date.now();
+	const slugOf = (name: string) => generateSlug(name) || name;
 
-	// If we have metadata, use the folder info from there
+	// Slug path ("client-x/notes") → folder id, for the folders we know.
+	const idBySlugPath = new Map<string, string>();
 	if (metadata) {
-		for (const [id, info] of Object.entries(metadata.folders)) {
+		const known = metadata.folders ?? {};
+		for (const [id, info] of Object.entries(known)) {
 			folders.push({
 				id,
 				name: info.name,
@@ -325,43 +330,52 @@ export function reconstructFolders(
 				modified: now,
 				deletedAt: null
 			});
+			const parts: string[] = [];
+			const seen = new Set<string>(); // the file can be edited by hand
+			for (let at: string | null = id; at && known[at] && !seen.has(at); at = known[at].parentId) {
+				seen.add(at);
+				parts.unshift(generateSlug(known[at].name));
+			}
+			// A name with no slug (e.g. Japanese) gets no directory of its own
+			// (see buildFolderPath), so its notes sit in the parent's directory.
+			const slugPath = parts.filter(Boolean).join('/');
+			if (slugPath && !idBySlugPath.has(slugPath)) idBySlugPath.set(slugPath, id);
 		}
-		return { folders, pathToFolderId };
 	}
-
-	// Otherwise, reconstruct from paths
-	const seenPaths = new Set<string>();
 
 	for (const filePath of paths) {
 		const parts = filePath.split('/');
-		// Remove the filename
-		parts.pop();
+		parts.pop(); // the filename
 
-		let currentPath = '';
+		let rawPath = '';
+		let slugPath = '';
 		let parentId: string | null = null;
 
 		for (const part of parts) {
-			currentPath = currentPath ? `${currentPath}/${part}` : part;
+			rawPath = rawPath ? `${rawPath}/${part}` : part;
+			slugPath = slugPath ? `${slugPath}/${slugOf(part)}` : slugOf(part);
 
-			if (!seenPaths.has(currentPath)) {
-				seenPaths.add(currentPath);
-				const folderId = crypto.randomUUID();
-				pathToFolderId[currentPath] = folderId;
-
+			let folderId = idBySlugPath.get(slugPath);
+			if (!folderId) {
+				// The same id on every device that pulls this directory, and on
+				// every pull until the metadata lists it, so it can't end up as
+				// several folders. (Slugs can't contain "--".)
+				folderId = metadata
+					? `dir-${metadata.vault.id}-${slugPath.replace(/\//g, '--')}`
+					: crypto.randomUUID();
+				idBySlugPath.set(slugPath, folderId);
 				folders.push({
 					id: folderId,
 					name: part.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
 					parentId,
-					vaultId: '', // Will be set by caller
+					vaultId: metadata?.vault.id ?? '', // Set by caller when there's no metadata
 					created: now,
 					modified: now,
 					deletedAt: null
 				});
-
-				parentId = folderId;
-			} else {
-				parentId = pathToFolderId[currentPath];
 			}
+			pathToFolderId[rawPath] = folderId;
+			parentId = folderId;
 		}
 	}
 
