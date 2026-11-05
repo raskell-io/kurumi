@@ -425,6 +425,8 @@
 	const mountedContent = untrack(() => content);
 	let destroyed = false;
 
+	let blobResolver: MutationObserver | undefined;
+
 	onMount(async () => {
 		// Plugin callbacks are registered under this editor's container, so
 		// a second editor (split view) doesn't take them over or clear them.
@@ -648,8 +650,10 @@
 				}
 			}
 		};
-		const blobResolver = new MutationObserver(() => void resolveBlobImages());
+		blobResolver = new MutationObserver(() => void resolveBlobImages());
 		blobResolver.observe(editorContainer, { childList: true, subtree: true });
+		// The note is already rendered by now, so that won't fire for its images.
+		void resolveBlobImages();
 
 		// File paste/drop is handled by fileDropPlugin (see .use below).
 
@@ -662,6 +666,7 @@
 
 	onDestroy(() => {
 		destroyed = true;
+		blobResolver?.disconnect();
 		if (editorContainer) {
 			editorContainer.removeEventListener('mouseup', checkSelection);
 		}

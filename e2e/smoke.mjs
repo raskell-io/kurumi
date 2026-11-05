@@ -1822,6 +1822,32 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
+	async 'images show when a note opens, without a click'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const id = await page.evaluate(async () => {
+			const find = (frag) => performance.getEntriesByType('resource').map((e) => e.name).find((n) => n.includes(frag));
+			const db = await import(find('/src/lib/db/store.ts'));
+			const blobs = await import(find('/src/lib/db/blob-store.ts'));
+			const canvas = document.createElement('canvas');
+			canvas.width = canvas.height = 40;
+			canvas.getContext('2d').fillRect(0, 0, 40, 40);
+			const png = await new Promise((r) => canvas.toBlob(r, 'image/png'));
+			const ref = await blobs.storeBlob(png, 'image/png');
+			return db.addMemoryObject('With image', `before\n\n![pasted image](${ref})\n\nafter`).id;
+		});
+		await new Promise((r) => setTimeout(r, 800)); // saved
+		await page.goto(`${BASE}/#/memory/${id}`, { waitUntil: 'load' });
+		const loaded = () =>
+			page.waitForFunction(() => {
+				const img = document.querySelector('main .ProseMirror img:not(.ProseMirror-separator)');
+				return img && img.naturalWidth === 40;
+			}, { timeout: 15000 });
+		await loaded();
+		await page.reload({ waitUntil: 'load' });
+		await loaded();
+		assert.deepEqual(errors, []);
+	},
+
 	async 'settings show the selected local folder'(browser) {
 		const { page, errors } = await freshPage(browser);
 		const name = await page.evaluate(async () => {
