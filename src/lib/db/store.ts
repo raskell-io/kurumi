@@ -269,12 +269,15 @@ export function getVaultContents(vaultId: string): {
 	};
 }
 
-/** A vault's projects, decisions, questions and meeting series (for git sync). */
+/** A vault's records that travel in metadata.json's `work` section. */
 export interface WorkRecords {
 	projects: Project[];
 	decisions: Decision[];
 	questions: Question[];
 	meetingSeries: MeetingSeries[];
+	reminderProposals: ReminderProposal[];
+	draftProposals: DraftProposal[];
+	templates: Template[];
 }
 
 export function getVaultWorkRecords(vaultId: string): WorkRecords {
@@ -284,7 +287,10 @@ export function getVaultWorkRecords(vaultId: string): WorkRecords {
 		projects: inVault(doc?.projects),
 		decisions: inVault(doc?.decisions),
 		questions: inVault(doc?.questions),
-		meetingSeries: inVault(doc?.meetingSeries)
+		meetingSeries: inVault(doc?.meetingSeries),
+		reminderProposals: inVault(doc?.reminderProposals),
+		draftProposals: inVault(doc?.draftProposals),
+		templates: inVault(doc?.templates)
 	};
 }
 
@@ -294,14 +300,17 @@ export function getVaultWorkRecords(vaultId: string): WorkRecords {
  */
 export function applyWorkImport(work: Partial<WorkRecords>): void {
 	updateDoc((d) => {
-		for (const key of ['projects', 'decisions', 'questions', 'meetingSeries'] as const) {
-			const incoming = work[key];
+		// Not every kind has `updatedAt`: templates have `modified`, proposals
+		// only `createdAt`.
+		type Stamped = { id: string; updatedAt?: number; modified?: number; createdAt?: number };
+		const stamp = (r: Stamped) => r.updatedAt ?? r.modified ?? r.createdAt ?? 0;
+		for (const [key, incoming] of Object.entries(work)) {
 			if (!Array.isArray(incoming)) continue;
-			const target = ((d as Record<string, unknown>)[key] ??= {}) as Record<string, { updatedAt: number }>;
-			for (const rec of incoming as { id: string; updatedAt: number }[]) {
+			const target = ((d as Record<string, unknown>)[key] ??= {}) as Record<string, Stamped>;
+			for (const rec of incoming as Stamped[]) {
 				if (!rec?.id) continue;
 				const local = target[rec.id];
-				if (!local || (rec.updatedAt ?? 0) > (local.updatedAt ?? 0)) target[rec.id] = deepCopy(rec);
+				if (!local || stamp(rec) > stamp(local)) target[rec.id] = deepCopy(rec);
 			}
 		}
 	});

@@ -1,11 +1,44 @@
 # Kurumi folder: guide for coding agents
 
-This folder is a mirror of a [Kurumi](https://github.com/raskell-io/kurumi)
-vault. You can add notes, images, files, to-dos, people, events, projects,
-decisions, questions and meetings by editing files here. Kurumi picks them up
-on its next sync, so nothing has to be done in its web interface.
+This folder is a mirror of the user's [Kurumi](https://github.com/raskell-io/kurumi)
+vault, their personal memory: notes, meetings, to-dos, people, projects. You can
+read it to answer questions and change it by editing files here, without Kurumi's
+interface.
 
 Kurumi writes this file on every sync; edits to it are overwritten.
+
+## What to use when
+
+| The user or the work calls for… | Use | Why |
+|---|---|---|
+| Knowledge worth keeping: findings, a summary, a write-up | **Note** | Searchable and linkable; what they'll recall later |
+| Something that happened on a given day, a passing log entry | **Daily note** | One running note per day, instead of many small ones |
+| Something the user asked to have tracked or done | **To-do** | Shows on the to-do list and on the day it's due |
+| Something *you* noticed that they might want to follow up | **Reminder proposal** | They approve or reject it, and only then does it become a to-do |
+| An email or invite that should go out | **Draft proposal** | They review and send it themselves. Kurumi sends nothing |
+| A choice that was made, and the reason for it | **Decision** | The log people check later for why something is the way it is |
+| Something unknown that needs an answer | **Question** | Stays visible as open until it's answered |
+| A body of work with several notes, to-dos or decisions | **Project** | Ties them together on one page |
+| A recurring meeting, or a point for the next one | **Meeting** + agenda item | The next meeting's note starts from its agenda |
+| Someone who comes up by name and matters | **Person** | Gives them a page: contact details, what's waiting on them |
+| A dated appointment with details (time, place, people) | **Event** | For a date alone, `//2026-11-20` in a note is enough |
+| Note structure the user will repeat | **Template** | Used when they create a note from it |
+| An image, a recording, a PDF | **Blob**, referenced from a note | Stays with the note on all their devices |
+
+Before you add anything:
+
+- **It's the user's memory, so stay in scope.** Add what they asked for or would
+  clearly want. Don't log your own working steps, and don't file a to-do for
+  every thought.
+- **Ask or propose when you're guessing.** If they told you to, act. If you
+  inferred it, use a proposal, which leaves the decision with them.
+- **Search first.** Look through the `.md` files and `metadata.json` for an
+  existing note, person, project or tag. Reuse names exactly as written: `Dana
+  Reyes` and `Dana` become two people. Extend what's there before creating more.
+- **Link things.** Set `memoryObjectId` / `memoryId` to the note something came
+  from and `projectId` to its project, so the user can trace it.
+- **Keep to their language and structure.** Follow how existing notes are written
+  and filed, and tell the user what you added.
 
 ## Rules
 
@@ -99,6 +132,14 @@ The body is Markdown.
   (`client-x/kickoff.md`). Kurumi doesn't remove the original there, so any
   other name leaves a second copy of the file behind.
 
+**Daily notes** are ordinary notes named `Daily • YYYY-MM-DD`, in the file
+`daily-YYYY-MM-DD.md` at the top of the vault. Append to the day's note if it
+exists, otherwise create it.
+
+**Tags** are the `tags` list of a note; reuse existing ones. **Folders** are
+directories. **Finding a note's id:** its frontmatter, or `noteIds` in
+`metadata.json` (path to id).
+
 To edit a note in a local folder, change its body, `tags`, `name` or emoji
 `icon`. To move it, move the file. To delete it (to the Trash), add
 `deleted: true` to its frontmatter. If the note was edited in the app at the
@@ -136,8 +177,10 @@ Add entries to the sections shown, leaving everything else as it is.
 `vaultId` is always `vault.id` from the same file. Fields in these examples
 that you leave out get the neutral default (null, empty, `open`). The ones
 that are required are the id, the two timestamps, and: `text` for to-dos,
-decisions and questions; `name` for people, projects and meetings; `date` for
-events. A record missing one of them is dropped.
+decisions, questions and reminder proposals; `name` for people, projects,
+meetings and templates; `date` for events; `subject` for draft proposals;
+`content` for templates; `memoryObjectId` and, for reminders, `suggestedDate`
+for proposals. Proposals only have `createdAt`, no `updatedAt`. A record missing one of them is dropped.
 
 Dates like `dueDate` are `YYYY-MM-DD`.
 
@@ -209,7 +252,11 @@ These two use `created` and `modified` as their timestamps.
 }
 ```
 
-### Projects, decisions, questions, meetings (`work`, each a list)
+### Projects, decisions, questions, meetings, proposals, templates (`work`, each a list)
+
+Updating these is as useful as adding them: when you finish a to-do, set it to
+`done`; when a question gets answered, set `status`, `answer` and `resolvedAt`;
+to raise something for the next meeting, add to its `agenda`.
 
 ```json
 {
@@ -271,6 +318,50 @@ These two use `created` and `modified` as their timestamps.
         "createdAt": 1793870000000,
         "updatedAt": 1793870000000
       }
+    ],
+    "reminderProposals": [
+      {
+        "id": "c49f8e0b173da625",
+        "memoryObjectId": "3f9a1c7e5b2d4a60",
+        "text": "Follow up with Dana about the Q4 plan",
+        "suggestedDate": "2026-11-20",
+        "reason": "Dana promised a reply by the 20th",
+        "confidence": 0.8,
+        "recurrence": "none",
+        "status": "pending",
+        "decidedAt": null,
+        "actionItemId": null,
+        "vaultId": "default",
+        "createdAt": 1793870000000
+      }
+    ],
+    "draftProposals": [
+      {
+        "id": "d50a9f1c284eb736",
+        "memoryObjectId": "3f9a1c7e5b2d4a60",
+        "kind": "email",
+        "target": "Dana Reyes",
+        "subject": "Q4 plan",
+        "body": "Hi Dana, here's the plan we discussed.",
+        "suggestedDate": null,
+        "suggestedTime": null,
+        "confidence": 0.8,
+        "status": "pending",
+        "decidedAt": null,
+        "vaultId": "default",
+        "createdAt": 1793870000000
+      }
+    ],
+    "templates": [
+      {
+        "id": "e61ba02d395fc847",
+        "name": "Incident review",
+        "content": "# {title}\n\nDate: {date}\n\n## What happened\n",
+        "description": "After something went wrong",
+        "vaultId": "default",
+        "created": 1793870000000,
+        "modified": 1793870000000
+      }
     ]
   }
 }
@@ -280,6 +371,12 @@ These two use `created` and `modified` as their timestamps.
 - Question `status`: `open`, `answered` or `dropped`.
 - Meeting `cadence`: `weekly`, `biweekly`, `monthly` or `none`.
 - `memoryId` is the note a decision or question came from.
+- Proposals need `memoryObjectId`, the note they came from, so write that note
+  first. Leave their `status` at `pending`: approving is the user's decision, and
+  only approving in the app creates the to-do. Draft `kind`: `email` or
+  `calendar-event`.
+- Templates use `created` and `modified`, and placeholders like `{title}`,
+  `{date}` and `{weekday}`.
 
 ## Not available from files
 
@@ -287,7 +384,9 @@ These two use `created` and `modified` as their timestamps.
   a to-do, decision or question, and `memoryObjectId` / `memoryId` to the note.
 - Voice memos and meetings with transcripts: capture those in the app. A
   recording embedded in a note (`![audio:…]`) plays but isn't transcribed.
-- Reminder and draft proposals, templates, and note icons on new notes.
+- Note icons on new notes, and favorites.
+- Labs features: flashcards, habits, saved searches and database views.
+- Vault settings, and encryption or sync settings.
 
 ## Check your work
 

@@ -114,7 +114,9 @@ same CRDT merge, so edits from several computers survive.
 With the local folder or Git, a coding agent such as Claude Code or Codex
 can add notes, images, files, to-dos and everything else without opening
 Kurumi. Every sync writes `.kurumi/AGENTS.md` next to `metadata.json`,
-describing the file formats and what can and can't be done from files.
+describing what to use when, the file formats, and what can and can't be done
+from files. Anything the agent only inferred should arrive as a proposal for you
+to approve.
 Agents don't load a guide from `.kurumi/` by themselves, so point yours at
 it: *"Read `.kurumi/AGENTS.md`, then add a to-do for…"*.
 

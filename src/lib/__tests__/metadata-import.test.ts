@@ -168,6 +168,13 @@ describe('agent guide', () => {
 		expect(records.work.questions[0]).toEqual({ ...question, vaultId: 'v1' });
 	});
 
+	it('says when to use each kind of object', () => {
+		const table = guide.slice(guide.indexOf('## What to use when'), guide.indexOf('## Rules'));
+		for (const kind of ['Note', 'Daily note', 'To-do', 'Reminder proposal', 'Draft proposal', 'Decision', 'Question', 'Project', 'Meeting', 'Person', 'Event', 'Template', 'Blob']) {
+			expect(table).toContain(`**${kind}**`);
+		}
+	});
+
 	it('uses blob ids that blob references can match', () => {
 		const ids = [...guide.matchAll(/[("]blob:([^)"]+)[)"]/g)].map((m) => m[1]);
 		expect(ids.length).toBeGreaterThan(0);

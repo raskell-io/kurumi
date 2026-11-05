@@ -1407,6 +1407,9 @@ const scenarios = {
 			m.work.projects.push({ id: 'agentproj1', name: 'Agent project', vaultId: m.vault.id, createdAt: now, updatedAt: now });
 			m.people.agentperson = { id: 'agentperson', name: 'Dana Reyes', vaultId: m.vault.id, created: now, modified: now };
 			m.blobs['blob:agentblob1'] = { mimeType: 'image/png' };
+			m.work.reminderProposals.push({ id: 'agentrem1', memoryObjectId: 'agentnote1', text: 'Follow up', suggestedDate: '2030-01-03', vaultId: m.vault.id, createdAt: now });
+			m.work.draftProposals.push({ id: 'agentdraft1', memoryObjectId: 'agentnote1', subject: 'Hello', vaultId: m.vault.id, createdAt: now });
+			m.work.templates.push({ id: 'agenttpl1', name: 'Agent template', content: '# {title}', vaultId: m.vault.id, created: now, modified: now });
 			await write(kurumi, 'metadata.json', JSON.stringify(m));
 			await write(await kurumi.getDirectoryHandle('blobs', { create: true }), 'agentblob1', new Uint8Array([137, 80, 78, 71]));
 			await write(dir, 'agent-note.md', '---\nid: agentnote1\nname: "Agent note"\ntags: ["from-agent"]\n---\n![Photo](blob:agentblob1)\n');
@@ -1414,6 +1417,12 @@ const scenarios = {
 
 			const after = await readMeta();
 			const stored = await blobs.getBlob('blob:agentblob1');
+			const full = JSON.parse(db.exportFullJSON());
+			const proposals = {
+				reminder: full.reminderProposals.find((r) => r.id === 'agentrem1')?.status,
+				draft: full.draftProposals.find((r) => r.id === 'agentdraft1')?.kind,
+				template: full.templates.find((t) => t.id === 'agenttpl1')?.name
+			};
 			const note = db.getMemoryObject('agentnote1');
 			const added = {
 				todo: items().find((a) => a.id === 'agenttodo1'),
@@ -1448,10 +1457,11 @@ const scenarios = {
 			await sync();
 			const done = items().find((a) => a.id === 'agenttodo2')?.status;
 
-			return { results: [first, second, third], guideHasRules: guide.includes('## Rules'), added, deleted, done };
+			return { proposals, results: [first, second, third], guideHasRules: guide.includes('## Rules'), added, deleted, done };
 		});
 		for (const r of out.results) assert.deepEqual(r, { success: true });
 		assert.ok(out.guideHasRules, 'AGENTS.md not written');
+		assert.deepEqual(out.proposals, { reminder: 'pending', draft: 'email', template: 'Agent template' });
 		assert.equal(out.added.todo?.text, 'From the agent');
 		assert.equal(out.added.todo?.dueDate, '2030-01-02');
 		assert.equal(out.added.fileTodoStatus, 'open', 'defaults written back to the file');

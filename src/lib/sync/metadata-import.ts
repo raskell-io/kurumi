@@ -13,11 +13,14 @@ import { canonicalJSON, hashText } from './folder-state';
 import type {
 	ActionItem,
 	Decision,
+	DraftProposal,
 	Event,
 	MeetingSeries,
 	Person,
 	Project,
-	Question
+	Question,
+	ReminderProposal,
+	Template
 } from '$lib/db/types';
 
 export interface MetadataRecords {
@@ -29,6 +32,9 @@ export interface MetadataRecords {
 		decisions: Decision[];
 		questions: Question[];
 		meetingSeries: MeetingSeries[];
+		reminderProposals: ReminderProposal[];
+		draftProposals: DraftProposal[];
+		templates: Template[];
 	};
 }
 
@@ -86,6 +92,8 @@ function readList<T>(
 
 const CREATED_UPDATED: [string, string] = ['createdAt', 'updatedAt'];
 const CREATED_MODIFIED: [string, string] = ['created', 'modified'];
+const CREATED_ONLY: [string, string] = ['createdAt', 'createdAt'];
+const isDate = (value: unknown) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value);
 
 /** The records a metadata file holds. */
 export function readMetadataRecords(metadata: GitMetadata, fallbackVaultId: string): MetadataRecords {
@@ -94,7 +102,7 @@ export function readMetadataRecords(metadata: GitMetadata, fallbackVaultId: stri
 	return {
 		people: readList<Person>(metadata.people, vaultId, CREATED_MODIFIED, (r) => (present(r.name) ? {} : null)),
 		events: readList<Event>(metadata.events, vaultId, CREATED_MODIFIED, (r) =>
-			typeof r.date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(r.date) ? {} : null
+			isDate(r.date) ? {} : null
 		),
 		actionItems: readList<ActionItem>(metadata.actionItems, vaultId, CREATED_UPDATED, (r) =>
 			present(r.text)
@@ -156,6 +164,35 @@ export function readMetadataRecords(metadata: GitMetadata, fallbackVaultId: stri
 								: []
 						}
 					: null
+			),
+			reminderProposals: readList<ReminderProposal>(work.reminderProposals, vaultId, CREATED_ONLY, (r) =>
+				present(r.text) && present(r.memoryObjectId) && isDate(r.suggestedDate)
+					? {
+							reason: orNull(r.reason),
+							confidence: typeof r.confidence === 'number' ? r.confidence : 1,
+							recurrence: oneOf(r.recurrence, ['none', 'daily', 'weekly', 'monthly', 'yearly'], 'none'),
+							status: oneOf(r.status, ['pending', 'approved', 'rejected', 'snoozed'], 'pending'),
+							decidedAt: timeOf(r.decidedAt),
+							actionItemId: orNull(r.actionItemId)
+						}
+					: null
+			),
+			draftProposals: readList<DraftProposal>(work.draftProposals, vaultId, CREATED_ONLY, (r) =>
+				present(r.subject) && present(r.memoryObjectId)
+					? {
+							kind: oneOf(r.kind, ['email', 'calendar-event'], 'email'),
+							target: orNull(r.target),
+							body: orEmpty(r.body),
+							suggestedDate: orNull(r.suggestedDate),
+							suggestedTime: orNull(r.suggestedTime),
+							confidence: typeof r.confidence === 'number' ? r.confidence : 1,
+							status: oneOf(r.status, ['pending', 'used', 'rejected'], 'pending'),
+							decidedAt: timeOf(r.decidedAt)
+						}
+					: null
+			),
+			templates: readList<Template>(work.templates, vaultId, CREATED_MODIFIED, (r) =>
+				present(r.name) && typeof r.content === 'string' ? {} : null
 			)
 		}
 	};
@@ -172,11 +209,19 @@ function sections(records: MetadataRecords): [Section, { id: string }[]][] {
 		['projects', records.work.projects],
 		['decisions', records.work.decisions],
 		['questions', records.work.questions],
-		['meetingSeries', records.work.meetingSeries]
+		['meetingSeries', records.work.meetingSeries],
+		['reminderProposals', records.work.reminderProposals],
+		['draftProposals', records.work.draftProposals],
+		['templates', records.work.templates]
 	];
 }
 
-const stampKey = (section: Section) => (section === 'people' || section === 'events' ? 'modified' : 'updatedAt');
+const stampKey = (section: Section) =>
+	section === 'people' || section === 'events' || section === 'templates'
+		? 'modified'
+		: section === 'reminderProposals' || section === 'draftProposals'
+			? 'createdAt'
+			: 'updatedAt';
 
 function fingerprint(record: object): string {
 	return hashText(canonicalJSON(record));
@@ -256,7 +301,10 @@ export function pickExternalChanges(
 			projects: pick('projects', incoming.work.projects),
 			decisions: pick('decisions', incoming.work.decisions),
 			questions: pick('questions', incoming.work.questions),
-			meetingSeries: pick('meetingSeries', incoming.work.meetingSeries)
+			meetingSeries: pick('meetingSeries', incoming.work.meetingSeries),
+			reminderProposals: pick('reminderProposals', incoming.work.reminderProposals),
+			draftProposals: pick('draftProposals', incoming.work.draftProposals),
+			templates: pick('templates', incoming.work.templates)
 		}
 	};
 	return { changes, deletions };

@@ -27,12 +27,15 @@ export interface GitMetadata {
 	// with something to record are listed; the key's presence means the
 	// writer knew about these fields (see GitImportData.noteExtrasKnown).
 	notes?: Record<string, NoteExtras>;
-	// Projects, decisions, questions and meeting series of the vault.
+	// Projects, decisions, questions, meeting series, proposals and templates.
 	work?: {
 		projects: unknown[];
 		decisions: unknown[];
 		questions: unknown[];
 		meetingSeries: unknown[];
+		reminderProposals?: unknown[];
+		draftProposals?: unknown[];
+		templates?: unknown[];
 	};
 	people: Record<string, Person>;
 	events: Record<string, Event>;
