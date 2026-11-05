@@ -46,6 +46,7 @@
 	import {
 		isLocalFSSupported,
 		hasLocalFSHandle,
+		getLocalFSFolder,
 		pickLocalFSDirectory,
 		clearLocalFSHandle,
 		isLocalFSAllVaults,
@@ -174,6 +175,7 @@
 	// Local FS state
 	let localFSAvailable = $state(false);
 	let localFSConfigured = $state(false);
+	let localFSFolder = $state<{ name: string; granted: boolean } | null>(null);
 	let localFSTesting = $state(false);
 	let localFSTestResult = $state<{ success: boolean; error?: string; folder?: string } | null>(null);
 	let localFSAllVaults = $state(false);
@@ -182,17 +184,20 @@
 		localFSAvailable = isLocalFSSupported();
 		localFSAllVaults = isLocalFSAllVaults();
 		localFSConfigured = await hasLocalFSHandle();
+		localFSFolder = await getLocalFSFolder();
 	}
 
 	async function handlePickFolder() {
 		const ok = await pickLocalFSDirectory();
 		localFSConfigured = ok;
+		localFSFolder = await getLocalFSFolder();
 		localFSTestResult = null;
 	}
 
 	async function handleClearFolder() {
 		await clearLocalFSHandle();
 		localFSConfigured = false;
+		localFSFolder = null;
 		localFSTestResult = null;
 	}
 
@@ -201,6 +206,7 @@
 		localFSTestResult = null;
 		localFSTestResult = await testLocalFSConnection();
 		localFSTesting = false;
+		localFSFolder = await getLocalFSFolder();
 	}
 
 	// Azure Blob state
@@ -671,6 +677,8 @@
 
 	async function handleSync() {
 		await sync();
+		// Syncing is what asks for the folder permission again.
+		if (localFSConfigured) localFSFolder = await getLocalFSFolder();
 	}
 
 	// Sync method handlers
@@ -1290,13 +1298,29 @@
 									</p>
 								{:else if localFSConfigured}
 									<div class="set-actions">
-										<span class="k-badge k-badge-success">Folder selected</span>
+										{#if localFSFolder}
+											<span
+												class="k-badge {localFSFolder.granted ? 'k-badge-success' : ''}"
+												title="Browsers only show a folder's name, not where it is"
+												data-testid="local-folder-name"
+											>
+												{localFSFolder.name}
+											</span>
+										{:else}
+											<span class="k-badge k-badge-success">Folder selected</span>
+										{/if}
 										<button onclick={handleLocalFSTest} disabled={localFSTesting} class="k-btn k-btn-sm">
 											{#if localFSTesting}{@render spinner()}{/if}
 											Test
 										</button>
 										<button onclick={handleClearFolder} class="k-btn k-btn-sm k-btn-ghost">Change folder</button>
 									</div>
+									{#if localFSFolder && !localFSFolder.granted}
+										<p class="k-help">
+											The browser needs your permission for this folder again. Press <em>Sync now</em>
+											and allow it.
+										</p>
+									{/if}
 									{#if localFSTestResult}
 										<div>
 											{@render testResultLine(

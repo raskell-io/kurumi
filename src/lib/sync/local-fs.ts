@@ -106,6 +106,24 @@ export async function clearLocalFSHandle(): Promise<void> {
 	setConfiguredFlag(false);
 }
 
+/**
+ * The chosen folder, without asking for anything. Browsers only reveal its
+ * name, never its path. `granted` is false when the browser wants permission
+ * again (after a restart, usually), which takes a click, e.g. on Sync now.
+ */
+export async function getLocalFSFolder(): Promise<{ name: string; granted: boolean } | null> {
+	try {
+		const handle = (await get(IDB_KEY)) as FileSystemDirectoryHandle | undefined;
+		if (!handle) return null;
+		const permission = await (handle as FileSystemDirectoryHandle & {
+			queryPermission: (opts: object) => Promise<string>;
+		}).queryPermission({ mode: 'readwrite' });
+		return { name: handle.name, granted: permission === 'granted' };
+	} catch {
+		return null;
+	}
+}
+
 async function getHandle(): Promise<FileSystemDirectoryHandle | null> {
 	try {
 		const handle = (await get(IDB_KEY)) as FileSystemDirectoryHandle | undefined;

@@ -91,7 +91,8 @@ branch, and a personal access token with read/write access to that repo.
 
 Settings → Sync → Local: choose a folder (Chrome and Edge). Kurumi writes
 `kurumi-sync.bin` (the database) and a Markdown copy of the vault; turn on
-**Write all vaults** for one subfolder per vault.
+**Write all vaults** for one subfolder per vault. The panel shows the
+folder's name; browsers don't reveal its full path.
 
 Kurumi also reads the folder back:
 

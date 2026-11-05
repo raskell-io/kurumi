@@ -1466,6 +1466,23 @@ const scenarios = {
 		assert.equal(out.done, 'done');
 		assert.deepEqual(errors, []);
 	},
+	async 'settings show the selected local folder'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const name = await page.evaluate(async () => {
+			const kv = await import('/node_modules/idb-keyval/dist/index.js');
+			const root = await navigator.storage.getDirectory();
+			const dir = await root.getDirectoryHandle('my-kurumi-folder', { create: true });
+			await kv.set('kurumi-local-fs-handle', dir);
+			localStorage.setItem('kurumi-local-fs-configured', '1');
+			localStorage.setItem('kurumi-sync-method', 'local-fs');
+			return dir.name;
+		});
+		await page.goto(`${BASE}/settings/sync`, { waitUntil: 'load' });
+		await page.waitForSelector('[data-testid="local-folder-name"]', { timeout: 15000 });
+		const shown = await page.$eval('[data-testid="local-folder-name"]', (el) => el.textContent.trim());
+		assert.equal(shown, name);
+		assert.deepEqual(errors, []);
+	}
 };
 
 // ------------------------------------------------------------ main
