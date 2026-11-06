@@ -862,7 +862,7 @@
 <style>
 	/* The board needs more room than the list's reading width. */
 	.board-page {
-		max-width: 76rem;
+		max-width: max(var(--note-width), 76rem);
 	}
 
 	.items {

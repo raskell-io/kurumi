@@ -218,8 +218,9 @@ OpenAI to MMS when the API key is missing.
   is in it) and the reader, both through `$lib/mermaid.ts` (strict security,
   colours and font from the theme)
 - Appearance (per device, applied before first paint in `app.html`): accent
-  colour (`accent-*` classes set `--accent-light/dark`), note width
-  (`note-width-*`, `--note-width`)
+  colour (`accent-*` classes set `--accent-light/dark`), content width
+  (`note-width-*`, `--note-width`: notes, Read mode, `.k-page`, home; grids
+  use at least 76rem)
 - Editor plugins register their UI callbacks per editor container
   (`editor/registry.ts`), so two editors can be open at once
 - Split view: a second note beside the main one (`SplitPane.svelte`,

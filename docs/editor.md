@@ -10,8 +10,8 @@ editor.
 </picture>
 
 Settings → Appearance sets the accent colour, the editor font, its size, and
-the note width: Narrow, Wide (the default) or Full. Width and accent apply to
-Read mode too, and each device keeps its own.
+the content width: Narrow, Wide (the default) or Full. Width applies to notes,
+Read mode and every other page, and each device keeps its own.
 
 A code block with the language `mermaid` shows a
 [Mermaid](https://mermaid.js.org) diagram, in the note's colours. Click the

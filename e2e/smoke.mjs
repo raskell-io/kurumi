@@ -1861,7 +1861,7 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
-	async 'note width: wide by default, narrow and full in Appearance'(browser) {
+	async 'content width: wide by default, narrow and full in Appearance, on every page'(browser) {
 		const { page, errors } = await freshPage(browser);
 		await page.setViewport({ width: 1800, height: 900 });
 		const id = await page.evaluate(async () => {
@@ -1887,10 +1887,23 @@ const scenarios = {
 		const full = await column();
 		await page.reload({ waitUntil: 'load' }); // the choice survives a reload, before first paint
 		const kept = await page.evaluate(() => document.documentElement.classList.contains('note-width-full'));
+		// Other pages follow it: lists and the home page.
+		await page.evaluate(() => localStorage.setItem('kurumi-note-width', 'wide'));
+		const pageWidth = async (path, selector) => {
+			await page.goto(`${BASE}/#${path}`, { waitUntil: 'load' });
+			await page.reload({ waitUntil: 'load' });
+			await page.waitForSelector(selector);
+			await page.waitForFunction((s) => document.querySelector(s).getBoundingClientRect().width === 64 * 16, { timeout: 15000 }, selector).catch(() => {});
+			return page.$eval(selector, (el) => Math.round(el.getBoundingClientRect().width));
+		};
+		const projects = await pageWidth('/projects', '.k-page');
+		const home = await pageWidth('/', '[data-testid="home-page"]');
 		assert.equal(narrow, 46 * 16);
 		assert.equal(wide, 64 * 16);
 		assert.ok(full > wide + 200, `full ${full}`);
 		assert.ok(kept);
+		assert.equal(projects, 64 * 16);
+		assert.equal(home, 64 * 16);
 		assert.deepEqual(errors, []);
 	},
 

@@ -501,7 +501,7 @@
 	});
 </script>
 
-<div class="mx-auto max-w-2xl px-5 py-8 md:px-8 md:py-16">
+<div class="mx-auto max-w-[var(--note-width)] px-5 py-8 md:px-8 md:py-16" data-testid="home-page">
 	{#if $memoryObjects.length === 0}
 		<!-- Empty-vault welcome state -->
 		<div class="flex flex-col items-center pt-[8vh] text-center">

@@ -229,8 +229,8 @@
 	--accent-dark-hover: color-mix(in srgb, #cba6f7 80%, white);
 }
 
-/* Note width (Settings → Appearance): the text column of the editor and
-   the reader. Wide is the default. */
+/* Content width (Settings → Appearance): notes, Read mode and every page
+   built on .k-page, plus the home page. Wide is the default. */
 :root {
 	--note-width: 64rem;
 }
@@ -657,13 +657,14 @@ textarea {
 	   then content sections. */
 	.k-page {
 		width: 100%;
-		max-width: 46rem;
+		max-width: var(--note-width);
 		margin: 0 auto;
 		padding: 2rem 1.25rem 6rem;
 	}
 
+	/* Calendars and grids need more room than reading does */
 	.k-page-wide {
-		max-width: 64rem;
+		max-width: max(var(--note-width), 76rem);
 	}
 
 	@media (min-width: 768px) {

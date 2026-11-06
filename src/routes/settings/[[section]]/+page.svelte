@@ -1215,8 +1215,8 @@
 
 						<div class="set-row">
 							<div class="set-row-text">
-								<div class="set-row-label" id="width-label">Note width</div>
-								<p class="set-row-help">How wide notes are, when editing and in Read mode. On this device.</p>
+								<div class="set-row-label" id="width-label">Content width</div>
+								<p class="set-row-help">How wide notes and pages are: the editor, Read mode, lists and the home page. On this device.</p>
 							</div>
 							<div class="k-segmented" role="group" aria-labelledby="width-label">
 								<button aria-pressed={noteWidth === 'narrow'} onclick={() => setNoteWidth('narrow')}>Narrow</button>
@@ -2860,10 +2860,10 @@
 		display: none;
 	}
 
-	/* Sticky section nav only when there's room beside the 46rem column */
+	/* Sticky section nav only when there's room beside the content column */
 	@media (min-width: 1024px) {
 		.settings-page {
-			max-width: 62rem;
+			max-width: max(62rem, calc(var(--note-width) + 12rem));
 		}
 
 		.settings-nav,
