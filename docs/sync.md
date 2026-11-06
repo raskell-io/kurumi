@@ -117,8 +117,10 @@ Kurumi. Every sync writes `.kurumi/AGENTS.md` next to `metadata.json`,
 describing what to use when, the file formats, and what can and can't be done
 from files. Anything the agent only inferred should arrive as a proposal for you
 to approve.
-Agents don't load a guide from `.kurumi/` by themselves, so point yours at
-it: *"Read `.kurumi/AGENTS.md`, then add a to-do for…"*.
+Sync also writes `.claude/CLAUDE.md` at the top of the folder, so Claude Code
+started there follows the guide by itself; instructions you've put in that file
+stay. Other agents don't load a guide from `.kurumi/`, so point them at it:
+*"Read `.kurumi/AGENTS.md`, then add a to-do for…"*.
 
 While Kurumi is open it notices changes in a local folder within about 15
 seconds, and writes its own there just as quickly, so you and an agent can work

@@ -25,6 +25,7 @@ import {
 import { vaultDirNames } from '$lib/utils/markdown-export';
 import { refToId, importBlobPayloads, type BlobPayload } from './blobs';
 import agentGuide from './agent-guide.md?raw';
+import { CLAUDE_DIR, CLAUDE_FILE, claudeInstructions } from './claude-instructions';
 import { hashText, resetFolderState, saveBaseText, type FolderState } from './folder-state';
 import { readMetadataRecords, recordFingerprints } from './metadata-import';
 import type { MemoryObject, Folder, Vault, Person, Event, ActionItem } from '$lib/db/types';
@@ -325,6 +326,17 @@ async function writeGuarded(
 	return true;
 }
 
+// A convenience, so it never gets in the way of syncing.
+async function writeClaudeInstructions(root: FileSystemDirectoryHandle): Promise<void> {
+	try {
+		const dir = await getOrCreateDir(root, [CLAUDE_DIR]);
+		const content = claudeInstructions(await readIfExists(dir, CLAUDE_FILE));
+		if (content !== null) await writeFile(dir, CLAUDE_FILE, content);
+	} catch (err) {
+		console.warn(`Couldn't write ${CLAUDE_DIR}/${CLAUDE_FILE}:`, err);
+	}
+}
+
 async function writeIfChanged(dir: FileSystemDirectoryHandle, name: string, content: string): Promise<void> {
 	if ((await readIfExists(dir, name)) !== content) await writeFile(dir, name, content);
 }
@@ -484,6 +496,7 @@ export async function localFSPushMarkdown(
 	if (!dir) throw new Error('Local folder not configured');
 	// Switching back from the all-vaults layout: clear its vault folders.
 	await pruneAllVaultsLayout(dir, new Set(), session);
+	await writeClaudeInstructions(dir);
 	await writeVaultMarkdown(dir, { memories, folders, vault, people, events, actionItems, blobs, work }, session, '');
 }
 
@@ -532,6 +545,7 @@ export async function localFSPushAllVaults(mirrors: VaultMirror[], session: Writ
 	const metaDir = await getOrCreateDir(dir, [METADATA_DIR]);
 	await writeIfChanged(metaDir, VAULTS_INDEX_FILE, JSON.stringify({ version: 1, vaults: index }, null, 2) + '\n');
 	await writeIfChanged(metaDir, AGENT_GUIDE_FILE, agentGuide);
+	await writeClaudeInstructions(dir);
 }
 
 async function readVaultsIndex(dir: FileSystemDirectoryHandle): Promise<Record<string, string>> {

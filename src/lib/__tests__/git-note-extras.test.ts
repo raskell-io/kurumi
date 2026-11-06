@@ -71,6 +71,7 @@ describe('agent guide in a git repo', () => {
 	it('is not read as a note', () => {
 		const files = new Map([
 			['.kurumi/AGENTS.md', '# guide'],
+			['.claude/CLAUDE.md', '# instructions'],
 			['plan.md', '---\nid: n1\n---\nbody']
 		]);
 		const { memories } = parseNotesFromFiles(files, null, 'v1');

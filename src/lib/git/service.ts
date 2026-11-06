@@ -32,6 +32,7 @@ import {
 import { getVaultWorkRecords, applyWorkImport } from '$lib/db';
 import { readMetadataRecords } from '../sync/metadata-import';
 import agentGuide from '../sync/agent-guide.md?raw';
+import { CLAUDE_DIR, CLAUDE_FILE, claudeInstructions } from '../sync/claude-instructions';
 import type { MemoryObject, Folder, Vault, Person, Event, ActionItem } from '../db/types';
 import {
 	collectBlobRefs,
@@ -254,6 +255,17 @@ export async function writeNotesToRepo(
 	await ensureDir(`${REPO_DIR}/.kurumi`);
 	await pfs.writeFile(`${REPO_DIR}/${METADATA_PATH}`, metadataJson, 'utf8');
 	await pfs.writeFile(`${REPO_DIR}/${AGENT_GUIDE_PATH}`, agentGuide, 'utf8');
+	try {
+		const claudePath = `${REPO_DIR}/${CLAUDE_DIR}/${CLAUDE_FILE}`;
+		await ensureDir(`${REPO_DIR}/${CLAUDE_DIR}`);
+		const existing = (await pathExists(claudePath))
+			? ((await pfs.readFile(claudePath, { encoding: 'utf8' })) as string)
+			: null;
+		const instructions = claudeInstructions(existing);
+		if (instructions !== null) await pfs.writeFile(claudePath, instructions, 'utf8');
+	} catch (err) {
+		console.warn(`Couldn't write ${CLAUDE_DIR}/${CLAUDE_FILE}:`, err);
+	}
 
 	// Write markdown files
 	for (const file of markdownFiles) {
@@ -371,7 +383,8 @@ export function parseNotesFromFiles(
 	vaultId: string
 ): { memories: MemoryObject[]; folders: Folder[] } {
 	const markdownPaths = Array.from(files.keys()).filter(
-		(p) => p.endsWith('.md') && !p.startsWith('.kurumi/')
+		// Hidden directories aren't notes (.kurumi, .claude, .github, …)
+		(p) => p.endsWith('.md') && !p.split('/').some((part) => part.startsWith('.'))
 	);
 
 	// Reconstruct folders
