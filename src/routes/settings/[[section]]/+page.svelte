@@ -291,6 +291,29 @@
 	let theme = $state<'system' | 'light' | 'dark'>('system');
 	let editorFont = $state<'quattro' | 'geist'>('quattro');
 	let editorFontSize = $state<'small' | 'medium' | 'large'>('medium');
+	type NoteWidth = 'narrow' | 'wide' | 'full';
+	const ACCENTS = [
+		{ id: 'lavender', label: 'Lavender', light: '#7287fd', dark: '#b4befe' },
+		{ id: 'blue', label: 'Blue', light: '#1e66f5', dark: '#89b4fa' },
+		{ id: 'sapphire', label: 'Sapphire', light: '#209fb5', dark: '#74c7ec' },
+		{ id: 'teal', label: 'Teal', light: '#179299', dark: '#94e2d5' },
+		{ id: 'green', label: 'Green', light: '#40a02b', dark: '#a6e3a1' },
+		{ id: 'peach', label: 'Peach', light: '#fe640b', dark: '#fab387' },
+		{ id: 'mauve', label: 'Mauve', light: '#8839ef', dark: '#cba6f7' }
+	] as const;
+	let accent = $state<string>(
+		typeof localStorage === 'undefined' ? 'lavender' : (localStorage.getItem('kurumi-accent') ?? 'lavender')
+	);
+	function setAccent(id: string) {
+		accent = id;
+		localStorage.setItem('kurumi-accent', id);
+		const classes = document.documentElement.classList;
+		for (const a of ACCENTS) classes.remove(`accent-${a.id}`);
+		classes.add(`accent-${id}`);
+	}
+	let noteWidth = $state<NoteWidth>(
+		typeof localStorage === 'undefined' ? 'wide' : ((localStorage.getItem('kurumi-note-width') as NoteWidth | null) ?? 'wide')
+	);
 
 	// Derived for the local-AI status panels
 	let currentWhisperModelId = $derived(whisperModelId($localInferenceSettings.whisperModel));
@@ -658,6 +681,13 @@
 		document.documentElement.classList.add(`font-${f}`);
 	}
 
+	function setNoteWidth(w: NoteWidth) {
+		noteWidth = w;
+		localStorage.setItem('kurumi-note-width', w);
+		document.documentElement.classList.remove('note-width-narrow', 'note-width-wide', 'note-width-full');
+		document.documentElement.classList.add(`note-width-${w}`);
+	}
+
 	function setEditorFontSize(s: 'small' | 'medium' | 'large') {
 		editorFontSize = s;
 		localStorage.setItem('kurumi-editor-font-size', s);
@@ -1012,6 +1042,8 @@
 			localStorage.removeItem('kurumi-sync-token');
 			localStorage.removeItem('kurumi-sync-url');
 			localStorage.removeItem('kurumi-sidebar-width');
+			localStorage.removeItem('kurumi-note-width');
+			localStorage.removeItem('kurumi-accent');
 
 			// Reload the page to reinitialize
 			location.reload();
@@ -1135,6 +1167,27 @@
 
 						<div class="set-row">
 							<div class="set-row-text">
+								<div class="set-row-label" id="accent-label">Accent colour</div>
+								<p class="set-row-help">Links, highlights and the touches of colour in notes. On this device.</p>
+							</div>
+							<div class="accent-swatches" role="radiogroup" aria-labelledby="accent-label">
+								{#each ACCENTS as option (option.id)}
+									<button
+										type="button"
+										role="radio"
+										aria-checked={accent === option.id}
+										aria-label={option.label}
+										title={option.label}
+										class="accent-swatch"
+										style="--swatch-light: {option.light}; --swatch-dark: {option.dark}"
+										onclick={() => setAccent(option.id)}
+									></button>
+								{/each}
+							</div>
+						</div>
+
+						<div class="set-row">
+							<div class="set-row-text">
 								<div class="set-row-label" id="font-label">Editor font</div>
 								<p class="set-row-help">Typeface used in the note editor.</p>
 							</div>
@@ -1157,6 +1210,18 @@
 								<button aria-pressed={editorFontSize === 'small'} onclick={() => setEditorFontSize('small')}>Small</button>
 								<button aria-pressed={editorFontSize === 'medium'} onclick={() => setEditorFontSize('medium')}>Medium</button>
 								<button aria-pressed={editorFontSize === 'large'} onclick={() => setEditorFontSize('large')}>Large</button>
+							</div>
+						</div>
+
+						<div class="set-row">
+							<div class="set-row-text">
+								<div class="set-row-label" id="width-label">Note width</div>
+								<p class="set-row-help">How wide notes are, when editing and in Read mode. On this device.</p>
+							</div>
+							<div class="k-segmented" role="group" aria-labelledby="width-label">
+								<button aria-pressed={noteWidth === 'narrow'} onclick={() => setNoteWidth('narrow')}>Narrow</button>
+								<button aria-pressed={noteWidth === 'wide'} onclick={() => setNoteWidth('wide')}>Wide</button>
+								<button aria-pressed={noteWidth === 'full'} onclick={() => setNoteWidth('full')}>Full</button>
 							</div>
 						</div>
 					</div>
@@ -3102,5 +3167,47 @@
 		padding: 0.125rem 0.375rem;
 		border-radius: 0.25rem;
 		font-size: 0.85em;
+	}
+
+	/* Accent colour picker: one dot per colour, in the current theme's shade */
+	.accent-swatches {
+		display: flex;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+
+	.accent-swatch {
+		--swatch: var(--swatch-light);
+		width: 1.5rem;
+		height: 1.5rem;
+		border-radius: 9999px;
+		background: var(--swatch);
+		border: 2px solid var(--color-bg);
+		box-shadow: 0 0 0 1px var(--color-border);
+		cursor: pointer;
+		transition: transform 0.12s ease, box-shadow 0.12s ease;
+	}
+
+	:global(:root.dark) .accent-swatch {
+		--swatch: var(--swatch-dark);
+	}
+
+	@media (prefers-color-scheme: dark) {
+		:global(:root:not(.light)) .accent-swatch {
+			--swatch: var(--swatch-dark);
+		}
+	}
+
+	.accent-swatch:hover {
+		transform: scale(1.1);
+	}
+
+	.accent-swatch[aria-checked='true'] {
+		box-shadow: 0 0 0 2px var(--swatch);
+	}
+
+	.accent-swatch:focus-visible {
+		outline: 2px solid var(--color-accent);
+		outline-offset: 3px;
 	}
 </style>

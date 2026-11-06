@@ -308,16 +308,16 @@
 {/if}
 
 <style>
-	/* Same 46rem text column and rhythm as the editor on /memory/[id] */
+	/* Same text column (--note-width) and rhythm as the editor on /memory/[id] */
 	.reader {
-		max-width: calc(46rem + 2.5rem);
+		max-width: calc(var(--note-width) + 2.5rem);
 		margin: 0 auto;
 		padding: 1.5rem 1.25rem 5rem;
 	}
 
 	@media (min-width: 768px) {
 		.reader {
-			max-width: calc(46rem + 6rem);
+			max-width: calc(var(--note-width) + 6rem);
 			padding: 3rem 3rem 6rem;
 		}
 	}

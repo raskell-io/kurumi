@@ -94,6 +94,8 @@
 				if (t === 'light' || t === 'dark') c.add(t);
 				c.add('font-' + (localStorage.getItem('kurumi-editor-font') || 'quattro'));
 				c.add('font-size-' + (localStorage.getItem('kurumi-editor-font-size') || 'medium'));
+				c.add('note-width-' + (localStorage.getItem('kurumi-note-width') || 'wide'));
+				c.add('accent-' + (localStorage.getItem('kurumi-accent') || 'lavender'));
 			} catch (e) {}
 		</script>
 		%sveltekit.head%

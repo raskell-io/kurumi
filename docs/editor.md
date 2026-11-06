@@ -9,6 +9,21 @@ editor.
   <img src="images/note.webp" alt="A note in the Kurumi editor with headings, bold text, a person mention and links to other notes">
 </picture>
 
+Settings → Appearance sets the accent colour, the editor font, its size, and
+the note width: Narrow, Wide (the default) or Full. Width and accent apply to
+Read mode too, and each device keeps its own.
+
+A code block with the language `mermaid` shows a
+[Mermaid](https://mermaid.js.org) diagram, in the note's colours. Click the
+diagram to edit its source, and click outside to see the result:
+
+````markdown
+```mermaid
+graph LR
+  Capture --> Process --> Recall
+```
+````
+
 ## Links and references
 
 | Type | You get |

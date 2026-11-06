@@ -213,6 +213,13 @@ OpenAI to MMS when the API key is missing.
   `![[embeds]]` (`noteEmbed.ts`), paste a URL onto selected text to
   link it (`pasteLink.ts`), clickable GFM task checkboxes
   (`taskToggle.ts`), mobile formatting toolbar (`MobileToolbar.svelte`)
+- Mermaid: ```mermaid blocks render as diagrams in the editor
+  (`editor/mermaid.ts`, a code_block node view; source shown while the cursor
+  is in it) and the reader, both through `$lib/mermaid.ts` (strict security,
+  colours and font from the theme)
+- Appearance (per device, applied before first paint in `app.html`): accent
+  colour (`accent-*` classes set `--accent-light/dark`), note width
+  (`note-width-*`, `--note-width`)
 - Editor plugins register their UI callbacks per editor container
   (`editor/registry.ts`), so two editors can be open at once
 - Split view: a second note beside the main one (`SplitPane.svelte`,
@@ -291,8 +298,10 @@ OpenAI to MMS when the API key is missing.
   all-vaults layout. After the mirror is written, imported originals are
   removed if their canonical path is a different file (exact-name check;
   case-insensitive disks make `A.md`/`a.md` one file).
-- Coding agents: `.kurumi/AGENTS.md` is written beside every `metadata.json`
-  from `sync/agent-guide.md`. **Change that guide when the on-disk format or
+- Coding agents: `.claude/CLAUDE.md` at the top of the folder points Claude Code
+  at the guide (`sync/claude-instructions.ts`; adds to a user's file, never
+  replaces it; `@` imports are relative to that file). `.kurumi/AGENTS.md` is
+  written beside every `metadata.json` from `sync/agent-guide.md`. **Change that guide when the on-disk format or
   what's read back changes**; a unit test runs its JSON examples through the
   importer. Records in `metadata.json` are read back by
   `sync/metadata-import.ts` as a three-way merge against what this device last

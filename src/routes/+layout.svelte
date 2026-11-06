@@ -1225,6 +1225,12 @@
 		background: var(--color-active);
 		color: var(--color-text);
 		font-weight: 500;
+		box-shadow: inset 2px 0 0 var(--color-accent);
+	}
+
+	.nav-row-active :global(.nav-icon) {
+		color: var(--color-accent);
+		opacity: 1;
 	}
 
 	.nav-row :global(.nav-icon) {

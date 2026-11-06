@@ -2,6 +2,7 @@
 	import { handleAttachmentClick } from '$lib/attachments';
 	import { openImageFromContainer, isViewable } from '$lib/stores/imageViewer';
 	import { marked } from 'marked';
+	import { renderMermaid } from '$lib/mermaid';
 	import { findMemoryObjectByTitle } from '$lib/db';
 	import { resolveBlobUrl, isBlobRef } from '$lib/utils/image';
 	import DataviewBlock from './DataviewBlock.svelte';
@@ -309,31 +310,14 @@
 		const blocks = mermaidBlocks;
 		if (blocks.length === 0 || !contentDiv) return;
 		requestAnimationFrame(async () => {
-			try {
-				const { default: mermaid } = await import('mermaid');
-				// Follow the app theme (manual .dark/.light class, else system)
-				const root = document.documentElement;
-				const isDark =
-					root.classList.contains('dark') ||
-					(!root.classList.contains('light') &&
-						window.matchMedia('(prefers-color-scheme: dark)').matches);
-				mermaid.initialize({
-					startOnLoad: false,
-					theme: isDark ? 'dark' : 'default',
-					securityLevel: 'loose'
-				});
-				for (const block of blocks) {
-					const el = contentDiv?.querySelector(`[data-mermaid-id="${block.id}"]`);
-					if (!el) continue;
-					const { svg } = await mermaid.render(`mermaid-${block.id}`, block.source);
-					el.innerHTML = svg;
-				}
-			} catch {
-				// mermaid not installed or rendering failed — show source as fallback
-				for (const block of blocks) {
-					const el = contentDiv?.querySelector(`[data-mermaid-id="${block.id}"]`);
-					if (el) el.innerHTML = `<pre class="mermaid-fallback"><code>${block.source.replace(/</g, '&lt;')}</code></pre>`;
-				}
+			for (const block of blocks) {
+				const el = contentDiv?.querySelector(`[data-mermaid-id="${block.id}"]`);
+				if (!el) continue;
+				const result = await renderMermaid(block.source);
+				el.innerHTML =
+					'svg' in result
+						? result.svg
+						: `<pre class="mermaid-fallback"><code>${block.source.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</code></pre>`;
 			}
 		});
 	});
@@ -514,7 +498,7 @@
 	.markdown-content :global(code) {
 		padding: 0.15em 0.35em;
 		border-radius: 4px;
-		background: var(--color-hover);
+		background: color-mix(in srgb, var(--color-accent) 10%, transparent);
 		color: var(--color-text);
 		font-family: var(--font-mono);
 		font-size: 0.85em;
@@ -599,6 +583,14 @@
 		height: auto;
 	}
 
+	/* Mermaid sizes its labels itself; the note's text styles mustn't reach them */
+	.markdown-content :global(svg :is(p, span, div)) {
+		margin: 0;
+		line-height: 1.5;
+		letter-spacing: normal;
+		font-size: inherit;
+	}
+
 	.markdown-content :global(.mermaid-fallback) {
 		margin: 0;
 		text-align: left;
@@ -607,8 +599,10 @@
 	/* Blockquotes */
 	.markdown-content :global(blockquote) {
 		margin: 0.75em 0;
-		padding-left: 1em;
-		border-left: 3px solid var(--color-border);
+		padding: 0.5em 1em;
+		border-left: 3px solid var(--color-accent);
+		background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+		border-radius: 0 var(--radius-md) var(--radius-md) 0;
 		color: var(--color-text-muted);
 	}
 
@@ -656,7 +650,7 @@
 	}
 
 	.markdown-content :global(li::marker) {
-		color: var(--color-text-faint);
+		color: color-mix(in srgb, var(--color-accent) 70%, var(--color-text-faint));
 	}
 
 	/* Task lists: marked emits <li><input type="checkbox"> without
@@ -733,7 +727,13 @@
 	.markdown-content :global(hr) {
 		margin: 1.75em 0;
 		border: none;
-		border-top: 1px solid var(--color-border);
+		height: 1px;
+		background: linear-gradient(
+			to right,
+			transparent,
+			color-mix(in srgb, var(--color-accent) 55%, transparent) 50%,
+			transparent
+		);
 	}
 
 	.markdown-content :global(img) {

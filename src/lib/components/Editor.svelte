@@ -35,6 +35,7 @@
 	import { taskListInputPlugin } from '$lib/editor/taskListInput';
 	import { taskTogglePlugin } from '$lib/editor/taskToggle';
 	import { codeBlockExitPlugin } from '$lib/editor/codeBlockExit';
+	import { mermaidPlugin } from '$lib/editor/mermaid';
 	import { audioEmbedPlugin } from '$lib/editor/audioEmbed';
 	import { startCheckboxRenderer } from '$lib/editor/checkboxRenderer';
 	import { processAndStoreImage } from '$lib/utils/image';
@@ -582,6 +583,7 @@
 			.use(taskTogglePlugin)
 			.use(codeBlockExitPlugin)
 			.use(audioEmbedPlugin)
+			.use(mermaidPlugin)
 			.use(trailingPlugin)
 			.use(block)
 			.use(findReplacePlugin)
@@ -1050,7 +1052,7 @@
 
 	/* Code */
 	:global(.milkdown code) {
-		background: var(--color-hover);
+		background: color-mix(in srgb, var(--color-accent) 10%, transparent);
 		color: var(--color-text);
 		padding: 0.15em 0.35em;
 		border-radius: 4px;
@@ -1074,12 +1076,99 @@
 		padding: 0;
 	}
 
-	/* Blockquotes */
+	/* The language of a code block, as a small label in its corner */
+	:global(.milkdown pre[data-language]) {
+		position: relative;
+	}
+
+	:global(.milkdown pre[data-language]:not(:first-child)::after) {
+		content: attr(data-language);
+		position: absolute;
+		top: 0.5em;
+		right: 0.75em;
+		font-family: var(--font-sans);
+		font-size: 0.65em;
+		font-weight: 600;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+		color: var(--color-accent);
+		opacity: 0.8;
+		pointer-events: none;
+	}
+
+	/* Mermaid: the diagram, and its source only while the cursor is in it */
+	:global(.milkdown .kurumi-mermaid) {
+		margin: 1em 0;
+	}
+
+	:global(.milkdown .kurumi-mermaid > pre) {
+		display: none;
+		margin-top: 0.5em;
+	}
+
+	:global(.milkdown .kurumi-mermaid.is-editing > pre) {
+		display: block;
+	}
+
+	:global(.milkdown .kurumi-mermaid-preview) {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.5em;
+		padding: 1em;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		background: var(--color-bg-secondary);
+		cursor: pointer;
+		overflow-x: auto;
+		transition: border-color 0.15s ease;
+	}
+
+	:global(.milkdown .kurumi-mermaid-preview:hover),
+	:global(.milkdown .kurumi-mermaid.is-editing .kurumi-mermaid-preview) {
+		border-color: color-mix(in srgb, var(--color-accent) 50%, var(--color-border));
+	}
+
+	:global(.milkdown .kurumi-mermaid-preview svg) {
+		max-width: 100%;
+		height: auto;
+	}
+
+	/* Mermaid sizes its labels itself; the note's text styles mustn't reach them */
+	:global(.milkdown .kurumi-mermaid-preview svg :is(p, span, div)) {
+		margin: 0;
+		line-height: 1.5;
+		letter-spacing: normal;
+		font-size: inherit;
+	}
+
+	:global(.milkdown .kurumi-mermaid-empty) {
+		color: var(--color-text-faint);
+		font-size: 0.9em;
+	}
+
+	:global(.milkdown .kurumi-mermaid-error) {
+		color: var(--color-danger);
+		font-family: var(--font-sans);
+		font-size: 0.8em;
+	}
+
+	/* Blockquotes: a band of the accent */
 	:global(.milkdown blockquote) {
-		border-left: 3px solid var(--color-border);
-		padding-left: 1em;
+		border-left: 3px solid var(--color-accent);
+		background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+		border-radius: 0 var(--radius-md) var(--radius-md) 0;
+		padding: 0.5em 1em;
 		margin: 0.75em 0;
 		color: var(--color-text-muted);
+	}
+
+	:global(.milkdown blockquote > :last-child) {
+		margin-bottom: 0;
+	}
+
+	:global(.milkdown ::selection) {
+		background: color-mix(in srgb, var(--color-accent) 25%, transparent);
 	}
 
 	/* Lists */
@@ -1098,7 +1187,7 @@
 	}
 
 	:global(.milkdown li::marker) {
-		color: var(--color-text-faint);
+		color: color-mix(in srgb, var(--color-accent) 70%, var(--color-text-faint));
 	}
 
 	:global(.milkdown ul) {
@@ -1129,7 +1218,13 @@
 	/* Horizontal rule */
 	:global(.milkdown hr) {
 		border: none;
-		border-top: 1px solid var(--color-border);
+		height: 1px;
+		background: linear-gradient(
+			to right,
+			transparent,
+			color-mix(in srgb, var(--color-accent) 55%, transparent) 50%,
+			transparent
+		);
 		margin: 1.75em 0;
 	}
 

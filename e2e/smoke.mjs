@@ -1398,6 +1398,9 @@ const scenarios = {
 			const first = await sync();
 			const kurumi = await dir.getDirectoryHandle('.kurumi');
 			const guide = await (await (await kurumi.getFileHandle('AGENTS.md')).getFile()).text();
+			const claudeDir = await dir.getDirectoryHandle('.claude');
+			const claudeText = await (await (await claudeDir.getFileHandle('CLAUDE.md')).getFile()).text();
+			await write(claudeDir, 'CLAUDE.md', '# Mine\n\nKeep this.\n');
 			const readMeta = async () => JSON.parse(await (await (await kurumi.getFileHandle('metadata.json')).getFile()).text());
 
 			// What an agent following the guide does.
@@ -1457,10 +1460,20 @@ const scenarios = {
 			await sync();
 			const done = items().find((a) => a.id === 'agenttodo2')?.status;
 
-			return { proposals, results: [first, second, third], guideHasRules: guide.includes('## Rules'), added, deleted, done };
+			const claudeAfter = await (await (await claudeDir.getFileHandle('CLAUDE.md')).getFile()).text();
+			const notesNow = JSON.parse(db.exportFullJSON()).memoryObjects;
+			const claude = {
+				imports: claudeText.includes('@../.kurumi/AGENTS.md'),
+				keptMine: claudeAfter.startsWith('# Mine\n\nKeep this.'),
+				addedBack: claudeAfter.includes('@../.kurumi/AGENTS.md'),
+				once: claudeAfter.split('@../.kurumi/AGENTS.md').length === 2,
+				notImported: !notesNow.some((n) => /kurumi vault|mine|claude/i.test(n.title))
+			};
+			return { claude, proposals, results: [first, second, third], guideHasRules: guide.includes('## Rules'), added, deleted, done };
 		});
 		for (const r of out.results) assert.deepEqual(r, { success: true });
 		assert.ok(out.guideHasRules, 'AGENTS.md not written');
+		assert.deepEqual(out.claude, { imports: true, keptMine: true, addedBack: true, once: true, notImported: true });
 		assert.deepEqual(out.proposals, { reminder: 'pending', draft: 'email', template: 'Agent template' });
 		assert.equal(out.added.todo?.text, 'From the agent');
 		assert.equal(out.added.todo?.dueDate, '2030-01-02');
@@ -1845,6 +1858,91 @@ const scenarios = {
 		await loaded();
 		await page.reload({ waitUntil: 'load' });
 		await loaded();
+		assert.deepEqual(errors, []);
+	},
+
+	async 'note width: wide by default, narrow and full in Appearance'(browser) {
+		const { page, errors } = await freshPage(browser);
+		await page.setViewport({ width: 1800, height: 900 });
+		const id = await page.evaluate(async () => {
+			const find = (frag) => performance.getEntriesByType('resource').map((e) => e.name).find((n) => n.includes(frag));
+			const db = await import(find('/src/lib/db/store.ts'));
+			return db.addMemoryObject('Wide note', 'text').id;
+		});
+		const column = async () => {
+			await page.goto(`${BASE}/#/memory/${id}`, { waitUntil: 'load' });
+			await page.waitForSelector('main .ProseMirror');
+			return page.$eval('main .ProseMirror', (el) => el.closest('.mx-auto').getBoundingClientRect().width);
+		};
+		const pick = async (label) => {
+			await page.goto(`${BASE}/#/settings/appearance`, { waitUntil: 'load' });
+			await page.waitForSelector('[aria-labelledby="width-label"] button');
+			const buttons = await page.$$('[aria-labelledby="width-label"] button');
+			for (const b of buttons) if ((await b.evaluate((e) => e.textContent.trim())) === label) await b.click();
+		};
+		const wide = await column();
+		await pick('Narrow');
+		const narrow = await column();
+		await pick('Full');
+		const full = await column();
+		await page.reload({ waitUntil: 'load' }); // the choice survives a reload, before first paint
+		const kept = await page.evaluate(() => document.documentElement.classList.contains('note-width-full'));
+		assert.equal(narrow, 46 * 16);
+		assert.equal(wide, 64 * 16);
+		assert.ok(full > wide + 200, `full ${full}`);
+		assert.ok(kept);
+		assert.deepEqual(errors, []);
+	},
+
+	async 'mermaid diagrams render in notes, and accents can be chosen'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const source = 'graph TD\n  A[Capture] --> B[Recall]';
+		const id = await page.evaluate(async (src) => {
+			const find = (frag) => performance.getEntriesByType('resource').map((e) => e.name).find((n) => n.includes(frag));
+			const db = await import(find('/src/lib/db/store.ts'));
+			return db.addMemoryObject('Diagram', `Intro\n\n\`\`\`mermaid\n${src}\n\`\`\`\n\nAfter`).id;
+		}, source);
+		await new Promise((r) => setTimeout(r, 800));
+		await page.goto(`${BASE}/#/memory/${id}`, { waitUntil: 'load' });
+		await page.waitForSelector('main .kurumi-mermaid-preview svg', { timeout: 30000 });
+		const shown = await page.$eval('main .kurumi-mermaid', (el) => ({
+			text: el.querySelector('svg').textContent,
+			sourceHidden: getComputedStyle(el.querySelector('pre')).display === 'none'
+		}));
+		assert.match(shown.text, /Capture/);
+		assert.ok(shown.sourceHidden, 'source shown while not editing');
+
+		// Click the diagram: its source opens; edit it, and the diagram follows.
+		await page.click('main .kurumi-mermaid-preview');
+		await page.waitForFunction(() => getComputedStyle(document.querySelector('main .kurumi-mermaid pre')).display !== 'none');
+		await page.keyboard.type('\n  B --> C[Act]');
+		await page.waitForFunction(() => document.querySelector('main .kurumi-mermaid-preview svg')?.textContent.includes('Act'), { timeout: 15000 });
+		// Broken source: an error, and the note keeps working.
+		await page.keyboard.type(' -->');
+		await page.waitForSelector('main .kurumi-mermaid-error', { timeout: 15000 });
+		for (let i = 0; i < 4; i++) await page.keyboard.press('Backspace');
+		await page.waitForFunction(() => !document.querySelector('main .kurumi-mermaid-error'), { timeout: 15000 });
+		await new Promise((r) => setTimeout(r, 1500)); // autosave
+		const stored = await page.evaluate(async (noteId) => {
+			const find = (frag) => performance.getEntriesByType('resource').map((e) => e.name).find((n) => n.includes(frag));
+			const db = await import(find('/src/lib/db/store.ts'));
+			return db.getMemoryObject(noteId).bodyMarkdown;
+		}, id);
+		assert.match(stored, /```mermaid\ngraph TD\n {2}A\[Capture\] --> B\[Recall\]\n {2}B --> C\[Act\]\n```/);
+
+		// Read mode renders it too.
+		await page.goto(`${BASE}/#/read/${id}`, { waitUntil: 'load' });
+		await page.waitForFunction(() => [...document.querySelectorAll('svg')].some((s) => s.textContent.includes('Act')), { timeout: 30000 });
+
+		// Accent colour: picked in Appearance, used by the app, kept on reload.
+		await page.goto(`${BASE}/#/settings/appearance`, { waitUntil: 'load' });
+		await page.waitForSelector('[aria-labelledby="accent-label"] button');
+		await page.click('[aria-labelledby="accent-label"] button[aria-label="Teal"]');
+		await page.reload({ waitUntil: 'load' });
+		// (in the dev server styles arrive after `load`)
+		await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() !== '');
+		const accent = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim());
+		assert.ok(['#179299', '#94e2d5'].includes(accent), accent);
 		assert.deepEqual(errors, []);
 	},
 

@@ -76,8 +76,8 @@
 	--color-text: #4c4f69;
 	--color-text-muted: #6c6f85;
 	--color-text-faint: #9ca0b0;
-	--color-accent: #7287fd;
-	--color-accent-hover: #1e66f5;
+	--color-accent: var(--accent-light, #7287fd);
+	--color-accent-hover: var(--accent-light-hover, #1e66f5);
 	--color-border: #e3e5ea;
 	--color-danger: #d20f39;
 
@@ -101,8 +101,8 @@
 		--color-text: #cdd6f4;
 		--color-text-muted: #a6adc8;
 		--color-text-faint: #7f849c;
-		--color-accent: #b4befe;
-		--color-accent-hover: #89b4fa;
+		--color-accent: var(--accent-dark, #b4befe);
+		--color-accent-hover: var(--accent-dark-hover, #89b4fa);
 		--color-border: #313244;
 		--color-danger: #f38ba8;
 		--color-ref-person: #a6e3a1;
@@ -122,8 +122,8 @@
 	--color-text: #cdd6f4;
 	--color-text-muted: #a6adc8;
 	--color-text-faint: #7f849c;
-	--color-accent: #b4befe;
-	--color-accent-hover: #89b4fa;
+	--color-accent: var(--accent-dark, #b4befe);
+	--color-accent-hover: var(--accent-dark-hover, #89b4fa);
 	--color-border: #313244;
 	--color-danger: #f38ba8;
 	--color-ref-person: #a6e3a1;
@@ -142,8 +142,8 @@
 	--color-text: #4c4f69;
 	--color-text-muted: #6c6f85;
 	--color-text-faint: #9ca0b0;
-	--color-accent: #7287fd;
-	--color-accent-hover: #1e66f5;
+	--color-accent: var(--accent-light, #7287fd);
+	--color-accent-hover: var(--accent-light-hover, #1e66f5);
 	--color-border: #e3e5ea;
 	--color-danger: #d20f39;
 	--color-ref-person: #40a02b;
@@ -183,6 +183,64 @@
 
 :root.font-size-large {
 	--font-size-editor: 1.1875rem; /* 19px */
+}
+
+/* Accent colour (Settings → Appearance), from the same palette as the theme:
+   a light-mode and a dark-mode shade each. Lavender, the default, needs no class. */
+:root.accent-blue {
+	--accent-light: #1e66f5;
+	--accent-light-hover: color-mix(in srgb, #1e66f5 80%, black);
+	--accent-dark: #89b4fa;
+	--accent-dark-hover: color-mix(in srgb, #89b4fa 80%, white);
+}
+
+:root.accent-sapphire {
+	--accent-light: #209fb5;
+	--accent-light-hover: color-mix(in srgb, #209fb5 80%, black);
+	--accent-dark: #74c7ec;
+	--accent-dark-hover: color-mix(in srgb, #74c7ec 80%, white);
+}
+
+:root.accent-teal {
+	--accent-light: #179299;
+	--accent-light-hover: color-mix(in srgb, #179299 80%, black);
+	--accent-dark: #94e2d5;
+	--accent-dark-hover: color-mix(in srgb, #94e2d5 80%, white);
+}
+
+:root.accent-green {
+	--accent-light: #40a02b;
+	--accent-light-hover: color-mix(in srgb, #40a02b 80%, black);
+	--accent-dark: #a6e3a1;
+	--accent-dark-hover: color-mix(in srgb, #a6e3a1 80%, white);
+}
+
+:root.accent-peach {
+	--accent-light: #fe640b;
+	--accent-light-hover: color-mix(in srgb, #fe640b 80%, black);
+	--accent-dark: #fab387;
+	--accent-dark-hover: color-mix(in srgb, #fab387 80%, white);
+}
+
+:root.accent-mauve {
+	--accent-light: #8839ef;
+	--accent-light-hover: color-mix(in srgb, #8839ef 80%, black);
+	--accent-dark: #cba6f7;
+	--accent-dark-hover: color-mix(in srgb, #cba6f7 80%, white);
+}
+
+/* Note width (Settings → Appearance): the text column of the editor and
+   the reader. Wide is the default. */
+:root {
+	--note-width: 64rem;
+}
+
+:root.note-width-narrow {
+	--note-width: 46rem;
+}
+
+:root.note-width-full {
+	--note-width: 100%;
 }
 
 /* Base styles */

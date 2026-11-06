@@ -896,7 +896,7 @@
 			onkeydowncapture={() => (lastKeyAt = Date.now())}
 			class="flex-1 overflow-y-auto overscroll-contain px-5 pb-6 md:px-12"
 		>
-			<div class="mx-auto flex min-h-full max-w-[46rem] flex-col pt-6 md:pt-12">
+			<div class="mx-auto flex min-h-full max-w-[var(--note-width)] flex-col pt-6 md:pt-12">
 				<!-- Hover-revealed insert bar (always shown on touch devices) -->
 				<div class="group/title">
 					{#if memory.icon}
