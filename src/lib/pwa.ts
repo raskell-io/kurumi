@@ -7,6 +7,7 @@
  */
 
 import { readable } from 'svelte/store';
+import { isTauri } from '$lib/desktop';
 
 // ---------------------------------------------------------------- online
 
@@ -76,12 +77,12 @@ export function setAppBadge(count: number): void {
 // --------------------------------------------------------- offline cache
 
 /**
- * Running in the desktop app (desktop/main.cjs), which serves the build from
- * app://kurumi. It has no service worker (the Cache API refuses app: URLs);
- * the files are on disk, so it always starts offline.
+ * Running in the desktop app (desktop/, Tauri). It registers no service
+ * worker: WebKit doesn't support one on the app's tauri: origin, and the
+ * files are on disk, so it always starts offline and updates with the app.
  */
 export function isDesktopApp(): boolean {
-	return typeof location !== 'undefined' && location.protocol === 'app:';
+	return isTauri();
 }
 
 export interface OfflineInfo {

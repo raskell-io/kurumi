@@ -401,14 +401,26 @@ OpenAI to MMS when the API key is missing.
   unlinked until they get real data-model support
 
 ### Desktop app (`desktop/`)
-- Electron shell, its own package (like `worker/`): serves `build/` from
-  `app://kurumi` (fixed origin = the vault survives updates), `.dmg` /
-  `.exe` / `.AppImage` via electron-builder; version from the root
-  `package.json`. `.github/workflows/desktop.yml` attaches them to the
-  release on a `v*` tag. `desktop/smoke.mjs` (`npm test` there) checks it
-- No service worker there (the Cache API refuses `app:` URLs):
-  `isDesktopApp()` in `src/lib/pwa.ts`. Code relying on the worker needs a
-  fallback for the desktop app. Unsigned for now (ad-hoc on macOS)
+- Tauri 2, its own package (like `worker/`), Rust in `desktop/src-tauri/`.
+  Embeds `build/` at compile time, served from `tauri://localhost`
+  (`https://tauri.localhost` on Windows; fixed origin = the vault survives
+  updates). `.dmg` (universal) / `.exe` / `.AppImage`; version from the root
+  `package.json`. `.github/workflows/desktop.yml` builds + self-tests them,
+  and attaches them to the release on a `v*` tag
+- System web engine: WebKit on macOS/Linux, so it's Safari's feature set.
+  `isTauri()` (`src/lib/desktop/`); `isDesktopApp()` in `pwa.ts` skips the
+  service worker. Code relying on the worker or a Chromium-only API needs
+  a fallback there
+- Folder sync: `src/lib/desktop/folder-handle.ts` stands in for the File
+  System Access API (installed as `window.showDirectoryPicker` by
+  `hooks.client.ts`), backed by `src-tauri/src/folders.rs`, which only
+  reaches picked folders. Stored handles come back from IndexedDB as plain
+  data: read them through `storedHandle()` in `local-fs.ts`. A new handle
+  method used by the sync must be added there too
+- `npm test` in `desktop/` = debug build + `selftest.mjs` (the app checks
+  itself from inside the webview, `KURUMI_SELFTEST`). Prerendered pages use
+  absolute asset paths (`paths.relative: false`) because Tauri answers
+  unknown routes with `index.html`. Unsigned for now (ad-hoc on macOS)
 
 ### Offline (PWA)
 - `UpdateToast.svelte` registers the Workbox service worker (production

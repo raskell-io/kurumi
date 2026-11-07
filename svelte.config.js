@@ -14,7 +14,11 @@ const config = {
 			strict: true
 		}),
 		paths: {
-			base: ''
+			base: '',
+			// Absolute asset paths (/_app/…) in every page, like 404.html. The
+			// desktop app answers unknown routes (/memory/<id>) with index.html,
+			// whose relative ./_app/… paths would resolve under /memory/.
+			relative: false
 		},
 		prerender: {
 			handleUnseenRoutes: 'ignore' // Dynamic routes handled by SPA fallback

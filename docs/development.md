@@ -39,8 +39,8 @@ macOS; set `CHROME_PATH` to choose one.
 Pages (kurumi.raskell.io). Deploys don't wait for CI.
 
 `.github/workflows/desktop.yml` builds the desktop apps (`desktop/`,
-Electron) for macOS, Windows and Linux on a version tag and attaches them
-to its GitHub release; run it by hand to get them as artifacts. See
+Tauri) for macOS, Windows and Linux and self-tests them, on changes to the
+desktop code and on version tags, which attach them to the GitHub release. See
 [desktop/README.md](../desktop/README.md).
 
 ## Releases
@@ -79,7 +79,7 @@ src/
 static/               Icons, manifest assets, sw-notify.js, llms.txt
 worker/               The sync server (Cloudflare Worker)
 agent/                The local git sync agent (Node)
-desktop/              The desktop app (Electron shell around build/)
+desktop/              The desktop app (Tauri, around build/)
 e2e/                  Browser tests and the screenshot script
 docs/                 This documentation
 ```

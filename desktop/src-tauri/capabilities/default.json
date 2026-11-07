@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The Kurumi window. Folder access goes through the app's own commands (folders.rs), which only reach picked folders.",
+  "windows": ["main"],
+  "permissions": ["core:default", "notification:default"]
+}

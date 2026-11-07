@@ -29,6 +29,7 @@ import { CLAUDE_DIR, CLAUDE_FILE, claudeInstructions } from './claude-instructio
 import { hashText, resetFolderState, saveBaseText, type FolderState } from './folder-state';
 import { readMetadataRecords, recordFingerprints } from './metadata-import';
 import type { MemoryObject, Folder, Vault, Person, Event, ActionItem } from '$lib/db/types';
+import { reviveFolderHandle } from '$lib/desktop/folder-handle';
 
 const IDB_KEY = 'kurumi-local-fs-handle';
 const FILENAME = 'kurumi-sync.bin';
@@ -49,6 +50,11 @@ const ALL_VAULTS_KEY = 'kurumi-local-fs-all-vaults';
 // IndexedDB (async), but sync gating (isSyncConfigured / shouldSync) needs a
 // synchronous answer, so we shadow handle presence in localStorage.
 const CONFIGURED_KEY = 'kurumi-local-fs-configured';
+
+/** The stored folder handle (the desktop app's comes back as plain data). */
+async function storedHandle(): Promise<FileSystemDirectoryHandle | undefined> {
+	return reviveFolderHandle(await get(IDB_KEY)) as FileSystemDirectoryHandle | undefined;
+}
 
 function setConfiguredFlag(configured: boolean): void {
 	if (typeof localStorage === 'undefined') return;
@@ -131,7 +137,7 @@ export interface LocalFSFolderInfo {
 
 export async function getLocalFSFolder(): Promise<LocalFSFolderInfo | null> {
 	try {
-		const handle = (await get(IDB_KEY)) as FileSystemDirectoryHandle | undefined;
+		const handle = await storedHandle();
 		if (!handle) return null;
 		const permission = await (handle as FileSystemDirectoryHandle & {
 			queryPermission: (opts: object) => Promise<string>;
@@ -167,7 +173,7 @@ export async function getLocalFSFolder(): Promise<LocalFSFolderInfo | null> {
 
 async function getHandle(): Promise<FileSystemDirectoryHandle | null> {
 	try {
-		const handle = (await get(IDB_KEY)) as FileSystemDirectoryHandle | undefined;
+		const handle = await storedHandle();
 		if (!handle) return null;
 		// Verify we still have permission
 		const perm = await (handle as FileSystemDirectoryHandle & {
@@ -908,7 +914,7 @@ export async function localFSSignature(): Promise<string | null> {
 // The handle, without ever asking for permission (no click to ask from).
 async function getGrantedHandle(): Promise<FileSystemDirectoryHandle | null> {
 	const info = await getLocalFSFolder();
-	return info?.granted ? ((await get(IDB_KEY)) as FileSystemDirectoryHandle) : null;
+	return info?.granted ? ((await storedHandle()) as FileSystemDirectoryHandle) : null;
 }
 
 /** The all-vaults index: vault id → folder name. */

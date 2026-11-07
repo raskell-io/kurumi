@@ -13,7 +13,7 @@ Installing it as an app gives it its own window, an icon and some extras
 - **iPhone / iPad:** Share → *Add to Home Screen*.
 - **Android:** menu → *Install app*.
 - **Desktop app:** the `.dmg` (Mac), `.exe` (Windows) or `.AppImage`
-  (Linux) on the [releases page](https://github.com/raskell-io/kurumi/releases).
+  (Linux), about 25 MB, on the [releases page](https://github.com/raskell-io/kurumi/releases).
   It keeps its own vault, separate from the browser's. The builds aren't
   signed yet: on a Mac, allow the first launch in System Settings →
   Privacy & Security → *Open Anyway*; on Windows, *More info* → *Run anyway*.

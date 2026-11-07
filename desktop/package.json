@@ -1,23 +1,18 @@
 {
 	"name": "kurumi-desktop",
-	"productName": "Kurumi",
 	"version": "0.0.0",
-	"description": "Kurumi as a desktop app (Electron shell around the static web build)",
-	"author": "Raffael Schneider",
-	"license": "MIT",
+	"description": "Kurumi as a desktop app (Tauri shell around the static web build)",
 	"private": true,
-	"main": "main.cjs",
+	"type": "module",
 	"scripts": {
-		"build:web": "npm --prefix .. run build",
-		"start": "electron .",
-		"dist": "electron-builder --config electron-builder.config.cjs --publish never",
-		"dist:mac": "npm run dist -- --mac",
-		"dist:win": "npm run dist -- --win",
-		"dist:linux": "npm run dist -- --linux",
-		"test": "node smoke.mjs"
+		"tauri": "tauri",
+		"dev": "tauri dev",
+		"dist": "tauri build",
+		"build:debug": "tauri build --debug --no-bundle",
+		"test": "npm run build:debug && node selftest.mjs",
+		"icons": "tauri icon ../static/kurumi-icon.png"
 	},
 	"devDependencies": {
-		"electron": "44.9.3",
-		"electron-builder": "26.17.0"
+		"@tauri-apps/cli": "2.12.4"
 	}
 }

@@ -91,10 +91,9 @@ Prefer a regular app? Download it from the [latest release](https://github.com/r
 
 | | Download |
 |---|---|
-| **Mac** (Apple Silicon) | `Kurumi-<version>-mac-arm64.dmg` |
-| **Mac** (Intel) | `Kurumi-<version>-mac-x64.dmg` |
-| **Windows** | `Kurumi-<version>-win-x64.exe` |
-| **Linux** | the `.AppImage` |
+| **Mac** (Apple Silicon and Intel) | `Kurumi_<version>_universal.dmg` |
+| **Windows** | `Kurumi_<version>_x64-setup.exe` |
+| **Linux** | `Kurumi_<version>_amd64.AppImage` |
 
 The builds aren't signed yet, so the first launch needs a click more: on a Mac, open the app once, then System Settings → Privacy & Security → *Open Anyway*; on Windows, *More info* → *Run anyway*. The desktop app keeps its own notes, separate from the browser's; [sync](docs/sync.md) moves them over. → [Desktop app](desktop/README.md)
 

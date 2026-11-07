@@ -1,57 +1,71 @@
 # Kurumi desktop
 
-An Electron shell around the static web build, packaged as a `.dmg`
-(macOS), an installer `.exe` (Windows) and an `.AppImage` (Linux).
+A [Tauri](https://tauri.app) app around the static web build: a `.dmg`
+for Mac (one universal file for Apple Silicon and Intel), an installer
+`.exe` for Windows and an `.AppImage` for Linux, around 20–25 MB each
+(Electron needed about 150 MB per platform; most of what remains is the
+web build itself).
 
-It serves `../build` from `app://kurumi`. That origin never changes, so
-the vault (IndexedDB) survives restarts and updates. The scheme counts as
-secure, so local folder sync, the microphone and notifications work as
-they do in Chrome. Links to the web open in the default browser.
+Tauri uses the system's web engine (WebKit on macOS and Linux, WebView2 on
+Windows) instead of shipping one. The build is served from a fixed origin
+(`tauri://localhost`; `https://tauri.localhost` on Windows), so the vault
+in IndexedDB survives restarts and updates.
 
 ## Run and package
+
+Needs Rust (`rustup`) and, on Linux, Tauri's
+[system packages](https://tauri.app/start/prerequisites/).
 
 ```bash
 npm run build            # at the repo root: the web build in build/
 cd desktop
 npm install
-npm start                # the app, on ../build
-npm test                 # smoke test (uses puppeteer from the root install)
-npm run dist             # installers for this OS in dist/
+npm run dev              # the app on the dev server (localhost:5173)
+npm test                 # debug build + self-test (below)
+npm run dist             # installers for this OS in src-tauri/target/release/bundle/
+npm run dist -- --target universal-apple-darwin   # one Mac app for both chips
 ```
 
-`KURUMI_DEV_URL=http://localhost:5173 npm start` loads the dev server
-instead (a different origin, so a separate vault). `KURUMI_EXE=<packaged
-executable> npm test` tests a packaged app, e.g.
-`dist/mac-arm64/Kurumi.app/Contents/MacOS/Kurumi`.
+The app embeds `build/` when it's compiled: rebuild after changing the web
+app. The version is the root `package.json` version (`tauri.conf.json`).
+Pushing a `vX.Y.Z` tag builds all three platforms, self-tests them and
+attaches them to the GitHub release (`.github/workflows/desktop.yml`).
 
-The app version is the root `package.json` version
-(`electron-builder.config.cjs`). Pushing a `vX.Y.Z` tag builds all three
-platforms and attaches them to the GitHub release
-(`.github/workflows/desktop.yml`).
+## How it fills the gaps
 
-## Differences from the web app
+| Web feature | In the desktop app |
+|---|---|
+| Local folder sync (`showDirectoryPicker`, which WebKit lacks) | `src/lib/desktop/folder-handle.ts` stands in for the File System Access API, backed by `src-tauri/src/folders.rs`. Its commands only reach folders picked in the system dialog (remembered in `folders.json` in the app's config folder), also after resolving symlinks |
+| Service worker | None: WebKit has none on `tauri:`. The files are on disk, so it starts offline and updates with the app (`isDesktopApp()` in `src/lib/pwa.ts`) |
+| Due to-do notifications | `tauri-plugin-notification` provides `window.Notification`; no Mark done / Snooze buttons |
+| Downloads (exports, backups) | Saved to the Downloads folder (`on_download` in `lib.rs`) |
+| Links to the web | Open in the default browser |
+| Dropping files into a note | The window leaves drops to the page (`disable_drag_drop_handler`) |
 
-- **No service worker.** Chromium's Cache API refuses `app:` URLs. The
-  app's files are on disk, so it starts offline anyway; `isDesktopApp()`
-  in `src/lib/pwa.ts` skips the registration. Due to-do notifications
-  are plain ones (clicking opens To-dos) without Mark done / Snooze
-  buttons. The ONNX runtime for local AI only sits in the ordinary HTTP
-  cache, not the worker's, so local AI may need a connection to start.
-- **No updater yet.** A new version means downloading the new installer.
-- **Its own data.** The desktop app's vault is separate from the
-  browser's. Move notes over with sync or a backup.
-- **Shortcuts:** the menu leaves `Cmd/Ctrl+R`, `Shift+R` and `Shift+I`
-  to Kurumi. Reload is F5, DevTools `Alt+Cmd+J` / F12.
-- Not wired yet: opening `.md` files with Kurumi and the icon shortcuts
-  (the web app gets those from the manifest).
+Not wired yet: opening `.md` files with Kurumi, the icon shortcuts and an
+auto-updater (a new version means downloading the new installer). On macOS
+and Linux the engine is WebKit, so what works in Safari works here; tab
+audio for meetings depends on the system's screen-capture support.
+
+## Self-test
+
+`node selftest.mjs` (after `npm run build:debug`, or with
+`KURUMI_EXE=<executable>` for a release build) starts the app twice with
+`KURUMI_SELFTEST=<temp dir>`. In that mode the app keeps its data in the
+temp dir (a separate WebKit store on macOS), answers the folder dialog with
+`<dir>/folder` and injects `src-tauri/src/selftest.js`, which checks the
+origin, folder sync through the real commands (and that paths outside are
+refused), downloads, notifications, a deep link, and that data and the
+picked folder survive the restart. Without the variable none of it is
+active. `cargo test` in `src-tauri` covers `folders.rs`.
 
 ## Signing
 
 Builds aren't signed with a developer certificate yet:
 
-- **macOS:** ad-hoc signed. The first launch is refused; open System
-  Settings → Privacy & Security → *Open Anyway* (or run
-  `xattr -dr com.apple.quarantine /Applications/Kurumi.app`). A Developer
-  ID and notarization (`mac.identity`, `notarize`) remove that step.
-- **Windows:** SmartScreen warns ("More info" → *Run anyway*) until the
-  installer is signed (`win.signtoolOptions` or Azure Trusted Signing).
+- **macOS:** ad-hoc signed (`signingIdentity: "-"`). The first launch is
+  refused; open System Settings → Privacy & Security → *Open Anyway* (or
+  run `xattr -dr com.apple.quarantine /Applications/Kurumi.app`). A
+  Developer ID and notarization remove that step.
+- **Windows:** SmartScreen warns (*More info* → *Run anyway*) until the
+  installer is signed.

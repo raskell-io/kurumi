@@ -37,4 +37,4 @@ The [project README](../README.md) is the short overview.
 | [Development](development.md) | Running locally, tests, CI, releases, project layout |
 | [Sync agent](../agent/README.md) | Keep the vaults in any git repo using your machine's own git |
 | [Sync server](../worker/README.md) | The Cloudflare Worker's routes and manual setup |
-| [Desktop app](../desktop/README.md) | The Electron shell, packaging, signing |
+| [Desktop app](../desktop/README.md) | The Tauri app: packaging, folder access, self-test, signing |
