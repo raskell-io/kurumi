@@ -1,0 +1,23 @@
+{
+	"name": "kurumi-desktop",
+	"productName": "Kurumi",
+	"version": "0.0.0",
+	"description": "Kurumi as a desktop app (Electron shell around the static web build)",
+	"author": "Raffael Schneider",
+	"license": "MIT",
+	"private": true,
+	"main": "main.cjs",
+	"scripts": {
+		"build:web": "npm --prefix .. run build",
+		"start": "electron .",
+		"dist": "electron-builder --config electron-builder.config.cjs --publish never",
+		"dist:mac": "npm run dist -- --mac",
+		"dist:win": "npm run dist -- --win",
+		"dist:linux": "npm run dist -- --linux",
+		"test": "node smoke.mjs"
+	},
+	"devDependencies": {
+		"electron": "44.9.3",
+		"electron-builder": "26.17.0"
+	}
+}

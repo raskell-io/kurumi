@@ -1,17 +1,19 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { RefreshCw, X } from 'lucide-svelte';
+	import { isDesktopApp } from '$lib/pwa';
 
 	// Registers the service worker (production builds only: in dev it
 	// would cache modules the dev server is still changing) so Kurumi
 	// starts and runs offline. A new version waits until the user
-	// reloads, so a deploy never reloads the page mid-edit.
+	// reloads, so a deploy never reloads the page mid-edit. Not in the
+	// desktop app: it updates with the app (see isDesktopApp).
 	let needRefresh = $state(false);
 	let offlineReady = $state(false);
 	let update: ((reload?: boolean) => Promise<void>) | null = null;
 
 	onMount(() => {
-		if (import.meta.env.DEV || !('serviceWorker' in navigator)) return;
+		if (import.meta.env.DEV || isDesktopApp() || !('serviceWorker' in navigator)) return;
 		let timer: ReturnType<typeof setTimeout>;
 		import('virtual:pwa-register').then(({ registerSW }) => {
 			update = registerSW({

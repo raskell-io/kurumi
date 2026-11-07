@@ -400,6 +400,16 @@ OpenAI to MMS when the API key is missing.
   Flashcards, Timeline, Smart folders. Canvas and database views stay
   unlinked until they get real data-model support
 
+### Desktop app (`desktop/`)
+- Electron shell, its own package (like `worker/`): serves `build/` from
+  `app://kurumi` (fixed origin = the vault survives updates), `.dmg` /
+  `.exe` / `.AppImage` via electron-builder; version from the root
+  `package.json`. `.github/workflows/desktop.yml` attaches them to the
+  release on a `v*` tag. `desktop/smoke.mjs` (`npm test` there) checks it
+- No service worker there (the Cache API refuses `app:` URLs):
+  `isDesktopApp()` in `src/lib/pwa.ts`. Code relying on the worker needs a
+  fallback for the desktop app. Unsigned for now (ad-hoc on macOS)
+
 ### Offline (PWA)
 - `UpdateToast.svelte` registers the Workbox service worker (production
   builds only; `registerType: 'prompt'`), so new versions wait for the
@@ -590,7 +600,8 @@ hides the hover UI the tests use). Deploys don't wait for CI.
 annotated `vX.Y.Z` tag summarising the release and push it
 (`git push origin vX.Y.Z`; origin pushes to GitHub and Codeberg). The
 app shows `version · commit · build date` (`__KURUMI_VERSION__`) in
-About and Settings → Offline & storage.
+About and Settings → Offline & storage. The tag also builds the desktop
+apps onto its GitHub release (`desktop.yml`).
 
 **Invariant:** `npx svelte-check` should always return
 `0 errors and 0 warnings`. CI and local pre-push runs enforce this.

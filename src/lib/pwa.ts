@@ -75,6 +75,15 @@ export function setAppBadge(count: number): void {
 
 // --------------------------------------------------------- offline cache
 
+/**
+ * Running in the desktop app (desktop/main.cjs), which serves the build from
+ * app://kurumi. It has no service worker (the Cache API refuses app: URLs);
+ * the files are on disk, so it always starts offline.
+ */
+export function isDesktopApp(): boolean {
+	return typeof location !== 'undefined' && location.protocol === 'app:';
+}
+
 export interface OfflineInfo {
 	/** A service worker controls this page: it loads without network. */
 	ready: boolean;
@@ -89,7 +98,7 @@ const MODEL_CACHE = 'transformers-cache';
 export async function offlineInfo(): Promise<OfflineInfo> {
 	const info: OfflineInfo = { ready: false, cachedFiles: 0, modelFiles: 0 };
 	if (typeof navigator === 'undefined') return info;
-	info.ready = !!navigator.serviceWorker?.controller;
+	info.ready = !!navigator.serviceWorker?.controller || isDesktopApp();
 	if (typeof caches === 'undefined') return info;
 	try {
 		for (const name of await caches.keys()) {

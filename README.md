@@ -85,6 +85,19 @@ Kurumi (クルミ, "walnut" in Japanese — because it looks like a brain) is a 
 
 Open [kurumi.raskell.io](https://kurumi.raskell.io) and install it as an app from the browser. To look around first, choose *explore an example* on the welcome screen. Bring your notes from Notion, Obsidian (or any Markdown folder), Roam or Evernote in Settings → Data.
 
+### Desktop app
+
+Prefer a regular app? Download it from the [latest release](https://github.com/raskell-io/kurumi/releases/latest):
+
+| | Download |
+|---|---|
+| **Mac** (Apple Silicon) | `Kurumi-<version>-mac-arm64.dmg` |
+| **Mac** (Intel) | `Kurumi-<version>-mac-x64.dmg` |
+| **Windows** | `Kurumi-<version>-win-x64.exe` |
+| **Linux** | the `.AppImage` |
+
+The builds aren't signed yet, so the first launch needs a click more: on a Mac, open the app once, then System Settings → Privacy & Security → *Open Anyway*; on Windows, *More info* → *Run anyway*. The desktop app keeps its own notes, separate from the browser's; [sync](docs/sync.md) moves them over. → [Desktop app](desktop/README.md)
+
 → [Getting started](docs/getting-started.md) · [Import & export](docs/import-export.md) · [Keyboard shortcuts](docs/keyboard-shortcuts.md)
 
 ---

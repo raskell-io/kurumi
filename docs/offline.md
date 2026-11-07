@@ -26,6 +26,10 @@ file, an icon shortcut) reuses the open window instead of a new one.
 | Due to-do reminders in the background | ✓ | — | — | — |
 | Local folder sync | desktop | — | — | — |
 
+The [desktop app](getting-started.md#open-or-install-kurumi) can do what
+Chrome can, except opening `.md` files and the Mark done / Snooze buttons
+on reminders. It updates by installing the new version.
+
 Apple doesn't give web apps the share sheet, file opening or background
 checks, so on iPhone and iPad those need Kurumi open. Settings → Offline
 & storage → *On this device* says what applies to the browser you're in.
