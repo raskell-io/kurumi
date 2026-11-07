@@ -64,7 +64,13 @@ try {
 	console.error(error.message);
 	failures++;
 } finally {
-	rmSync(dir, { recursive: true, force: true });
+	// WebView2's helper processes can hold the profile for a moment after
+	// the app exits (EBUSY on Windows); a leftover temp dir is no failure.
+	try {
+		rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+	} catch (error) {
+		console.warn(`couldn't remove ${dir}: ${error.code ?? error.message}`);
+	}
 }
 
 if (failures) {
