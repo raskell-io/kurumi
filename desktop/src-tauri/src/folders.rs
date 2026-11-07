@@ -63,7 +63,11 @@ impl Folders {
     fn authorize(&self, path: &str) -> Result<PathBuf, String> {
         let path = PathBuf::from(path);
         let denied = || format!("NotAllowedError: {} is outside the folders you picked", path.display());
-        if !path.is_absolute() || path.components().any(|c| matches!(c, Component::ParentDir | Component::CurDir)) {
+        // By name too: in Windows \\?\ paths `..` isn't parsed as ParentDir.
+        let dotted = |c: Component| {
+            matches!(c, Component::ParentDir | Component::CurDir) || c.as_os_str() == ".." || c.as_os_str() == "."
+        };
+        if !path.is_absolute() || path.components().any(dotted) {
             return Err(denied());
         }
         let roots = self.roots.lock().unwrap();
@@ -301,25 +305,32 @@ fn decode_uri_component(s: &str) -> String {
 mod tests {
     use super::*;
 
-    fn setup() -> (tempfile::TempDir, Folders, String) {
+    /// Paths are joined with Path::join, as the app joins them with the
+    /// platform's separator: in Windows \\?\ paths only `\` separates.
+    fn at(root: &Path, rel: &str) -> String {
+        rel.split('/').fold(root.to_path_buf(), |p, part| p.join(part)).to_string_lossy().into_owned()
+    }
+
+    fn setup() -> (tempfile::TempDir, Folders, PathBuf) {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("vault");
         fs::create_dir(&root).unwrap();
         let root = root.canonicalize().unwrap();
         let folders = Folders::with_roots(vec![root.clone()]);
-        (tmp, folders, root.to_string_lossy().into_owned())
+        (tmp, folders, root)
     }
 
     #[test]
     fn reaches_only_inside_picked_folders() {
         let (tmp, folders, root) = setup();
         fs::write(tmp.path().join("secret.txt"), "no").unwrap();
-        assert!(folders.authorize(&format!("{root}/a.md")).is_ok());
-        assert!(folders.authorize(&format!("{root}/../secret.txt")).unwrap_err().starts_with("NotAllowedError"));
+        assert!(folders.authorize(&at(&root, "a.md")).is_ok());
+        assert!(folders.authorize(&at(&root, "../secret.txt")).unwrap_err().starts_with("NotAllowedError"));
         assert!(folders.authorize(&tmp.path().join("secret.txt").to_string_lossy()).is_err());
         assert!(folders.authorize("relative/a.md").is_err());
-        // A prefix of the name isn't the folder: /x/vault2 is not in /x/vault.
-        assert!(folders.authorize(&format!("{root}2/a.md")).is_err());
+        // A prefix of the name isn't the folder: …/vault2 is not in …/vault.
+        let sibling = PathBuf::from(format!("{}2", root.display()));
+        assert!(folders.authorize(&at(&sibling, "a.md")).is_err());
     }
 
     #[cfg(unix)]
@@ -327,21 +338,22 @@ mod tests {
     fn symlinks_out_of_the_folder_are_refused() {
         let (tmp, folders, root) = setup();
         fs::create_dir(tmp.path().join("outside")).unwrap();
-        std::os::unix::fs::symlink(tmp.path().join("outside"), Path::new(&root).join("link")).unwrap();
-        assert!(folders.authorize(&format!("{root}/link/x.md")).is_err());
+        std::os::unix::fs::symlink(tmp.path().join("outside"), root.join("link")).unwrap();
+        assert!(folders.authorize(&at(&root, "link/x.md")).is_err());
     }
 
     #[test]
     fn behaves_like_the_file_system_access_api() {
         let (_tmp, folders, root) = setup();
-        let sub = format!("{root}/notes");
-        let file = format!("{sub}/a.md");
+        let sub = at(&root, "notes");
+        let file = at(&root, "notes/a.md");
         assert!(open(&folders, &sub, true, false).unwrap_err().starts_with("NotFoundError"));
         open(&folders, &sub, true, true).unwrap();
         assert!(open(&folders, &sub, false, false).unwrap_err().starts_with("TypeMismatchError"));
         open(&folders, &file, false, true).unwrap();
         assert_eq!(read(&folders, &file).unwrap(), b"");
         write(&folders, &file, "hällo".as_bytes()).unwrap();
+        write(&folders, &file, "hällo".as_bytes()).unwrap(); // replacing an existing file
         assert_eq!(read(&folders, &file).unwrap(), "hällo".as_bytes());
         let listed = list(&folders, &sub).unwrap();
         assert_eq!(listed.len(), 1, "no temp file left behind");
@@ -350,7 +362,7 @@ mod tests {
         remove(&folders, &file, false).unwrap();
         remove(&folders, &sub, false).unwrap();
         assert!(read(&folders, &file).unwrap_err().starts_with("NotFoundError"));
-        assert!(remove(&folders, &root, true).unwrap_err().starts_with("NotAllowedError"));
+        assert!(remove(&folders, &root.to_string_lossy(), true).unwrap_err().starts_with("NotAllowedError"));
     }
 
     #[test]
