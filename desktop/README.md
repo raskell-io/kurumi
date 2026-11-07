@@ -2,9 +2,9 @@
 
 A [Tauri](https://tauri.app) app around the static web build: a `.dmg`
 for Mac (one universal file for Apple Silicon and Intel), an installer
-`.exe` for Windows and an `.AppImage` for Linux, around 20–25 MB each
-(Electron needed about 150 MB per platform; most of what remains is the
-web build itself).
+`.exe` for Windows and an `.AppImage` for Linux: about 24 MB, 10 MB and
+90 MB (the AppImage carries its own WebKit). Electron needed about 150 MB
+per platform.
 
 Tauri uses the system's web engine (WebKit on macOS and Linux, WebView2 on
 Windows) instead of shipping one. The build is served from a fixed origin
