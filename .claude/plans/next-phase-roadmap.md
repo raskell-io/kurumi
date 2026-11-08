@@ -389,15 +389,22 @@ Read mode doesn't pull in ProseMirror. Left alone: the Automerge wasm
 (3.5 MB raw, the database itself) and the ONNX runtime wasm, which the
 build emits twice (2 × 21.8 MB) but nothing precaches; only deploy size.
 
-### [ ] Realtime API verification
-Untested feature shipped against documentation alone. Needs exercise
-against a live OpenAI key to confirm the event-handling code handles
-all the actual event shapes.
+### [~] Realtime API verification
+2026-11-08, checked against the current docs: the client was written for
+the beta interface (preview model, SDP to /v1/realtime?model=…, beta
+session fields, `response.audio_transcript.*` events), so the assistant's
+words would never have shown. Migrated to GA: client secret minted in the
+browser (/v1/realtime/client_secrets, carries the session config), WebRTC
+call at /v1/realtime/calls, `gpt-realtime`, GA event names (beta names
+still read). Event handling is a pure function with unit tests on the GA
+shapes; both endpoints answer browser requests (CORS ok). Left: one live
+run, `OPENAI_API_KEY=… npm run test:live` (connects with a fake mic), and
+a spoken conversation.
 
-### [ ] LLM recurrence extraction verification
-Untested: the `proposeReminders` prompt asks GPT-4o-mini to detect
-"every week" style phrases. Need to verify the model actually
-populates the `recurrence` field in real extractions.
+### [~] LLM recurrence extraction verification
+`npm run test:live` runs the real provider and prompt on daily / weekly /
+monthly / one-off phrases and checks `recurrence`. Needs a key to run
+(none on the machine this was written on).
 
 ### [~] Periodic background sync verification
 The handler is now tested (e2e/pwa.mjs): with the app's tab closed,

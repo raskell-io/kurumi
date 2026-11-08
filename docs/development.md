@@ -20,7 +20,8 @@ in built versions, not in `npm run dev`.
 | `npm run check` | svelte-check: types, accessibility, CSS. Must report **0 errors and 0 warnings** |
 | `npm test` | Unit tests (Vitest), including the sync worker's |
 | `npm run test:e2e` | Browser scenarios (`e2e/smoke.mjs`): starts `vite dev`, drives a fresh Chrome profile through capture, editing, sync, the sync server with pairing and encryption, imports, … |
-| `npm run test:pwa` | Builds, then checks the installed-app features (`e2e/pwa.mjs`): offline start, updates, share target, notification actions |
+| `npm run test:pwa` | Builds, then checks the installed-app features (`e2e/pwa.mjs`): offline start, updates, share target, notification actions, the periodic background sync handler |
+| `OPENAI_API_KEY=… npm run test:live` | Live checks against OpenAI (`e2e/live-openai.mjs`, a few cents): recurrence in extracted reminders, and a Realtime voice session reaching *connected* (fake microphone). Not in CI |
 | `npm run screenshots` | Builds, then retakes the docs screenshots from the example vault (`e2e/screenshots.mjs`; `THEME=dark` for the dark set) |
 
 The browser suites use puppeteer's Chrome, or the system Chrome on

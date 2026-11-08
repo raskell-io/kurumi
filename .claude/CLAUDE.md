@@ -654,6 +654,8 @@ npm test             # unit tests (Vitest)
 npm run test:e2e     # browser smoke tests (e2e/smoke.mjs; starts vite dev,
                      # headless Chrome; set CHROME_PATH if needed)
 npm run test:pwa     # production build + service worker checks (e2e/pwa.mjs)
+npm run test:live    # needs OPENAI_API_KEY: reminder recurrence + Realtime session
+                     # against the live API (e2e/live-openai.mjs; not in CI)
 npm run screenshots  # production build + docs/images/*.webp from the example
                      # vault (e2e/screenshots.mjs; THEME=dark for *-dark.webp)
 ```

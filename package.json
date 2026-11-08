@@ -15,6 +15,7 @@
 		"test:watch": "vitest",
 		"test:e2e": "node e2e/smoke.mjs",
 		"test:pwa": "vite build && node e2e/pwa.mjs",
+		"test:live": "node e2e/live-openai.mjs",
 		"screenshots": "vite build && node e2e/screenshots.mjs"
 	},
 	"devDependencies": {

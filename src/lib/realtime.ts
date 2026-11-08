@@ -8,16 +8,21 @@
  *
  * Design notes:
  *
- * - Auth: uses the same OpenAI API key the rest of Kurumi uses
- *   (localStorage key set in Settings → AI Assistant). The key is
- *   sent directly in the SDP exchange — there's no server-side token
- *   exchange because Kurumi is a static PWA. This matches how the
- *   existing REST provider handles auth, with the same trust model.
+ * - Auth (GA Realtime API): the browser mints a short-lived client
+ *   secret with the user's OpenAI key (POST /v1/realtime/client_secrets,
+ *   which also carries the session config) and does the SDP exchange
+ *   with that secret (POST /v1/realtime/calls). Kurumi is a static PWA,
+ *   so the key is already in the browser for the REST provider; the
+ *   secret keeps it out of the WebRTC call itself.
  *
  * - Transport: one RTCPeerConnection carrying a mic audio track
  *   outbound, an assistant audio track inbound (routed to an
  *   <audio> element), and a single data channel for JSON events
  *   (transcripts, tool calls, status updates).
+ *
+ * - Events: `interpretRealtimeEvent` turns data-channel events into
+ *   actions, and accepts both the GA names (response.output_audio_transcript.*)
+ *   and the beta ones (response.audio_transcript.*).
  *
  * - Tool use: the session is configured with a single `search_memory`
  *   function. When the model emits a function_call, we run
@@ -33,9 +38,115 @@
 import { writable, type Writable } from 'svelte/store';
 import { retrieveMemoryContext, buildContextBlocks } from './ask';
 
-const REALTIME_MODEL = 'gpt-4o-realtime-preview-2024-12-17';
-const REALTIME_URL = `https://api.openai.com/v1/realtime?model=${REALTIME_MODEL}`;
+// The GA Realtime API (the beta interface and preview models are on their way out).
+export const REALTIME_MODEL = 'gpt-realtime';
+const CLIENT_SECRETS_URL = 'https://api.openai.com/v1/realtime/client_secrets';
+const CALLS_URL = 'https://api.openai.com/v1/realtime/calls';
 const OPENAI_KEY_STORAGE = 'kurumi-openai-key';
+
+const INSTRUCTIONS = [
+	'You are Kurumi, a second-brain voice assistant.',
+	'When the user asks a question about their notes, memories, meetings,',
+	'or anything that could live in their knowledge base, ALWAYS call the',
+	"search_memory function first before answering. Pass the user's",
+	'original phrasing as the query. Use the returned snippets to ground',
+	'your reply, and cite specific memories by title when relevant.',
+	'Keep spoken answers concise and conversational.'
+].join(' ');
+
+/** The session config (GA shape), sent when minting the client secret. */
+export function realtimeSessionConfig(model = REALTIME_MODEL) {
+	return {
+		type: 'realtime',
+		model,
+		instructions: INSTRUCTIONS,
+		output_modalities: ['audio'],
+		audio: {
+			input: { transcription: { model: 'gpt-4o-mini-transcribe' } },
+			output: { voice: 'marin' }
+		},
+		tools: [
+			{
+				type: 'function',
+				name: 'search_memory',
+				description:
+					"Search the user's Kurumi vault for memories relevant to a question. Returns a JSON list of memory snippets with their ids and titles.",
+				parameters: {
+					type: 'object',
+					properties: {
+						query: { type: 'string', description: 'The natural-language question to search for.' }
+					},
+					required: ['query']
+				}
+			}
+		],
+		tool_choice: 'auto'
+	};
+}
+
+/** What a data-channel event means for the session (null: nothing to do). */
+export type RealtimeAction =
+	| { kind: 'user-transcript'; id: string; text: string }
+	| { kind: 'assistant-delta'; id: string; delta: string }
+	| { kind: 'assistant-done'; id: string }
+	| { kind: 'call-delta'; callId: string; name?: string; delta: string }
+	| { kind: 'call-done'; callId: string; name?: string; args?: string }
+	| { kind: 'error'; message: string };
+
+/** Interpret one Realtime server event; GA and beta event names both work. */
+export function interpretRealtimeEvent(event: Record<string, unknown>): RealtimeAction | null {
+	const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
+	const itemId = str(event.item_id);
+	switch (event.type) {
+		case 'conversation.item.input_audio_transcription.completed': {
+			const text = str(event.transcript);
+			return itemId && text ? { kind: 'user-transcript', id: `user-${itemId}`, text } : null;
+		}
+		case 'response.output_audio_transcript.delta':
+		case 'response.audio_transcript.delta':
+		case 'response.output_text.delta':
+		case 'response.text.delta': {
+			const delta = str(event.delta);
+			return itemId && delta !== undefined ? { kind: 'assistant-delta', id: `assistant-${itemId}`, delta } : null;
+		}
+		case 'response.output_audio_transcript.done':
+		case 'response.audio_transcript.done':
+		case 'response.output_text.done':
+		case 'response.text.done':
+			return itemId ? { kind: 'assistant-done', id: `assistant-${itemId}` } : null;
+		case 'response.function_call_arguments.delta': {
+			const callId = str(event.call_id);
+			return callId ? { kind: 'call-delta', callId, name: str(event.name), delta: str(event.delta) ?? '' } : null;
+		}
+		case 'response.function_call_arguments.done': {
+			const callId = str(event.call_id);
+			return callId ? { kind: 'call-done', callId, name: str(event.name), args: str(event.arguments) } : null;
+		}
+		case 'error': {
+			const error = event.error as { message?: string } | undefined;
+			return { kind: 'error', message: error?.message ?? 'Realtime error' };
+		}
+		default:
+			return null;
+	}
+}
+
+/** Mint a short-lived client secret for one session (its config travels with it). */
+async function mintClientSecret(apiKey: string): Promise<string> {
+	const response = await fetch(CLIENT_SECRETS_URL, {
+		method: 'POST',
+		headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+		body: JSON.stringify({ session: realtimeSessionConfig() })
+	});
+	if (!response.ok) {
+		const text = await response.text().catch(() => '');
+		throw new Error(`Realtime session setup failed (${response.status}): ${text || 'no body'}`);
+	}
+	const data = (await response.json()) as { value?: string; client_secret?: { value?: string } };
+	const secret = data.value ?? data.client_secret?.value;
+	if (!secret) throw new Error('Realtime session setup returned no client secret');
+	return secret;
+}
 
 export type RealtimeStatus =
 	| 'idle'
@@ -153,7 +264,6 @@ export class RealtimeSession {
 
 			// 3. Data channel for events
 			this.dc = this.pc.createDataChannel('oai-events');
-			this.dc.addEventListener('open', () => this.handleDataChannelOpen());
 			this.dc.addEventListener('message', (e) => this.handleDataChannelMessage(e));
 			this.dc.addEventListener('close', () => {
 				if (this.getStatus() === 'connected') {
@@ -161,14 +271,16 @@ export class RealtimeSession {
 				}
 			});
 
-			// 4. Create SDP offer and exchange with OpenAI
+			// 4. Create SDP offer and exchange it with OpenAI, using a
+			//    short-lived secret minted with the user's key.
 			const offer = await this.pc.createOffer();
 			await this.pc.setLocalDescription(offer);
+			const secret = await mintClientSecret(apiKey);
 
-			const response = await fetch(REALTIME_URL, {
+			const response = await fetch(CALLS_URL, {
 				method: 'POST',
 				headers: {
-					Authorization: `Bearer ${apiKey}`,
+					Authorization: `Bearer ${secret}`,
 					'Content-Type': 'application/sdp'
 				},
 				body: offer.sdp
@@ -238,50 +350,6 @@ export class RealtimeSession {
 		return status;
 	}
 
-	/**
-	 * Send a session.update event on data channel open to configure
-	 * tools, instructions, and voice. Without this the model answers
-	 * as a generic assistant with no access to Kurumi's memory.
-	 */
-	private handleDataChannelOpen(): void {
-		this.sendEvent({
-			type: 'session.update',
-			session: {
-				voice: 'alloy',
-				modalities: ['text', 'audio'],
-				input_audio_transcription: { model: 'whisper-1' },
-				instructions: [
-					'You are Kurumi, a second-brain voice assistant.',
-					'When the user asks a question about their notes, memories, meetings,',
-					'or anything that could live in their knowledge base, ALWAYS call the',
-					'search_memory function first before answering. Pass the user\'s',
-					"original phrasing as the query. Use the returned snippets to ground",
-					'your reply, and cite specific memories by title when relevant.',
-					'Keep spoken answers concise and conversational.'
-				].join(' '),
-				tools: [
-					{
-						type: 'function',
-						name: 'search_memory',
-						description:
-							"Search the user's Kurumi vault for memories relevant to a question. Returns a JSON list of memory snippets with their ids and titles.",
-						parameters: {
-							type: 'object',
-							properties: {
-								query: {
-									type: 'string',
-									description: 'The natural-language question to search for.'
-								}
-							},
-							required: ['query']
-						}
-					}
-				],
-				tool_choice: 'auto'
-			}
-		});
-	}
-
 	private sendEvent(event: unknown): void {
 		if (!this.dc || this.dc.readyState !== 'open') return;
 		this.dc.send(JSON.stringify(event));
@@ -295,66 +363,35 @@ export class RealtimeSession {
 			return;
 		}
 
-		const type = event.type as string | undefined;
-		if (!type) return;
-
-		switch (type) {
-			case 'conversation.item.input_audio_transcription.completed': {
-				// Final user transcript for a committed audio segment.
-				const itemId = event.item_id as string | undefined;
-				const transcript = event.transcript as string | undefined;
-				if (itemId && transcript) {
-					upsertTurn(`user-${itemId}`, 'user', transcript, true);
-				}
+		const action = interpretRealtimeEvent(event);
+		if (!action) return; // the many informational events
+		switch (action.kind) {
+			case 'user-transcript':
+				upsertTurn(action.id, 'user', action.text, true);
+				break;
+			case 'assistant-delta':
+				upsertTurn(action.id, 'assistant', action.delta, false);
+				break;
+			case 'assistant-done':
+				finalizeTurn(action.id);
+				break;
+			case 'call-delta': {
+				const existing = this.pendingCalls.get(action.callId) ?? { name: action.name ?? '', args: '' };
+				if (action.name && !existing.name) existing.name = action.name;
+				existing.args += action.delta;
+				this.pendingCalls.set(action.callId, existing);
 				break;
 			}
-			case 'response.audio_transcript.delta': {
-				// Streaming assistant text (aligned with outgoing audio)
-				const itemId = event.item_id as string | undefined;
-				const delta = event.delta as string | undefined;
-				if (itemId && typeof delta === 'string') {
-					upsertTurn(`assistant-${itemId}`, 'assistant', delta, false);
-				}
+			case 'call-done': {
+				const pending = this.pendingCalls.get(action.callId) ?? { name: action.name ?? '', args: action.args ?? '' };
+				if (action.args !== undefined) pending.args = action.args;
+				if (action.name && !pending.name) pending.name = action.name;
+				this.pendingCalls.delete(action.callId);
+				void this.executeToolCall(action.callId, pending.name, pending.args);
 				break;
 			}
-			case 'response.audio_transcript.done': {
-				const itemId = event.item_id as string | undefined;
-				if (itemId) finalizeTurn(`assistant-${itemId}`);
-				break;
-			}
-			case 'response.function_call_arguments.delta': {
-				const callId = event.call_id as string | undefined;
-				const name = event.name as string | undefined;
-				const delta = event.delta as string | undefined;
-				if (!callId) break;
-				const existing = this.pendingCalls.get(callId) ?? { name: name ?? '', args: '' };
-				if (name && !existing.name) existing.name = name;
-				if (typeof delta === 'string') existing.args += delta;
-				this.pendingCalls.set(callId, existing);
-				break;
-			}
-			case 'response.function_call_arguments.done': {
-				const callId = event.call_id as string | undefined;
-				const name = event.name as string | undefined;
-				const finalArgs = event.arguments as string | undefined;
-				if (!callId) break;
-				const pending = this.pendingCalls.get(callId) ?? {
-					name: name ?? '',
-					args: finalArgs ?? ''
-				};
-				if (finalArgs !== undefined) pending.args = finalArgs;
-				if (name && !pending.name) pending.name = name;
-				this.pendingCalls.delete(callId);
-				void this.executeToolCall(callId, pending.name, pending.args);
-				break;
-			}
-			case 'error': {
-				const payload = event.error as { message?: string } | undefined;
-				realtimeError.set(payload?.message ?? 'Realtime error');
-				break;
-			}
-			default:
-				// Ignore the dozens of other informational events
+			case 'error':
+				realtimeError.set(action.message);
 				break;
 		}
 	}
