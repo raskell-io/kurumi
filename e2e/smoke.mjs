@@ -2177,6 +2177,28 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
+	async 'code blocks: highlighting and language picker'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const id = await db(page, `return db.addMemoryObject('Code', 'Intro\\n\\n\\u0060\\u0060\\u0060ts\\nconst answer = 42;\\n\\u0060\\u0060\\u0060\\n').id;`);
+		await page.goto(`${BASE}/#/memory/${id}`, { waitUntil: 'load' });
+		await page.waitForSelector('main .kurumi-code .hljs-keyword', { timeout: 15000 });
+		assert.equal(await page.$eval('main .kurumi-code .hljs-keyword', (e) => e.textContent), 'const');
+		// Switch the language from the header: saved in the markdown.
+		await page.click('main .kurumi-code-lang', { clickCount: 3 });
+		await page.keyboard.type('python');
+		await page.keyboard.press('Enter');
+		await sleep(1500);
+		assert.match(await db(page, `return db.getMemoryObject(arg).bodyMarkdown;`, id), /```python\nconst answer = 42;/);
+		// Typing in the block keeps it highlighted.
+		await page.click('main .kurumi-code pre');
+		await press(page, MOD, 'End');
+		await sleep(200);
+		// Read mode highlights too.
+		await page.goto(`${BASE}/#/read/${id}`, { waitUntil: 'load' });
+		await page.waitForSelector('.markdown-content pre code .hljs-number', { timeout: 15000 });
+		assert.deepEqual(errors, []);
+	},
+
 	async 'settings show the selected local folder'(browser) {
 		const { page, errors } = await freshPage(browser);
 		const name = await page.evaluate(async () => {

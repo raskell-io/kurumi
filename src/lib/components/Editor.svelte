@@ -36,6 +36,7 @@
 	import { taskTogglePlugin } from '$lib/editor/taskToggle';
 	import { codeBlockExitPlugin } from '$lib/editor/codeBlockExit';
 	import { mermaidPlugin } from '$lib/editor/mermaid';
+	import { codeHighlightPlugin } from '$lib/editor/codeHighlight';
 	import { mathPlugins } from '$lib/editor/math';
 	import { columnsPlugins } from '$lib/editor/columns';
 	import { audioEmbedPlugin } from '$lib/editor/audioEmbed';
@@ -609,6 +610,7 @@
 			.use(codeBlockExitPlugin)
 			.use(audioEmbedPlugin)
 			.use(mermaidPlugin)
+			.use(codeHighlightPlugin)
 			.use(trailingPlugin)
 			.use(block)
 			.use(findReplacePlugin)
@@ -1132,6 +1134,88 @@
 		color: var(--color-accent);
 		opacity: 0.8;
 		pointer-events: none;
+	}
+
+	/* Code blocks: header with the language and a copy button (codeHighlight.ts) */
+	:global(.milkdown .kurumi-code) {
+		position: relative;
+		margin: 1em 0;
+	}
+
+	:global(.milkdown .kurumi-code > pre) {
+		margin: 0;
+	}
+
+	:global(.milkdown .kurumi-code > pre[data-language]::after) {
+		display: none;
+	}
+
+	:global(.milkdown .kurumi-code-header) {
+		position: absolute;
+		top: 0.35em;
+		right: 0.5em;
+		z-index: 1;
+		display: flex;
+		align-items: center;
+		gap: 0.25em;
+		font-family: var(--font-sans);
+		font-size: 0.72rem;
+	}
+
+	:global(.milkdown .kurumi-code-lang) {
+		width: auto;
+		padding: 0.15em 0.4em;
+		border: 1px solid transparent;
+		border-radius: var(--radius-sm, 4px);
+		background: transparent;
+		color: var(--color-accent);
+		font: inherit;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		text-align: right;
+		opacity: 0.8;
+	}
+
+	:global(.milkdown .kurumi-code-lang::placeholder) {
+		color: transparent;
+		text-transform: none;
+		font-weight: 400;
+	}
+
+	:global(.milkdown .kurumi-code-lang:is(:hover, :focus)) {
+		border-color: var(--color-border);
+		background: var(--color-bg);
+		text-align: left;
+		text-transform: none;
+		opacity: 1;
+		outline: none;
+	}
+
+	:global(.milkdown .kurumi-code-copy) {
+		padding: 0.15em 0.5em;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm, 4px);
+		background: var(--color-bg);
+		color: var(--color-text-muted);
+		font: inherit;
+		cursor: pointer;
+		opacity: 0;
+		transition: opacity 0.15s;
+	}
+
+	:global(.milkdown .kurumi-code:is(:hover, :focus-within) .kurumi-code-lang::placeholder) {
+		color: var(--color-text-faint);
+	}
+
+	:global(.milkdown .kurumi-code:is(:hover, :focus-within) .kurumi-code-copy) {
+		opacity: 1;
+	}
+
+	@media (hover: none) {
+		:global(.milkdown .kurumi-code-copy) {
+			opacity: 1;
+		}
 	}
 
 	/* Mermaid: the diagram, and its source only while the cursor is in it */

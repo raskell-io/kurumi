@@ -21,6 +21,11 @@ and Visual modes: motions (`h j k l`, `w b e`, `0 ^ $`, `gg G`, with counts),
 `i a I A o O`, `x r ~ J`, operators `d c y` with a motion or `iw`/`aw`, `dd yy
 cc D C`, `p P`, `u` and `Ctrl+R`. A badge in the corner shows the mode.
 
+Code blocks are coloured by language (about 40 common ones, from Bash to
+TypeScript), in the editor and in Read mode. Type the language after the
+opening fence (```` ```python ````), or set it in the box in the block's
+corner, which also has a **Copy** button.
+
 A code block with the language `mermaid` shows a
 [Mermaid](https://mermaid.js.org) diagram, in the note's colours. Click the
 diagram to edit its source, and click outside to see the result:

@@ -1312,3 +1312,29 @@ a[href^='blob:']:not([href*='://'])::before {
 a[href^='blob:']:not([href*='://']):hover {
 	border-color: var(--color-accent);
 }
+
+/* Syntax highlighting (highlight.js classes from $lib/highlight), editor and
+   reader. Hues are mixed with the theme's text colour, so they lighten on dark
+   themes and darken on light ones without a table per palette. */
+:root {
+	--code-keyword: color-mix(in srgb, #8839ef 62%, var(--color-text));
+	--code-string: color-mix(in srgb, #40a02b 62%, var(--color-text));
+	--code-number: color-mix(in srgb, #fe640b 62%, var(--color-text));
+	--code-comment: color-mix(in srgb, var(--color-text-muted) 85%, transparent);
+	--code-function: color-mix(in srgb, #1e66f5 62%, var(--color-text));
+	--code-type: color-mix(in srgb, #df8e1d 62%, var(--color-text));
+	--code-tag: color-mix(in srgb, #d20f39 58%, var(--color-text));
+	--code-attr: color-mix(in srgb, #179299 62%, var(--color-text));
+}
+:is(.hljs-keyword, .hljs-selector-tag, .hljs-built_in.hljs-keyword, .hljs-meta .hljs-keyword) { color: var(--code-keyword); }
+:is(.hljs-string, .hljs-regexp, .hljs-addition, .hljs-template-string, .hljs-selector-attr) { color: var(--code-string); }
+:is(.hljs-number, .hljs-literal, .hljs-symbol, .hljs-bullet) { color: var(--code-number); }
+:is(.hljs-comment, .hljs-quote) { color: var(--code-comment); font-style: italic; }
+:is(.hljs-title, .hljs-title.function_, .hljs-section) { color: var(--code-function); }
+:is(.hljs-type, .hljs-title.class_, .hljs-built_in, .hljs-class .hljs-title) { color: var(--code-type); }
+:is(.hljs-name, .hljs-selector-id, .hljs-selector-class, .hljs-deletion, .hljs-variable.language_) { color: var(--code-tag); }
+:is(.hljs-attr, .hljs-attribute, .hljs-property, .hljs-params, .hljs-variable, .hljs-template-variable, .hljs-meta) { color: var(--code-attr); }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 600; }
+.hljs-deletion { background: color-mix(in srgb, #d20f39 10%, transparent); }
+.hljs-addition { background: color-mix(in srgb, #40a02b 10%, transparent); }

@@ -11,6 +11,7 @@ import type { Node as ProseMirrorNode } from '@milkdown/kit/prose/model';
 import { renderMermaid } from '$lib/mermaid';
 import { isQueryBlock, queryBlockView } from './queryBlock.svelte';
 import { isDatabaseBlock, databaseBlockView } from './databaseBlock.svelte';
+import { codeBlockView, isFrontmatterBlock } from './codeHighlight';
 
 const key = new PluginKey('kurumi-mermaid');
 const isMermaid = (node: ProseMirrorNode) =>
@@ -99,7 +100,8 @@ export const mermaidPlugin = $prose(
 						// ```kurumi live queries share this node view (queryBlock.svelte.ts)
 						if (isQueryBlock(node)) return queryBlockView(node, view, getPos as () => number | undefined);
 						if (isDatabaseBlock(node)) return databaseBlockView(node, view, getPos as () => number | undefined);
-						if (!isMermaid(node)) return null as never; // default rendering
+						if (isFrontmatterBlock(node)) return null as never; // default rendering (Properties)
+						if (!isMermaid(node)) return codeBlockView(node, view, getPos as () => number | undefined);
 						return mermaidView(node, view, getPos as () => number | undefined);
 					}
 				},

@@ -141,9 +141,9 @@ via pre-processing `> [!type]` syntax into styled divs.
 HTML `<details>/<summary>` rendered natively by marked + styled.
 Slash command `/toggle` inserts the scaffold.
 
-### [ ] Columns / multi-column layout
-Side-by-side content blocks. Moderate — Milkdown node that wraps N
-children each constrained to a fraction of the width. DEFERRED.
+### [x] Columns / multi-column layout
+`::::columns` / `:::column` container directives (`editor/columns.ts`),
+shipped in v0.6.0.
 
 ### [x] Embeds (YouTube / Twitter / Figma / maps / PDF / image / audio)
 YouTube URLs auto-convert to responsive iframes in read mode.
@@ -162,9 +162,10 @@ remove, sort, drag-to-resize. DEFERRED — GFM tables already render.
 Slash commands `/math-block` and `/math-inline`. Full KaTeX
 rendering can be added as a future dep.
 
-### [ ] Syntax-highlighted code blocks
-Shiki or Prism integration inside Milkdown. Copy button, language
-switcher. DEFERRED — needs external dep.
+### [x] Syntax-highlighted code blocks
+lowlight (highlight.js grammars), loaded on first use: `$lib/highlight.ts`
+for tokens, decorations in `editor/codeHighlight.ts` (header with language
+picker + copy), spans in Read mode.
 
 ### [ ] Inline action items
 `- [ ] text` lines inside any memory automatically become ActionItem

@@ -10,6 +10,7 @@
 	import { resolveBlobUrl, isBlobRef } from '$lib/utils/image';
 	import DataviewBlock from './DataviewBlock.svelte';
 	import { onMount, mount, unmount, tick } from 'svelte';
+	import { loadHighlighter, highlightToHtml } from '$lib/highlight';
 	import DatabaseBlock from './database/DatabaseBlock.svelte';
 	import { databaseBlockViewId } from '$lib/editor/databaseBlock.svelte';
 
@@ -246,7 +247,7 @@
 
 		// Add copy button to fenced code blocks
 		html = html.replace(
-			/<pre><code(?: class="language-(\w+)")?>/g,
+			/<pre><code(?: class="language-([\w+#.-]+)")?>/g,
 			(_, lang) => {
 				const label = lang || 'code';
 				return `<div class="code-block-wrapper"><div class="code-block-header"><span class="code-block-lang">${label}</span><button type="button" class="code-copy-btn" data-action="copy-code" title="Copy code">Copy</button></div><pre><code${lang ? ` class="language-${lang}"` : ''}>`;
@@ -434,6 +435,23 @@
 			for (const el of nodes) {
 				const source = el.dataset.math ?? '';
 				el.innerHTML = await renderMath(source, el.classList.contains('math-block'));
+			}
+		});
+	});
+
+	// Syntax-highlight code blocks after DOM update (lowlight loads on first use)
+	$effect(() => {
+		void html;
+		if (!contentDiv || !html.includes('class="language-')) return;
+		requestAnimationFrame(async () => {
+			const ll = await loadHighlighter();
+			const nodes = contentDiv?.querySelectorAll<HTMLElement>('pre > code[class^="language-"]') ?? [];
+			for (const el of nodes) {
+				if (el.dataset.highlighted) continue;
+				const lang = el.className.match(/language-(\S+)/)?.[1] ?? '';
+				const highlighted = highlightToHtml(ll, el.textContent ?? '', lang);
+				if (highlighted !== null) el.innerHTML = highlighted;
+				el.dataset.highlighted = '1';
 			}
 		});
 	});
