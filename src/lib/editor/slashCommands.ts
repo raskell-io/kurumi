@@ -18,6 +18,7 @@
  *      registry.
  */
 
+import { insertInlineMath } from './math';
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state';
 import { $prose } from '@milkdown/kit/utils';
 import type { EditorView } from '@milkdown/kit/prose/view';
@@ -463,6 +464,6 @@ export const builtInSlashCommands: SlashCommand[] = [
 		description: 'Inline LaTeX expression',
 		icon: 'code',
 		category: 'Insert',
-		execute: (view, from, to) => replaceWithText(view, from, to, '$E = mc^2$')
+		execute: (view, from, to) => insertInlineMath(view, from, to, 'E = mc^2') || replaceWithText(view, from, to, '$E = mc^2$')
 	}
 ];

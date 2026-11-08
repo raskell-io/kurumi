@@ -29,6 +29,7 @@ graph LR
 | Type | You get |
 |------|---------|
 | `[[` | A link to another note. Suggestions appear as you type; `Enter` or `Tab` picks one, `Esc` closes the list. Hover a link for a preview; Alt+click opens it beside the current note |
+| `[[Title\|text]]` | The same link, showing *text* instead of the title. `[[Title#Heading]]` points at a heading and opens the note. While the cursor isn't in it, the link reads `[[text]]` |
 | `![[Title]]` | The other note shown live inside this one |
 | `@` | A person. Click the name for their [person page](organize-and-recall.md#people) |
 | `#` | A tag |
@@ -51,7 +52,7 @@ Selected text takes `Cmd/Ctrl+B` / `I`.
 | `> [!info]`, `> [!warning]`, `> [!tip]` | Callouts |
 | `<details><summary>Title</summary> … </details>` | A collapsible section |
 | ```` ```mermaid ```` | A diagram, rendered |
-| `$x^2$`, `$$ … $$` | Inline and block math (LaTeX) |
+| `$x^2$`, `$$ … $$` | Math (LaTeX), typeset by KaTeX. Typing the closing `$` turns `$…$` into a formula; click it to edit. `$$` then Enter starts a block, which shows its source while the cursor is in it. A `$` with a space after it, or a digit after the closing one, stays text: `$5 and $10` is safe |
 | Tables | Pipe tables, edited in place |
 
 ## Slash commands

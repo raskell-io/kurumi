@@ -589,6 +589,31 @@ textarea {
 		pointer-events: none;
 	}
 
+	/* Option chips (database select values; colour from optionHue in $lib/database) */
+	.k-chip {
+		display: inline-flex;
+		max-width: 100%;
+		align-items: center;
+		padding: 0.0625rem 0.4375rem;
+		border-radius: 999px;
+		font-size: 0.75rem;
+		line-height: 1.4;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		background: color-mix(in srgb, var(--chip, var(--color-text-faint)) 18%, transparent);
+		color: color-mix(in srgb, var(--chip, var(--color-text-faint)) 70%, var(--color-text));
+	}
+
+	.k-chip.hue-0 { --chip: #8839ef; }
+	.k-chip.hue-1 { --chip: #1e66f5; }
+	.k-chip.hue-2 { --chip: #179299; }
+	.k-chip.hue-3 { --chip: #40a02b; }
+	.k-chip.hue-4 { --chip: #df8e1d; }
+	.k-chip.hue-5 { --chip: #fe640b; }
+	.k-chip.hue-6 { --chip: #d20f39; }
+	.k-chip.hue-7 { --chip: #7c7f93; }
+
 	/* Popover menus */
 	.k-menu {
 		min-width: 12rem;

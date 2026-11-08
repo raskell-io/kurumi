@@ -126,13 +126,14 @@
 	// Outgoing links (wikilinks to other memories)
 	let outgoingLinks = $derived.by(() => {
 		if (!memory) return [];
-		const titles = extractWikilinks(memory.bodyMarkdown);
+		// One entry per note, however often (or with whatever alias) it's linked.
+		const titles = [...new Map(extractWikilinks(memory.bodyMarkdown).map((t) => [t.toLowerCase(), t])).values()];
 		return titles
 			.map((title) => {
 				const target = findMemoryObjectByTitle(title);
 				return target ? { title, id: target.id } : null;
 			})
-			.filter((l): l is { title: string; id: string } => l !== null);
+			.filter((l, i, all): l is { title: string; id: string } => l !== null && all.findIndex((o) => o?.id === l.id) === i);
 	});
 
 	// Build breadcrumbs

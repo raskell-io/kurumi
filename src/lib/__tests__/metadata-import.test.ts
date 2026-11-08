@@ -161,7 +161,10 @@ describe('pickExternalChanges', () => {
 describe('agent guide', () => {
 	// What the guide tells agents to write has to be what the app accepts.
 	const blocks = [...guide.matchAll(/```json\n([\s\S]*?)```/g)].map((m) => JSON.parse(m[1]));
-	const merged = Object.assign({}, ...blocks) as Partial<GitMetadata>;
+	// Sections can be split over several examples (work.databaseViews has its own).
+	const merged = Object.assign({}, ...blocks, {
+		work: Object.assign({}, ...blocks.map((b) => b.work ?? {}))
+	}) as Partial<GitMetadata>;
 	const warn = vi.spyOn(console, 'warn');
 	const records = readMetadataRecords(metadata(merged), 'v1');
 

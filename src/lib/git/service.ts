@@ -685,9 +685,13 @@ export function mergeMemoryLists(local: MemoryObject[], remote: MemoryObject[]):
 		// starred/unstarred last.
 		const favSource =
 			(memory.favoriteChangedAt ?? 0) > (existing.favoriteChangedAt ?? 0) ? memory : existing;
+		// Database properties likewise, from whichever side changed them last.
+		const propsSource = (memory.propsChangedAt ?? 0) > (existing.propsChangedAt ?? 0) ? memory : existing;
 		const { favoritedAt: _f, favoriteChangedAt: _c, ...rest } = newer;
 		merged.set(memory.id, {
 			...rest,
+			customProps: propsSource.customProps ?? {},
+			...(propsSource.propsChangedAt ? { propsChangedAt: propsSource.propsChangedAt } : {}),
 			...(favSource.favoritedAt ? { favoritedAt: favSource.favoritedAt } : {}),
 			...(favSource.favoriteChangedAt ? { favoriteChangedAt: favSource.favoriteChangedAt } : {})
 		});

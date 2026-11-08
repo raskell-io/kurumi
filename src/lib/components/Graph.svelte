@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { wikilinkLabel } from '$lib/wikilinks';
 	import { onMount, onDestroy, tick, untrack } from 'svelte';
 	import { memoryObjects, folders, extractWikilinks, type MemoryObject, type Folder } from '$lib/db';
 	import { goto } from '$app/navigation';
@@ -281,7 +282,7 @@
 			// Remove raw URLs
 			.replace(/https?:\/\/[^\s]+/g, '')
 			// Remove wikilinks [[text]]
-			.replace(/\[\[([^\]]+)\]\]/g, '$1')
+			.replace(/\[\[([^[\]\n]+?)\]\]/g, (_: string, inner: string) => wikilinkLabel(inner))
 			// Clean up @mentions (keep the name)
 			.replace(/@(\w+)/g, '@$1')
 			// Clean up //dates (keep the date)

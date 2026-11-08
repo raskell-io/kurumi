@@ -89,9 +89,12 @@ function findDecorations(doc: any): Decoration[] {
 				);
 			}
 
-			// Find tags
+			// Find tags (not a heading in a link: [[Note#Heading]])
+			const linkSpans = [...node.text.matchAll(/\[\[[^[\]\n]*?\]\]/g)].map((m: RegExpMatchArray) => [m.index!, m.index! + m[0].length]);
 			tagRegex.lastIndex = 0;
 			while ((match = tagRegex.exec(node.text)) !== null) {
+				const at = match.index;
+				if (linkSpans.some(([from, to]) => at > from && at < to)) continue;
 				const start = pos + match.index;
 				const end = start + match[0].length;
 				const tag = match[1];

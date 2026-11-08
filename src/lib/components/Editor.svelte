@@ -36,6 +36,7 @@
 	import { taskTogglePlugin } from '$lib/editor/taskToggle';
 	import { codeBlockExitPlugin } from '$lib/editor/codeBlockExit';
 	import { mermaidPlugin } from '$lib/editor/mermaid';
+	import { mathPlugins } from '$lib/editor/math';
 	import { audioEmbedPlugin } from '$lib/editor/audioEmbed';
 	import { startCheckboxRenderer } from '$lib/editor/checkboxRenderer';
 	import { processAndStoreImage } from '$lib/utils/image';
@@ -539,6 +540,7 @@
 			})
 			.use(commonmark)
 			.use(gfm)
+			.use(mathPlugins)
 			.use(listener)
 			.use(history)
 			// Before clipboard: ProseMirror asks plugins in order and the
@@ -897,6 +899,11 @@
 		transition: background-color 0.12s ease, text-decoration-color 0.12s ease;
 	}
 
+	/* [[Note|text]] reads [[text]] unless the cursor is in it (editor/wikilink.ts) */
+	:global(.milkdown .wikilink-target-hidden) {
+		display: none;
+	}
+
 	:global(.milkdown .wikilink:hover) {
 		background: var(--color-accent-soft);
 		text-decoration-color: var(--color-accent);
@@ -1151,6 +1158,70 @@
 		color: var(--color-danger);
 		font-family: var(--font-sans);
 		font-size: 0.8em;
+	}
+
+	/* Math: KaTeX, and the source only while editing (editor/math.ts) */
+	:global(.milkdown .kurumi-math-inline) {
+		position: relative;
+		padding: 0 0.1em;
+		border-radius: 4px;
+		cursor: pointer;
+	}
+
+	:global(.milkdown .kurumi-math-inline:hover),
+	:global(.milkdown .kurumi-math-inline.is-selected) {
+		background: var(--color-accent-soft);
+	}
+
+	:global(.milkdown .kurumi-math-input) {
+		position: absolute;
+		top: calc(100% + 4px);
+		left: 0;
+		z-index: 20;
+		min-width: 14rem;
+		padding: 0.3rem 0.5rem;
+		border: 1px solid var(--color-accent);
+		border-radius: var(--radius-md);
+		background: var(--color-bg);
+		color: var(--color-text);
+		font-family: var(--font-mono, ui-monospace, monospace);
+		font-size: 0.85rem;
+		box-shadow: var(--shadow-md);
+		outline: none;
+	}
+
+	:global(.milkdown .kurumi-math-block) {
+		margin: 1em 0;
+	}
+
+	:global(.milkdown .kurumi-math-block > pre) {
+		display: none;
+		margin-top: 0.5em;
+	}
+
+	:global(.milkdown .kurumi-math-block.is-editing > pre) {
+		display: block;
+	}
+
+	:global(.milkdown .kurumi-math-preview) {
+		padding: 0.5em 1em;
+		border: 1px solid transparent;
+		border-radius: var(--radius-md);
+		cursor: pointer;
+		overflow-x: auto;
+		text-align: center;
+		transition: border-color 0.15s ease;
+	}
+
+	:global(.milkdown .kurumi-math-preview:hover),
+	:global(.milkdown .kurumi-math-block.is-editing .kurumi-math-preview) {
+		border-color: var(--color-border);
+		background: var(--color-bg-secondary);
+	}
+
+	:global(.milkdown .kurumi-math-empty) {
+		color: var(--color-text-faint);
+		font-size: 0.9em;
 	}
 
 	/* Blockquotes: a band of the accent */

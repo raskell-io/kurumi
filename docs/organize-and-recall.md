@@ -22,6 +22,27 @@ Folders nest without limit. In the sidebar tree:
 
 Large folders show 200 notes and a *Show more* button.
 
+## Databases
+
+Any folder can be a database: right-click it → *Open as database*, or
+⌘K → *New database*. Its notes are the rows, and you add properties:
+text, number, select, multi-select, date, checkbox, URL or person.
+
+- **Views:** table, board (grouped by a select property; drag cards
+  between columns), gallery and calendar (by a date property; drag to
+  another day). Add views as tabs; each keeps its own filters, sort and
+  shown properties, and all share the properties.
+- **Editing:** click a cell. In a select, type a new option to add it.
+  *New* adds a row (a note in the folder); a row passing a view's
+  filters keeps their values.
+- **On the note:** a row's properties sit under its title, editable.
+- A database folder has a database icon in the tree; click it to open
+  the database. *Turn back into a folder* (view ⋯ menu) removes the
+  views; the values stay on the notes.
+
+Properties sync with every method. In git sync they're merged per note,
+the side that changed them last winning.
+
 ## Favorites, icons and tabs
 
 - **Favorites:** the star in a note's header pins it to the top of the

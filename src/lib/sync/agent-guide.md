@@ -128,7 +128,10 @@ The body is Markdown.
   Kurumi renames it to that if it isn't.
 - Frontmatter is deliberately simple: `---` on the very first line (LF line
   endings for git sync), one `key: value` per line, tags inline as above (no YAML block lists).
-- Links have no alias form: `[[Title]]`, never `[[Title|text]]`.
+- Links: `[[Title]]`; `[[Title|shown text]]` shows other text, `[[Title#Heading]]`
+  points at a heading (it opens the note). In a table, escape the bar: `[[Title\|text]]`.
+- Math: `$x^2$` inline, `$$` on their own lines around a block of LaTeX. A `$` with a
+  space after it or a digit after the closing one stays text, so prices are safe.
 - A new directory becomes a folder. With all vaults on, a new top-level
   directory becomes a new vault.
 - Git sync: always set `id`, and use slugged names for files and directories
@@ -384,6 +387,47 @@ to raise something for the next meeting, add to its `agenda`.
 - Templates use `created` and `modified`, and placeholders like `{title}`,
   `{date}` and `{weekday}`.
 
+### Databases (`work.databaseViews`)
+
+A database is a folder shown as a table, board, gallery or calendar: its notes
+are the rows. A view names the folder (`folderId`, from `folders`) and the
+properties its rows have. All views of one folder share the same `properties`.
+
+```json
+{
+  "work": {
+    "databaseViews": [
+      {
+        "id": "f72cb13e4a6d9058",
+        "name": "Reading list",
+        "folderId": "8b1e4c2a9f3d7065",
+        "viewType": "table",
+        "columns": [
+          { "field": "title", "visible": true },
+          { "field": "prop:status", "visible": true }
+        ],
+        "properties": [
+          { "key": "status", "label": "Status", "type": "select", "options": ["To read", "Reading", "Done"] }
+        ],
+        "sortField": "updatedAt",
+        "sortDirection": "desc",
+        "groupField": "prop:status",
+        "filterQuery": "",
+        "vaultId": "default",
+        "createdAt": 1793870000000,
+        "updatedAt": 1793870000000
+      }
+    ]
+  }
+}
+```
+
+- `viewType`: `table`, `board` (grouped by `groupField`), `gallery` or `calendar`.
+- Property `type`: `text`, `number`, `date` (`YYYY-MM-DD`), `select`,
+  `multiSelect`, `checkbox`, `url` or `person`.
+- The rows' values are under `notes.<id>.customProps` (by property `key`), which
+  you can read but not change: set them in the app.
+
 ## Not available from files
 
 - Links from a note to a project. Link from the other side: set `projectId` on
@@ -391,7 +435,8 @@ to raise something for the next meeting, add to its `agenda`.
 - Voice memos and meetings with transcripts: capture those in the app. A
   recording embedded in a note (`![audio:…]`) plays but isn't transcribed.
 - Note icons on new notes, and favorites.
-- Labs features: flashcards, habits, saved searches and database views.
+- Database property values (see Databases above).
+- Labs features: flashcards, habits and saved searches.
 - Vault settings, and encryption or sync settings.
 
 ## Check your work

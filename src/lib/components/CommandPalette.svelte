@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { wikilinkLabel } from '$lib/wikilinks';
 	import { createExampleVault, EXAMPLE_VAULT_NAME } from '$lib/example-vault';
 	import { search } from '$lib/search';
 	import { goto } from '$app/navigation';
@@ -13,7 +14,9 @@
 		setCurrentVault,
 		addVault,
 		transcribeMemoryAudio,
-		todayIso
+		todayIso,
+		addFolder,
+		openFolderAsDatabase
 	} from '$lib/db';
 	import { storeBlob } from '$lib/db/blob-store';
 	import { getIconById } from '$lib/icons/vault-icons';
@@ -106,6 +109,18 @@
 			action: () => {
 				onClose();
 				triggerUploadRecording.set(true);
+			}
+		},
+		{
+			id: 'new-database',
+			type: 'action',
+			title: 'New database',
+			description: 'A table, board, gallery or calendar of notes with properties',
+			icon: 'folder',
+			action: () => {
+				onClose();
+				const folder = addFolder('New database');
+				goto(`/database/${openFolderAsDatabase(folder.id).id}`);
 			}
 		},
 		{
@@ -376,7 +391,7 @@
 	function stripHtml(html: string): string {
 		return html
 			.replace(/<[^>]*>/g, ' ')      // Remove HTML tags
-			.replace(/\[\[([^\]|]+)(\|[^\]]+)?\]\]/g, '$1')  // Convert [[link]] or [[link|text]] to just the link/text
+			.replace(/\[\[([^[\]\n]+?)\]\]/g, (_, inner: string) => wikilinkLabel(inner))  // [[link]] / [[link|text]] → what it shows
 			.replace(/&nbsp;/g, ' ')       // Replace &nbsp;
 			.replace(/&amp;/g, '&')        // Replace &amp;
 			.replace(/&lt;/g, '<')         // Replace &lt;

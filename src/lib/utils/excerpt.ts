@@ -1,3 +1,5 @@
+import { wikilinkLabel } from '$lib/wikilinks';
+
 /**
  * Plain-text excerpt of a note's markdown for list rows and cards: drops
  * frontmatter, formatting, tags and code; keeps link text and URLs intact.
@@ -13,7 +15,7 @@ export function markdownExcerpt(content: string, maxLength = 200): string {
 		.replace(/```[\s\S]*?```/g, '') // code blocks (before inline code, which would split them)
 		.replace(/`([^`]+)`/g, '$1') // inline code
 		.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // links
-		.replace(/\[\[([^\]|]+)(\|[^\]]+)?\]\]/g, '$1') // wikilinks
+		.replace(/\[\[([^[\]\n]+?)\]\]/g, (_, inner: string) => wikilinkLabel(inner)) // wikilinks (their alias)
 		.replace(/<((?:https?|mailto):[^>\s]+)>/g, '$1') // autolinks
 		.replace(/!\[([^\]]*)\]\([^)]+\)/g, '') // images
 		.replace(/^>\s/gm, '') // blockquotes

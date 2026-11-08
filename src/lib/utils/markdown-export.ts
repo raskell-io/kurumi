@@ -3,6 +3,7 @@
  * Supports: Vanilla Markdown, Hugo, Zola
  */
 
+import { parseWikilink, wikilinkLabel } from '$lib/wikilinks';
 import type { MemoryObject, Folder, Vault } from '../db/types';
 import JSZip from 'jszip';
 import { getBlob } from '../db/blob-store';
@@ -209,14 +210,15 @@ export function convertWikilinks(
 	current: MemoryObject,
 	folders: Folder[]
 ): string {
-	return content.replace(/\[\[([^\]]+)\]\]/g, (match, title) => {
-		const target = memories.find((m) => m.title.toLowerCase() === title.toLowerCase());
+	return content.replace(/\[\[([^[\]\n]+?)\]\]/g, (match, inner: string) => {
+		const title = parseWikilink(inner).target.toLowerCase();
+		const target = memories.find((m) => m.title.toLowerCase() === title);
 		if (!target) {
 			// Keep original if target not found
 			return match;
 		}
 		const relativePath = calculateRelativePath(current, target, folders);
-		return `[${title}](${relativePath})`;
+		return `[${wikilinkLabel(inner)}](${relativePath})`;
 	});
 }
 

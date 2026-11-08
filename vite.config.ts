@@ -113,7 +113,8 @@ export default defineConfig({
 				// weights from precache. They're loaded on demand the first time
 				// local inference is used; the browser cache + transformers.js's
 				// own IndexedDB cache make subsequent loads instant.
-				globIgnores: ['**/ort-*.wasm', '**/onnxruntime-*.wasm'],
+				// KaTeX ships each font as woff2, woff and ttf; browsers use the woff2.
+				globIgnores: ['**/ort-*.wasm', '**/onnxruntime-*.wasm', '**/KaTeX_*.woff'],
 				maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MiB for Automerge WASM
 				// Inject our custom notification handlers into the generated
 				// Workbox service worker. sw-notify.js adds the periodicsync

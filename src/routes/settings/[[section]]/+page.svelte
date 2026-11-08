@@ -2317,12 +2317,13 @@
 								<p class="set-row-help">
 									In Notion: Settings → Export all workspace content (or a page's ⋯ → Export), format
 									<strong>Markdown &amp; CSV</strong>, with subpages. Pick the downloaded <code>.zip</code>.
-									Pages keep their nesting as folders, links become [[wikilinks]], images and files come along.
+									Pages keep their nesting as folders, links become [[wikilinks]], images and files come along,
+									and databases become Kurumi databases with their properties.
 								</p>
 								{#if notionImportResult}
 									{@render importResultLine(
 										notionImportResult,
-										`Imported ${notionImportResult.notesCreated} page${notionImportResult.notesCreated === 1 ? '' : 's'}${notionImportResult.filesStored ? ` and ${notionImportResult.filesStored} file${notionImportResult.filesStored === 1 ? '' : 's'}` : ''}`
+										`Imported ${notionImportResult.notesCreated} page${notionImportResult.notesCreated === 1 ? '' : 's'}${notionImportResult.databasesCreated ? `, ${notionImportResult.databasesCreated} database${notionImportResult.databasesCreated === 1 ? '' : 's'}` : ''}${notionImportResult.filesStored ? ` and ${notionImportResult.filesStored} file${notionImportResult.filesStored === 1 ? '' : 's'}` : ''}`
 									)}
 								{/if}
 							</div>

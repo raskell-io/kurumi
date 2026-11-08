@@ -23,7 +23,9 @@
 		currentVaultId,
 		moveMemoryObjectToVault,
 		moveFolderToVault,
-		setMemoryFavorite
+		setMemoryFavorite,
+		databaseViews,
+		openFolderAsDatabase
 	} from '$lib/db';
 	import { openInSplit } from '$lib/stores/workspace';
 	import {
@@ -44,7 +46,8 @@
 		Plus,
 		Link2,
 		Star,
-		Columns2
+		Columns2,
+		Database
 	} from 'lucide-svelte';
 	import { pushUndo } from '$lib/stores/undo';
 
@@ -194,6 +197,13 @@
 		contextMenuFolder = type === 'folder' ? id : null;
 		showVaultSubmenu = false;
 		contextMenuPosition = { x: rect.left, y: rect.bottom + 4 };
+	}
+
+	// Folders shown as databases (they have a view), and opening one.
+	let databaseFolderIds = $derived(new Set($databaseViews.map((v) => v.folderId)));
+	function openAsDatabase(folderId: string) {
+		closeContextMenu();
+		goto(`/database/${openFolderAsDatabase(folderId).id}`);
 	}
 
 	function closeContextMenu() {
@@ -1060,7 +1070,17 @@
 					>
 						<ChevronRight class="h-3 w-3 transition-transform duration-150 {isExpanded ? 'rotate-90' : ''}" />
 					</button>
-					{#if isExpanded && hasContents}
+					{#if databaseFolderIds.has(folder.id)}
+						<button
+							class="tree-db-btn"
+							onclick={(e) => { e.stopPropagation(); openAsDatabase(folder.id); }}
+							title="Open database"
+							aria-label="Open {folder.name} as a database"
+							tabindex="-1"
+						>
+							<Database class="tree-icon" />
+						</button>
+					{:else if isExpanded && hasContents}
 						<FolderOpen class="tree-icon text-[var(--color-text-muted)]" />
 					{:else}
 						<Folder class="tree-icon text-[var(--color-text-muted)]" />
@@ -1273,6 +1293,10 @@
 		>
 			<FolderPlus class="h-4 w-4" />
 			New Subfolder
+		</button>
+		<button onclick={() => openAsDatabase(contextMenuFolder!)} class="k-menu-item">
+			<Database class="h-4 w-4" />
+			{databaseFolderIds.has(contextMenuFolder) ? 'Open database' : 'Open as database'}
 		</button>
 		<div class="k-menu-sep"></div>
 		<button
@@ -1684,5 +1708,15 @@
 			min-height: 2.5rem;
 			font-size: 0.9375rem;
 		}
+	}
+
+	.tree-db-btn {
+		display: inline-flex;
+		border-radius: var(--radius-sm);
+		color: var(--color-text-muted);
+	}
+
+	.tree-db-btn:hover {
+		color: var(--color-accent);
 	}
 </style>

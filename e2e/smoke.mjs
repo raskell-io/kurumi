@@ -573,9 +573,9 @@ const scenarios = {
 			assert.equal(await active(), label);
 		}
 		await page.goto(`${BASE}/settings/about`, { waitUntil: 'load' });
-		await page.waitForSelector('.about-headline');
+		await page.waitForSelector('.hero-title');
 		const about = await page.$eval('#about', (e) => e.textContent);
-		assert.match(about, /local-first second brain/);
+		assert.match(about, /second brain for notes, voice memos and meetings/);
 		// The real build version (package · commit · date), not a fixed string
 		assert.match(about, /Kurumi \d+\.\d+\.\d+ · [0-9a-f]{7,} · \d{4}-\d{2}-\d{2}/);
 		assert.deepEqual(errors, []);
@@ -949,7 +949,8 @@ const scenarios = {
 		inner.file(`Work ${id(1)}/Kickoff call ${id(2)}.md`, `# Kickoff call\n\nDecided the scope.\n\n![](Kickoff%20call%20${id(2)}/whiteboard.png)\n\n[brief.pdf](Kickoff%20call%20${id(2)}/brief.pdf)\n\nBack to [Work](../Work%20${id(1)}.md)`);
 		inner.file(`Work ${id(1)}/Kickoff call ${id(2)}/whiteboard.png`, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64'));
 		inner.file(`Work ${id(1)}/Kickoff call ${id(2)}/brief.pdf`, '%PDF-1.4');
-		inner.file(`Work ${id(1)}/Tasks ${id(3)}.csv`, 'Name,Status\nShip,Done');
+		inner.file(`Work ${id(1)}/Tasks ${id(3)}.csv`, 'Name,Status,Due\nShip,Done,"November 9, 2026"\nPlan,Todo,\nTest,Done,');
+		inner.file(`Work ${id(1)}/Tasks ${id(3)}/Ship ${id(4)}.md`, '# Ship\n\nStatus: Done\nDue: November 9, 2026\n\nRelease notes.');
 		const outer = new JSZip();
 		outer.file('Export-part-1.zip', await inner.generateAsync({ type: 'nodebuffer' }));
 		const zipPath = join(tmpdir(), `kurumi-notion-${Date.now()}.zip`);
@@ -958,7 +959,7 @@ const scenarios = {
 		await page.goto(`${BASE}/settings/data`, { waitUntil: 'load' });
 		const input = await page.waitForSelector('input[aria-label="Notion export"]');
 		await input.uploadFile(zipPath);
-		await page.waitForFunction(() => document.querySelector('main').innerText.includes('Imported 2 pages and 2 files'), { timeout: 15_000 });
+		await page.waitForFunction(() => document.querySelector('main').innerText.includes('Imported 5 pages, 1 database and 2 files'), { timeout: 15_000 });
 		rmSync(zipPath, { force: true });
 
 		const notes = await db(page, `
@@ -970,7 +971,22 @@ const scenarios = {
 		const kickoff = notes.notes.find((n) => n.title === 'Kickoff call');
 		assert.equal(work.folder, null);
 		assert.equal(kickoff.folder, 'Work');
-		assert.deepEqual(notes.folders, ['Work']);
+		assert.deepEqual(notes.folders.sort(), ['Tasks', 'Work']);
+		// The database: typed properties, values on the row pages, Notion's
+		// property lines gone from the body
+		const tasks = await db(page, `
+			let vs; db.databaseViews.subscribe((v) => (vs = v))();
+			let ms; db.memoryObjects.subscribe((v) => (ms = v))();
+			const view = vs[0];
+			const rows = ms.filter((m) => m.folderId === view.folderId).sort((a, b) => a.title.localeCompare(b.title));
+			return { props: view.properties.map((p) => p.label + ':' + p.type), rows: rows.map((r) => [r.title, r.customProps, r.bodyMarkdown]) };
+		`);
+		assert.deepEqual(tasks.props, ['Status:select', 'Due:date']);
+		assert.deepEqual(tasks.rows, [
+			['Plan', { status: 'Todo' }, ''],
+			['Ship', { status: 'Done', due: '2026-11-09' }, 'Release notes.'],
+			['Test', { status: 'Done' }, '']
+		]);
 		assert.match(work.body, /See \[\[Kickoff call\]\]/);
 		assert.match(kickoff.body, /!\[\]\(blob:[0-9A-Za-z]+\)/);
 		assert.match(kickoff.body, /\[brief\.pdf\]\(blob:[0-9A-Za-z]+\)/);
@@ -1956,6 +1972,54 @@ const scenarios = {
 		await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() !== '');
 		const accent = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim());
 		assert.ok(['#179299', '#94e2d5'].includes(accent), accent);
+		assert.deepEqual(errors, []);
+	},
+
+	async 'math, aliased links and a database'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const ids = await db(page, `
+			db.addMemoryObject('Roadmap', 'The plan.');
+			const note = db.addMemoryObject('Notes', 'See [[Roadmap|the plan]] for $5 and $10.');
+			const folder = db.addFolder('Tasks');
+			const view = db.openFolderAsDatabase(folder.id);
+			db.setDatabaseProperties(folder.id, [{ key: 'status', label: 'Status', type: 'select', options: ['Todo', 'Done'] }]);
+			const row = db.addDatabaseRow(folder.id, 'Write spec', { status: 'Todo' });
+			return { note: note.id, view: view.id, row: row.id, roadmap: db.findBacklinks(db.findMemoryObjectByTitle('Roadmap').id).length };
+		`);
+		assert.equal(ids.roadmap, 1, 'an aliased link is a backlink');
+
+		// Math typed in the editor: a node, stored as LaTeX (not escaped);
+		// the alias reads [[the plan]] and dollar amounts stay text.
+		await page.goto(`${BASE}/#/memory/${ids.note}`, { waitUntil: 'load' });
+		await page.waitForSelector('main .ProseMirror .wikilink');
+		assert.deepEqual(await page.$$eval('main .wikilink-target-hidden', (e) => e.map((x) => x.textContent)), ['Roadmap|']);
+		await page.click('main .ProseMirror');
+		await page.keyboard.press('End');
+		await page.keyboard.type(' Area $a_1^2$ done.');
+		await page.waitForSelector('main .kurumi-math-inline .katex', { timeout: 15000 });
+		assert.equal(await page.$$eval('main .kurumi-math-inline', (e) => e.length), 1);
+		await sleep(1500); // autosave
+		const body = await db(page, `return db.getMemoryObject(arg).bodyMarkdown;`, ids.note);
+		assert.equal(body.trim(), 'See [[Roadmap|the plan]] for $5 and $10. Area $a_1^2$ done.');
+		await page.goto(`${BASE}/#/read/${ids.note}`, { waitUntil: 'load' });
+		await page.waitForSelector('.markdown-content .math-inline .katex', { timeout: 15000 });
+		assert.equal(await page.$eval('.markdown-content a.wikilink', (a) => a.textContent), 'the plan');
+
+		// The database: change a select through its popover (adding an option),
+		// and see it on the board and on the note.
+		await page.goto(`${BASE}/#/database/${ids.view}`, { waitUntil: 'load' });
+		await page.waitForSelector('td .pv-btn');
+		await page.click('td .pv-btn');
+		await page.waitForSelector('[role="dialog"] input');
+		await sleep(100);
+		await page.keyboard.type('Blocked');
+		await page.keyboard.press('Enter');
+		await page.waitForFunction(() => document.querySelector('td .k-chip')?.textContent === 'Blocked');
+		const view = await db(page, `let vs; db.databaseViews.subscribe((v) => (vs = v))(); return vs[0].properties[0].options;`);
+		assert.deepEqual(view, ['Todo', 'Done', 'Blocked']);
+		await page.goto(`${BASE}/#/memory/${ids.row}`, { waitUntil: 'load' });
+		await page.waitForSelector('.note-prop');
+		assert.match(await page.$eval('.note-props', (e) => e.textContent), /Status\s*Blocked/);
 		assert.deepEqual(errors, []);
 	},
 

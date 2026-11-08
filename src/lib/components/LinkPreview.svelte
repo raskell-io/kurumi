@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { parseWikilink, wikilinkLabel } from '$lib/wikilinks';
 	/**
 	 * Hover preview for [[wikilinks]] (Obsidian-style page preview).
 	 *
@@ -45,7 +46,7 @@
 		const text = (target.summaryShort || target.bodyMarkdown || '')
 			.replace(/^---[\s\S]*?---\s*/, '')
 			.replace(/!\[[^\]]*\]\([^)]*\)/g, '')
-			.replace(/\[\[([^\]|]+)(\|[^\]]+)?\]\]/g, '$1')
+			.replace(/\[\[([^[\]\n]+?)\]\]/g, (_, inner: string) => wikilinkLabel(inner))
 			.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
 			.replace(/^#{1,6}\s+/gm, '')
 			.replace(/[*_`>~]/g, '')
@@ -76,7 +77,7 @@
 	}
 
 	function show(el: HTMLElement) {
-		const title = el.dataset.wikilinkTitle?.split('|')[0].trim();
+		const title = el.dataset.wikilinkTitle ? parseWikilink(el.dataset.wikilinkTitle).target : '';
 		if (!title) return;
 		const rect = el.getBoundingClientRect();
 		const above = rect.bottom + 220 > window.innerHeight;

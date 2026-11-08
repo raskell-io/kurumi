@@ -1,4 +1,5 @@
 import * as Automerge from '@automerge/automerge';
+import { parseWikilink } from '$lib/wikilinks';
 import { get, set, setMany, del } from 'idb-keyval';
 import { writable, derived, type Readable } from 'svelte/store';
 import { deleteBlob, getBlob } from './blob-store';
@@ -278,6 +279,7 @@ export interface WorkRecords {
 	reminderProposals: ReminderProposal[];
 	draftProposals: DraftProposal[];
 	templates: Template[];
+	databaseViews: DatabaseView[];
 }
 
 export function getVaultWorkRecords(vaultId: string): WorkRecords {
@@ -290,7 +292,8 @@ export function getVaultWorkRecords(vaultId: string): WorkRecords {
 		meetingSeries: inVault(doc?.meetingSeries),
 		reminderProposals: inVault(doc?.reminderProposals),
 		draftProposals: inVault(doc?.draftProposals),
-		templates: inVault(doc?.templates)
+		templates: inVault(doc?.templates),
+		databaseViews: inVault(doc?.databaseViews)
 	};
 }
 
@@ -3652,6 +3655,8 @@ export function addDatabaseView(options: {
 	properties?: PropertyDefinition[];
 }): DatabaseView {
 	const now = Date.now();
+	// Views of one folder share its properties.
+	const properties = options.properties ?? deepCopy(databasePropertiesOf(options.folderId));
 	const view: DatabaseView = {
 		id: generateId(),
 		name: options.name,
@@ -3659,11 +3664,9 @@ export function addDatabaseView(options: {
 		viewType: options.viewType ?? 'table',
 		columns: options.columns ?? [
 			{ field: 'title', visible: true },
-			{ field: 'type', visible: true },
-			{ field: 'updatedAt', visible: true },
-			{ field: 'tags', visible: true }
+			...properties.map((p) => ({ field: `prop:${p.key}`, visible: true }))
 		],
-		properties: options.properties ?? [],
+		properties,
 		sortField: 'updatedAt',
 		sortDirection: 'desc',
 		groupField: null,
@@ -3695,7 +3698,7 @@ export function updateDatabaseView(
 	updates: Partial<Pick<
 		DatabaseView,
 		'name' | 'viewType' | 'columns' | 'properties' | 'sortField' |
-		'sortDirection' | 'groupField' | 'filterQuery'
+		'sortDirection' | 'groupField' | 'filterQuery' | 'filters' | 'dateField'
 	>>
 ): void {
 	updateDoc((d) => {
@@ -3716,8 +3719,87 @@ export function updateDatabaseView(
 		if (updates.sortDirection !== undefined) view.sortDirection = updates.sortDirection;
 		if (updates.groupField !== undefined) view.groupField = updates.groupField;
 		if (updates.filterQuery !== undefined) view.filterQuery = updates.filterQuery;
+		if (updates.filters !== undefined) view.filters = deepCopy(updates.filters);
+		if (updates.dateField !== undefined) view.dateField = updates.dateField;
 		view.updatedAt = Date.now();
 	});
+}
+
+/** The property schema of the database in `folderId` (empty if it has no views). */
+export function databasePropertiesOf(folderId: string | null | undefined): PropertyDefinition[] {
+	if (!folderId || !doc?.databaseViews) return [];
+	const views = Object.values(doc.databaseViews)
+		.filter((v) => v.folderId === folderId)
+		.sort((a, b) => a.createdAt - b.createdAt);
+	return views[0]?.properties ? deepCopy(views[0].properties) : [];
+}
+
+/** Whether `folderId` is a database (has a view). */
+export function isDatabaseFolder(folderId: string | null | undefined): boolean {
+	return !!folderId && Object.values(doc?.databaseViews ?? {}).some((v) => v.folderId === folderId);
+}
+
+/**
+ * Set the property schema of a database: every view of the folder gets it.
+ * New properties are added to each view's columns; removed ones drop out.
+ */
+export function setDatabaseProperties(folderId: string, properties: PropertyDefinition[]): void {
+	updateDoc((d) => {
+		const keys = new Set(properties.map((p) => p.key));
+		for (const view of Object.values(d.databaseViews ?? {})) {
+			if (view.folderId !== folderId) continue;
+			while (view.properties.length > 0) view.properties.pop();
+			for (const prop of properties) view.properties.push(deepCopy(prop));
+			for (let i = view.columns.length - 1; i >= 0; i--) {
+				const field = view.columns[i].field;
+				if (field.startsWith('prop:') && !keys.has(field.slice(5))) view.columns.splice(i, 1);
+			}
+			for (const prop of properties) {
+				if (!view.columns.some((c) => c.field === `prop:${prop.key}`)) {
+					view.columns.push({ field: `prop:${prop.key}`, visible: true });
+				}
+			}
+			if (view.groupField?.startsWith('prop:') && !keys.has(view.groupField.slice(5))) view.groupField = null;
+			if (view.dateField?.startsWith('prop:') && !keys.has(view.dateField.slice(5))) view.dateField = null;
+			if (view.sortField?.startsWith('prop:') && !keys.has(view.sortField.slice(5))) view.sortField = 'updatedAt';
+			if (view.filters) {
+				for (let i = view.filters.length - 1; i >= 0; i--) {
+					const field = view.filters[i].field;
+					if (field.startsWith('prop:') && !keys.has(field.slice(5))) view.filters.splice(i, 1);
+				}
+			}
+			view.updatedAt = Date.now();
+		}
+	});
+}
+
+/** The folder's database view to open: the first one, or a new table named after the folder. */
+export function openFolderAsDatabase(folderId: string): DatabaseView {
+	const existing = Object.values(doc?.databaseViews ?? {})
+		.filter((v) => v.folderId === folderId)
+		.sort((a, b) => a.createdAt - b.createdAt)[0];
+	if (existing) return existing;
+	return addDatabaseView({ name: 'Table', folderId });
+}
+
+/** A new row: a note in the database's folder, with some property values. */
+export function addDatabaseRow(folderId: string, title = '', props: Record<string, unknown> = {}): MemoryObject {
+	const memory = addMemoryObject(title, '', folderId);
+	const entries = Object.entries(props).filter(([, v]) => !isEmptyPropValue(v));
+	if (entries.length > 0) {
+		updateDoc((d) => {
+			const m = d.memoryObjects[memory.id];
+			if (!m) return;
+			if (!m.customProps) m.customProps = {};
+			for (const [key, value] of entries) m.customProps[key] = deepCopy(value);
+			m.propsChangedAt = Date.now();
+		});
+	}
+	return memoriesView()[memory.id] ?? memory;
+}
+
+export function isEmptyPropValue(value: unknown): boolean {
+	return value === null || value === undefined || value === '' || (Array.isArray(value) && value.length === 0);
 }
 
 export function deleteDatabaseView(id: string): void {
@@ -3726,15 +3808,27 @@ export function deleteDatabaseView(id: string): void {
 	});
 }
 
+/** Put back a deleted view (undo). */
+export function restoreDatabaseView(view: DatabaseView): void {
+	updateDoc((d) => {
+		if (!d.databaseViews) d.databaseViews = {};
+		d.databaseViews[view.id] = deepCopy(view);
+	});
+}
+
 // ---- Custom property helpers -----------------------------------------------
 
+/** Set a property value on a note; an empty value removes it. */
 export function setMemoryCustomProp(memoryId: string, key: string, value: unknown): void {
 	updateDoc((d) => {
 		const memory = d.memoryObjects[memoryId];
 		if (!memory) return;
 		if (!memory.customProps) memory.customProps = {};
-		memory.customProps[key] = value;
-		memory.updatedAt = Date.now();
+		if (isEmptyPropValue(value)) delete memory.customProps[key];
+		else memory.customProps[key] = deepCopy(value);
+		const now = Date.now();
+		memory.propsChangedAt = now;
+		memory.updatedAt = now;
 	});
 }
 
@@ -4362,6 +4456,11 @@ export function applyGitImport(data: GitImportData): void {
 				else delete existing.favoritedAt;
 				existing.favoriteChangedAt = m.favoriteChangedAt;
 			}
+			// Database properties: the side that changed them last wins.
+			if ((m.propsChangedAt ?? 0) > (existing.propsChangedAt ?? 0)) {
+				existing.customProps = deepCopy(m.customProps ?? {});
+				existing.propsChangedAt = m.propsChangedAt;
+			}
 		}
 
 		for (const f of data.folders) {
@@ -4731,24 +4830,15 @@ export async function importJSON(
 
 // ============ Content Extraction ============
 
-// Extract wikilinks from content
-// Handles both escaped \[\[...\]\] and unescaped [[...]] formats (Milkdown escapes brackets)
+// The titles this content links to: [[Title]], [[Title|alias]] and
+// [[Title#Heading]] all count as Title (see $lib/wikilinks). Also reads
+// Milkdown's escaped form \[\[Title]], which older notes may hold.
 export function extractWikilinks(content: string): string[] {
 	const links: string[] = [];
-
-	// Match unescaped [[...]]
-	const unescapedRegex = /\[\[([^\]]+)\]\]/g;
-	let match;
-	while ((match = unescapedRegex.exec(content)) !== null) {
-		links.push(match[1]);
+	for (const match of (content ?? '').matchAll(/\\?\[\\?\[([^[\]\n]+?)\\?\]\\?\]/g)) {
+		const { target } = parseWikilink(match[1]);
+		if (target) links.push(target);
 	}
-
-	// Match escaped \[\[...]] (Milkdown format - escapes opening brackets)
-	const escapedRegex = /\\\[\\\[([^\]]+)\]\]/g;
-	while ((match = escapedRegex.exec(content)) !== null) {
-		links.push(match[1]);
-	}
-
 	return links;
 }
 

@@ -7,7 +7,7 @@ exports can come in. Imports and exports live in **Settings → Data**.
 
 | From | What to pick | What you get |
 |------|--------------|--------------|
-| **Notion** | In Notion: Settings → *Export all workspace content* (or a page's ⋯ → *Export*), format **Markdown & CSV**, with subpages. Pick the `.zip` | Pages nested as folders, page links as `[[wikilinks]]`, images and files stored with the notes. Database tables are skipped (their rows come in as pages) |
+| **Notion** | In Notion: Settings → *Export all workspace content* (or a page's ⋯ → *Export*), format **Markdown & CSV**, with subpages. Pick the `.zip` | Pages nested as folders, page links as `[[wikilinks]]` (link text kept as `[[Page\|text]]`), images and files stored with the notes. Databases become [databases](organize-and-recall.md#databases): their columns turn into typed properties and each row's values go on its page |
 | **A Markdown folder**: Obsidian, Logseq, Bear, Foam, … | The folder | Subfolders as folders, notes with their frontmatter tags |
 | **Roam Research** | The JSON export | One note per page, outlines as nested bullets, `{{TODO}}` / `{{DONE}}` as checkboxes |
 | **Evernote** | An `.enex` export | Notes as Markdown, tags as `#hashtags` |

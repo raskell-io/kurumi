@@ -217,6 +217,17 @@ OpenAI to MMS when the API key is missing.
   (`editor/mermaid.ts`, a code_block node view; source shown while the cursor
   is in it) and the reader, both through `$lib/mermaid.ts` (strict security,
   colours and font from the theme)
+- Math: `$…$` / `$$…$$` are real editor nodes (`editor/math.ts`; KaTeX via
+  `$lib/math.ts`, loaded on first use, `trust: false`). As plain text the
+  serializer would escape LaTeX (`x_1` → `x\_1`). The remark side
+  (`editor/math-markdown.ts`, tested without a DOM) applies Pandoc's dollar
+  rule, so `$5 and $10` stays text, and doesn't escape `$` in text. The reader
+  uses the same rule, outside code
+- Wikilinks: `[[Title|alias]]`, `[[Title#Heading]]`, `[[Title\|alias]]` in
+  tables. Parse them with `$lib/wikilinks` (`parseWikilink`, `wikilinkLabel`),
+  never a bare `/\[\[(.+)\]\]/`: links resolve by `target` only
+  (`extractWikilinks` returns targets). The editor hides `Title|` unless the
+  cursor is in the link
 - Appearance (per device, applied before first paint in `app.html`): accent
   colour (`accent-*` classes set `--accent-light/dark`), content width
   (`note-width-*`, `--note-width`: notes, Read mode, `.k-page`, home; grids
@@ -376,8 +387,9 @@ OpenAI to MMS when the API key is missing.
   in the ZIP, linked relatively (`collectAssets` / `linkAssets`)
 - Notion import (`utils/notion-import.ts`): the "Markdown & CSV" ZIP
   (ZIPs inside are opened); ids stripped, page tree → folders, page links
-  → [[wikilinks]] (no aliases: Kurumi has no `[[a|b]]`), files stored as
-  blob refs, CSV tables skipped (rows come as pages)
+  → [[wikilinks]] (`[[Title|text]]` when the link text differs), files stored
+  as blob refs, databases (CSV + folder of row pages; `_all.csv` preferred) →
+  Kurumi databases with typed properties, values matched to pages by title
 - Example vault (`src/lib/example-vault.ts`): welcome screen "explore an
   example" or ⌘K "Explore example vault"; a separate vault named
   `Example` with a project, meeting series, to-dos, decisions, questions
@@ -397,8 +409,18 @@ OpenAI to MMS when the API key is missing.
 - To-dos: Active / Waiting for / Completed tabs; list or Kanban board (Open / In progress / Done, drag
   or arrows), filters by project (from the source note) and assignee
 - Labs (`stores/labs.ts`, Settings → Labs, off by default): Habits,
-  Flashcards, Timeline, Smart folders. Canvas and database views stay
-  unlinked until they get real data-model support
+  Flashcards, Timeline, Smart folders. Canvas stays unlinked until it gets
+  real data-model support
+- Databases (`/database/[id]`, `$lib/database.ts`): a folder whose notes are
+  rows. `DatabaseView`s (table/board/gallery/calendar, own columns, filters,
+  sort) share one property schema per folder: change it only through
+  `setDatabaseProperties`. Values are `MemoryObject.customProps` (by property
+  key), written with `setMemoryCustomProp`, which stamps `propsChangedAt`: git
+  sync carries values in metadata `notes[id].customProps` and merges them on
+  that stamp, like favorites; views travel as `work.databaseViews`. Entry
+  points: folder menu *Open as database*, ⌘K *New database*; rows show their
+  properties on the note (`NoteProperties.svelte`). Notion CSVs import as
+  databases (`readNotionDatabase`, `inferPropertyType`)
 
 ### Desktop app (`desktop/`)
 - Tauri 2, its own package (like `worker/`), Rust in `desktop/src-tauri/`.

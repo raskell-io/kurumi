@@ -124,8 +124,8 @@ function getAutocompleteState(view: EditorView): AutocompleteState | null {
 	const textAfterOpen = textBefore.slice(openBracketIdx + 2);
 	if (textAfterOpen.includes(']]')) return null;
 
-	// Check there's no newline in between
-	if (textAfterOpen.includes('\n')) return null;
+	// Check there's no newline in between, and stop once an alias is typed ([[Note|…)
+	if (textAfterOpen.includes('\n') || textAfterOpen.includes('|')) return null;
 
 	// Calculate the absolute position of `[[`
 	const blockStart = pos - $pos.parentOffset;

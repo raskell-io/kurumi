@@ -20,9 +20,9 @@ function handleEnter(view: EditorView): boolean {
 	const { selection } = state;
 	const { $from } = selection;
 
-	// Check if we're inside a code_block node
+	// Inside a code block or a math block ($$)
 	const parentNode = $from.parent;
-	if (parentNode.type.name !== 'code_block') return false;
+	if (parentNode.type.name !== 'code_block' && parentNode.type.name !== 'math_block') return false;
 
 	// Check if cursor is at the very end of the code block
 	const isAtEnd = $from.parentOffset === parentNode.content.size;
@@ -38,14 +38,15 @@ function handleEnter(view: EditorView): boolean {
 	const codeBlockPos = $from.before($from.depth);
 	const codeBlockEnd = $from.after($from.depth);
 
-	// Remove the trailing newline from the code block
-	const tr = state.tr.delete($from.pos - lastLine.length - 1, $from.pos);
+	// Remove the trailing newline from the code block (an empty block has none)
+	const trailing = text.length > 0 ? lastLine.length + 1 : 0;
+	const tr = trailing ? state.tr.delete($from.pos - trailing, $from.pos) : state.tr;
 
 	// Insert a new paragraph after the code block
 	const paragraphType = state.schema.nodes.paragraph;
 	if (paragraphType) {
 		// Recalculate position after the deletion
-		const newCodeBlockEnd = codeBlockEnd - lastLine.length - 1;
+		const newCodeBlockEnd = codeBlockEnd - trailing;
 		tr.insert(newCodeBlockEnd, paragraphType.create());
 		// Move cursor into the new paragraph
 		tr.setSelection(TextSelection.near(tr.doc.resolve(newCodeBlockEnd + 1)));

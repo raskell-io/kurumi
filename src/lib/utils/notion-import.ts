@@ -10,18 +10,25 @@
  *
  * Pages become notes (folders mirror the page tree), page links become
  * [[wikilinks]], images and files are stored and relinked as blob refs
- * (images inline, other files as attachments). The CSVs are skipped: their
- * rows arrive as pages.
+ * (images inline, other files as attachments). A database becomes a Kurumi
+ * database: its folder of row pages gets a table view, the CSV's columns
+ * become typed properties (inferPropertyType) and each row's values go on
+ * its page, matched by title. Notion repeats the values at the top of each
+ * row page ("Status: Done"); those lines are dropped.
  */
 
 import JSZip from 'jszip';
-import { addFolder, addMemoryObject, batchUpdates } from '$lib/db';
+import { addFolder, addMemoryObject, addDatabaseView, batchUpdates, setMemoryCustomProp } from '$lib/db';
+import type { PropertyDefinition } from '$lib/db/types';
 import { storeBlob } from '$lib/db/blob-store';
+import { parseCsv } from './csv';
+import { inferPropertyType, newPropertyKey, parseInput } from '$lib/database';
 
 export interface NotionImportResult {
 	success: boolean;
 	notesCreated: number;
 	foldersCreated: number;
+	databasesCreated?: number;
 	filesStored: number;
 	skipped: string[];
 	error?: string;
@@ -71,10 +78,14 @@ export function rewriteNotionLinks(
 	return body.replace(/(!?)\[([^\]]*)\]\(([^)\s]+)\)/g, (whole, bang: string, text: string, target: string) => {
 		const path = resolveNotionPath(fromDir, target);
 		if (!path) return whole;
+		// A link to a database's CSV: the database is a folder now, keep the name.
+		if (!bang && /\.csv$/i.test(path)) return text;
 		if (!bang && /\.md$/i.test(path)) {
 			const title = pageTitle(path);
-			// Kurumi has no [[Title|alias]]; the link text gives way to the title.
-			return title ? `[[${title}]]` : whole;
+			if (!title) return whole;
+			// Keep Notion's link text when it differs from the title.
+			const shown = text.trim();
+			return shown && shown !== title && !/[[\]|\n]/.test(shown) ? `[[${title}|${shown}]]` : `[[${title}]]`;
 		}
 		const ref = fileRef(path);
 		return ref ? `${bang}[${text}](${ref})` : whole;
@@ -84,6 +95,56 @@ export function rewriteNotionLinks(
 interface Entry {
 	path: string;
 	file: JSZip.JSZipObject;
+}
+
+export interface NotionDatabase {
+	/** The folder of row pages (the CSV's path without `.csv`). */
+	dir: string;
+	properties: PropertyDefinition[];
+	/** Per row: its title and its values by property key. */
+	rows: { title: string; values: Record<string, unknown> }[];
+}
+
+/** Relation cells list pages as `Title (Title%20<id>.md)`; keep the titles. */
+function cleanCell(value: string): string {
+	return value.replace(/\s*\([^()]*\.md\)/g, '').trim();
+}
+
+/**
+ * A database from its CSV: the first column is the title, the others become
+ * properties with a type guessed from their values.
+ */
+export function readNotionDatabase(csvPath: string, csv: string): NotionDatabase | null {
+	const [header, ...records] = parseCsv(csv);
+	if (!header || header.length === 0) return null;
+	const properties: PropertyDefinition[] = [];
+	const columns: { index: number; prop: PropertyDefinition }[] = [];
+	for (let i = 1; i < header.length; i++) {
+		const label = header[i].trim() || `Column ${i + 1}`;
+		const values = records.map((r) => cleanCell(r[i] ?? ''));
+		const { type, options } = inferPropertyType(values);
+		const prop: PropertyDefinition = { key: newPropertyKey(label, properties), label, type, ...(options ? { options } : {}) };
+		properties.push(prop);
+		columns.push({ index: i, prop });
+	}
+	const rows = records.map((r) => {
+		const values: Record<string, unknown> = {};
+		for (const { index, prop } of columns) {
+			const value = parseInput(prop.type, cleanCell(r[index] ?? ''));
+			if (value !== null && !(prop.type === 'checkbox' && value === false)) values[prop.key] = value;
+		}
+		return { title: (r[0] ?? '').trim() || 'Untitled', values };
+	});
+	return { dir: csvPath.replace(/(_all)?\.csv$/i, ''), properties, rows };
+}
+
+/** Drop the `Property: value` lines Notion puts at the top of a row's page. */
+export function stripNotionPropertyLines(body: string, labels: string[]): string {
+	if (labels.length === 0) return body;
+	const lines = body.split('\n');
+	let i = 0;
+	while (i < lines.length && labels.some((l) => lines[i].startsWith(`${l}: `) || lines[i] === `${l}:`)) i++;
+	return i === 0 ? body : lines.slice(i).join('\n').replace(/^\s*\n/, '');
 }
 
 /** All files in the export, opening ZIPs inside the ZIP (Notion splits big exports). */
@@ -135,7 +196,7 @@ export async function importNotionExport(zipFile: File | Blob): Promise<NotionIm
 		for (const [path, text] of texts) {
 			for (const match of text.matchAll(/\]\(([^)\s]+)\)/g)) {
 				const target = resolveNotionPath(dirOf(path), match[1]);
-				if (!target || /\.md$/i.test(target) || refs.has(target)) continue;
+				if (!target || /\.(md|csv)$/i.test(target) || refs.has(target)) continue;
 				const entry = byPath.get(target);
 				if (!entry) continue;
 				const ext = target.split('.').pop()!.toLowerCase();
@@ -144,8 +205,14 @@ export async function importNotionExport(zipFile: File | Blob): Promise<NotionIm
 			}
 		}
 		result.filesStored = refs.size;
-		for (const entry of entries) {
-			if (/\.csv$/i.test(entry.path)) result.skipped.push(`${cleanNotionName(entry.path.split('/').pop()!)} (database table; its rows are imported as pages)`);
+
+		// Databases: Notion writes `X.csv` (the view) and, newer exports,
+		// `X_all.csv` (every row); take the full one.
+		const databases = new Map<string, NotionDatabase>();
+		const csvs = entries.filter((e) => /\.csv$/i.test(e.path));
+		for (const entry of csvs.sort((a, b) => Number(/_all\.csv$/i.test(a.path)) - Number(/_all\.csv$/i.test(b.path)))) {
+			const db = readNotionDatabase(entry.path, await entry.file.async('string'));
+			if (db) databases.set(db.dir, db);
 		}
 
 		batchUpdates(() => {
@@ -161,11 +228,36 @@ export async function importNotionExport(zipFile: File | Blob): Promise<NotionIm
 				result.foldersCreated++;
 				return id;
 			};
+			const rowsByDir = new Map<string, { id: string; title: string }[]>();
 			for (const page of pages) {
 				const { title, body } = splitNotionTitle(page.path, texts.get(page.path)!);
-				const linked = rewriteNotionLinks(body, dirOf(page.path), (p) => titles.get(p), (p) => refs.get(p));
-				addMemoryObject(title, linked.trim(), folderFor(dirOf(page.path)));
+				const db = databases.get(dirOf(page.path));
+				const content = db ? stripNotionPropertyLines(body, db.properties.map((p) => p.label)) : body;
+				const linked = rewriteNotionLinks(content, dirOf(page.path), (p) => titles.get(p), (p) => refs.get(p));
+				const memory = addMemoryObject(title, linked.trim(), folderFor(dirOf(page.path)));
+				if (db) rowsByDir.set(db.dir, [...(rowsByDir.get(db.dir) ?? []), { id: memory.id, title }]);
 				result.notesCreated++;
+			}
+
+			for (const db of databases.values()) {
+				const folderId = folderFor(db.dir);
+				if (!folderId) continue;
+				addDatabaseView({ name: 'Table', folderId, properties: db.properties });
+				result.databasesCreated = (result.databasesCreated ?? 0) + 1;
+				// Rows by title, in order (titles can repeat).
+				const pagesLeft = [...(rowsByDir.get(db.dir) ?? [])];
+				for (const row of db.rows) {
+					const at = pagesLeft.findIndex((p) => p.title === row.title);
+					let id: string;
+					if (at === -1) {
+						// A row without a page in the export: a note with just its values.
+						id = addMemoryObject(row.title, '', folderId).id;
+						result.notesCreated++;
+					} else {
+						id = pagesLeft.splice(at, 1)[0].id;
+					}
+					for (const [key, value] of Object.entries(row.values)) setMemoryCustomProp(id, key, value);
+				}
 			}
 		});
 		result.success = true;

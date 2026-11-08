@@ -11,7 +11,7 @@ The [project README](../README.md) is the short overview.
 | [Getting started](getting-started.md) | Install the app, find your way around, try the example vault, bring in your notes |
 | [Capture](capture.md) | Notes, voice memos, meetings, files, photos, sharing from other apps, daily notes |
 | [Editor](editor.md) | Markdown syntax, links, mentions, dates, tasks, embeds, slash commands, find & replace |
-| [Organize & recall](organize-and-recall.md) | Vaults, folders, tags, people, search, Ask Kurumi, graph, read mode, references |
+| [Organize & recall](organize-and-recall.md) | Vaults, folders, databases, tags, people, search, Ask Kurumi, graph, read mode, references |
 | [Work](work.md) | To-dos, projects, recurring meetings, decisions, open questions, proposals, inbox |
 | [AI](ai.md) | On-device models, remote providers, the agent, voice, what leaves your device |
 | [Keyboard shortcuts](keyboard-shortcuts.md) | Every shortcut, and how to change them |

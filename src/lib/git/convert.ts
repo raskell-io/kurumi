@@ -27,7 +27,8 @@ export interface GitMetadata {
 	// with something to record are listed; the key's presence means the
 	// writer knew about these fields (see GitImportData.noteExtrasKnown).
 	notes?: Record<string, NoteExtras>;
-	// Projects, decisions, questions, meeting series, proposals and templates.
+	// Projects, decisions, questions, meeting series, proposals, templates
+	// and database views.
 	work?: {
 		projects: unknown[];
 		decisions: unknown[];
@@ -36,6 +37,7 @@ export interface GitMetadata {
 		reminderProposals?: unknown[];
 		draftProposals?: unknown[];
 		templates?: unknown[];
+		databaseViews?: unknown[];
 	};
 	people: Record<string, Person>;
 	events: Record<string, Event>;
@@ -49,6 +51,9 @@ export interface NoteExtras {
 	icon?: string; // uploaded image icons only; emoji live in frontmatter
 	favoritedAt?: number;
 	favoriteChangedAt?: number;
+	// Database property values (MemoryObject.customProps) and when they last changed.
+	customProps?: Record<string, unknown>;
+	propsChangedAt?: number;
 }
 
 export interface MarkdownFile {
@@ -260,7 +265,9 @@ export function createMetadata(
 		const extras: NoteExtras = {
 			...(memory.icon?.startsWith('data:') ? { icon: memory.icon } : {}),
 			...(memory.favoritedAt ? { favoritedAt: memory.favoritedAt } : {}),
-			...(memory.favoriteChangedAt ? { favoriteChangedAt: memory.favoriteChangedAt } : {})
+			...(memory.favoriteChangedAt ? { favoriteChangedAt: memory.favoriteChangedAt } : {}),
+			...(memory.customProps && Object.keys(memory.customProps).length > 0 ? { customProps: memory.customProps } : {}),
+			...(memory.propsChangedAt ? { propsChangedAt: memory.propsChangedAt } : {})
 		};
 		if (Object.keys(extras).length > 0) notes[memory.id] = extras;
 	}

@@ -214,6 +214,9 @@ export interface MemoryObject {
 	favoriteChangedAt?: number;
 	// The recurring meeting this note is an instance of.
 	seriesId?: string;
+	// Last change to customProps. Property edits merge on this in git sync
+	// (like favorites), apart from the markdown.
+	propsChangedAt?: number;
 }
 
 export interface MeetingMetadata {
@@ -401,6 +404,18 @@ export interface DatabaseColumn {
 	visible: boolean;
 }
 
+/** A filter on a database view; rows must pass all of them. */
+export interface DatabaseFilter {
+	field: string; // 'title' or 'prop:<key>'
+	op: 'contains' | 'is' | 'isNot' | 'empty' | 'notEmpty' | 'checked' | 'unchecked' | 'before' | 'after';
+	value?: string;
+}
+
+/**
+ * A view of a database. A database is a folder: its notes are the rows and
+ * their `customProps` the cells. Every view of a folder shares one property
+ * schema (`properties`, kept equal by setDatabaseProperties).
+ */
 export interface DatabaseView {
 	id: string;
 	name: string;
@@ -412,6 +427,8 @@ export interface DatabaseView {
 	sortDirection: 'asc' | 'desc';
 	groupField: string | null; // for board view
 	filterQuery: string; // search filter operators string, optional
+	filters?: DatabaseFilter[];
+	dateField?: string | null; // for calendar view: a 'prop:<key>' of type date
 	vaultId: string;
 	createdAt: number;
 	updatedAt: number;

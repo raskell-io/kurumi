@@ -27,6 +27,7 @@
 	import NoteIcon from '$lib/components/NoteIcon.svelte';
 	import IconPicker from '$lib/components/IconPicker.svelte';
 	import NoteProjects from '$lib/components/NoteProjects.svelte';
+	import NoteProperties from '$lib/components/NoteProperties.svelte';
 	import NoteRecordDialog, { type RecordKind } from '$lib/components/NoteRecordDialog.svelte';
 	import { untrack, tick } from 'svelte';
 	import { downloadSingleMemory, type MarkdownExportFormat } from '$lib/utils/markdown-export';
@@ -948,6 +949,7 @@
 						style="font-family: var(--font-editor);"
 					/>
 					<NoteProjects {memory} bind:picker={projectPicker} />
+					<NoteProperties {memory} />
 				</div>
 
 				<!-- Audio playback for voice memos and meetings -->

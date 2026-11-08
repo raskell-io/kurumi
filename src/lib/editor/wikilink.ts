@@ -2,9 +2,9 @@ import { $prose } from '@milkdown/kit/utils';
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state';
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view';
 import { createRegistry } from './registry';
+import { parseWikilink, WIKILINK_PATTERN } from '$lib/wikilinks';
 
 const wikilinkPluginKey = new PluginKey('wikilink');
-const wikilinkRegex = /\[\[([^\]]+)\]\]/g;
 
 export interface WikilinkClickHandler {
 	(title: string, event: MouseEvent): void;
@@ -19,23 +19,37 @@ export function setWikilinkClickHandler(root: Element, handler: WikilinkClickHan
 	else handlers.delete(root);
 }
 
-function findWikilinks(doc: any): Decoration[] {
+/**
+ * Decorate every [[link]]. In `[[Note|text]]` the `Note|` part is hidden
+ * unless the cursor is in the link, so it reads `[[text]]`; clicks go to
+ * Note either way (see $lib/wikilinks).
+ */
+function findWikilinks(doc: any, selection?: { from: number; to: number }): Decoration[] {
 	const decorations: Decoration[] = [];
 
 	doc.descendants((node: any, pos: number) => {
 		if (node.isText && node.text) {
-			let match;
-			while ((match = wikilinkRegex.exec(node.text)) !== null) {
-				const start = pos + match.index;
+			for (const match of node.text.matchAll(WIKILINK_PATTERN) as IterableIterator<RegExpMatchArray>) {
+				const start = pos + match.index!;
 				const end = start + match[0].length;
-				const title = match[1];
+				const inner = match[1];
+				const { target } = parseWikilink(inner);
 
 				decorations.push(
 					Decoration.inline(start, end, {
 						class: 'wikilink',
-						'data-wikilink-title': title
+						'data-wikilink-title': target || inner
 					})
 				);
+
+				const bar = inner.search(/\\?\|/);
+				const editing = selection && selection.from <= end && selection.to >= start;
+				if (bar > 0 && !editing) {
+					const barLength = inner[bar] === '\\' ? 2 : 1;
+					decorations.push(
+						Decoration.inline(start + 2, start + 2 + bar + barLength, { class: 'wikilink-target-hidden' })
+					);
+				}
 			}
 		}
 	});
@@ -48,11 +62,12 @@ export const wikilinkPlugin = $prose(() => {
 		key: wikilinkPluginKey,
 		state: {
 			init(_, state) {
-				return DecorationSet.create(state.doc, findWikilinks(state.doc));
+				return DecorationSet.create(state.doc, findWikilinks(state.doc, state.selection));
 			},
-			apply(tr, oldSet) {
-				if (tr.docChanged) {
-					return DecorationSet.create(tr.doc, findWikilinks(tr.doc));
+			apply(tr, oldSet, _old, state) {
+				// The selection decides which aliases show their target.
+				if (tr.docChanged || tr.selectionSet) {
+					return DecorationSet.create(tr.doc, findWikilinks(tr.doc, state.selection));
 				}
 				return oldSet.map(tr.mapping, tr.doc);
 			}
@@ -63,8 +78,9 @@ export const wikilinkPlugin = $prose(() => {
 			},
 			handleClick(view, pos, event) {
 				const target = event.target as HTMLElement;
-				if (target.classList.contains('wikilink')) {
-					const title = target.dataset.wikilinkTitle;
+				const link = target.closest<HTMLElement>('.wikilink');
+				if (link) {
+					const title = link.dataset.wikilinkTitle;
 					const clickHandler = handlers.get(view);
 					if (title && clickHandler) {
 						event.preventDefault();

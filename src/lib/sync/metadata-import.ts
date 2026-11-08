@@ -12,6 +12,7 @@ import type { GitMetadata } from '$lib/git/convert';
 import { canonicalJSON, hashText } from './folder-state';
 import type {
 	ActionItem,
+	DatabaseView,
 	Decision,
 	DraftProposal,
 	Event,
@@ -35,6 +36,7 @@ export interface MetadataRecords {
 		reminderProposals: ReminderProposal[];
 		draftProposals: DraftProposal[];
 		templates: Template[];
+		databaseViews: DatabaseView[];
 	};
 }
 
@@ -193,6 +195,30 @@ export function readMetadataRecords(metadata: GitMetadata, fallbackVaultId: stri
 			),
 			templates: readList<Template>(work.templates, vaultId, CREATED_MODIFIED, (r) =>
 				present(r.name) && typeof r.content === 'string' ? {} : null
+			),
+			databaseViews: readList<DatabaseView>(work.databaseViews, vaultId, CREATED_UPDATED, (r) =>
+				present(r.name) && present(r.folderId)
+					? {
+							viewType: oneOf(r.viewType, ['table', 'board', 'calendar', 'gallery'], 'table'),
+							columns: Array.isArray(r.columns)
+								? r.columns.filter((c) => present(c?.field)).map((c) => ({ ...c, visible: c.visible !== false }))
+								: [{ field: 'title', visible: true }],
+							properties: Array.isArray(r.properties)
+								? r.properties.filter((p) => present(p?.key) && present(p?.label)).map((p) => ({
+										...p,
+										type: oneOf(
+											p.type,
+											['text', 'number', 'date', 'select', 'multiSelect', 'checkbox', 'url', 'person'],
+											'text'
+										)
+									}))
+								: [],
+							sortField: orNull(r.sortField),
+							sortDirection: oneOf(r.sortDirection, ['asc', 'desc'], 'desc'),
+							groupField: orNull(r.groupField),
+							filterQuery: orEmpty(r.filterQuery)
+						}
+					: null
 			)
 		}
 	};
@@ -212,7 +238,8 @@ function sections(records: MetadataRecords): [Section, { id: string }[]][] {
 		['meetingSeries', records.work.meetingSeries],
 		['reminderProposals', records.work.reminderProposals],
 		['draftProposals', records.work.draftProposals],
-		['templates', records.work.templates]
+		['templates', records.work.templates],
+		['databaseViews', records.work.databaseViews]
 	];
 }
 
@@ -329,7 +356,8 @@ export function pickExternalChanges(
 			meetingSeries: pick('meetingSeries', incoming.work.meetingSeries),
 			reminderProposals: pick('reminderProposals', incoming.work.reminderProposals),
 			draftProposals: pick('draftProposals', incoming.work.draftProposals),
-			templates: pick('templates', incoming.work.templates)
+			templates: pick('templates', incoming.work.templates),
+			databaseViews: pick('databaseViews', incoming.work.databaseViews)
 		}
 	};
 	return { changes, deletions };

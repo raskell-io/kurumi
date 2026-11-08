@@ -3,6 +3,8 @@
 	import { openImageFromContainer, isViewable } from '$lib/stores/imageViewer';
 	import { marked } from 'marked';
 	import { renderMermaid } from '$lib/mermaid';
+	import { renderMath } from '$lib/math';
+	import { parseWikilink, wikilinkLabel } from '$lib/wikilinks';
 	import { findMemoryObjectByTitle } from '$lib/db';
 	import { resolveBlobUrl, isBlobRef } from '$lib/utils/image';
 	import DataviewBlock from './DataviewBlock.svelte';
@@ -85,7 +87,8 @@
 		// Inline-render another memory's content. For the rendered view,
 		// we show a linked card with a preview; the full embed would
 		// create recursive rendering issues.
-		md = md.replace(/!\[\[([^\]]+)\]\]/g, (_, title) => {
+		md = md.replace(/!\[\[([^[\]\n]+?)\]\]/g, (_, inner: string) => {
+			const title = parseWikilink(inner).target;
 			const memory = findMemoryObjectByTitle(title);
 			if (memory) {
 				const preview = (memory.summaryShort || memory.bodyMarkdown || '')
@@ -98,17 +101,32 @@
 		});
 
 		// --- LaTeX math: $inline$ and $$block$$ ---
-		// Wrap in spans/divs with class so CSS/KaTeX can process them.
-		// We don't run KaTeX here (no dep) but we mark them so they're
-		// identifiable and don't get mangled by marked.
-		md = md.replace(/\$\$([^$]+)\$\$/g, (_, math) => {
-			return `<div class="math-block">${escapeHtml(math.trim())}</div>`;
-		});
-		md = md.replace(/(?<!\$)\$([^$\n]+)\$(?!\$)/g, (_, math) => {
-			return `<span class="math-inline">${escapeHtml(math.trim())}</span>`;
-		});
+		// Placeholders with the source in an attribute (so the later
+		// passes over the HTML can't touch it), typeset by KaTeX after
+		// render. Not inside code; "$5 and $10" stays text (the editor's
+		// rule, editor/math.ts).
+		md = outsideCode(md, (part) =>
+			part
+				.replace(/\$\$([\s\S]+?)\$\$/g, (_, math: string) => `<div class="math-block" data-math="${escapeAttr(math.trim())}"></div>`)
+				.replace(
+					/(^|[^$\\\w])\$([^\s$](?:[^$\n]*[^\s$])?)\$(?![\d$])/g,
+					(_, before: string, math: string) => `${before}<span class="math-inline" data-math="${escapeAttr(math)}"></span>`
+				)
+		);
 
 		return md;
+	}
+
+	/** Apply `fn` to the markdown outside fenced code and inline code. */
+	function outsideCode(md: string, fn: (part: string) => string): string {
+		return md
+			.split(/(^(?:```|~~~)[^\n]*\n[\s\S]*?^(?:```|~~~)[ \t]*$|`[^`\n]+`)/m)
+			.map((part, i) => (i % 2 ? part : fn(part)))
+			.join('');
+	}
+
+	function escapeAttr(s: string): string {
+		return escapeHtml(s).replace(/"/g, '&quot;');
 	}
 
 	function escapeHtml(s: string): string {
@@ -124,13 +142,15 @@
 
 	// Process custom syntax AFTER marked has rendered
 	function postProcessHtml(html: string): string {
-		// Process wikilinks [[Title]]
-		html = html.replace(/\[\[([^\]]+)\]\]/g, (_, title) => {
-			const memory = findMemoryObjectByTitle(title);
+		// Process wikilinks [[Title]], [[Title|alias]], [[Title#Heading]]
+		html = html.replace(/\[\[([^[\]\n]+?)\]\]/g, (_, inner: string) => {
+			const { target } = parseWikilink(inner);
+			const label = wikilinkLabel(inner);
+			const memory = target ? findMemoryObjectByTitle(target) : undefined;
 			if (memory) {
-				return `<a href="/read/${memory.id}" class="wikilink">${title}</a>`;
+				return `<a href="/read/${memory.id}" class="wikilink" title="${escapeAttr(target)}">${label}</a>`;
 			}
-			return `<a href="/?search=${encodeURIComponent(title)}" class="wikilink wikilink-broken">${title}</a>`;
+			return `<a href="/?search=${encodeURIComponent(target || label)}" class="wikilink wikilink-broken">${label}</a>`;
 		});
 
 		// Process dates //YYYY-MM-DD — use data attributes for popup.
@@ -303,6 +323,19 @@
 		void html; // subscribe to changes
 		// Delay to let the DOM update first
 		requestAnimationFrame(() => resolveBlobImages());
+	});
+
+	// Typeset math after DOM update (KaTeX loads on first use)
+	$effect(() => {
+		void html;
+		if (!contentDiv || !html.includes('data-math=')) return;
+		requestAnimationFrame(async () => {
+			const nodes = contentDiv?.querySelectorAll<HTMLElement>('[data-math]') ?? [];
+			for (const el of nodes) {
+				const source = el.dataset.math ?? '';
+				el.innerHTML = await renderMath(source, el.classList.contains('math-block'));
+			}
+		});
 	});
 
 	// Render mermaid diagrams after DOM update
@@ -858,25 +891,12 @@
 		color: var(--color-text-faint);
 	}
 
-	/* LaTeX math (marked, not typeset) */
+	/* LaTeX math (KaTeX) */
 	.markdown-content :global(.math-block) {
 		display: block;
 		margin: 0.75em 0;
-		padding: 0.75em 1em;
 		overflow-x: auto;
-		border-radius: var(--radius-md);
-		background: var(--color-bg-secondary);
-		font-family: var(--font-mono);
-		font-size: 0.9em;
 		text-align: center;
-	}
-
-	.markdown-content :global(.math-inline) {
-		padding: 0.1em 0.25em;
-		border-radius: 4px;
-		background: var(--color-hover);
-		font-family: var(--font-mono);
-		font-size: 0.85em;
 	}
 
 	/* YouTube embeds */

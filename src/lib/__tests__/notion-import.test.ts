@@ -25,7 +25,7 @@ describe('Notion import', () => {
 		const refs = new Map([['Work/Kickoff 1/chart.png', 'blob:img1'], ['Work/Kickoff 1/brief.pdf', 'blob:pdf1']]);
 		const body = 'See [Kickoff call](Kickoff%201.md), [the kickoff](Kickoff%201.md), ![](Kickoff%201/chart.png), [brief.pdf](Kickoff%201/brief.pdf) and [site](https://x.org).';
 		expect(rewriteNotionLinks(body, 'Work', (p) => titles.get(p), (p) => refs.get(p))).toBe(
-			'See [[Kickoff call]], [[Kickoff call]], ![](blob:img1), [brief.pdf](blob:pdf1) and [site](https://x.org).'
+			'See [[Kickoff call]], [[Kickoff call|the kickoff]], ![](blob:img1), [brief.pdf](blob:pdf1) and [site](https://x.org).'
 		);
 	});
 });
