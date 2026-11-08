@@ -7,7 +7,7 @@ import { parseWikilink, WIKILINK_PATTERN } from '$lib/wikilinks';
 const wikilinkPluginKey = new PluginKey('wikilink');
 
 export interface WikilinkClickHandler {
-	(title: string, event: MouseEvent): void;
+	(title: string, event: MouseEvent, anchor: { heading: string | null; block: string | null }): void;
 }
 
 // Click handlers per editor (see ./registry).
@@ -33,12 +33,14 @@ function findWikilinks(doc: any, selection?: { from: number; to: number }): Deco
 				const start = pos + match.index!;
 				const end = start + match[0].length;
 				const inner = match[1];
-				const { target } = parseWikilink(inner);
+				const { target, heading, block } = parseWikilink(inner);
 
 				decorations.push(
 					Decoration.inline(start, end, {
 						class: 'wikilink',
-						'data-wikilink-title': target || inner
+						'data-wikilink-title': target,
+						...(heading ? { 'data-wikilink-heading': heading } : {}),
+						...(block ? { 'data-wikilink-block': block } : {})
 					})
 				);
 
@@ -80,11 +82,12 @@ export const wikilinkPlugin = $prose(() => {
 				const target = event.target as HTMLElement;
 				const link = target.closest<HTMLElement>('.wikilink');
 				if (link) {
-					const title = link.dataset.wikilinkTitle;
+					const title = link.dataset.wikilinkTitle ?? '';
+					const anchor = { heading: link.dataset.wikilinkHeading ?? null, block: link.dataset.wikilinkBlock ?? null };
 					const clickHandler = handlers.get(view);
-					if (title && clickHandler) {
+					if ((title || anchor.heading || anchor.block) && clickHandler) {
 						event.preventDefault();
-						clickHandler(title, event);
+						clickHandler(title, event, anchor);
 						return true;
 					}
 				}

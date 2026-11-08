@@ -12,8 +12,11 @@
 		type MemoryObject,
 		type PropertyDefinition
 	} from '$lib/db';
-	import { optionsOf, PROPERTY_TYPES } from '$lib/database';
+	import { optionsOf, PROPERTY_TYPES, isComputed, computedText, propertyValue } from '$lib/database';
+	import { computeContext } from '$lib/stores/compute';
+	import { addDatabaseRow } from '$lib/db';
 	import PropertyValue from './PropertyValue.svelte';
+	import RelationValue from './RelationValue.svelte';
 	import { Database, ArrowUpRight } from 'lucide-svelte';
 
 	let { memory }: { memory: MemoryObject } = $props();
@@ -41,13 +44,27 @@
 			<div class="note-prop">
 				<span class="note-prop-label" title={PROPERTY_TYPES.find((t) => t.type === prop.type)?.label}>{prop.label}</span>
 				<div class="min-w-0 flex-1">
-					<PropertyValue
-						{prop}
-						value={memory.customProps?.[prop.key]}
-						options={optionsOf(prop, siblings)}
-						onChange={(v) => setMemoryCustomProp(memory.id, prop.key, v)}
-						onAddOption={(o) => addOption(prop, o)}
-					/>
+					{#if prop.type === 'relation'}
+						<RelationValue
+							{prop}
+							value={propertyValue(memory, prop, properties, $computeContext) as string[]}
+							candidates={prop.relationTo ? $memoryObjects.filter((m) => m.folderId === prop.relationTo) : $memoryObjects.filter((m) => m.type !== 'canvas' && m.id !== memory.id)}
+							byId={$computeContext.byId}
+							onChange={(ids) => setMemoryCustomProp(memory.id, prop.key, ids)}
+							onCreate={prop.relationTo ? (t) => (t ? addDatabaseRow(prop.relationTo!, t).id : null) : undefined}
+						/>
+					{:else if isComputed(prop.type)}
+						{@const v = propertyValue(memory, prop, properties, $computeContext)}
+						<span class="note-prop-computed">{typeof v === 'string' && v.startsWith('#ERROR') ? 'Error in the formula' : computedText(v) || '—'}</span>
+					{:else}
+						<PropertyValue
+							{prop}
+							value={memory.customProps?.[prop.key]}
+							options={optionsOf(prop, siblings)}
+							onChange={(v) => setMemoryCustomProp(memory.id, prop.key, v)}
+							onAddOption={(o) => addOption(prop, o)}
+						/>
+					{/if}
 				</div>
 			</div>
 		{/each}
@@ -84,6 +101,12 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	.note-prop-computed {
+		display: block;
+		padding: 0.25rem 0.375rem;
+		color: var(--color-text-muted);
 	}
 
 	.note-prop-db {

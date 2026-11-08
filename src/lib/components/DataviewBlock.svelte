@@ -1,12 +1,16 @@
 <script lang="ts">
 	import { search, parseSearchQuery, filterMemories, hasAnyFilter } from '$lib/search';
-	import { memoryObjects, getFolder, todayIso, type MemoryObject } from '$lib/db';
+	import { memoryObjects, getFolder, todayIso, databaseViews, folders, type MemoryObject, type PropertyDefinition } from '$lib/db';
+	import { parseCondition, meetsCondition, compareValues, asList, valueText, isEmptyValue, propertyValue, type PropertyCondition } from '$lib/database';
+	import { computeContext } from '$lib/stores/compute';
 	import { FileText, Mic, Users, Search } from 'lucide-svelte';
 
 	interface Props {
 		/** Raw content inside the ```kurumi code block. Lines are parsed
 		 *  as: first line = the filter query, subsequent key:value lines
-		 *  configure the view (view, group, limit, sort). */
+		 *  configure the view (view, group, limit, sort) and, for databases,
+		 *  `from: <database>`, `where: <condition>` (repeatable) and
+		 *  `show: <property>, …`. */
 		source: string;
 	}
 
@@ -19,7 +23,12 @@
 		view: ViewType;
 		group: string | null;
 		limit: number;
-		sort: 'updated' | 'created' | 'title';
+		sort: string;
+		desc: boolean;
+		from: string | null;
+		where: PropertyCondition[];
+		whereText: string[];
+		show: string[];
 	}
 
 	function parseConfig(raw: string): Config {
@@ -29,7 +38,12 @@
 			view: 'list',
 			group: null,
 			limit: 50,
-			sort: 'updated'
+			sort: 'updated',
+			desc: true,
+			from: null,
+			where: [],
+			whereText: [],
+			show: []
 		};
 
 		const queryParts: string[] = [];
@@ -52,10 +66,27 @@
 					case 'limit':
 						config.limit = Math.max(1, Math.min(200, parseInt(value, 10) || 50));
 						break;
-					case 'sort':
-						if (['updated', 'created', 'title'].includes(value.toLowerCase())) {
-							config.sort = value.toLowerCase() as Config['sort'];
+					case 'sort': {
+						// updated / created / title, or a property, then asc / desc
+						const m = /^(.*?)(?:\s+(asc|desc))?$/i.exec(value)!;
+						config.sort = m[1].trim() || 'updated';
+						const builtIn = ['updated', 'created'].includes(config.sort.toLowerCase());
+						config.desc = m[2] ? m[2].toLowerCase() === 'desc' : builtIn;
+						break;
+					}
+					case 'from':
+						config.from = value || null;
+						break;
+					case 'where': {
+						const cond = parseCondition(value);
+						if (cond) {
+							config.where.push(cond);
+							config.whereText.push(value);
 						}
+						break;
+					}
+					case 'show':
+						config.show = value.split(',').map((s) => s.trim()).filter(Boolean);
 						break;
 					default:
 						// Not a view config key — treat as part of the query
@@ -71,34 +102,79 @@
 
 	let config = $derived(parseConfig(source));
 
+	// Each database's properties, by folder (a note's own database decides
+	// what `Status` means for it).
+	let schemaByFolder = $derived.by(() => {
+		const map = new Map<string, PropertyDefinition[]>();
+		for (const v of [...$databaseViews].sort((a, b) => a.createdAt - b.createdAt)) {
+			if (!map.has(v.folderId)) map.set(v.folderId, v.properties);
+		}
+		return map;
+	});
+	const propsOf = (m: MemoryObject) => (m.folderId ? schemaByFolder.get(m.folderId) ?? [] : []);
+	const propOf = (m: MemoryObject, label: string) => propsOf(m).find((p) => p.label.toLowerCase() === label.toLowerCase());
+
+	// `from:` a database (or any folder) by name.
+	let fromFolderIds = $derived.by(() => {
+		if (!config.from) return null;
+		const name = config.from.toLowerCase();
+		return new Set($folders.filter((f) => f.name.toLowerCase() === name).map((f) => f.id));
+	});
+
 	let results = $derived.by(() => {
 		// Re-run whenever memoryObjects change
 		void $memoryObjects;
-		if (!config.query) return $memoryObjects.slice(0, config.limit);
-		const hits = search(config.query);
-		const ids = hits.map((h) => h.id);
-		const byId = new Map($memoryObjects.map((m) => [m.id, m]));
-		return ids
-			.map((id) => byId.get(id))
-			.filter((m): m is MemoryObject => !!m)
-			.slice(0, config.limit);
+		let items: MemoryObject[];
+		if (!config.query) {
+			items = $memoryObjects;
+		} else {
+			const byId = new Map($memoryObjects.map((m) => [m.id, m]));
+			items = search(config.query)
+				.map((h) => byId.get(h.id))
+				.filter((m): m is MemoryObject => !!m);
+		}
+		if (fromFolderIds) items = items.filter((m) => m.folderId && fromFolderIds!.has(m.folderId));
+		if (config.where.length) {
+			const today = todayIso();
+			items = items.filter((m) => config.where.every((c) => meetsCondition(m, c, propsOf(m), today, $computeContext)));
+		}
+		return items;
 	});
 
 	let sorted = $derived.by(() => {
 		const items = [...results];
-		switch (config.sort) {
+		const dir = config.desc ? -1 : 1;
+		switch (config.sort.toLowerCase()) {
 			case 'title':
-				items.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+				items.sort((a, b) => (a.title || '').localeCompare(b.title || '') * dir);
 				break;
 			case 'created':
-				items.sort((a, b) => b.createdAt - a.createdAt);
+				items.sort((a, b) => (a.createdAt - b.createdAt) * dir);
 				break;
 			case 'updated':
-			default:
-				items.sort((a, b) => b.updatedAt - a.updatedAt);
+				items.sort((a, b) => (a.updatedAt - b.updatedAt) * dir);
+				break;
+			default: {
+				// A property: empty values last
+				const valueOf = (m: MemoryObject) => {
+					const p = propOf(m, config.sort);
+					return p ? m.customProps?.[p.key] : null;
+				};
+				items.sort((a, b) => {
+					const va = valueOf(a);
+					const vb = valueOf(b);
+					if (isEmptyValue(va) !== isEmptyValue(vb)) return isEmptyValue(va) ? 1 : -1;
+					return compareValues(va, vb, propOf(a, config.sort)?.type) * dir;
+				});
+			}
 		}
-		return items;
+		return items.slice(0, config.limit);
 	});
+
+	function cell(memory: MemoryObject, label: string): string {
+		const p = propOf(memory, label);
+		return p ? valueText(propertyValue(memory, p, propsOf(memory), $computeContext), p.type, undefined, $computeContext) : '';
+	}
 
 	// Board grouping
 	type GroupedBoard = Map<string, MemoryObject[]>;
@@ -116,6 +192,11 @@
 				keys = memory.participants.length > 0 ? memory.participants : ['(none)'];
 			} else if (field === 'topic' || field === 'topics') {
 				keys = memory.topics.length > 0 ? memory.topics : ['(none)'];
+			} else if (propOf(memory, field)) {
+				// A database property: one column per value
+				const p = propOf(memory, field)!;
+				const values = asList(memory.customProps?.[p.key]);
+				keys = values.length > 0 ? values : [`No ${p.label}`];
 			} else if (field === 'status') {
 				keys = [memory.processingState];
 			} else {
@@ -128,6 +209,12 @@
 		}
 		return groups;
 	});
+
+	let summary = $derived(
+		[config.query, config.from ? `from ${config.from}` : '', ...config.whereText]
+			.filter(Boolean)
+			.join(' · ') || 'All notes'
+	);
 
 	function typeIcon(type: string) {
 		if (type === 'meeting') return Users;
@@ -151,7 +238,7 @@
 <div class="dataview" role="region" aria-label="Live query results">
 	<div class="dv-header">
 		<Search class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)]" />
-		<code class="dv-query" title={config.query || 'All memories'}>{config.query || 'All memories'}</code>
+		<code class="dv-query" title={summary}>{summary}</code>
 		<span class="dv-count">{sorted.length} result{sorted.length === 1 ? '' : 's'}</span>
 	</div>
 
@@ -163,18 +250,26 @@
 				<thead>
 					<tr>
 						<th>Title</th>
-						<th>Type</th>
-						<th>Updated</th>
-						<th>Tags</th>
+						{#if config.show.length}
+							{#each config.show as label (label)}<th>{label}</th>{/each}
+						{:else}
+							<th>Type</th>
+							<th>Updated</th>
+							<th>Tags</th>
+						{/if}
 					</tr>
 				</thead>
 				<tbody>
 					{#each sorted as memory (memory.id)}
 						<tr>
 							<td><a href="/memory/{memory.id}" class="dv-link">{memory.title || 'Untitled'}</a></td>
-							<td class="dv-muted capitalize">{memory.type}</td>
-							<td class="dv-muted whitespace-nowrap tabular-nums">{formatDate(memory.updatedAt)}</td>
-							<td class="dv-muted">{memory.tags.slice(0, 3).map((t) => '#' + t).join(' ')}</td>
+							{#if config.show.length}
+								{#each config.show as label (label)}<td class="dv-muted">{cell(memory, label)}</td>{/each}
+							{:else}
+								<td class="dv-muted capitalize">{memory.type}</td>
+								<td class="dv-muted whitespace-nowrap tabular-nums">{formatDate(memory.updatedAt)}</td>
+								<td class="dv-muted">{memory.tags.slice(0, 3).map((t) => '#' + t).join(' ')}</td>
+							{/if}
 						</tr>
 					{/each}
 				</tbody>

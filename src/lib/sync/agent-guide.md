@@ -129,7 +129,10 @@ The body is Markdown.
 - Frontmatter is deliberately simple: `---` on the very first line (LF line
   endings for git sync), one `key: value` per line, tags inline as above (no YAML block lists).
 - Links: `[[Title]]`; `[[Title|shown text]]` shows other text, `[[Title#Heading]]`
-  points at a heading (it opens the note). In a table, escape the bar: `[[Title\|text]]`.
+  points at a heading, `[[Title#^a1b2c3]]` at the block ending in ` ^a1b2c3` (keep
+  such ids when you edit). `![[Title#Heading]]` embeds a section. In a table,
+  escape the bar: `[[Title\|text]]`.
+- Columns: `::::columns`, then `:::column` … `:::` for each, then `::::`.
 - Math: `$x^2$` inline, `$$` on their own lines around a block of LaTeX. A `$` with a
   space after it or a digit after the closing one stays text, so prices are safe.
 - A new directory becomes a folder. With all vaults on, a new top-level
@@ -422,9 +425,12 @@ properties its rows have. All views of one folder share the same `properties`.
 }
 ```
 
-- `viewType`: `table`, `board` (grouped by `groupField`), `gallery` or `calendar`.
+- `viewType`: `table`, `list`, `board` (grouped by `groupField`), `gallery`,
+  `calendar` or `timeline` (`dateField`, optional `endDateField`).
 - Property `type`: `text`, `number`, `date` (`YYYY-MM-DD`), `select`,
-  `multiSelect`, `checkbox`, `url` or `person`.
+  `multiSelect`, `checkbox`, `url`, `person`, `relation` (`relationTo`: a folder
+  id; values are note ids), `rollup` or `formula` (computed, never stored).
+- A note's body can show a database: a ```` ```database ```` block with `view: <id>`.
 - The rows' values are under `notes.<id>.customProps` (by property `key`), which
   you can read but not change: set them in the app.
 
@@ -432,6 +438,8 @@ properties its rows have. All views of one folder share the same `properties`.
 
 - Links from a note to a project. Link from the other side: set `projectId` on
   a to-do, decision or question, and `memoryObjectId` / `memoryId` to the note.
+- Canvases: a canvas note's body is JSON Canvas. Leave those files as they are.
+- PDF highlights.
 - Voice memos and meetings with transcripts: capture those in the app. A
   recording embedded in a note (`![audio:…]`) plays but isn't transcribed.
 - Note icons on new notes, and favorites.

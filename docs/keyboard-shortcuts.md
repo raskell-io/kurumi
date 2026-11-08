@@ -40,6 +40,9 @@ in a note.
 | `↑` `↓`, `Enter` / `Tab`, `Esc` | Pick, accept, dismiss a suggestion |
 | Alt + click a link | Open it beside this note |
 
+Vim keys in the editor: Settings → Keyboard shortcuts → *Vim mode* (see
+[Editor](editor.md)).
+
 ## Lists (to-dos, proposals, drafts, inbox, people, tags, topics)
 
 | Key | Action |

@@ -28,6 +28,7 @@
 	import IconPicker from '$lib/components/IconPicker.svelte';
 	import NoteProjects from '$lib/components/NoteProjects.svelte';
 	import NoteProperties from '$lib/components/NoteProperties.svelte';
+	import { setPendingAnchor, takePendingAnchor, scrollToAnchor, type NoteAnchor } from '$lib/stores/anchor';
 	import NoteRecordDialog, { type RecordKind } from '$lib/components/NoteRecordDialog.svelte';
 	import { untrack, tick } from 'svelte';
 	import { downloadSingleMemory, type MarkdownExportFormat } from '$lib/utils/markdown-export';
@@ -385,6 +386,19 @@
 	// (transcription, sync) propagate to the UI without a manual refresh.
 	let memory = $derived($memoryObjects.find((m) => m.id === $page.params.id));
 
+	// A canvas opens on its board, not in the editor (links, tabs, search all land here).
+	$effect(() => {
+		if (memory?.type === 'canvas') goto(`/canvas/${memory.id}`, { replaceState: true });
+	});
+
+	// Opened from a link to a heading or block: scroll to it once it's drawn.
+	$effect(() => {
+		const id = memory?.id;
+		if (!id) return;
+		const anchor = untrack(() => takePendingAnchor(id));
+		if (anchor) void scrollToAnchor(() => document.querySelector(`[data-note-id="${id}"]`), anchor);
+	});
+
 	// Rough word count for the header (ignores markdown punctuation).
 	let wordCount = $derived(
 		content.replace(/[#>*_`~\[\]()!|-]+/g, ' ').split(/\s+/).filter(Boolean).length
@@ -657,10 +671,17 @@
 
 	// Alt+click (or "Open to the side" in the preview) opens the link in
 	// the split pane instead.
-	function handleWikilinkClick(linkTitle: string, event?: MouseEvent | { altKey: boolean }) {
+	function handleWikilinkClick(linkTitle: string, event?: MouseEvent | { altKey: boolean }, anchor?: NoteAnchor) {
+		// [[#Heading]], or a link to a part of this very note: just scroll there.
+		if (anchor && (!linkTitle || linkTitle.toLowerCase() === memory?.title.toLowerCase()) && memory) {
+			const id = memory.id;
+			void scrollToAnchor(() => document.querySelector(`[data-note-id="${id}"]`), anchor, 500);
+			return;
+		}
 		// Find memory by title (case-insensitive)
 		const all = get(memoryObjects);
 		const target = all.find((m) => m.title.toLowerCase() === linkTitle.toLowerCase());
+		if (target && anchor) setPendingAnchor(target.id, anchor);
 
 		if (event?.altKey) {
 			const id = target ? target.id : addMemoryObject(linkTitle, '').id;

@@ -37,6 +37,7 @@
 	import { codeBlockExitPlugin } from '$lib/editor/codeBlockExit';
 	import { mermaidPlugin } from '$lib/editor/mermaid';
 	import { mathPlugins } from '$lib/editor/math';
+	import { columnsPlugins } from '$lib/editor/columns';
 	import { audioEmbedPlugin } from '$lib/editor/audioEmbed';
 	import { startCheckboxRenderer } from '$lib/editor/checkboxRenderer';
 	import { processAndStoreImage } from '$lib/utils/image';
@@ -57,6 +58,10 @@
 	import { matchShortcut } from '$lib/shortcuts';
 	import { findReplacePlugin } from '$lib/editor/findReplace';
 	import { noteEmbedPlugin } from '$lib/editor/noteEmbed';
+	import { blockRefPlugin } from '$lib/editor/blockRef';
+	import { headingFoldPlugin } from '$lib/editor/headingFold';
+	import { vimPlugin, vimEnabled, onVimMode, type VimMode } from '$lib/editor/vim';
+	import type { NoteAnchor } from '$lib/stores/anchor';
 	import { pasteLinkPlugin } from '$lib/editor/pasteLink';
 	import { pasteMarkdownPlugin } from '$lib/editor/pasteMarkdown';
 	import { fileDropPlugin } from '$lib/editor/fileDrop';
@@ -70,7 +75,7 @@
 	interface Props {
 		content: string;
 		onchange?: (markdown: string, noteId?: string) => void;
-		onWikilinkClick?: (title: string) => void;
+		onWikilinkClick?: (title: string, event?: MouseEvent, anchor?: NoteAnchor) => void;
 		placeholder?: string;
 		currentFolderId?: string | null;
 		noteId?: string;
@@ -429,6 +434,8 @@
 
 	let blobResolver: MutationObserver | undefined;
 
+	let vimMode = $state<VimMode | null>(null);
+
 	onMount(async () => {
 		// Plugin callbacks are registered under this editor's container, so
 		// a second editor (split view) doesn't take them over or clear them.
@@ -438,6 +445,7 @@
 		if (onWikilinkClick) {
 			setWikilinkClickHandler(root, onWikilinkClick);
 		}
+		onVimMode(root, (mode) => (vimMode = mode));
 
 		// Set up tag/person/date click handlers to navigate to references page
 		setReferenceClickHandlers(root, {
@@ -533,7 +541,21 @@
 			.config(nord)
 			.config((ctx) => {
 				// Write "-" bullets (Obsidian/GitHub style) rather than remark's "*".
-				ctx.update(remarkStringifyOptionsCtx, (options) => ({ ...options, bullet: '-' as const }));
+				ctx.update(remarkStringifyOptionsCtx, (options) => ({
+					...options,
+					bullet: '-' as const,
+					// Milkdown gives lists `spread: "true" | "false"` (strings); the
+					// markdown writer only reads booleans, so every list it wrote was
+					// loose (a blank line between items) once a note was edited.
+					join: [
+						...((options as { join?: unknown[] }).join ?? []),
+						(left: { type: string }, right: { type: string }, parent: { type: string; spread?: unknown }) => {
+							if ((parent.type !== 'list' && parent.type !== 'listItem') || typeof parent.spread !== 'string') return undefined;
+							if (left.type === 'paragraph' && right.type === 'paragraph') return undefined; // two paragraphs: always apart
+							return parent.spread === 'true' ? 1 : 0;
+						}
+					]
+				}) as typeof options);
 				configureBlockHandle(ctx, (anchor, blockPos) => {
 					blockMenu = { view: ctx.get(editorViewCtx), blockPos, anchor };
 				});
@@ -541,6 +563,7 @@
 			.use(commonmark)
 			.use(gfm)
 			.use(mathPlugins)
+			.use(columnsPlugins)
 			.use(listener)
 			.use(history)
 			// Before clipboard: ProseMirror asks plugins in order and the
@@ -590,6 +613,9 @@
 			.use(block)
 			.use(findReplacePlugin)
 			.use(noteEmbedPlugin)
+			.use(blockRefPlugin)
+			.use(headingFoldPlugin)
+			.use(vimPlugin)
 			.use(imageClickPlugin)
 			.create();
 
@@ -684,6 +710,7 @@
 			setAutocompleteCallbacks(editorContainer, null);
 			setDatePeopleCallbacks(editorContainer, null);
 			setSlashCallbacks(editorContainer, null);
+			onVimMode(editorContainer, null);
 		}
 	});
 </script>
@@ -691,7 +718,10 @@
 <svelte:window onkeydown={handleFindShortcut} />
 
 <div class="milkdown-wrapper">
-	<div bind:this={editorContainer} class="milkdown-editor" data-placeholder={placeholder}></div>
+	<div bind:this={editorContainer} class="milkdown-editor" data-placeholder={placeholder} data-note-id={noteId}></div>
+	{#if $vimEnabled && vimMode && editorFocused}
+		<div class="vim-badge vim-badge-{vimMode}" aria-live="polite">{vimMode.toUpperCase()}</div>
+	{/if}
 
 	{#if showAutocomplete}
 		<WikilinkAutocomplete
@@ -766,6 +796,7 @@
 			view={blockMenu.view}
 			blockPos={blockMenu.blockPos}
 			anchor={blockMenu.anchor}
+			{noteId}
 			onClose={() => (blockMenu = null)}
 		/>
 	{/if}
@@ -1158,6 +1189,195 @@
 		color: var(--color-danger);
 		font-family: var(--font-sans);
 		font-size: 0.8em;
+	}
+
+	/* Columns (editor/columns.ts) */
+	:global(.milkdown .kurumi-columns) {
+		display: grid;
+		grid-auto-columns: minmax(0, 1fr);
+		grid-auto-flow: column;
+		gap: 1.5rem;
+		margin: 0.75em 0;
+	}
+
+	:global(.milkdown .kurumi-column) {
+		min-width: 0;
+		padding: 0.25rem 0.5rem;
+		border-radius: var(--radius-md);
+		outline: 1px dashed transparent;
+		transition: outline-color 0.15s;
+	}
+
+	:global(.milkdown .kurumi-columns:hover .kurumi-column),
+	:global(.milkdown .kurumi-column:focus-within) {
+		outline-color: var(--color-border);
+	}
+
+	:global(.milkdown .kurumi-column > :first-child) {
+		margin-top: 0;
+	}
+
+	@media (max-width: 640px) {
+		:global(.milkdown .kurumi-columns) {
+			grid-auto-flow: row;
+		}
+	}
+
+	/* Toggle headings (editor/headingFold.ts): a caret in the margin folds the section */
+	:global(.milkdown .ProseMirror :is(h1, h2, h3, h4, h5, h6)) {
+		position: relative;
+	}
+
+	:global(.milkdown .foldable::before) {
+		content: '';
+		position: absolute;
+		left: -1.5rem;
+		top: calc(50% - 0.625rem);
+		width: 1.25rem;
+		height: 1.25rem;
+		border-radius: var(--radius-sm);
+		background-color: var(--color-text-faint);
+		-webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='m9 6 6 6-6 6' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 0.875rem no-repeat;
+		mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='m9 6 6 6-6 6' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 0.875rem no-repeat;
+		opacity: 0;
+		transform: rotate(90deg);
+		transition: opacity 0.15s, transform 0.15s;
+		cursor: pointer;
+	}
+
+	:global(.milkdown .foldable:hover::before),
+	:global(.milkdown .foldable.is-folded-heading::before) {
+		opacity: 1;
+	}
+
+	:global(.milkdown .foldable.is-folded-heading::before) {
+		transform: none;
+	}
+
+	:global(.milkdown .fold-hidden) {
+		display: none !important;
+	}
+
+	:global(.milkdown .is-folded-heading::after) {
+		content: ' …';
+		color: var(--color-text-faint);
+		font-weight: 400;
+	}
+
+	/* Vim mode (editor/vim.ts): a block cursor outside Insert mode */
+	:global(.milkdown .ProseMirror.vim-normal),
+	:global(.milkdown .ProseMirror.vim-visual) {
+		caret-color: transparent;
+	}
+
+	:global(.milkdown .ProseMirror.vim-normal .vim-cursor) {
+		border-radius: 2px;
+		background: color-mix(in srgb, var(--color-accent) 55%, transparent);
+	}
+
+	:global(.milkdown .ProseMirror:not(:focus) .vim-cursor) {
+		background: none;
+		outline: 1px solid color-mix(in srgb, var(--color-accent) 60%, transparent);
+	}
+
+	:global(.milkdown .vim-cursor-empty) {
+		display: inline-block;
+		width: 0.55em;
+	}
+
+	.vim-badge {
+		position: fixed;
+		right: 1rem;
+		bottom: 1rem;
+		z-index: 30;
+		padding: 0.125rem 0.5rem;
+		border-radius: var(--radius-sm);
+		background: var(--color-bg-secondary);
+		border: 1px solid var(--color-border);
+		font-family: var(--font-mono);
+		font-size: 0.6875rem;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		color: var(--color-text-muted);
+		pointer-events: none;
+	}
+
+	.vim-badge-insert {
+		color: var(--color-accent);
+	}
+
+	.vim-badge-visual {
+		color: var(--color-ref-tag);
+	}
+
+	/* Live queries and databases: the results, and the source only while editing
+	   (editor/queryBlock.svelte.ts, editor/databaseBlock.svelte.ts) */
+	:global(.milkdown :is(.kurumi-query, .kurumi-database) > pre) {
+		display: none;
+		margin-top: 0.25em;
+	}
+
+	:global(.milkdown :is(.kurumi-query, .kurumi-database).is-editing > pre) {
+		display: block;
+	}
+
+	/* The note's typography mustn't reach an embedded database */
+	:global(.milkdown .kurumi-database-preview) {
+		font-family: var(--font-sans);
+		font-size: 0.875rem;
+		line-height: 1.45;
+		white-space: normal;
+	}
+
+	:global(.milkdown .kurumi-database-preview :is(table, th, td, tr)) {
+		margin: 0;
+		box-shadow: none;
+		background: none;
+		font-size: inherit;
+	}
+
+	:global(.milkdown .kurumi-database .kurumi-database-preview :is(th, td)) {
+		padding: 0.125rem 0.25rem !important;
+		border: none;
+		border-bottom: 1px solid var(--color-border);
+		border-right: 1px solid var(--color-border);
+	}
+
+	:global(.milkdown .kurumi-database .kurumi-database-preview :is(h1, p, ul, li)) {
+		margin: 0;
+		padding: 0;
+		font-size: inherit;
+	}
+
+	:global(.milkdown .kurumi-query-preview) {
+		cursor: pointer;
+	}
+
+	/* The note's table styles (and the theme's) mustn't reach the results table */
+	:global(.milkdown .kurumi-query .kurumi-query-preview table) {
+		margin: 0;
+		border: none;
+		border-radius: 0;
+		box-shadow: none;
+		font-size: inherit;
+	}
+
+	:global(.milkdown .kurumi-query .kurumi-query-preview tr) {
+		border: none;
+	}
+
+	:global(.milkdown .kurumi-query .kurumi-query-preview :is(th, td)) {
+		padding: 0.375rem 0.75rem !important;
+		border: none;
+		border-bottom: 1px solid var(--color-border);
+		background: none;
+	}
+
+	:global(.milkdown .kurumi-query .kurumi-query-preview th) {
+		background: var(--color-bg-secondary);
+		font-size: 0.75rem;
+		font-weight: 500;
+		color: var(--color-text-muted);
 	}
 
 	/* Math: KaTeX, and the source only while editing (editor/math.ts) */

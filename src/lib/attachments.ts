@@ -8,10 +8,20 @@
 
 import { getBlob, storeBlob } from '$lib/db/blob-store';
 import { showNotice } from '$lib/stores/notice';
+import { openPdf } from '$lib/stores/pdfViewer';
 
-/** A stored blob ref (`blob:<id>`), not a runtime object URL (`blob:http…`). */
+/**
+ * A stored blob ref (`blob:<id>`), not a runtime object URL (`blob:http…`).
+ * A link to a page of a PDF adds `#page=3`.
+ */
 export function isAttachmentRef(href: string | null | undefined): href is string {
-	return !!href && /^blob:[0-9A-Za-z]+$/.test(href);
+	return !!href && /^blob:[0-9A-Za-z]+(#page=\d+)?$/.test(href);
+}
+
+/** `blob:<id>#page=3` → the ref and the page. */
+export function splitAttachmentHref(href: string): { ref: string; page: number } {
+	const [ref, fragment] = href.split('#');
+	return { ref, page: Number(/page=(\d+)/.exec(fragment ?? '')?.[1] ?? 1) || 1 };
 }
 
 const escapeLinkText = (text: string) => text.replace(/([[\]\\])/g, '\\$1');
@@ -65,6 +75,14 @@ export function handleAttachmentClick(event: MouseEvent): boolean {
 	if (!link || !isAttachmentRef(href)) return false;
 	event.preventDefault();
 	event.stopPropagation();
-	openAttachment(href, link.textContent?.trim() || 'file');
+	const { ref, page } = splitAttachmentHref(href);
+	const name = link.textContent?.trim() || 'file';
+	// PDFs open in Kurumi's viewer (highlights; it can open them in a tab too).
+	if ((/\.pdf\b/i.test(name) || href.includes('#page=')) && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
+		const noteId = /#\/memory\/([^/?#]+)/.exec(location.hash)?.[1] ?? null;
+		openPdf(ref, name.replace(/,\s*p\.\s*\d+$/, ''), page, noteId);
+		return true;
+	}
+	openAttachment(ref, name);
 	return true;
 }

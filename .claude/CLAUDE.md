@@ -223,12 +223,33 @@ OpenAI to MMS when the API key is missing.
   (`editor/math-markdown.ts`, tested without a DOM) applies Pandoc's dollar
   rule, so `$5 and $10` stays text, and doesn't escape `$` in text. The reader
   uses the same rule, outside code
-- Wikilinks: `[[Title|alias]]`, `[[Title#Heading]]`, `[[Title\|alias]]` in
-  tables. Parse them with `$lib/wikilinks` (`parseWikilink`, `wikilinkLabel`),
-  never a bare `/\[\[(.+)\]\]/`: links resolve by `target` only
-  (`extractWikilinks` returns targets). The editor hides `Title|` unless the
-  cursor is in the link
-- Appearance (per device, applied before first paint in `app.html`): accent
+- Wikilinks: `[[Title|alias]]`, `[[Title#Heading]]`, `[[Title#^blockid]]`,
+  `[[Title\|alias]]` in tables. Parse them with `$lib/wikilinks` (`parseWikilink`,
+  `wikilinkLabel`), never a bare `/\[\[(.+)\]\]/`: links resolve by `target`
+  only (`extractWikilinks` returns targets). The editor hides `Title|` unless the
+  cursor is in the link. Block ids are ` ^id` at a line's end (`editor/blockRef.ts`
+  marks them; the block menu adds one). Sections and blocks: `markdownSection`,
+  `markdownBlock`; synced embeds edit through `editablePart`/`replacePart`
+  (block ids kept). Following a heading/block link: `setPendingAnchor` then the
+  note/read page calls `scrollToAnchor` (`stores/anchor.ts`, an overlay flash:
+  ProseMirror redraws its own elements)
+- Columns: `::::columns` / `:::column` container directives (`editor/columns.ts`,
+  markdown side `columns-markdown.ts`). Only the container construct of
+  micromark-extension-directive is on: inline `:name` would change ordinary text.
+  Other containers stay raw (html node). Read mode: `renderColumns` in MarkdownRenderer
+- Toggle headings: `editor/headingFold.ts`, folds per device in localStorage
+  (`kurumi-folds:<noteId>`), never in the markdown
+- Vim mode: `editor/vim.ts` (opt-in, `kurumi-vim`). The layout's Escape handler
+  skips `defaultPrevented` keys, or vim's Escape would blur the editor
+- Lists: Milkdown passes `spread` as strings; Editor.svelte adds a remark-stringify
+  `join` rule that reads them (before it every edited list was saved loose)
+- Live queries (```kurumi) render live in the editor too (`editor/queryBlock.svelte.ts`,
+  through mermaid.ts, which owns the code_block node view: only one plugin can).
+  `from:`, `where:` (`parseCondition`/`meetsCondition`), `show:`, property sort/group
+- Appearance (per device, applied before first paint in `app.html`): colour
+  theme (`palette-*`, `$lib/themes.ts`; theme selectors use `:root:where(…)` so a
+  CSS snippet's plain `:root` wins), CSS snippet (`kurumi-custom-css`, a <style>
+  after the app's, moved last again by the layout), accent
   colour (`accent-*` classes set `--accent-light/dark`), content width
   (`note-width-*`, `--note-width`: notes, Read mode, `.k-page`, home; grids
   use at least 76rem)
@@ -409,10 +430,24 @@ OpenAI to MMS when the API key is missing.
 - To-dos: Active / Waiting for / Completed tabs; list or Kanban board (Open / In progress / Done, drag
   or arrows), filters by project (from the source note) and assignee
 - Labs (`stores/labs.ts`, Settings → Labs, off by default): Habits,
-  Flashcards, Timeline, Smart folders. Canvas stays unlinked until it gets
-  real data-model support
-- Databases (`/database/[id]`, `$lib/database.ts`): a folder whose notes are
-  rows. `DatabaseView`s (table/board/gallery/calendar, own columns, filters,
+  Flashcards, Timeline, Smart folders
+- Canvas (`/canvas/[id]`, `$lib/canvas.ts`): a memory of type `canvas` whose
+  body is JSON Canvas (Obsidian's format; note cards add `memoryId`). `addCanvas`,
+  `notePath` (canvases open on their board; `/memory/<id>` redirects). Search
+  indexes `canvasText`. Obsidian import reads `.canvas`; Markdown export writes it
+- PDF viewer (`PdfViewer.svelte`, `stores/pdfViewer.ts`, pdf.js legacy build,
+  loaded on first use; the worker is .mjs, hence `mjs` in the precache globs).
+  Highlights: `doc.pdfHighlights` by file ref (CRDT sync and backups; not in git
+  metadata). Page links: `[name, p. 3](blob:<id>#page=3)`
+- Databases (`/database/[id]` wraps `components/database/DatabaseView.svelte`,
+  also embedded in notes as ```database blocks: `editor/databaseBlock.svelte.ts`,
+  `DatabaseBlock.svelte`; Read mode mounts them in place), `$lib/database.ts`:
+  a folder whose notes are rows. Relation/rollup/formula properties: values via
+  `propertyValue(memory, prop, properties, ctx)` with `ComputeContext`
+  (`stores/compute.ts`); formulas are `$lib/formula.ts` (own parser, no eval).
+  Views: table/list (grouped: `groupRows`), board, gallery, calendar, timeline
+  (`dateField`/`endDateField`). Templates: `setDatabaseTemplates` (shared like
+  properties), `addRowFromTemplate`. `DatabaseView`s (table/board/gallery/calendar, own columns, filters,
   sort) share one property schema per folder: change it only through
   `setDatabaseProperties`. Values are `MemoryObject.customProps` (by property
   key), written with `setMemoryCustomProp`, which stamps `propsChangedAt`: git

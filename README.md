@@ -46,9 +46,9 @@ Kurumi (クルミ, "walnut" in Japanese — because it looks like a brain) is a 
 
 ## What it does
 
-**Capture.** A Markdown editor with `[[links]]`, `@people`, `#tags`, `//dates`, live embeds, slash commands, tables, callouts, diagrams and math. Voice memos and meetings are transcribed and summarized, with to-dos, decisions and follow-ups pulled out for you to review. Paste or drop any file; share into Kurumi from other apps; clip web pages. → [Capture](docs/capture.md) · [Editor](docs/editor.md)
+**Capture.** A Markdown editor with `[[links]]` (to notes, headings or blocks), `@people`, `#tags`, `//dates`, live and synced embeds, columns, toggle headings, tables, callouts, diagrams and math, plus vim mode, colour themes and CSS snippets. PDFs open in a viewer you can highlight in; canvases lay out cards, notes and links on a board. Voice memos and meetings are transcribed and summarized, with to-dos, decisions and follow-ups pulled out for you to review. Paste or drop any file; share into Kurumi from other apps; clip web pages. → [Capture](docs/capture.md) · [Editor](docs/editor.md)
 
-**Recall.** Search by words or by meaning, ask questions answered from your notes with citations, and browse by backlinks, graph, calendar, people and references. → [Organize & recall](docs/organize-and-recall.md)
+**Recall.** Search by words or by meaning, ask questions answered from your notes with citations, and browse by backlinks, graph, calendar, people and references. Databases turn a folder into tables, boards, calendars and timelines, with relations, rollups and formulas, also inside a note; live queries filter on their properties. → [Organize & recall](docs/organize-and-recall.md)
 
 **Act.** To-dos with a list and a board, what you're waiting for from whom, projects that pull notes, to-dos, decisions and questions together, and recurring meetings with a running agenda. → [Work](docs/work.md)
 

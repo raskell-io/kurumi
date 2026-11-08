@@ -4,6 +4,7 @@
  */
 
 import { parseWikilink, wikilinkLabel } from '$lib/wikilinks';
+import { parseCanvas, serializeCanvas } from '$lib/canvas';
 import type { MemoryObject, Folder, Vault } from '../db/types';
 import JSZip from 'jszip';
 import { getBlob } from '../db/blob-store';
@@ -375,6 +376,19 @@ export function exportMemoriesToFiles(
 	for (const memory of memories) {
 		const folderPath = buildFolderPath(memory, folders);
 		const slug = generateSlug(memory.title || 'untitled');
+
+		// Canvases as JSON Canvas files (Obsidian opens them), note cards
+		// pointing at the exported notes.
+		if (memory.type === 'canvas') {
+			const data = parseCanvas(memory.bodyMarkdown);
+			for (const node of data.nodes) {
+				const target = node.memoryId ? memories.find((m) => m.id === node.memoryId) : undefined;
+				if (target) node.file = [...buildFolderPath(target, folders), `${generateSlug(target.title || 'untitled')}.md`].join('/');
+			}
+			files.push({ path: [vaultSlug, ...folderPath, `${slug}.canvas`].join('/'), content: serializeCanvas(data) });
+			continue;
+		}
+
 		const filename = `${slug}.md`;
 
 		const pathParts = [vaultSlug, ...folderPath, filename];

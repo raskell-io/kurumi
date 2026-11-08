@@ -18,6 +18,8 @@
 		Hash,
 		Link,
 		Table,
+		Columns2,
+		Columns3,
 		Info,
 		AlertTriangle,
 		Lightbulb,
@@ -65,7 +67,10 @@
 		toggle: ChevronRight,
 		'memory-embed': FileText,
 		'math-block': Sigma,
-		'math-inline': Sigma
+		'math-inline': Sigma,
+		'columns-2': Columns2,
+		'columns-3': Columns3,
+		database: Database
 	};
 
 	// Markdown shortcuts that produce the same block, shown as quiet hints

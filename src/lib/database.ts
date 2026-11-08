@@ -5,7 +5,8 @@
  * formatting, sorting and filtering values.
  */
 
-import type { DatabaseFilter, MemoryObject, PropertyDefinition, PropertyType } from '$lib/db/types';
+import type { DatabaseFilter, MemoryObject, PropertyDefinition, PropertyType, RollupFn } from '$lib/db/types';
+import { evaluateFormula, formulaText, parseFormula, FormulaError, type FormulaValue } from '$lib/formula';
 
 export const PROPERTY_TYPES: { type: PropertyType; label: string }[] = [
 	{ type: 'text', label: 'Text' },
@@ -15,8 +16,141 @@ export const PROPERTY_TYPES: { type: PropertyType; label: string }[] = [
 	{ type: 'date', label: 'Date' },
 	{ type: 'checkbox', label: 'Checkbox' },
 	{ type: 'url', label: 'URL' },
-	{ type: 'person', label: 'Person' }
+	{ type: 'person', label: 'Person' },
+	{ type: 'relation', label: 'Relation' },
+	{ type: 'rollup', label: 'Rollup' },
+	{ type: 'formula', label: 'Formula' }
 ];
+
+export const ROLLUP_FNS: { fn: RollupFn; label: string }[] = [
+	{ fn: 'count', label: 'Count all' },
+	{ fn: 'countValues', label: 'Count values' },
+	{ fn: 'countUnique', label: 'Count unique' },
+	{ fn: 'sum', label: 'Sum' },
+	{ fn: 'average', label: 'Average' },
+	{ fn: 'min', label: 'Min' },
+	{ fn: 'max', label: 'Max' },
+	{ fn: 'earliest', label: 'Earliest date' },
+	{ fn: 'latest', label: 'Latest date' },
+	{ fn: 'percentChecked', label: 'Percent checked' },
+	{ fn: 'list', label: 'Show values' }
+];
+
+/** Types whose values are worked out, not typed in. */
+export const isComputed = (type: PropertyType | undefined) => type === 'rollup' || type === 'formula';
+
+/**
+ * What computed values need: every note by id, each database's properties
+ * (by folder), and today's date for formulas.
+ */
+export interface ComputeContext {
+	byId: Map<string, MemoryObject>;
+	schemaOf: (folderId: string | null | undefined) => PropertyDefinition[];
+	today: string;
+}
+
+const parsed = new Map<string, ReturnType<typeof parseFormula> | FormulaError>();
+function parsedFormula(src: string) {
+	if (!parsed.has(src)) {
+		try {
+			parsed.set(src, parseFormula(src));
+		} catch (err) {
+			parsed.set(src, err instanceof FormulaError ? err : new FormulaError(String(err)));
+		}
+	}
+	return parsed.get(src)!;
+}
+
+/** A property's value for a note: stored, or worked out for rollups and formulas. */
+export function propertyValue(
+	memory: MemoryObject,
+	prop: PropertyDefinition,
+	properties: PropertyDefinition[],
+	ctx?: ComputeContext,
+	depth = 0
+): unknown {
+	const stored = memory.customProps?.[prop.key] ?? null;
+	if (prop.type === 'relation') {
+		const ids = asList(stored);
+		return ctx ? ids.filter((id) => ctx.byId.has(id) && !ctx.byId.get(id)!.deletedAt) : ids;
+	}
+	if (!ctx || depth > 4) return isComputed(prop.type) ? null : stored;
+	if (prop.type === 'rollup' && prop.rollup) {
+		const relation = properties.find((p) => p.key === prop.rollup!.relation && p.type === 'relation');
+		if (!relation) return null;
+		const rows = (propertyValue(memory, relation, properties, ctx, depth + 1) as string[]).map((id) => ctx.byId.get(id)!);
+		const target = prop.rollup.property;
+		const values = rows.map((row) => {
+			if (target === 'title') return row.title || 'Untitled';
+			const schema = ctx.schemaOf(row.folderId);
+			const p = schema.find((x) => x.key === target);
+			return p ? propertyValue(row, p, schema, ctx, depth + 1) : null;
+		});
+		return rollupOf(values, prop.rollup.fn, rows.length);
+	}
+	if (prop.type === 'formula' && prop.formula) {
+		const tree = parsedFormula(prop.formula);
+		if (tree instanceof FormulaError) return `#ERROR ${tree.message}`;
+		try {
+			return evaluateFormula(
+				tree,
+				(name) => {
+					const key = name.trim().toLowerCase();
+					if (key === 'title' || key === 'name') return memory.title || '';
+					if (key === 'created') return new Date(memory.createdAt).toISOString().slice(0, 10);
+					if (key === 'updated') return new Date(memory.updatedAt).toISOString().slice(0, 10);
+					const p = properties.find((x) => x.label.toLowerCase() === key);
+					if (!p || p.key === prop.key) return null;
+					const v = propertyValue(memory, p, properties, ctx, depth + 1);
+					if (p.type === 'relation') return (v as string[]).map((id) => ctx.byId.get(id)?.title || 'Untitled');
+					if (p.type === 'checkbox') return !!v;
+					return (v ?? null) as FormulaValue;
+				},
+				ctx.today
+			);
+		} catch (err) {
+			return `#ERROR ${err instanceof Error ? err.message : String(err)}`;
+		}
+	}
+	return stored;
+}
+
+function rollupOf(values: unknown[], fn: RollupFn, count: number): unknown {
+	const flat = values.flatMap((v) => (Array.isArray(v) ? v : [v])).filter((v) => !isEmptyValue(v));
+	const nums = flat.map(Number).filter((n) => Number.isFinite(n));
+	const dates = flat.filter((v): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v)).sort();
+	switch (fn) {
+		case 'count':
+			return count;
+		case 'countValues':
+			return flat.length;
+		case 'countUnique':
+			return new Set(flat.map(String)).size;
+		case 'sum':
+			return nums.reduce((a, b) => a + b, 0);
+		case 'average':
+			return nums.length ? Math.round((nums.reduce((a, b) => a + b, 0) / nums.length) * 100) / 100 : null;
+		case 'min':
+			return nums.length ? Math.min(...nums) : null;
+		case 'max':
+			return nums.length ? Math.max(...nums) : null;
+		case 'earliest':
+			return dates[0] ?? null;
+		case 'latest':
+			return dates[dates.length - 1] ?? null;
+		case 'percentChecked':
+			return values.length ? `${Math.round((values.filter((v) => v === true).length / values.length) * 100)}%` : null;
+		case 'list':
+			return flat.map((v) => (typeof v === 'boolean' ? (v ? '✓' : '') : String(v))).filter(Boolean);
+	}
+}
+
+/** Text for a computed value (formula results, rollups). */
+export function computedText(value: unknown): string {
+	if (value === null || value === undefined) return '';
+	if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return formatDate(value);
+	return formulaText(value as FormulaValue);
+}
 
 /** Built-in note fields a view can show next to the properties. */
 export const BUILTIN_FIELDS: { field: string; label: string }[] = [
@@ -48,9 +182,12 @@ export function fieldLabel(field: string, properties: PropertyDefinition[]): str
 	return propertyOf(field, properties)?.label ?? BUILTIN_FIELDS.find((b) => b.field === field)?.label ?? field;
 }
 
-/** The raw value of a column for a note. */
-export function fieldValue(memory: MemoryObject, field: string): unknown {
-	if (field.startsWith('prop:')) return memory.customProps?.[field.slice(5)] ?? null;
+/** The value of a column for a note (computed ones need `ctx`). */
+export function fieldValue(memory: MemoryObject, field: string, properties: PropertyDefinition[] = [], ctx?: ComputeContext): unknown {
+	if (field.startsWith('prop:')) {
+		const prop = propertyOf(field, properties);
+		return prop ? propertyValue(memory, prop, properties, ctx) : (memory.customProps?.[field.slice(5)] ?? null);
+	}
 	switch (field) {
 		case 'title':
 			return memory.title || '';
@@ -86,9 +223,11 @@ export function formatDate(iso: string): string {
 }
 
 /** Plain text for a value (sorting fallbacks, search, CSV). */
-export function valueText(value: unknown, type?: PropertyType, field?: string): string {
+export function valueText(value: unknown, type?: PropertyType, field?: string, ctx?: ComputeContext): string {
 	if (isEmptyValue(value)) return '';
 	if (field === 'createdAt' || field === 'updatedAt') return new Date(value as number).toLocaleDateString();
+	if (type === 'relation') return asList(value).map((id) => ctx?.byId.get(id)?.title || 'Untitled').join(', ');
+	if (isComputed(type)) return computedText(value);
 	if (type === 'checkbox') return value ? 'Yes' : 'No';
 	if (type === 'date' && typeof value === 'string') return formatDate(value);
 	return asList(value).join(', ');
@@ -111,7 +250,11 @@ export function operatorsFor(type: PropertyType | undefined): DatabaseFilter['op
 			return ['checked', 'unchecked'];
 		case 'select':
 		case 'multiSelect':
-			return ['is', 'isNot', 'empty', 'notEmpty'];
+		case 'relation':
+			return ['is', 'isNot', 'contains', 'empty', 'notEmpty'];
+		case 'rollup':
+		case 'formula':
+			return ['is', 'isNot', 'contains', 'before', 'after', 'empty', 'notEmpty'];
 		case 'date':
 			return ['is', 'before', 'after', 'empty', 'notEmpty'];
 		case 'number':
@@ -137,9 +280,11 @@ export const operatorNeedsValue = (op: DatabaseFilter['op']) =>
 	!['empty', 'notEmpty', 'checked', 'unchecked'].includes(op);
 
 /** Whether a note passes one filter. */
-export function passesFilter(memory: MemoryObject, filter: DatabaseFilter, properties: PropertyDefinition[]): boolean {
+export function passesFilter(memory: MemoryObject, filter: DatabaseFilter, properties: PropertyDefinition[], ctx?: ComputeContext): boolean {
 	const prop = propertyOf(filter.field, properties);
-	const value = fieldValue(memory, filter.field);
+	const raw = fieldValue(memory, filter.field, properties, ctx);
+	// Relations compare by the related notes' titles, computed values by their text.
+	const value = prop?.type === 'relation' ? asList(raw).map((id) => ctx?.byId.get(id)?.title ?? id) : isComputed(prop?.type) && !(typeof raw === 'number') ? computedText(raw) || null : raw;
 	const wanted = (filter.value ?? '').trim().toLowerCase();
 	const list = asList(value).map((v) => v.toLowerCase());
 	switch (filter.op) {
@@ -172,13 +317,14 @@ export function filterRows(
 	rows: MemoryObject[],
 	filters: DatabaseFilter[],
 	properties: PropertyDefinition[],
-	search = ''
+	search = '',
+	ctx?: ComputeContext
 ): MemoryObject[] {
 	const needle = search.trim().toLowerCase();
 	return rows.filter((memory) => {
-		if (!filters.every((f) => passesFilter(memory, f, properties))) return false;
+		if (!filters.every((f) => passesFilter(memory, f, properties, ctx))) return false;
 		if (!needle) return true;
-		const values = properties.map((p) => valueText(memory.customProps?.[p.key], p.type)).join(' ');
+		const values = properties.map((p) => valueText(propertyValue(memory, p, properties, ctx), p.type, undefined, ctx)).join(' ');
 		return `${memory.title}\n${memory.bodyMarkdown}\n${values}`.toLowerCase().includes(needle);
 	});
 }
@@ -187,16 +333,24 @@ export function sortRows(
 	rows: MemoryObject[],
 	field: string | null,
 	direction: 'asc' | 'desc',
-	properties: PropertyDefinition[]
+	properties: PropertyDefinition[],
+	ctx?: ComputeContext
 ): MemoryObject[] {
 	if (!field) return rows;
 	const type = propertyOf(field, properties)?.type;
 	const dir = direction === 'asc' ? 1 : -1;
+	const keyOf = (m: MemoryObject) => {
+		const v = fieldValue(m, field, properties, ctx);
+		return type === 'relation' ? valueText(v, type, undefined, ctx) : v;
+	};
+	const keys = new Map(rows.map((m) => [m.id, keyOf(m)]));
 	return [...rows].sort((a, b) => {
-		const ea = isEmptyValue(fieldValue(a, field));
-		const eb = isEmptyValue(fieldValue(b, field));
+		const va = keys.get(a.id);
+		const vb = keys.get(b.id);
+		const ea = isEmptyValue(va);
+		const eb = isEmptyValue(vb);
 		if (ea !== eb) return ea ? 1 : -1; // empty last either way
-		return compareValues(fieldValue(a, field), fieldValue(b, field), type) * dir || b.updatedAt - a.updatedAt;
+		return compareValues(va, vb, type === 'relation' ? 'text' : type) * dir || b.updatedAt - a.updatedAt;
 	});
 }
 
@@ -289,4 +443,123 @@ export function inferPropertyType(values: string[]): { type: PropertyType; optio
 		return { type: 'select', options: distinct };
 	}
 	return { type: 'text' };
+}
+
+// ---- Property conditions in live queries ------------------------------------
+// A ```kurumi block's `where:` lines: `Status = Done`, `Rating > 3`,
+// `Due before today`, `Tags contains ux`, `Fiction`, `not Fiction`,
+// `Owner is empty`. Labels match properties case-insensitively, in the
+// database (folder) each note belongs to.
+
+export interface PropertyCondition {
+	label: string;
+	op: DatabaseFilter['op'] | 'atLeast' | 'atMost' | 'truthy' | 'falsy';
+	value?: string;
+}
+
+const CONDITION =
+	/^(.*?)\s+(is\s+not\s+empty|is\s+empty|is\s+not|!=|==|=|is|>=|<=|>|<|after|before|contains)(?:\s+(.*))?$/i;
+
+export function parseCondition(text: string): PropertyCondition | null {
+	const t = text.trim();
+	if (!t) return null;
+	const m = CONDITION.exec(t);
+	const unquote = (v: string | undefined) => (v ?? '').trim().replace(/^["'](.*)["']$/, '$1');
+	if (m && m[1].trim()) {
+		const label = unquote(m[1]);
+		const op = m[2].toLowerCase().replace(/\s+/g, ' ');
+		const value = unquote(m[3]);
+		const ops: Record<string, PropertyCondition['op']> = {
+			'is not empty': 'notEmpty',
+			'is empty': 'empty',
+			'is not': 'isNot',
+			'!=': 'isNot',
+			'==': 'is',
+			'=': 'is',
+			is: 'is',
+			'>=': 'atLeast',
+			'<=': 'atMost',
+			'>': 'after',
+			after: 'after',
+			'<': 'before',
+			before: 'before',
+			contains: 'contains'
+		};
+		const mapped = ops[op];
+		if (mapped === 'empty' || mapped === 'notEmpty') return { label, op: mapped };
+		if (value) return { label, op: mapped, value };
+	}
+	const negated = /^not\s+(.+)$/i.exec(t);
+	if (negated) return { label: unquote(negated[1]), op: 'falsy' };
+	return { label: unquote(t), op: 'truthy' };
+}
+
+/** Whether a note meets a condition, given the properties of its database. */
+export function meetsCondition(memory: MemoryObject, cond: PropertyCondition, properties: PropertyDefinition[], today: string, ctx?: ComputeContext): boolean {
+	const prop = properties.find((p) => p.label.toLowerCase() === cond.label.toLowerCase());
+	if (!prop) return cond.op === 'falsy' || cond.op === 'empty';
+	const field = `prop:${prop.key}`;
+	const value = cond.value?.toLowerCase() === 'today' ? today : cond.value;
+	const test = (op: DatabaseFilter['op']) => passesFilter(memory, { field, op, value }, properties, ctx);
+	switch (cond.op) {
+		case 'truthy':
+			return prop.type === 'checkbox' ? test('checked') : test('notEmpty');
+		case 'falsy':
+			return prop.type === 'checkbox' ? test('unchecked') : test('empty');
+		case 'atLeast':
+			return !test('notEmpty') ? false : !test('before');
+		case 'atMost':
+			return !test('notEmpty') ? false : !test('after');
+		case 'is':
+		case 'isNot':
+			if (prop.type === 'checkbox') {
+				const yes = /^(yes|true|checked|1)$/i.test(value ?? '');
+				return (cond.op === 'is') === (yes ? test('checked') : test('unchecked'));
+			}
+			return test(cond.op);
+		default:
+			return test(cond.op);
+	}
+}
+
+/**
+ * Rows grouped by a column's value, for grouped tables and lists: a select's
+ * options in their order, then other values A–Z, then the empty group. A
+ * row with several values (multi-select, relation) is in each of them.
+ */
+export function groupRows(
+	rows: MemoryObject[],
+	field: string,
+	properties: PropertyDefinition[],
+	ctx?: ComputeContext
+): { key: string; label: string; value: string | null; rows: MemoryObject[] }[] {
+	const prop = propertyOf(field, properties);
+	const groups = new Map<string, { label: string; value: string | null; rows: MemoryObject[] }>();
+	const empty: MemoryObject[] = [];
+	for (const row of rows) {
+		const raw = fieldValue(row, field, properties, ctx);
+		let values: string[];
+		if (prop?.type === 'checkbox') values = [raw ? 'Checked' : 'Not checked'];
+		else if (prop?.type === 'relation') values = asList(raw);
+		else if (isComputed(prop?.type)) values = computedText(raw) ? [computedText(raw)] : [];
+		else if (prop?.type === 'date' && typeof raw === 'string') values = [raw];
+		else values = asList(raw);
+		if (values.length === 0) empty.push(row);
+		for (const v of values) {
+			const label = prop?.type === 'relation' ? ctx?.byId.get(v)?.title || 'Untitled' : prop?.type === 'date' ? formatDate(v) : v;
+			const g = groups.get(v) ?? { label, value: v, rows: [] };
+			g.rows.push(row);
+			groups.set(v, g);
+		}
+	}
+	const order = prop?.options ?? [];
+	const sorted = [...groups.entries()].sort(([a, ga], [b, gb]) => {
+		const ia = order.indexOf(a);
+		const ib = order.indexOf(b);
+		if (ia !== -1 || ib !== -1) return (ia === -1 ? 1e9 : ia) - (ib === -1 ? 1e9 : ib);
+		return ga.label.localeCompare(gb.label, undefined, { numeric: true });
+	});
+	const out = sorted.map(([key, g]) => ({ key, ...g }));
+	if (empty.length) out.push({ key: '∅', label: `No ${prop?.label ?? fieldLabel(field, properties)}`, value: null, rows: empty });
+	return out;
 }

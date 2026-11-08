@@ -19,6 +19,8 @@
  */
 
 import { insertInlineMath } from './math';
+import { columnsMarkdown } from './columns-markdown';
+import { addFolder, getMemoryObject, openFolderAsDatabase } from '$lib/db';
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state';
 import { $prose } from '@milkdown/kit/utils';
 import type { EditorView } from '@milkdown/kit/prose/view';
@@ -449,6 +451,37 @@ export const builtInSlashCommands: SlashCommand[] = [
 		icon: 'link',
 		category: 'Insert',
 		execute: (view, from, to) => replaceWithText(view, from, to, '![[')
+	},
+	{
+		id: 'columns-2',
+		label: 'Two columns',
+		description: 'Side by side blocks',
+		icon: 'columns',
+		category: 'Insert',
+		execute: (view, from, to) => insertBlocks(view, from, to, columnsMarkdown(2), 'first')
+	},
+	{
+		id: 'columns-3',
+		label: 'Three columns',
+		description: 'Three blocks side by side',
+		icon: 'columns',
+		category: 'Insert',
+		execute: (view, from, to) => insertBlocks(view, from, to, columnsMarkdown(3), 'first')
+	},
+	{
+		id: 'database',
+		label: 'Database',
+		description: 'A table of notes with properties, inside this note',
+		icon: 'table',
+		category: 'Insert',
+		execute: (view, from, to) => {
+			// A new database in this note's folder, shown here as a ```database block.
+			const noteId = view.dom.closest<HTMLElement>('[data-note-id]')?.dataset.noteId;
+			const note = noteId ? getMemoryObject(noteId) : undefined;
+			const folder = addFolder(note?.title ? `${note.title} database` : 'Untitled database', note?.folderId ?? null);
+			const dbView = openFolderAsDatabase(folder.id);
+			return insertBlocks(view, from, to, '```database\nview: ' + dbView.id + '\n```\n');
+		}
 	},
 	{
 		id: 'math-block',

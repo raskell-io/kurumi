@@ -384,16 +384,55 @@ export type ReminderStatus = 'pending' | 'approved' | 'rejected' | 'snoozed';
 // property key. Custom properties live in `MemoryObject.customProps`.
 // ---------------------------------------------------------------------------
 
-export type PropertyType = 'text' | 'number' | 'date' | 'select' | 'multiSelect' | 'checkbox' | 'url' | 'person';
+export type PropertyType =
+	| 'text'
+	| 'number'
+	| 'date'
+	| 'select'
+	| 'multiSelect'
+	| 'checkbox'
+	| 'url'
+	| 'person'
+	| 'relation'
+	| 'rollup'
+	| 'formula';
+
+export type RollupFn =
+	| 'count'
+	| 'countValues'
+	| 'countUnique'
+	| 'sum'
+	| 'average'
+	| 'min'
+	| 'max'
+	| 'list'
+	| 'percentChecked'
+	| 'earliest'
+	| 'latest';
 
 export interface PropertyDefinition {
 	key: string; // unique within the view, used as the key in customProps
 	label: string;
 	type: PropertyType;
 	options?: string[]; // for select / multiSelect: allowed values
+	/** relation: the database (folder id) it links to; null for any note. Values are note ids. */
+	relationTo?: string | null;
+	/** rollup: a value of the related rows (by a relation of this database), summarised. Computed. */
+	rollup?: { relation: string; property: string; fn: RollupFn };
+	/** formula: an expression ($lib/formula). Computed. */
+	formula?: string;
 }
 
-export type DatabaseViewType = 'table' | 'board' | 'calendar' | 'gallery';
+export type DatabaseViewType = 'table' | 'board' | 'calendar' | 'gallery' | 'list' | 'timeline';
+
+/** A starting point for new rows: title, body and property values. Shared by a database's views. */
+export interface DatabaseTemplate {
+	id: string;
+	name: string;
+	title: string;
+	body: string;
+	props: Record<string, unknown>;
+}
 
 export interface DatabaseColumn {
 	// Either a built-in field name (title, type, createdAt, updatedAt,
@@ -428,7 +467,9 @@ export interface DatabaseView {
 	groupField: string | null; // for board view
 	filterQuery: string; // search filter operators string, optional
 	filters?: DatabaseFilter[];
-	dateField?: string | null; // for calendar view: a 'prop:<key>' of type date
+	dateField?: string | null; // for calendar and timeline views: a 'prop:<key>' of type date
+	endDateField?: string | null; // for the timeline: where a row ends (optional)
+	templates?: DatabaseTemplate[]; // shared by the folder's views (setDatabaseTemplates)
 	vaultId: string;
 	createdAt: number;
 	updatedAt: number;
@@ -506,6 +547,26 @@ export interface Entity {
 	updatedAt: number;
 }
 
+/**
+ * A highlight in a PDF attachment (PdfViewer.svelte). Kept per file (its
+ * `blob:` ref), so every note linking the PDF sees the same highlights.
+ * Rects are fractions of the page (x, y, width, height), so zoom doesn't
+ * matter.
+ */
+export interface PdfHighlight {
+	id: string;
+	ref: string;
+	page: number; // 1-based
+	rects: [number, number, number, number][];
+	text: string;
+	color: 'yellow' | 'green' | 'blue' | 'pink';
+	comment: string;
+	vaultId: string;
+	createdAt: number;
+	updatedAt: number;
+	[key: string]: unknown; // Automerge compatibility
+}
+
 export interface Relation {
 	id: string;
 	fromObjectId: string;
@@ -533,6 +594,8 @@ export interface KurumiDocument {
 	decisions: Record<string, Decision>;
 	questions: Record<string, Question>;
 	meetingSeries: Record<string, MeetingSeries>;
+	/** Highlights in PDF attachments, by id (added in 0.6; absent before). */
+	pdfHighlights?: Record<string, PdfHighlight>;
 	currentVaultId: string;
 	version: number;
 	/** Sync end-to-end encryption is on (src/lib/sync/crypto.ts). In the

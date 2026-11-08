@@ -108,7 +108,8 @@ export default defineConfig({
 				]
 			},
 			workbox: {
-				globPatterns: ['**/*.{js,css,html,ico,png,svg,avif,woff,woff2,wasm}'],
+				// mjs: the PDF viewer's pdf.js worker
+				globPatterns: ['**/*.{js,mjs,css,html,ico,png,svg,avif,woff,woff2,wasm}'],
 				// Exclude the ONNX runtime WASM (~22 MB) and Hugging Face model
 				// weights from precache. They're loaded on demand the first time
 				// local inference is used; the browser cache + transformers.js's

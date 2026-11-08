@@ -26,12 +26,26 @@ Large folders show 200 notes and a *Show more* button.
 
 Any folder can be a database: right-click it → *Open as database*, or
 ⌘K → *New database*. Its notes are the rows, and you add properties:
-text, number, select, multi-select, date, checkbox, URL or person.
+text, number, select, multi-select, date, checkbox, URL, person, and:
 
-- **Views:** table, board (grouped by a select property; drag cards
-  between columns), gallery and calendar (by a date property; drag to
-  another day). Add views as tabs; each keeps its own filters, sort and
-  shown properties, and all share the properties.
+- **Relation:** links to rows of another database (or any note). Pick them
+  from a list; typing a new name adds a row there.
+- **Rollup:** sums up a relation: count, sum, average, min, max, earliest or
+  latest date, percent checked, or the values themselves.
+- **Formula:** worked out per row, e.g. `prop("Points") * 2`,
+  `if(prop("Done"), "✓", "")`, `dateBetween(prop("Due"), today(), "days")`.
+  Text, maths, logic and date functions; the editor shows the result for
+  the first row as you type.
+
+- **Views:** table and list (both can be grouped by any property), board
+  (grouped by a select property; drag cards between columns), gallery,
+  calendar (by a date property; drag to another day) and timeline (from a
+  start to an end date; drag a bar to move it, its end to change its length).
+  Add views as tabs; each keeps its own filters, sort and shown properties,
+  and all share the properties.
+- **Templates:** the arrow next to *New* adds rows from a template (a title,
+  where `{date}` is today, a body and property values).
+- **In a note:** `/database`, or the database's ⋯ → *Copy embed for a note*.
 - **Editing:** click a cell. In a select, type a new option to add it.
   *New* adds a row (a note in the folder); a row passing a view's
   filters keeps their values.
@@ -42,6 +56,17 @@ text, number, select, multi-select, date, checkbox, URL or person.
 
 Properties sync with every method. In git sync they're merged per note,
 the side that changed them last winning.
+
+## Canvas
+
+A canvas is a board for thinking spatially: ⌘K → *New canvas*, or a folder's
+menu → *New canvas*. Double-click the board for a text card (Markdown), or add
+a note, a link or a group from the toolbar. Select a card to resize or colour
+it, and drag one of its side dots onto another card to connect them; a
+connection can have a label and an arrow. Drag the board to pan, scroll or
+pinch to zoom. Canvases use Obsidian's open JSON Canvas format: Obsidian's
+`.canvas` files import with the vault, and the Markdown export writes them
+back.
 
 ## Favorites, icons and tabs
 

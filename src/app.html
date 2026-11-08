@@ -96,9 +96,24 @@
 				c.add('font-size-' + (localStorage.getItem('kurumi-editor-font-size') || 'medium'));
 				c.add('note-width-' + (localStorage.getItem('kurumi-note-width') || 'wide'));
 				c.add('accent-' + (localStorage.getItem('kurumi-accent') || 'lavender'));
+				var p = localStorage.getItem('kurumi-palette');
+				if (p && p !== 'catppuccin') c.add('palette-' + p);
 			} catch (e) {}
 		</script>
 		%sveltekit.head%
+		<script>
+			// The user's CSS snippet (Settings → Appearance), after the app's
+			// styles so it wins ties. The layout moves it last again on start.
+			try {
+				var css = localStorage.getItem('kurumi-custom-css');
+				if (css) {
+					var s = document.createElement('style');
+					s.id = 'kurumi-custom-css';
+					s.textContent = css;
+					document.head.appendChild(s);
+				}
+			} catch (e) {}
+		</script>
 	</head>
 	<body data-sveltekit-preload-data="hover">
 		<!-- Static text for crawlers and readers without JavaScript; removed as soon as scripts run, the app renders below. -->

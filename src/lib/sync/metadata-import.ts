@@ -199,7 +199,7 @@ export function readMetadataRecords(metadata: GitMetadata, fallbackVaultId: stri
 			databaseViews: readList<DatabaseView>(work.databaseViews, vaultId, CREATED_UPDATED, (r) =>
 				present(r.name) && present(r.folderId)
 					? {
-							viewType: oneOf(r.viewType, ['table', 'board', 'calendar', 'gallery'], 'table'),
+							viewType: oneOf(r.viewType, ['table', 'board', 'calendar', 'gallery', 'list', 'timeline'], 'table'),
 							columns: Array.isArray(r.columns)
 								? r.columns.filter((c) => present(c?.field)).map((c) => ({ ...c, visible: c.visible !== false }))
 								: [{ field: 'title', visible: true }],
@@ -208,7 +208,7 @@ export function readMetadataRecords(metadata: GitMetadata, fallbackVaultId: stri
 										...p,
 										type: oneOf(
 											p.type,
-											['text', 'number', 'date', 'select', 'multiSelect', 'checkbox', 'url', 'person'],
+											['text', 'number', 'date', 'select', 'multiSelect', 'checkbox', 'url', 'person', 'relation', 'rollup', 'formula'],
 											'text'
 										)
 									}))

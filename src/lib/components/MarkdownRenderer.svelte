@@ -4,11 +4,14 @@
 	import { marked } from 'marked';
 	import { renderMermaid } from '$lib/mermaid';
 	import { renderMath } from '$lib/math';
-	import { parseWikilink, wikilinkLabel } from '$lib/wikilinks';
+	import { parseWikilink, wikilinkLabel, markdownSection, markdownBlock } from '$lib/wikilinks';
+	import { setPendingAnchor, scrollToAnchor } from '$lib/stores/anchor';
 	import { findMemoryObjectByTitle } from '$lib/db';
 	import { resolveBlobUrl, isBlobRef } from '$lib/utils/image';
 	import DataviewBlock from './DataviewBlock.svelte';
-	import { onMount } from 'svelte';
+	import { onMount, mount, unmount, tick } from 'svelte';
+	import DatabaseBlock from './database/DatabaseBlock.svelte';
+	import { databaseBlockViewId } from '$lib/editor/databaseBlock.svelte';
 
 	interface Props {
 		content: string;
@@ -29,8 +32,9 @@
 		source: string;
 	}
 
-	function extractDataviewBlocks(md: string): { cleaned: string; blocks: DataviewEntry[]; mermaidBlocks: MermaidEntry[] } {
+	function extractDataviewBlocks(md: string): { cleaned: string; blocks: DataviewEntry[]; mermaidBlocks: MermaidEntry[]; databaseBlocks: DataviewEntry[] } {
 		const blocks: DataviewEntry[] = [];
+		const databaseBlocks: DataviewEntry[] = [];
 		const mermaidBlocks: MermaidEntry[] = [];
 		let dvIdx = 0;
 		let mmIdx = 0;
@@ -39,12 +43,55 @@
 			blocks.push({ id, source: body });
 			return `<div data-dataview-id="${id}"></div>`;
 		});
+		cleaned = cleaned.replace(/```database\n([\s\S]*?)```/g, (_, body) => {
+			const id = `db-${databaseBlocks.length}`;
+			databaseBlocks.push({ id, source: body });
+			return `<div data-database-id="${id}"></div>`;
+		});
 		cleaned = cleaned.replace(/```mermaid\n([\s\S]*?)```/g, (_, body) => {
 			const id = `mm-${mmIdx++}`;
 			mermaidBlocks.push({ id, source: body.trim() });
 			return `<div class="mermaid-block" data-mermaid-id="${id}"></div>`;
 		});
-		return { cleaned, blocks, mermaidBlocks };
+		return { cleaned, blocks, mermaidBlocks, databaseBlocks };
+	}
+
+	/**
+	 * Columns (`::::columns` / `:::column`, editor/columns.ts) as a grid. The
+	 * markdown inside stays markdown: blank lines around it let marked parse it.
+	 */
+	function renderColumns(md: string): string {
+		const lines = md.split('\n');
+		const out: string[] = [];
+		let fence: string | null = null;
+		let depth = 0; // 0 outside, 1 in columns, 2 in a column
+		let outerFence = '';
+		for (const line of lines) {
+			const code = line.trimStart().match(/^(`{3,}|~{3,})/)?.[1];
+			if (fence) {
+				if (code && code[0] === fence[0] && code.length >= fence.length) fence = null;
+				out.push(line);
+				continue;
+			}
+			if (code) fence = code;
+			const open = /^(:{3,})\s*(columns|column)\s*$/.exec(line);
+			const close = /^(:{3,})\s*$/.exec(line);
+			if (depth === 0 && open?.[2] === 'columns') {
+				depth = 1;
+				outerFence = open[1];
+				out.push('<div class="md-columns">');
+			} else if (depth === 1 && open?.[2] === 'column') {
+				depth = 2;
+				out.push('<div class="md-column">', '');
+			} else if (depth === 2 && close && close[1].length < outerFence.length) {
+				depth = 1;
+				out.push('', '</div>');
+			} else if (depth === 1 && close && close[1].length >= outerFence.length) {
+				depth = 0;
+				out.push('</div>', '');
+			} else out.push(line);
+		}
+		return out.join('\n');
 	}
 
 	/**
@@ -52,6 +99,7 @@
 	 * that maps to HTML structures marked doesn't understand natively.
 	 */
 	function preProcessMarkdown(md: string): string {
+		md = renderColumns(md);
 		// --- Bare checkboxes: [ ] and [x] without list prefix ---
 		// Notion and Obsidian both auto-convert these. GFM requires the
 		// `- ` prefix, so we add it when the line starts with [ ] or [x].
@@ -88,17 +136,29 @@
 		// we show a linked card with a preview; the full embed would
 		// create recursive rendering issues.
 		md = md.replace(/!\[\[([^[\]\n]+?)\]\]/g, (_, inner: string) => {
-			const title = parseWikilink(inner).target;
+			const { target: title, heading, block } = parseWikilink(inner);
 			const memory = findMemoryObjectByTitle(title);
 			if (memory) {
-				const preview = (memory.summaryShort || memory.bodyMarkdown || '')
+				// A heading's section or a block, else the summary or the note.
+				const part = heading
+					? markdownSection(memory.bodyMarkdown, heading)
+					: block
+						? markdownBlock(memory.bodyMarkdown, block)
+						: null;
+				const preview = (part ?? (memory.summaryShort || memory.bodyMarkdown || ''))
 					.replace(/\s+/g, ' ')
 					.trim()
 					.slice(0, 150);
-				return `<div class="memory-embed"><a href="/memory/${memory.id}" class="embed-link"><strong>${title}</strong><span class="embed-preview">${preview}${preview.length >= 150 ? '...' : ''}</span></a></div>`;
+				return `<div class="memory-embed"><a href="/memory/${memory.id}" class="embed-link"><strong>${escapeHtml(wikilinkLabel(inner.split(/\\?\|/)[0]))}</strong><span class="embed-preview">${preview}${preview.length >= 150 ? '...' : ''}</span></a></div>`;
 			}
 			return `<div class="memory-embed memory-embed-broken"><span>![[${title}]] — not found</span></div>`;
 		});
+
+		// --- Block ids: ` ^a1b2c3` at a line's end becomes an invisible
+		// anchor for [[Note#^a1b2c3]] links.
+		md = outsideCode(md, (part) =>
+			part.replace(/[ \t]\^([A-Za-z0-9][A-Za-z0-9-]*)[ \t]*$/gm, (_, id: string) => `<span class="block-anchor" data-block-id="${escapeAttr(id)}"></span>`)
+		);
 
 		// --- LaTeX math: $inline$ and $$block$$ ---
 		// Placeholders with the source in an attribute (so the later
@@ -144,11 +204,13 @@
 	function postProcessHtml(html: string): string {
 		// Process wikilinks [[Title]], [[Title|alias]], [[Title#Heading]]
 		html = html.replace(/\[\[([^[\]\n]+?)\]\]/g, (_, inner: string) => {
-			const { target } = parseWikilink(inner);
+			const { target, heading, block } = parseWikilink(inner);
 			const label = wikilinkLabel(inner);
+			const anchor = `${heading ? ` data-heading="${escapeAttr(heading)}"` : ''}${block ? ` data-block="${escapeAttr(block)}"` : ''}`;
+			if (!target && anchor) return `<a href="#" class="wikilink"${anchor}>${label}</a>`;
 			const memory = target ? findMemoryObjectByTitle(target) : undefined;
 			if (memory) {
-				return `<a href="/read/${memory.id}" class="wikilink" title="${escapeAttr(target)}">${label}</a>`;
+				return `<a href="/read/${memory.id}" class="wikilink" title="${escapeAttr(target)}" data-note="${memory.id}"${anchor}>${label}</a>`;
 			}
 			return `<a href="/?search=${encodeURIComponent(target || label)}" class="wikilink wikilink-broken">${label}</a>`;
 		});
@@ -226,6 +288,21 @@
 
 	function handleClick(e: MouseEvent) {
 		const target = e.target as HTMLElement;
+
+		// A link to a heading or block: there, or in this note.
+		const link = target.closest<HTMLAnchorElement>('a.wikilink[data-heading], a.wikilink[data-block]');
+		if (link && contentDiv) {
+			const anchor = { heading: link.dataset.heading ?? null, block: link.dataset.block ?? null };
+			const noteId = link.dataset.note;
+			if (!noteId || location.hash.includes(`/read/${noteId}`)) {
+				e.preventDefault();
+				const root = contentDiv;
+				void scrollToAnchor(() => root, anchor, 300);
+			} else {
+				setPendingAnchor(noteId, anchor);
+			}
+			return;
+		}
 
 		// Attachment links open the stored file.
 		if (handleAttachmentClick(e)) return;
@@ -325,6 +402,29 @@
 		requestAnimationFrame(() => resolveBlobImages());
 	});
 
+	// Live queries and databases go where their block was (placeholders in the HTML).
+	$effect(() => {
+		void html;
+		const queries = dataviewBlocks;
+		const dbs = extracted.databaseBlocks;
+		if (!contentDiv || (queries.length === 0 && dbs.length === 0)) return;
+		const mounted: ReturnType<typeof mount>[] = [];
+		const root = contentDiv;
+		tick().then(() => {
+			for (const block of queries) {
+				const target = root.querySelector(`[data-dataview-id="${block.id}"]`);
+				if (target) mounted.push(mount(DataviewBlock, { target, props: { source: block.source } }));
+			}
+			for (const block of dbs) {
+				const target = root.querySelector(`[data-database-id="${block.id}"]`);
+				if (target) mounted.push(mount(DatabaseBlock, { target, props: { viewId: databaseBlockViewId(block.source) } }));
+			}
+		});
+		return () => {
+			for (const m of mounted) void unmount(m);
+		};
+	});
+
 	// Typeset math after DOM update (KaTeX loads on first use)
 	$effect(() => {
 		void html;
@@ -360,9 +460,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="markdown-content" bind:this={contentDiv} onclick={handleClick}>
 	{@html html}
-	{#each dataviewBlocks as block (block.id)}
-		<DataviewBlock source={block.source} />
-	{/each}
+
 </div>
 
 
@@ -889,6 +987,25 @@
 		border-style: dashed;
 		font-size: 0.8125rem;
 		color: var(--color-text-faint);
+	}
+
+	/* Columns */
+	.markdown-content :global(.md-columns) {
+		display: grid;
+		grid-auto-columns: minmax(0, 1fr);
+		grid-auto-flow: column;
+		gap: 1.5rem;
+		margin: 0.75em 0;
+	}
+
+	.markdown-content :global(.md-column > :first-child) {
+		margin-top: 0;
+	}
+
+	@media (max-width: 640px) {
+		.markdown-content :global(.md-columns) {
+			grid-auto-flow: row;
+		}
 	}
 
 	/* LaTeX math (KaTeX) */

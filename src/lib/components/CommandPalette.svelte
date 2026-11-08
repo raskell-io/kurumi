@@ -16,7 +16,8 @@
 		transcribeMemoryAudio,
 		todayIso,
 		addFolder,
-		openFolderAsDatabase
+		openFolderAsDatabase,
+		addCanvas
 	} from '$lib/db';
 	import { storeBlob } from '$lib/db/blob-store';
 	import { getIconById } from '$lib/icons/vault-icons';
@@ -109,6 +110,17 @@
 			action: () => {
 				onClose();
 				triggerUploadRecording.set(true);
+			}
+		},
+		{
+			id: 'new-canvas',
+			type: 'action',
+			title: 'New canvas',
+			description: 'Cards, notes and links on a board, with connections',
+			icon: 'plus',
+			action: () => {
+				onClose();
+				goto(`/canvas/${addCanvas().id}`);
 			}
 		},
 		{

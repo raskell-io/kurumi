@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { memoryObjects, folders, type MemoryObject } from '$lib/db';
-	import { NotebookText } from 'lucide-svelte';
+	import { NotebookText, Heading } from 'lucide-svelte';
+	import { headingsOf } from '$lib/wikilinks';
 	import { placePopup } from '$lib/editor/datePeopleAutocomplete';
 
 	interface Props {
@@ -78,6 +79,42 @@
 		return filtered.slice(0, 10);
 	});
 
+	// `[[Note#` lists that note's headings instead of notes.
+	let hashAt = $derived(query.indexOf('#'));
+	let headingNote = $derived(
+		hashAt > 0
+			? $memoryObjects.find((m) => (m.title || '').toLowerCase() === query.slice(0, hashAt).trim().toLowerCase()) ?? null
+			: null
+	);
+
+	interface Item {
+		id: string;
+		title: string;
+		sub: string;
+		value: string;
+		heading: boolean;
+		sameFolder: boolean;
+	}
+
+	let items = $derived.by((): Item[] => {
+		if (headingNote) {
+			const q = query.slice(hashAt + 1).trim().toLowerCase();
+			const title = headingNote.title || 'Untitled';
+			return headingsOf(headingNote.bodyMarkdown)
+				.filter((h) => h.text.toLowerCase().includes(q))
+				.slice(0, 10)
+				.map((h, i) => ({ id: `${i}:${h.text}`, title: h.text, sub: `Heading ${h.level}`, value: `${title}#${h.text}`, heading: true, sameFolder: false }));
+		}
+		return filteredNotes.map((n) => ({
+			id: n.id,
+			title: n.title || 'Untitled',
+			sub: getFolderName(n.folderId),
+			value: n.title || 'Untitled',
+			heading: false,
+			sameFolder: n.folderId === currentFolderId
+		}));
+	});
+
 	$effect(() => {
 		// Reset selection whenever the typed query changes
 		void query;
@@ -99,9 +136,6 @@
 		return () => window.removeEventListener('keydown', onKey, true);
 	});
 
-	function handleSelect(memory: MemoryObject) {
-		onSelect(memory.title || 'Untitled');
-	}
 
 	function handleKey(key: string): boolean {
 		switch (key) {
@@ -109,17 +143,17 @@
 				onClose();
 				return true;
 			case 'ArrowDown':
-				if (filteredNotes.length === 0) return false;
-				selectedIndex = Math.min(selectedIndex + 1, filteredNotes.length - 1);
+				if (items.length === 0) return false;
+				selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
 				return true;
 			case 'ArrowUp':
-				if (filteredNotes.length === 0) return false;
+				if (items.length === 0) return false;
 				selectedIndex = Math.max(selectedIndex - 1, 0);
 				return true;
 			case 'Enter':
 			case 'Tab':
-				if (filteredNotes.length > 0) {
-					onSelect(filteredNotes[selectedIndex].title || 'Untitled');
+				if (items.length > 0) {
+					onSelect(items[selectedIndex].value);
 				} else if (query.trim()) {
 					// Create link with typed text
 					onSelect(query.trim());
@@ -141,14 +175,14 @@
 	aria-label="Link to note"
 >
 	<div class="header">
-		<span>Link to note</span>
+		<span>{headingNote ? `Heading in ${headingNote.title || 'Untitled'}` : 'Link to note'}</span>
 		{#if query.trim()}
 			<span class="query">· {query}</span>
 		{/if}
 	</div>
 
 	<div class="results">
-		{#if filteredNotes.length === 0}
+		{#if items.length === 0}
 			<div class="empty">
 				{#if query.trim()}
 					<span>Press Enter to link to "{query.trim()}"</span>
@@ -157,7 +191,7 @@
 				{/if}
 			</div>
 		{:else}
-			{#each filteredNotes as note, i (note.id)}
+			{#each items as item, i (item.id)}
 				<button
 					class="result-item"
 					class:selected={i === selectedIndex}
@@ -166,19 +200,23 @@
 					onmousedown={(e) => {
 						// Keep the editor's focus and selection intact
 						e.preventDefault();
-						handleSelect(note);
+						onSelect(item.value);
 					}}
 					onmouseenter={() => (selectedIndex = i)}
 					tabindex="-1"
 				>
-					<NotebookText class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
+					{#if item.heading}
+						<Heading class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
+					{:else}
+						<NotebookText class="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
+					{/if}
 					<div class="note-info">
-						<span class="note-title">{note.title || 'Untitled'}</span>
-						{#if note.folderId}
-							<span class="note-folder">{getFolderName(note.folderId)}</span>
+						<span class="note-title">{item.title}</span>
+						{#if item.sub}
+							<span class="note-folder">{item.sub}</span>
 						{/if}
 					</div>
-					{#if note.folderId === currentFolderId}
+					{#if item.sameFolder}
 						<span class="same-folder-badge">Same folder</span>
 					{/if}
 				</button>

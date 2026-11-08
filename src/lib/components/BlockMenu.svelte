@@ -21,8 +21,12 @@
 		Code,
 		Copy,
 		Trash2,
-		Check
+		Check,
+		Link2
 	} from 'lucide-svelte';
+	import { linkToBlock } from '$lib/editor/blockRef';
+	import { getMemoryObject } from '$lib/db';
+	import { showNotice } from '$lib/stores/notice';
 
 	// Menu for the block handle's ⋮⋮ button: turn the block into another
 	// type, duplicate it, or delete it.
@@ -31,9 +35,21 @@
 		blockPos: number;
 		anchor: DOMRect;
 		onClose: () => void;
+		noteId?: string;
 	}
 
-	let { view, blockPos, anchor, onClose }: Props = $props();
+	let { view, blockPos, anchor, onClose, noteId }: Props = $props();
+
+	// [[Title#Heading]] for a heading, else [[Title#^id]] (adding the id).
+	// synced: `![[…]]`, an embed that can be edited wherever it's pasted.
+	function copyLink(synced = false) {
+		const title = (noteId && getMemoryObject(noteId)?.title) || 'Untitled';
+		const link = linkToBlock(view, inside, title);
+		if (!link) return showNotice('This block can’t be linked to.');
+		const text = synced ? `!${link}` : link;
+		void navigator.clipboard?.writeText(text);
+		showNotice(synced ? `Copied ${text}: paste it on a line of its own in any note` : `Copied ${link}`);
+	}
 
 	const ICONS: Record<BlockKind, typeof Pilcrow> = {
 		paragraph: Pilcrow,
@@ -82,6 +98,12 @@
 		</button>
 	{/each}
 	<div class="k-menu-sep"></div>
+	<button class="k-menu-item" role="menuitem" onclick={() => run(copyLink)}>
+		<Link2 class="h-4 w-4 text-[var(--color-text-muted)]" /> Copy link to block
+	</button>
+	<button class="k-menu-item" role="menuitem" onclick={() => run(() => copyLink(true))}>
+		<Copy class="h-4 w-4 text-[var(--color-text-muted)]" /> Copy as synced block
+	</button>
 	<button class="k-menu-item" role="menuitem" onclick={() => run(() => duplicateBlock(view, blockPos))}>
 		<Copy class="h-4 w-4 text-[var(--color-text-muted)]" /> Duplicate
 	</button>

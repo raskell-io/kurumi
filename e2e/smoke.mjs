@@ -190,8 +190,12 @@ async function typeInEditor(page, text, selector = 'main .ProseMirror') {
 	await sleep(700); // editor debounce + autosave
 }
 
+// The editor's HTML without attributes.
 const editorHtml = (page, selector = 'main .ProseMirror') =>
-	page.$eval(selector, (e) => e.innerHTML.replace(/ (class|id|data-(?!item-type|checked)[\w-]+|contenteditable|draggable|style|aria-[\w-]+)="[^"]*"/g, ''));
+	page.$eval(selector, (e) => {
+		const copy = e.cloneNode(true);
+		return copy.innerHTML.replace(/ (class|id|data-(?!item-type|checked)[\w-]+|contenteditable|draggable|style|aria-[\w-]+)="[^"]*"/g, '');
+	});
 
 const treeRowText = (page) =>
 	page.$$eval('.note-row', (rows) => rows.map((r) => r.textContent.replace(/\s+/g, ' ').trim()));
@@ -675,17 +679,24 @@ const scenarios = {
 		await page.waitForFunction(() => /brief\.pdf\s+signed/.test(document.querySelector('main .ProseMirror').textContent));
 		await sleep(700);
 		assert.match(await bodyOf(page, 'Files'), /\[brief\.pdf\]\(blob:[0-9A-Za-z]+\) signed/);
-		// Clicking opens the stored file in a new tab
-		const opened = context.waitForTarget((t) => t.url().startsWith('blob:http'), { timeout: 10_000 });
+		// A PDF opens in Kurumi's viewer (this one isn't a real PDF: it says so),
+		// which can open the stored file in a new tab
 		await chip.click();
+		await page.waitForFunction(() => document.querySelector('.pdf-viewer .pdf-name')?.textContent === 'brief.pdf');
+		const opened = context.waitForTarget((t) => t.url().startsWith('blob:http'), { timeout: 10_000 });
+		await page.click('.pdf-viewer button[aria-label="Open in a new tab"]');
 		await (await (await opened).page())?.close();
+		await page.bringToFront();
+		await page.keyboard.press('Escape');
+		await page.waitForFunction(() => !document.querySelector('.pdf-viewer'));
 		// Read mode too
 		const id = await page.evaluate(() => location.hash.split('/').pop());
 		await page.goto(`${BASE}/read/${id}`, { waitUntil: 'load' });
 		const readChip = await page.waitForSelector('main a[href^="blob:"]');
-		const openedAgain = context.waitForTarget((t) => t.url().startsWith('blob:http'), { timeout: 10_000 });
 		await readChip.click();
-		await (await (await openedAgain).page())?.close();
+		await page.waitForSelector('.pdf-viewer');
+		await page.keyboard.press('Escape');
+		await page.waitForFunction(() => !document.querySelector('.pdf-viewer'));
 		// A file another device attached that hasn't synced here: a notice
 		await db(page, `db.addMemoryObject('Elsewhere', '[minutes.docx](blob:notSyncedYet1)');`);
 		await page.goto(`${BASE}/read/${await db(page, `let ms; db.memoryObjects.subscribe((v) => (ms = v))(); return ms.find((m) => m.title === 'Elsewhere').id;`)}`, { waitUntil: 'load' });
@@ -2020,6 +2031,149 @@ const scenarios = {
 		await page.goto(`${BASE}/#/memory/${ids.row}`, { waitUntil: 'load' });
 		await page.waitForSelector('.note-prop');
 		assert.match(await page.$eval('.note-props', (e) => e.textContent), /Status\s*Blocked/);
+		assert.deepEqual(errors, []);
+	},
+
+	async 'heading and block links, synced blocks, columns and folds'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const filler = Array.from({ length: 25 }, (_, i) => `Filler paragraph ${i}.`).join('\n\n');
+		const ids = await db(page, `
+			const src = db.addMemoryObject('Plan', '# Plan\\n\\n' + arg + '\\n\\n## Goals\\n\\nShip the beta ^g01\\n\\n## Risks\\n\\nNone.');
+			const note = db.addMemoryObject('Board', 'See [[Plan#Goals]].\\n\\n::::columns\\n:::column\\nLeft\\n:::\\n\\n:::column\\n- one\\n- two\\n:::\\n::::\\n\\n## Folded\\n\\nHidden text\\n\\n![[Plan#^g01]]\\n');
+			return { src: src.id, note: note.id };
+		`, filler);
+		await page.goto(`${BASE}/#/memory/${ids.note}`, { waitUntil: 'load' });
+		await page.waitForSelector('main .kurumi-columns');
+		assert.deepEqual(await page.$$eval('main .kurumi-column', (c) => c.map((x) => x.textContent.trim())), ['Left', 'onetwo']);
+		// Typing in a column keeps the markdown (and the list tight)
+		await page.click('main .kurumi-column:nth-child(2) li:last-child p');
+		await page.keyboard.press('End');
+		await page.keyboard.type('!');
+		await sleep(1500);
+		const body = await db(page, `return db.getMemoryObject(arg).bodyMarkdown;`, ids.note);
+		assert.match(body, /::::columns\n:::column\nLeft\n:::\n\n:::column\n- one\n- two!\n:::\n::::/);
+		// Folding hides the section, not the text
+		await page.evaluate(() => {
+			// The fold caret sits in the margin, left of the heading
+			const h = document.querySelector('main .milkdown h2.foldable');
+			const r = h.getBoundingClientRect();
+			h.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: r.left - 10, clientY: r.top + r.height / 2 }));
+		});
+		await page.waitForFunction(() => [...document.querySelectorAll('main .fold-hidden')].some((e) => e.textContent.includes('Hidden text')));
+		// Synced block: edit it here, saved in Plan with its id
+		await page.click('main .note-embed-edit');
+		await page.waitForSelector('main .note-embed-editor');
+		await page.evaluate(() => {
+			const t = document.querySelector('main .note-embed-editor');
+			t.value = 'Ship the beta and docs';
+			t.dispatchEvent(new Event('input', { bubbles: true }));
+		});
+		await page.click('main .note-embed-edit');
+		await sleep(800);
+		assert.match(await db(page, `return db.getMemoryObject(arg).bodyMarkdown;`, ids.src), /Ship the beta and docs \^g01/);
+		// A heading link opens the note scrolled to the heading
+		await page.click('main .milkdown .wikilink');
+		await page.waitForFunction((id) => location.hash.includes(id), {}, ids.src);
+		await page.waitForFunction(
+			() => {
+				const h = [...document.querySelectorAll('main .milkdown h2')].find((x) => x.textContent.includes('Goals'));
+				if (!h) return false;
+				const r = h.getBoundingClientRect();
+				return r.top > 0 && r.bottom < innerHeight;
+			},
+			{ timeout: 10000 }
+		);
+		assert.deepEqual(errors, []);
+	},
+
+	async 'databases: relations, rollups, formulas, grouping and a timeline'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const ids = await db(page, `
+			const tasks = db.addFolder('Tasks');
+			const tasksView = db.openFolderAsDatabase(tasks.id);
+			db.setDatabaseProperties(tasks.id, [
+				{ key: 'points', label: 'Points', type: 'number' },
+				{ key: 'done', label: 'Done', type: 'checkbox' },
+				{ key: 'start', label: 'Start', type: 'date' },
+				{ key: 'stage', label: 'Stage', type: 'select', options: ['Todo', 'Done'] }
+			]);
+			const a = db.addDatabaseRow(tasks.id, 'Spec', { points: 3, done: true, start: '2026-11-02', stage: 'Done' });
+			const b = db.addDatabaseRow(tasks.id, 'Build', { points: 5, start: '2026-11-09', stage: 'Todo' });
+			const projects = db.addFolder('Projects');
+			const projView = db.openFolderAsDatabase(projects.id);
+			db.setDatabaseProperties(projects.id, [
+				{ key: 'tasks', label: 'Tasks', type: 'relation', relationTo: tasks.id },
+				{ key: 'total', label: 'Total', type: 'rollup', rollup: { relation: 'tasks', property: 'points', fn: 'sum' } },
+				{ key: 'label', label: 'Label', type: 'formula', formula: 'concat(prop("Total"), " pts")' }
+			]);
+			db.addDatabaseRow(projects.id, 'Launch', { tasks: [a.id, b.id] });
+			return { tasksView: tasksView.id, projView: projView.id };
+		`);
+		await page.goto(`${BASE}/#/database/${ids.projView}`, { waitUntil: 'load' });
+		await page.waitForSelector('main tbody tr');
+		const row = await page.$eval('main tbody tr', (r) => [...r.querySelectorAll('td')].map((td) => td.textContent.replace(/\s+/g, ' ').trim()));
+		assert.deepEqual(row.slice(0, 4), ['Launch', 'Spec Build', '8', '8 pts']);
+		await page.goto(`${BASE}/#/database/${ids.tasksView}`, { waitUntil: 'load' });
+		await page.waitForSelector('main select[aria-label="Group by"]');
+		await page.select('main select[aria-label="Group by"]', 'prop:stage');
+		await page.waitForFunction(() => document.querySelectorAll('main .db-group-head').length === 2);
+		await db(page, `db.updateDatabaseView(arg, { viewType: 'timeline', dateField: 'prop:start' });`, ids.tasksView);
+		await page.waitForFunction(() => document.querySelectorAll('main .db-tl-bar').length === 2);
+		assert.deepEqual(errors, []);
+	},
+
+	async 'canvas: cards, a connection, saved as JSON Canvas'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const id = await db(page, `db.addMemoryObject('Roadmap', 'The plan.'); return db.addCanvas('Planning').id;`);
+		await page.goto(`${BASE}/#/memory/${id}`, { waitUntil: 'load' });
+		await page.waitForSelector('main .canvas-viewport');
+		assert.match(await page.evaluate(() => location.hash), /canvas/);
+		const vp = await (await page.$('main .canvas-viewport')).boundingBox();
+		await page.mouse.click(vp.x + 250, vp.y + 220, { clickCount: 2 });
+		await page.waitForSelector('main .card-editor');
+		await sleep(100);
+		await page.keyboard.type('An idea');
+		await page.mouse.click(vp.x + vp.width - 40, vp.y + vp.height - 40);
+		await clickText(page, 'main .canvas-toolbar button', 'Note');
+		await page.waitForSelector('[role="dialog"] input');
+		await sleep(100);
+		await page.keyboard.type('Road');
+		await page.keyboard.press('Enter');
+		await page.waitForFunction(() => document.querySelectorAll('main .canvas-card').length === 2);
+		const cards = await page.$$('main .canvas-card');
+		const text = await cards[0].boundingBox();
+		await page.mouse.click(text.x + 15, text.y + 15);
+		const handle = await (await page.waitForSelector('main .canvas-card.is-selected .handle-right')).boundingBox();
+		const note = await cards[1].boundingBox();
+		await page.mouse.move(handle.x + 6, handle.y + 6);
+		await page.mouse.down();
+		await page.mouse.move(note.x + note.width / 2, note.y + note.height / 2, { steps: 8 });
+		await page.mouse.up();
+		await sleep(1000);
+		const saved = JSON.parse(await db(page, `return db.getMemoryObject(arg).bodyMarkdown;`, id));
+		assert.deepEqual(saved.nodes.map((n) => n.type), ['text', 'file']);
+		assert.equal(saved.nodes[0].text, 'An idea');
+		assert.equal(saved.edges.length, 1);
+		assert.deepEqual(errors, []);
+	},
+
+	async 'vim mode: normal, insert and operators'(browser) {
+		const { page, errors } = await freshPage(browser);
+		await page.evaluate(() => localStorage.setItem('kurumi-vim', 'on'));
+		const id = await db(page, `return db.addMemoryObject('Vim', 'alpha beta gamma\\n\\nsecond line').id;`);
+		await page.goto(`${BASE}/#/memory/${id}`, { waitUntil: 'load' });
+		await page.reload({ waitUntil: 'load' });
+		const p = await page.waitForSelector('main .milkdown .ProseMirror p');
+		const box = await p.boundingBox();
+		await page.mouse.click(box.x + 2, box.y + box.height / 2);
+		await page.waitForSelector('main .vim-badge');
+		for (const key of ['0', 'd', 'w', 'w', 'c', 'w']) await page.keyboard.type(key);
+		await page.keyboard.type('GAMMA');
+		await page.keyboard.press('Escape');
+		for (const key of ['j', 'd', 'd', 'u']) await page.keyboard.type(key);
+		await sleep(1500);
+		assert.equal((await db(page, `return db.getMemoryObject(arg).bodyMarkdown;`, id)).trim(), 'beta GAMMA\n\nsecond line');
+		assert.equal(await page.$eval('main .vim-badge', (b) => b.textContent), 'NORMAL');
 		assert.deepEqual(errors, []);
 	},
 

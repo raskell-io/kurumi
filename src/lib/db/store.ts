@@ -35,6 +35,8 @@ import {
 	type DatabaseView,
 	type DatabaseViewType,
 	type PropertyDefinition,
+	type PdfHighlight,
+	type DatabaseTemplate,
 	type DatabaseColumn,
 	type SavedSearch,
 	type Flashcard,
@@ -1970,6 +1972,21 @@ export function updateMemoryObject(
 	});
 }
 
+/** A new, empty canvas ($lib/canvas, /canvas/[id]). */
+export function addCanvas(title = 'Untitled canvas', folderId: string | null = null): MemoryObject {
+	const memory = addMemoryObject(title, '{\n\t"nodes": [],\n\t"edges": []\n}', folderId);
+	updateDoc((d) => {
+		const m = d.memoryObjects[memory.id];
+		if (m) m.type = 'canvas';
+	});
+	return memoriesView()[memory.id] ?? memory;
+}
+
+/** Where a note opens: canvases on their board, everything else in the editor. */
+export function notePath(memory: Pick<MemoryObject, 'id' | 'type'>): string {
+	return memory.type === 'canvas' ? `/canvas/${memory.id}` : `/memory/${memory.id}`;
+}
+
 // Set or clear (null) a note's page icon.
 export function setMemoryIcon(id: string, icon: string | null): void {
 	updateDoc((d) => {
@@ -3657,6 +3674,7 @@ export function addDatabaseView(options: {
 	const now = Date.now();
 	// Views of one folder share its properties.
 	const properties = options.properties ?? deepCopy(databasePropertiesOf(options.folderId));
+	const sibling = Object.values(doc?.databaseViews ?? {}).find((v) => v.folderId === options.folderId && v.templates?.length);
 	const view: DatabaseView = {
 		id: generateId(),
 		name: options.name,
@@ -3671,6 +3689,7 @@ export function addDatabaseView(options: {
 		sortDirection: 'desc',
 		groupField: null,
 		filterQuery: '',
+		...(sibling?.templates ? { templates: deepCopy(sibling.templates) } : {}),
 		vaultId: getCurrentVaultId(),
 		createdAt: now,
 		updatedAt: now
@@ -3698,7 +3717,7 @@ export function updateDatabaseView(
 	updates: Partial<Pick<
 		DatabaseView,
 		'name' | 'viewType' | 'columns' | 'properties' | 'sortField' |
-		'sortDirection' | 'groupField' | 'filterQuery' | 'filters' | 'dateField'
+		'sortDirection' | 'groupField' | 'filterQuery' | 'filters' | 'dateField' | 'endDateField'
 	>>
 ): void {
 	updateDoc((d) => {
@@ -3721,6 +3740,7 @@ export function updateDatabaseView(
 		if (updates.filterQuery !== undefined) view.filterQuery = updates.filterQuery;
 		if (updates.filters !== undefined) view.filters = deepCopy(updates.filters);
 		if (updates.dateField !== undefined) view.dateField = updates.dateField;
+		if (updates.endDateField !== undefined) view.endDateField = updates.endDateField;
 		view.updatedAt = Date.now();
 	});
 }
@@ -3771,6 +3791,25 @@ export function setDatabaseProperties(folderId: string, properties: PropertyDefi
 			view.updatedAt = Date.now();
 		}
 	});
+}
+
+/** A database's row templates (every view of the folder gets them). */
+export function setDatabaseTemplates(folderId: string, templates: DatabaseTemplate[]): void {
+	updateDoc((d) => {
+		for (const view of Object.values(d.databaseViews ?? {})) {
+			if (view.folderId !== folderId) continue;
+			view.templates = deepCopy(templates);
+			view.updatedAt = Date.now();
+		}
+	});
+}
+
+/** A new row from a template ({date} in its title is today's date). */
+export function addRowFromTemplate(folderId: string, template: DatabaseTemplate, props: Record<string, unknown> = {}): MemoryObject {
+	const title = template.title.replace(/\{date\}/g, todayIso());
+	const memory = addDatabaseRow(folderId, title, { ...template.props, ...props });
+	if (template.body) updateMemoryObject(memory.id, { bodyMarkdown: template.body.replace(/\{date\}/g, todayIso()) });
+	return memoriesView()[memory.id] ?? memory;
 }
 
 /** The folder's database view to open: the first one, or a new table named after the folder. */
@@ -3834,6 +3873,48 @@ export function setMemoryCustomProp(memoryId: string, key: string, value: unknow
 
 export function getMemoryCustomProp(memoryId: string, key: string): unknown {
 	return memoriesView()[memoryId]?.customProps?.[key] ?? null;
+}
+
+// ============ PDF highlights ============
+
+/** Highlights of every PDF (all vaults: a file can be linked from any). */
+export const pdfHighlights: Readable<PdfHighlight[]> = derived(docStore, ($doc) =>
+	Object.values($doc?.pdfHighlights ?? {}).sort((a, b) => a.page - b.page || a.rects[0]?.[1] - b.rects[0]?.[1])
+);
+
+export function addPdfHighlight(h: Pick<PdfHighlight, 'ref' | 'page' | 'rects' | 'text' | 'color'>): PdfHighlight {
+	const now = Date.now();
+	const highlight: PdfHighlight = { id: generateId(), comment: '', vaultId: getCurrentVaultId(), createdAt: now, updatedAt: now, ...h };
+	updateDoc((d) => {
+		if (!d.pdfHighlights) d.pdfHighlights = {};
+		d.pdfHighlights[highlight.id] = deepCopy(highlight);
+	});
+	return highlight;
+}
+
+export function updatePdfHighlight(id: string, updates: Partial<Pick<PdfHighlight, 'color' | 'comment'>>): void {
+	updateDoc((d) => {
+		const h = d.pdfHighlights?.[id];
+		if (!h) return;
+		if (updates.color !== undefined) h.color = updates.color;
+		if (updates.comment !== undefined) h.comment = updates.comment;
+		h.updatedAt = Date.now();
+	});
+}
+
+export function deletePdfHighlight(id: string): PdfHighlight | null {
+	const removed = doc?.pdfHighlights?.[id] ? deepCopy(doc.pdfHighlights[id]) : null;
+	updateDoc((d) => {
+		if (d.pdfHighlights) delete d.pdfHighlights[id];
+	});
+	return removed;
+}
+
+export function restorePdfHighlight(h: PdfHighlight): void {
+	updateDoc((d) => {
+		if (!d.pdfHighlights) d.pdfHighlights = {};
+		d.pdfHighlights[h.id] = deepCopy(h);
+	});
 }
 
 // ============ ReminderProposal CRUD ============
@@ -4523,6 +4604,7 @@ const BACKUP_COLLECTIONS = [
 	'reminderProposals',
 	'draftProposals',
 	'databaseViews',
+	'pdfHighlights',
 	'savedSearches',
 	'flashcards',
 	'projects',

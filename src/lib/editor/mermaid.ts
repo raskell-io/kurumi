@@ -9,6 +9,8 @@ import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/
 import { $prose } from '@milkdown/kit/utils';
 import type { Node as ProseMirrorNode } from '@milkdown/kit/prose/model';
 import { renderMermaid } from '$lib/mermaid';
+import { isQueryBlock, queryBlockView } from './queryBlock.svelte';
+import { isDatabaseBlock, databaseBlockView } from './databaseBlock.svelte';
 
 const key = new PluginKey('kurumi-mermaid');
 const isMermaid = (node: ProseMirrorNode) =>
@@ -94,6 +96,9 @@ export const mermaidPlugin = $prose(
 			props: {
 				nodeViews: {
 					code_block(node, view, getPos) {
+						// ```kurumi live queries share this node view (queryBlock.svelte.ts)
+						if (isQueryBlock(node)) return queryBlockView(node, view, getPos as () => number | undefined);
+						if (isDatabaseBlock(node)) return databaseBlockView(node, view, getPos as () => number | undefined);
 						if (!isMermaid(node)) return null as never; // default rendering
 						return mermaidView(node, view, getPos as () => number | undefined);
 					}
@@ -103,7 +108,7 @@ export const mermaidPlugin = $prose(
 					const { $from } = state.selection;
 					for (let depth = $from.depth; depth > 0; depth--) {
 						const node = $from.node(depth);
-						if (isMermaid(node)) {
+						if (isMermaid(node) || isQueryBlock(node) || isDatabaseBlock(node)) {
 							const pos = $from.before(depth);
 							return DecorationSet.create(state.doc, [
 								Decoration.node(pos, pos + node.nodeSize, { class: 'is-editing' })

@@ -51,6 +51,7 @@
 	} from '$lib/stores/workspace';
 	import SplitPane from '$lib/components/SplitPane.svelte';
 	import ImageViewer from '$lib/components/ImageViewer.svelte';
+	import PdfViewer from '$lib/components/PdfViewer.svelte';
 	import { labsEnabled, LAB_PAGES } from '$lib/stores/labs';
 	import { matchShortcut, type ShortcutId } from '$lib/shortcuts';
 	import {
@@ -359,7 +360,8 @@
 			return;
 		}
 
-		if (e.key === 'Escape') {
+		// Handled already (vim mode's Escape back to Normal, a popup closing)
+		if (e.key === 'Escape' && !e.defaultPrevented) {
 			if (typing) {
 				// Allow Escape in inputs
 				target.blur();
@@ -455,6 +457,10 @@
 	});
 
 	onMount(() => {
+		// Keep the user's CSS snippet after the app's own styles (dev adds them late).
+		const customCss = document.getElementById('kurumi-custom-css');
+		if (customCss) document.head.appendChild(customCss);
+
 		// Initialize hash-based routing for GitHub Pages compatibility
 		cleanupHashRouter = initHashRouter();
 
@@ -1187,6 +1193,7 @@
 
 <!-- Full-screen image viewer (opened from images in notes) -->
 <ImageViewer />
+<PdfViewer />
 
 <style>
 	/* Boot screen: only reveal after a beat so fast boots don't flash */

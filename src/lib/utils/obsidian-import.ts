@@ -1,4 +1,5 @@
-import { addMemoryObject, addFolder, batchUpdates } from '$lib/db';
+import { addMemoryObject, addFolder, addCanvas, updateMemoryObject, batchUpdates } from '$lib/db';
+import { parseCanvas, serializeCanvas } from '$lib/canvas';
 
 export interface ObsidianImportResult {
 	success: boolean;
@@ -69,15 +70,35 @@ export async function importObsidianVault(): Promise<ObsidianImportResult> {
 				foldersCreated++;
 			}
 
-			// Create memories
-			for (const file of files) {
+			// Create memories (canvases after the notes their cards point to)
+			const idByPath = new Map<string, string>();
+			const idByTitle = new Map<string, string>();
+			for (const file of files.filter((f) => !/\.canvas$/i.test(f.name))) {
 				const parentPath = getParentPath(file.path);
 				const folderId = parentPath ? folderIdMap.get(parentPath) || null : null;
 
 				// Remove .md extension for title
 				const title = file.name.replace(/\.md$/i, '');
 
-				addMemoryObject(title, file.content, folderId);
+				const memory = addMemoryObject(title, file.content, folderId);
+				idByPath.set(file.path.toLowerCase(), memory.id);
+				idByTitle.set(title.toLowerCase(), memory.id);
+				notesCreated++;
+			}
+			// Obsidian canvases (JSON Canvas): note cards get the imported note's id.
+			for (const file of files.filter((f) => /\.canvas$/i.test(f.name))) {
+				const parentPath = getParentPath(file.path);
+				const folderId = parentPath ? folderIdMap.get(parentPath) || null : null;
+				const data = parseCanvas(file.content);
+				for (const node of data.nodes) {
+					if (node.type !== 'file' || !node.file) continue;
+					const path = node.file.toLowerCase();
+					const title = node.file.split('/').pop()!.replace(/\.md$/i, '').toLowerCase();
+					const id = idByPath.get(path) ?? idByTitle.get(title);
+					if (id) node.memoryId = id;
+				}
+				const canvas = addCanvas(file.name.replace(/\.canvas$/i, ''), folderId);
+				updateMemoryObject(canvas.id, { bodyMarkdown: serializeCanvas(data) });
 				notesCreated++;
 			}
 		});
@@ -145,8 +166,8 @@ async function readDirectory(
 			const subDirHandle = await dirHandle.getDirectoryHandle(entry.name);
 			await readDirectory(subDirHandle, entryPath, files, folders, skipped);
 		} else if (entry.kind === 'file') {
-			// Only import markdown files
-			if (!entry.name.toLowerCase().endsWith('.md')) {
+			// Only import markdown files and canvases
+			if (!/\.(md|canvas)$/i.test(entry.name)) {
 				skipped.push(`${entryPath} (not markdown)`);
 				continue;
 			}

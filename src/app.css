@@ -95,7 +95,7 @@
 
 /* Dark theme via system preference - Catppuccin Mocha */
 @media (prefers-color-scheme: dark) {
-	:root:not(.light) {
+	:root:where(:not(.light)) {
 		--color-bg: #1e1e2e;
 		--color-bg-secondary: #181825;
 		--color-text: #cdd6f4;
@@ -116,7 +116,7 @@
 }
 
 /* Manual dark theme override - Catppuccin Mocha */
-:root.dark {
+:root:where(.dark) {
 	--color-bg: #1e1e2e;
 	--color-bg-secondary: #181825;
 	--color-text: #cdd6f4;
@@ -136,7 +136,7 @@
 }
 
 /* Manual light theme override - Catppuccin Latte (with white bg) */
-:root.light {
+:root:where(.light) {
 	--color-bg: #ffffff;
 	--color-bg-secondary: #f7f7f8;
 	--color-text: #4c4f69;
@@ -153,6 +153,223 @@
 	--shadow-sm: 0 1px 2px rgba(15, 15, 30, 0.06);
 	--shadow-md: 0 4px 12px rgba(15, 15, 30, 0.08), 0 1px 3px rgba(15, 15, 30, 0.06);
 	--shadow-lg: 0 16px 40px rgba(15, 15, 30, 0.14), 0 2px 8px rgba(15, 15, 30, 0.06);
+}
+
+
+/* Colour themes (Settings → Appearance; `palette-*` on <html>, set before first
+   paint in app.html). Catppuccin is the default above; the accent stays
+   the user's own. Listed in $lib/themes.ts. Like the default theme's,
+   these selectors weigh no more than `:root` (`:where`), so the order
+   decides and a CSS snippet's `:root { --color-bg: … }` wins. */
+/* Nord */
+:root:where(.palette-nord) {
+	--color-bg: #eceff4;
+	--color-bg-secondary: #e5e9f0;
+	--color-text: #2e3440;
+	--color-text-muted: #4c566a;
+	--color-text-faint: #7b88a1;
+	--color-border: #d8dee9;
+	--color-danger: #bf616a;
+	--color-ref-person: #5e8a4a;
+	--color-ref-date: #5e81ac;
+	--color-ref-tag: #c0704f;
+	--color-ref-url: #9a6f96;
+}
+:root:where(.palette-nord.dark) {
+	--color-bg: #2e3440;
+	--color-bg-secondary: #272c36;
+	--color-text: #eceff4;
+	--color-text-muted: #d8dee9;
+	--color-text-faint: #8892a6;
+	--color-border: #3b4252;
+	--color-danger: #bf616a;
+	--color-ref-person: #a3be8c;
+	--color-ref-date: #81a1c1;
+	--color-ref-tag: #d08770;
+	--color-ref-url: #b48ead;
+}
+@media (prefers-color-scheme: dark) {
+	:root:where(.palette-nord:not(.light)) {
+		--color-bg: #2e3440;
+		--color-bg-secondary: #272c36;
+		--color-text: #eceff4;
+		--color-text-muted: #d8dee9;
+		--color-text-faint: #8892a6;
+		--color-border: #3b4252;
+		--color-danger: #bf616a;
+		--color-ref-person: #a3be8c;
+		--color-ref-date: #81a1c1;
+		--color-ref-tag: #d08770;
+		--color-ref-url: #b48ead;
+	}
+}
+/* Gruvbox */
+:root:where(.palette-gruvbox) {
+	--color-bg: #fbf1c7;
+	--color-bg-secondary: #f2e5bc;
+	--color-text: #3c3836;
+	--color-text-muted: #665c54;
+	--color-text-faint: #928374;
+	--color-border: #e5d5ad;
+	--color-danger: #cc241d;
+	--color-ref-person: #79740e;
+	--color-ref-date: #076678;
+	--color-ref-tag: #af3a03;
+	--color-ref-url: #8f3f71;
+}
+:root:where(.palette-gruvbox.dark) {
+	--color-bg: #282828;
+	--color-bg-secondary: #1d2021;
+	--color-text: #ebdbb2;
+	--color-text-muted: #bdae93;
+	--color-text-faint: #928374;
+	--color-border: #3c3836;
+	--color-danger: #fb4934;
+	--color-ref-person: #b8bb26;
+	--color-ref-date: #83a598;
+	--color-ref-tag: #fe8019;
+	--color-ref-url: #d3869b;
+}
+@media (prefers-color-scheme: dark) {
+	:root:where(.palette-gruvbox:not(.light)) {
+		--color-bg: #282828;
+		--color-bg-secondary: #1d2021;
+		--color-text: #ebdbb2;
+		--color-text-muted: #bdae93;
+		--color-text-faint: #928374;
+		--color-border: #3c3836;
+		--color-danger: #fb4934;
+		--color-ref-person: #b8bb26;
+		--color-ref-date: #83a598;
+		--color-ref-tag: #fe8019;
+		--color-ref-url: #d3869b;
+	}
+}
+/* Solarized */
+:root:where(.palette-solarized) {
+	--color-bg: #fdf6e3;
+	--color-bg-secondary: #eee8d5;
+	--color-text: #475b62;
+	--color-text-muted: #657b83;
+	--color-text-faint: #93a1a1;
+	--color-border: #e4ddc8;
+	--color-danger: #dc322f;
+	--color-ref-person: #859900;
+	--color-ref-date: #268bd2;
+	--color-ref-tag: #cb4b16;
+	--color-ref-url: #6c71c4;
+}
+:root:where(.palette-solarized.dark) {
+	--color-bg: #002b36;
+	--color-bg-secondary: #00222b;
+	--color-text: #c4d0d0;
+	--color-text-muted: #93a1a1;
+	--color-text-faint: #6c8189;
+	--color-border: #0d3a45;
+	--color-danger: #dc322f;
+	--color-ref-person: #859900;
+	--color-ref-date: #268bd2;
+	--color-ref-tag: #cb4b16;
+	--color-ref-url: #6c71c4;
+}
+@media (prefers-color-scheme: dark) {
+	:root:where(.palette-solarized:not(.light)) {
+		--color-bg: #002b36;
+		--color-bg-secondary: #00222b;
+		--color-text: #c4d0d0;
+		--color-text-muted: #93a1a1;
+		--color-text-faint: #6c8189;
+		--color-border: #0d3a45;
+		--color-danger: #dc322f;
+		--color-ref-person: #859900;
+		--color-ref-date: #268bd2;
+		--color-ref-tag: #cb4b16;
+		--color-ref-url: #6c71c4;
+	}
+}
+/* Rosé Pine */
+:root:where(.palette-rose-pine) {
+	--color-bg: #faf4ed;
+	--color-bg-secondary: #fffaf3;
+	--color-text: #575279;
+	--color-text-muted: #797593;
+	--color-text-faint: #9893a5;
+	--color-border: #f2e9e1;
+	--color-danger: #b4637a;
+	--color-ref-person: #286983;
+	--color-ref-date: #56949f;
+	--color-ref-tag: #d7827e;
+	--color-ref-url: #907aa9;
+}
+:root:where(.palette-rose-pine.dark) {
+	--color-bg: #191724;
+	--color-bg-secondary: #1f1d2e;
+	--color-text: #e0def4;
+	--color-text-muted: #908caa;
+	--color-text-faint: #6e6a86;
+	--color-border: #26233a;
+	--color-danger: #eb6f92;
+	--color-ref-person: #9ccfd8;
+	--color-ref-date: #c4a7e7;
+	--color-ref-tag: #ebbcba;
+	--color-ref-url: #f6c177;
+}
+@media (prefers-color-scheme: dark) {
+	:root:where(.palette-rose-pine:not(.light)) {
+		--color-bg: #191724;
+		--color-bg-secondary: #1f1d2e;
+		--color-text: #e0def4;
+		--color-text-muted: #908caa;
+		--color-text-faint: #6e6a86;
+		--color-border: #26233a;
+		--color-danger: #eb6f92;
+		--color-ref-person: #9ccfd8;
+		--color-ref-date: #c4a7e7;
+		--color-ref-tag: #ebbcba;
+		--color-ref-url: #f6c177;
+	}
+}
+/* Plain */
+:root:where(.palette-plain) {
+	--color-bg: #ffffff;
+	--color-bg-secondary: #f6f6f6;
+	--color-text: #1f1f1f;
+	--color-text-muted: #5c5c5c;
+	--color-text-faint: #9a9a9a;
+	--color-border: #e6e6e6;
+	--color-danger: #c62828;
+	--color-ref-person: #2e7d32;
+	--color-ref-date: #1565c0;
+	--color-ref-tag: #d35400;
+	--color-ref-url: #6a1b9a;
+}
+:root:where(.palette-plain.dark) {
+	--color-bg: #161616;
+	--color-bg-secondary: #101010;
+	--color-text: #e6e6e6;
+	--color-text-muted: #a8a8a8;
+	--color-text-faint: #6f6f6f;
+	--color-border: #2a2a2a;
+	--color-danger: #ef5350;
+	--color-ref-person: #81c784;
+	--color-ref-date: #64b5f6;
+	--color-ref-tag: #ffb74d;
+	--color-ref-url: #ba68c8;
+}
+@media (prefers-color-scheme: dark) {
+	:root:where(.palette-plain:not(.light)) {
+		--color-bg: #161616;
+		--color-bg-secondary: #101010;
+		--color-text: #e6e6e6;
+		--color-text-muted: #a8a8a8;
+		--color-text-faint: #6f6f6f;
+		--color-border: #2a2a2a;
+		--color-danger: #ef5350;
+		--color-ref-person: #81c784;
+		--color-ref-date: #64b5f6;
+		--color-ref-tag: #ffb74d;
+		--color-ref-url: #ba68c8;
+	}
 }
 
 /* Interaction surfaces derive from the text color so they work in both
@@ -394,6 +611,24 @@ select {
 }
 
 /* Keyframe Animations */
+/* The heading or block a link pointed at ($lib/stores/anchor.ts) */
+@keyframes anchorFlash {
+	0%, 40% { opacity: 1; }
+	100% { opacity: 0; }
+}
+
+.anchor-flash {
+	border-radius: 6px;
+	background: var(--color-accent-soft);
+	animation: anchorFlash 1.8s ease-out forwards;
+}
+
+/* A block's id marker (` ^a1b2c3`): faint in the editor, hidden when reading */
+.block-id {
+	color: var(--color-text-faint);
+	font-size: 0.8em;
+}
+
 @keyframes fadeIn {
 	from { opacity: 0; }
 	to { opacity: 1; }

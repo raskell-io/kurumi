@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { parseWikilink, wikilinkLabel } from '$lib/wikilinks';
+	import { parseWikilink, wikilinkLabel, markdownSection, markdownBlock, stripBlockIds } from '$lib/wikilinks';
 	/**
 	 * Hover preview for [[wikilinks]] (Obsidian-style page preview).
 	 *
@@ -26,6 +26,7 @@
 	const CARD_WIDTH = 340;
 
 	let linkTitle = $state<string | null>(null);
+	let linkAnchor = $state<{ heading: string | null; block: string | null }>({ heading: null, block: null });
 	let position = $state<{ left: number; top: number; above: boolean }>({ left: 0, top: 0, above: false });
 	let openTimer: ReturnType<typeof setTimeout> | null = null;
 	let closeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -43,7 +44,13 @@
 	// Plain-text excerpt: drop frontmatter and the most common markdown syntax.
 	let excerpt = $derived.by(() => {
 		if (!target) return '';
-		const text = (target.summaryShort || target.bodyMarkdown || '')
+		// A link to a heading or block previews that part.
+		const part = linkAnchor.heading
+			? markdownSection(target.bodyMarkdown, linkAnchor.heading)
+			: linkAnchor.block
+				? markdownBlock(target.bodyMarkdown, linkAnchor.block)
+				: null;
+		const text = (part ?? (target.summaryShort || stripBlockIds(target.bodyMarkdown || '')))
 			.replace(/^---[\s\S]*?---\s*/, '')
 			.replace(/!\[[^\]]*\]\([^)]*\)/g, '')
 			.replace(/\[\[([^[\]\n]+?)\]\]/g, (_, inner: string) => wikilinkLabel(inner))
@@ -86,6 +93,7 @@
 			top: above ? rect.top - 8 : rect.bottom + 8,
 			above
 		};
+		linkAnchor = { heading: el.dataset.wikilinkHeading ?? null, block: el.dataset.wikilinkBlock ?? null };
 		linkTitle = title;
 	}
 

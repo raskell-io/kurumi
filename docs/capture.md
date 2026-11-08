@@ -64,8 +64,13 @@ Paste or drop any file into a note:
 
 - **images** appear inline (click to enlarge);
 - **audio** becomes a player;
-- **anything else** (PDF, spreadsheet, …) becomes a chip you click to
-  open in a tab or download.
+- **PDFs** open in Kurumi's viewer: select text and pick a colour to
+  highlight it. The highlights list (top right) jumps to each one, takes a
+  comment, copies it as a quote with a link to its page, or adds them all to
+  the note. Highlights belong to the file, so every note linking it sees
+  them. The viewer's ↗ button opens the file in a browser tab;
+- **anything else** (spreadsheet, …) becomes a chip you click to open in a
+  tab or download.
 
 Files live in the browser's storage next to the note and travel with
 [sync](sync.md). If you open a note whose file hasn't reached this device

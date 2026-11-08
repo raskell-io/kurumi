@@ -1,4 +1,5 @@
 import MiniSearch from 'minisearch';
+import { canvasText, parseCanvas } from '$lib/canvas';
 import { memoryObjects, extractTags, extractPeople, getFolderPath } from '$lib/db';
 import { get } from 'svelte/store';
 import type { MemoryObject, MemoryType } from '$lib/db/types';
@@ -260,6 +261,8 @@ function createIndex(): MiniSearch<MemoryObject> {
 			if (fieldName === 'participants') return (memory.participants ?? []).join(' ');
 			if (fieldName === 'topics') return (memory.topics ?? []).join(' ');
 			if (fieldName === 'projects') return (memory.projects ?? []).join(' ');
+			// A canvas's body is JSON: index what its cards say.
+			if (fieldName === 'bodyMarkdown' && memory.type === 'canvas') return canvasText(parseCanvas(memory.bodyMarkdown));
 			const value = (memory as unknown as Record<string, unknown>)[fieldName];
 			return typeof value === 'string' ? value : '';
 		},

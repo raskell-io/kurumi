@@ -25,7 +25,9 @@
 		moveFolderToVault,
 		setMemoryFavorite,
 		databaseViews,
-		openFolderAsDatabase
+		openFolderAsDatabase,
+		addCanvas,
+		notePath
 	} from '$lib/db';
 	import { openInSplit } from '$lib/stores/workspace';
 	import {
@@ -47,7 +49,8 @@
 		Link2,
 		Star,
 		Columns2,
-		Database
+		Database,
+		LayoutDashboard
 	} from 'lucide-svelte';
 	import { pushUndo } from '$lib/stores/undo';
 
@@ -201,6 +204,11 @@
 
 	// Folders shown as databases (they have a view), and opening one.
 	let databaseFolderIds = $derived(new Set($databaseViews.map((v) => v.folderId)));
+	function newCanvasIn(folderId: string) {
+		closeContextMenu();
+		goto(`/canvas/${addCanvas('Untitled canvas', folderId).id}`);
+	}
+
 	function openAsDatabase(folderId: string) {
 		closeContextMenu();
 		goto(`/database/${openFolderAsDatabase(folderId).id}`);
@@ -358,7 +366,7 @@
 	}
 
 	function isNoteActive(noteId: string): boolean {
-		return currentPath === `/memory/${noteId}`;
+		return currentPath === `/memory/${noteId}` || currentPath === `/canvas/${noteId}`;
 	}
 
 	function handleNoteClick() {
@@ -1181,7 +1189,7 @@
 				<Trash2 class="h-5 w-5" />
 			</button>
 			<a
-				href="/memory/{memory.id}"
+				href={notePath(memory)}
 				onclick={(e) => {
 					if (e.altKey) {
 						e.preventDefault();
@@ -1205,7 +1213,11 @@
 				ondragend={handleDragEnd}
 			>
 				<span class="tree-chevron" aria-hidden="true"></span>
-				<NoteIcon icon={memory.icon} class="tree-icon" />
+				{#if memory.type === 'canvas' && !memory.icon}
+					<LayoutDashboard class="tree-icon" />
+				{:else}
+					<NoteIcon icon={memory.icon} class="tree-icon" />
+				{/if}
 				{#if renamingNote === memory.id}
 										<input
 						type="text"
@@ -1293,6 +1305,10 @@
 		>
 			<FolderPlus class="h-4 w-4" />
 			New Subfolder
+		</button>
+		<button onclick={() => newCanvasIn(contextMenuFolder!)} class="k-menu-item">
+			<LayoutDashboard class="h-4 w-4" />
+			New canvas
 		</button>
 		<button onclick={() => openAsDatabase(contextMenuFolder!)} class="k-menu-item">
 			<Database class="h-4 w-4" />

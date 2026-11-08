@@ -107,6 +107,8 @@
 		type StorageInfo
 	} from '$lib/pwa';
 	import { onMount } from 'svelte';
+	import { vimEnabled, setVimEnabled } from '$lib/editor/vim';
+	import { PALETTES, PALETTE_KEY, CUSTOM_CSS_KEY, applyPalette, applyCustomCss } from '$lib/themes';
 	import { isTauri } from '$lib/desktop';
 	import {
 		latestDesktopRelease,
@@ -320,6 +322,32 @@
 		const classes = document.documentElement.classList;
 		for (const a of ACCENTS) classes.remove(`accent-${a.id}`);
 		classes.add(`accent-${id}`);
+	}
+	// Colour theme and CSS snippet ($lib/themes.ts), per device
+	let palette = $state<string>(
+		typeof localStorage === 'undefined' ? 'catppuccin' : (localStorage.getItem(PALETTE_KEY) ?? 'catppuccin')
+	);
+	function setPalette(id: string) {
+		palette = id;
+		localStorage.setItem(PALETTE_KEY, id);
+		applyPalette(id);
+	}
+	let customCss = $state<string>(typeof localStorage === 'undefined' ? '' : (localStorage.getItem(CUSTOM_CSS_KEY) ?? ''));
+	let customCssTimer: ReturnType<typeof setTimeout> | undefined;
+	function setCustomCss(css: string) {
+		customCss = css;
+		applyCustomCss(css);
+		clearTimeout(customCssTimer);
+		customCssTimer = setTimeout(() => {
+			if (css.trim()) localStorage.setItem(CUSTOM_CSS_KEY, css);
+			else localStorage.removeItem(CUSTOM_CSS_KEY);
+		}, 300);
+	}
+	let cssFileInput: HTMLInputElement | undefined = $state();
+	async function loadCssFile(e: Event) {
+		const file = (e.currentTarget as HTMLInputElement).files?.[0];
+		if (file) setCustomCss(`${customCss.trim() ? customCss.trimEnd() + '\n\n' : ''}/* ${file.name} */\n${await file.text()}`);
+		(e.currentTarget as HTMLInputElement).value = '';
 	}
 	let noteWidth = $state<NoteWidth>(
 		typeof localStorage === 'undefined' ? 'wide' : ((localStorage.getItem('kurumi-note-width') as NoteWidth | null) ?? 'wide')
@@ -1073,6 +1101,8 @@
 			localStorage.removeItem('kurumi-sidebar-width');
 			localStorage.removeItem('kurumi-note-width');
 			localStorage.removeItem('kurumi-accent');
+			localStorage.removeItem(PALETTE_KEY);
+			localStorage.removeItem(CUSTOM_CSS_KEY);
 
 			// Reload the page to reinitialize
 			location.reload();
@@ -1196,6 +1226,28 @@
 
 						<div class="set-row">
 							<div class="set-row-text">
+								<div class="set-row-label" id="palette-label">Colour theme</div>
+								<p class="set-row-help">Background and text colours, each with a light and a dark version. On this device.</p>
+							</div>
+							<div class="palette-options" role="radiogroup" aria-labelledby="palette-label">
+								{#each PALETTES as option (option.id)}
+									<button
+										type="button"
+										role="radio"
+										aria-checked={palette === option.id}
+										class="palette-option"
+										style="--p-light-bg: {option.light[0]}; --p-light-text: {option.light[1]}; --p-light-ref: {option.light[2]}; --p-dark-bg: {option.dark[0]}; --p-dark-text: {option.dark[1]}; --p-dark-ref: {option.dark[2]}"
+										onclick={() => setPalette(option.id)}
+									>
+										<span class="palette-preview" aria-hidden="true"><span class="half light">Aa</span><span class="half dark">Aa</span></span>
+										<span class="palette-name">{option.label}</span>
+									</button>
+								{/each}
+							</div>
+						</div>
+
+						<div class="set-row">
+							<div class="set-row-text">
 								<div class="set-row-label" id="accent-label">Accent colour</div>
 								<p class="set-row-help">Links, highlights and the touches of colour in notes. On this device.</p>
 							</div>
@@ -1251,6 +1303,33 @@
 								<button aria-pressed={noteWidth === 'narrow'} onclick={() => setNoteWidth('narrow')}>Narrow</button>
 								<button aria-pressed={noteWidth === 'wide'} onclick={() => setNoteWidth('wide')}>Wide</button>
 								<button aria-pressed={noteWidth === 'full'} onclick={() => setNoteWidth('full')}>Full</button>
+							</div>
+						</div>
+
+						<div class="set-block">
+							<div>
+								<div class="set-row-label" id="css-label">CSS snippet</div>
+								<p class="set-row-help">
+									Your own CSS, applied as you type, on this device. Override the theme's variables
+									(<code>:root {'{'} --color-bg: #fafafa; {'}'}</code>, <code>--font-editor</code>,
+									<code>--note-width</code>) or style anything. Clear it if something looks wrong.
+								</p>
+							</div>
+							<textarea
+								class="k-input css-snippet"
+								rows="7"
+								spellcheck="false"
+								placeholder={':root {\n  --color-bg: #fcfcf9;\n}\n.milkdown h1 { letter-spacing: -0.02em; }'}
+								aria-labelledby="css-label"
+								value={customCss}
+								oninput={(e) => setCustomCss(e.currentTarget.value)}
+							></textarea>
+							<div class="flex flex-wrap gap-1.5">
+								<input bind:this={cssFileInput} type="file" accept=".css,text/css" class="hidden" onchange={loadCssFile} aria-label="CSS file" />
+								<button type="button" class="k-btn" onclick={() => cssFileInput?.click()}><Upload class="h-3.5 w-3.5" />Add a .css file</button>
+								{#if customCss.trim()}
+									<button type="button" class="k-btn" onclick={() => setCustomCss('')}><X class="h-3.5 w-3.5" />Clear</button>
+								{/if}
 							</div>
 						</div>
 					</div>
@@ -2190,6 +2269,22 @@
 						Click Change and press the new keys. Backspace removes a shortcut. Saved on this device.
 					</p>
 					<div class="set-rows">
+						<div class="set-row">
+							<div class="set-row-text">
+								<div class="set-row-label" id="vim-label">Vim mode</div>
+								<p class="set-row-help">
+									Vim keys in the editor: Normal, Insert and Visual modes, motions, operators, counts,
+									<code>dd</code>, <code>yy</code>, <code>p</code>, <code>u</code>. On this device.
+								</p>
+							</div>
+							<button
+								role="switch"
+								aria-checked={$vimEnabled}
+								aria-labelledby="vim-label"
+								onclick={() => setVimEnabled(!$vimEnabled)}
+								class="switch"
+							></button>
+						</div>
 						<ShortcutSettings />
 					</div>
 				</section>
@@ -3123,6 +3218,67 @@
 
 	.settings-nav-link.danger {
 		margin-top: 0.75rem;
+	}
+
+	/* ---- Colour themes ---- */
+	.palette-options {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 0.375rem;
+	}
+
+	.palette-option {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		padding: 0.25rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		font-size: 0.75rem;
+		color: var(--color-text-muted);
+	}
+
+	.palette-option[aria-checked='true'] {
+		border-color: var(--color-accent);
+		box-shadow: 0 0 0 2px var(--color-accent-soft);
+		color: var(--color-text);
+	}
+
+	.palette-preview {
+		display: flex;
+		overflow: hidden;
+		border-radius: var(--radius-sm);
+	}
+
+	.palette-preview .half {
+		flex: 1;
+		padding: 0.25rem 0;
+		font-family: var(--font-editor);
+		font-size: 0.8125rem;
+		font-weight: 600;
+		text-align: center;
+	}
+
+	.palette-preview .light {
+		background: var(--p-light-bg);
+		color: var(--p-light-text);
+		box-shadow: inset 0 -3px 0 var(--p-light-ref);
+	}
+
+	.palette-preview .dark {
+		background: var(--p-dark-bg);
+		color: var(--p-dark-text);
+		box-shadow: inset 0 -3px 0 var(--p-dark-ref);
+	}
+
+	.css-snippet {
+		height: auto;
+		min-height: 8rem;
+		font-family: var(--font-mono);
+		font-size: 0.75rem;
+		line-height: 1.5;
+		white-space: pre;
+		tab-size: 2;
 	}
 
 	/* ---- Desktop app downloads ---- */

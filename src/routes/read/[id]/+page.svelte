@@ -12,6 +12,8 @@
 		memoryObjects
 	} from '$lib/db';
 	import ReadNav from '$lib/components/ReadNav.svelte';
+	import { untrack } from 'svelte';
+	import { takePendingAnchor, scrollToAnchor } from '$lib/stores/anchor';
 	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
 	import RefPopup from '$lib/components/RefPopup.svelte';
 	import { findSemanticBacklinks } from '$lib/digest';
@@ -98,6 +100,14 @@
 
 	// Get current memory
 	let memory = $derived(getMemoryObject($page.params.id ?? ''));
+
+	// Opened from a link to a heading or block: scroll to it.
+	$effect(() => {
+		const id = memory?.id;
+		if (!id) return;
+		const anchor = untrack(() => takePendingAnchor(id));
+		if (anchor) void scrollToAnchor(() => document.querySelector('main .markdown-content'), anchor);
+	});
 
 	// Get folder info
 	let folder = $derived(memory?.folderId ? getFolder(memory.folderId) : null);
