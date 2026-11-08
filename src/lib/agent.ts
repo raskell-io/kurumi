@@ -30,8 +30,12 @@ import {
 	memoryObjects,
 	actionItems,
 	getAllPeople,
-	getAllTags
+	getAllTags,
+	projects,
+	decisions,
+	questions
 } from './db';
+import { exploreGraph } from './graph-walk';
 import { get } from 'svelte/store';
 import { retrieveMemoryContext, buildContextBlocks } from './ask';
 import { generateDailyDigest } from './digest';
@@ -176,6 +180,22 @@ const TOOLS = [
 	{
 		type: 'function' as const,
 		function: {
+			name: 'explore_graph',
+			description:
+				"Walk the user's knowledge graph from a person, project, #tag or note title: what links to it and from it, who is mentioned, its to-dos, decisions and open questions, then one step further. Use it for questions about how things connect (\"what do we know about Alice's Q4 priorities?\", \"what's going on with Project X?\"). The user sees the path you took as a graph.",
+			parameters: {
+				type: 'object',
+				properties: {
+					start: { type: 'string', description: 'Where to start: a person\'s name, project name, #tag or note title' },
+					depth: { type: 'number', description: 'How many steps to follow (1-3, default 2)' }
+				},
+				required: ['start']
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
 			name: 'remember',
 			description:
 				"Remember a lasting fact about the user for future conversations (a preference, their role, people and projects they care about). Saved in their note 'Kurumi memory'. One short fact per call. Never store passwords, keys or other secrets.",
@@ -291,6 +311,7 @@ const TOOL_STATUS_LABELS: Record<string, string> = {
 	add_reminder: 'Adding reminder...',
 	generate_daily_digest: 'Generating digest...',
 	generate_weekly_review: 'Writing weekly review...',
+	explore_graph: 'Exploring connections...',
 	remember: 'Remembering...',
 	forget: 'Forgetting...',
 	recall_conversations: 'Looking through past conversations...',
@@ -329,6 +350,9 @@ const SYSTEM_PROMPT_LINES = [
 	'- generate_daily_digest / generate_weekly_review: write a digest or weekly review note',
 	'- remember / forget: keep or drop a lasting fact about the user across conversations',
 	'- recall_conversations: search earlier conversations',
+	'- explore_graph: follow how a person, project, tag or note connects to the rest',
+	'  (prefer it over search_memory for "what do we know about X" questions about',
+	'  people and projects; cite the notes you used with [[Title]])',
 	'',
 	'When the user asks you to remember something, or tells you a lasting',
 	'preference or fact about themselves that would help in later chats,',
@@ -400,6 +424,22 @@ async function executeTool(
 			const start = args.date ? mondayOf(String(args.date)) : undefined;
 			const memoryId = await generateWeeklyReview(start ? { start, end: addDays(start, 6) } : undefined);
 			return { ok: true, memoryId, message: 'Weekly review written' };
+		}
+		case 'explore_graph': {
+			const start = String(args.start ?? '');
+			const graph = exploreGraph(
+				start,
+				{
+					notes: get(memoryObjects),
+					projects: get(projects),
+					todos: get(actionItems),
+					decisions: get(decisions),
+					questions: get(questions)
+				},
+				{ depth: typeof args.depth === 'number' ? args.depth : 2 }
+			);
+			if (!graph.start) return { found: false, message: `Nothing called "${start}" in the vault. Try search_memory.` };
+			return { found: true, start: graph.start.label, nodes: graph.nodes, edges: graph.edges };
 		}
 		case 'remember':
 			return remember(String(args.fact ?? ''));

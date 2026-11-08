@@ -2454,6 +2454,41 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
+	async 'knowledge graph: the agent walks links and the chat draws them'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const mod = (path) => `performance.getEntriesByType('resource').map((e) => e.name).find((n) => n.includes('/src/lib/db/store.ts')).replace('/db/store.ts', '${path}')`;
+		await db(page, `
+			const plan = db.addMemoryObject('Q4 planning', 'With @Alice Chen. See [[Roadmap]].');
+			db.addMemoryObject('Roadmap', 'Ship in March.');
+			db.addActionItem({ text: 'Draft hiring plan', assignee: 'Alice Chen', memoryObjectId: plan.id });
+		`);
+		// What the agent's explore_graph tool returns, stored as a finished chat.
+		const summary = await page.evaluate(`(async () => {
+			const db = await import(${mod('/db/store.ts')});
+			const gw = await import(${mod('/graph-walk.ts')});
+			const read = (s) => { let v; s.subscribe((x) => (v = x))(); return v; };
+			const g = gw.exploreGraph('Alice Chen', { notes: read(db.memoryObjects), projects: read(db.projects), todos: read(db.actionItems), decisions: read(db.decisions), questions: read(db.questions) });
+			const session = { messages: [
+				{ id: 'u', role: 'user', content: 'What is Alice working on?', createdAt: Date.now() },
+				{ id: 'a', role: 'assistant', content: 'The hiring plan.', toolCalls: [{ id: 't', name: 'explore_graph', args: { start: 'Alice Chen' }, result: { found: true, start: g.start.label, nodes: g.nodes, edges: g.edges }, status: 'done' }], createdAt: Date.now() }
+			], thinking: false, thinkingStatus: null, streamStats: null, error: null };
+			localStorage.setItem('kurumi-agent-session-kg', JSON.stringify(session));
+			localStorage.setItem('kurumi-agent-history', JSON.stringify([{ id: 'kg', title: 'Alice', createdAt: Date.now(), updatedAt: Date.now(), messageCount: 2 }]));
+			return g.nodes.map((n) => n.id.split(':')[0]).join(',');
+		})()`);
+		assert.equal(summary, 'person,todo,note,note');
+		await page.reload({ waitUntil: 'load' });
+		await page.waitForSelector('aside');
+		await press(page, MOD, '`');
+		await page.waitForSelector('.graph-fragment .node');
+		assert.equal(await page.$$eval('.graph-fragment .node', (n) => n.length), 4);
+		assert.match(await page.$eval('.tool-label', (e) => e.textContent), /Explored the graph from "Alice Chen"/);
+		// A node opens what it stands for.
+		await page.evaluate(() => [...document.querySelectorAll('.graph-fragment .node')].find((n) => n.textContent.includes('Roadmap')).dispatchEvent(new MouseEvent('click', { bubbles: true })));
+		await page.waitForFunction(() => location.hash.includes('/memory/'));
+		assert.deepEqual(errors, []);
+	},
+
 	async 'settings show the selected local folder'(browser) {
 		const { page, errors } = await freshPage(browser);
 		const name = await page.evaluate(async () => {

@@ -83,6 +83,14 @@ remembers* opens it): edit or empty it to change what it knows. It
 syncs with your vault. The agent can also look through your earlier
 conversations on this device when you refer back to one.
 
+**It follows connections.** Ask about a person, project or topic ("what do
+we know about Ana's priorities?", "what's going on with Falcon?") and the
+agent walks your notes from there: links in both directions, who's
+mentioned, the project's notes, and the to-dos, decisions and open
+questions attached, then one step further. It answers from what it found,
+and the chat shows the path it took as a small graph; click a node to open
+it.
+
 ## Living notes
 
 A living note keeps itself up to date. On a note, ⌘K *Make this a living

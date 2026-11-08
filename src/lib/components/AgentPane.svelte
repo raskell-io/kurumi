@@ -15,6 +15,8 @@
 	} from '$lib/agent';
 	import { addMemoryObject, memoryObjects, getAllPeople, getAllTags } from '$lib/db';
 	import { ensureMemoryNote } from '$lib/agent-memory';
+	import GraphFragment from './GraphFragment.svelte';
+	import type { GraphNode, GraphEdge } from '$lib/graph-walk';
 	import { goto } from '$app/navigation';
 	import { startPushToTalk, type RecorderHandle } from '$lib/voice';
 	import { inferenceRouter } from '$lib/inference';
@@ -1117,6 +1119,12 @@
 		}
 	}
 
+	// The walk an explore_graph call took, to draw under it.
+	function graphOf(tc: ToolCall): { nodes: GraphNode[]; edges: GraphEdge[] } | null {
+		const result = tc.result as { nodes?: GraphNode[]; edges?: GraphEdge[] } | null;
+		return result?.nodes?.length ? { nodes: result.nodes, edges: result.edges ?? [] } : null;
+	}
+
 	function toolLabel(tc: ToolCall): string {
 		switch (tc.name) {
 			case 'search_memory': return `Searched: "${tc.args.query ?? ''}"`;
@@ -1130,6 +1138,7 @@
 			case 'remember': return `Remembered: "${tc.args.fact ?? ''}"`;
 			case 'forget': return `Forgot: "${tc.args.fact ?? ''}"`;
 			case 'recall_conversations': return 'Looked through past conversations';
+			case 'explore_graph': return `Explored the graph from "${tc.args.start ?? ''}"`;
 			case 'search_people': return `Searched people: "${tc.args.query ?? 'all'}"`;
 			case 'search_topics': return `Searched topics: "${tc.args.query ?? 'all'}"`;
 			default: return tc.name;
@@ -1524,6 +1533,10 @@
 												{/if}
 												<pre class="tool-result">{renderToolResult(tc)}</pre>
 											</div>
+										{/if}
+										{#if tc.name === 'explore_graph' && tc.status === 'done' && graphOf(tc)}
+											{@const g = graphOf(tc)!}
+											<GraphFragment nodes={g.nodes} edges={g.edges} />
 										{/if}
 									</div>
 								{/each}

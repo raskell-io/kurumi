@@ -237,12 +237,11 @@ digest.ts which queries the existing embedding index.
 **Scope:** Medium. Embeddings already exist; needs a ranker + UI
 surface on the memory detail page.
 
-### [ ] Knowledge-graph chat navigator
-Chat mode optimized for graph exploration: "what do we know about
-Alice's Q4 priorities?" → walks entity links, returns synthesized
-answer with a visual graph fragment of the path taken.
-
-**Scope:** Large. Builds on the agentic chat pane.
+### [x] Knowledge-graph chat navigator
+Agent tool `explore_graph` (`$lib/graph-walk.ts`): BFS from a person,
+project, #tag or note over wikilinks/backlinks, mentions, projects, tags
+and attached to-dos/decisions/questions (capped fan-out and total), with
+snippets for the answer. The pane draws the walk (`GraphFragment.svelte`).
 
 ### [x] Persistent agent memory
 `$lib/agent-memory.ts`: facts in a "Kurumi memory" note per vault, managed
