@@ -2389,6 +2389,31 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
+	async 'pinned tabs: stay first and survive a reload'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const ids = await db(page, `return ['One', 'Two', 'Three'].map((t) => db.addMemoryObject(t, 'x').id);`);
+		for (const id of ids) {
+			await page.goto(`${BASE}/#/memory/${id}`, { waitUntil: 'load' });
+			await page.waitForSelector('main .ProseMirror');
+		}
+		const tabs = () => page.$$eval('.tab-item', (t) => t.map((x) => (x.classList.contains('tab-pinned') ? '📌' : '') + x.querySelector('.truncate').textContent));
+		assert.deepEqual(await tabs(), ['One', 'Two', 'Three']);
+		// Pin the last one from its tab: it moves to the front.
+		await page.hover('.tab-item:last-child');
+		await page.click('.tab-item:last-child button[aria-label="Pin tab"]');
+		await sleep(200);
+		assert.deepEqual(await tabs(), ['📌Three', 'One', 'Two']);
+		// After a reload only the pinned tab is back (open tabs are per session).
+		await page.reload({ waitUntil: 'load' });
+		await page.waitForSelector('.tab-item');
+		assert.deepEqual((await tabs()).filter((t) => t.startsWith('📌')), ['📌Three']);
+		// Right-click unpins.
+		await page.click('.tab-item.tab-pinned', { button: 'right' });
+		await sleep(200);
+		assert.equal((await tabs()).filter((t) => t.startsWith('📌')).length, 0);
+		assert.deepEqual(errors, []);
+	},
+
 	async 'settings show the selected local folder'(browser) {
 		const { page, errors } = await freshPage(browser);
 		const name = await page.evaluate(async () => {

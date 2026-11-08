@@ -75,7 +75,10 @@ back.
 - **Icons:** give a note an emoji or an image; it shows in the tree, tabs,
   the switcher and link previews.
 - **Tabs:** the notes you open line up as tabs above the editor. Drag to
-  reorder, middle-click to close.
+  reorder, middle-click to close. **Pin** the ones you're working on (the
+  pin on a tab, right-click, or ⌘K *Pin this note as a tab*): pinned tabs
+  stay on the left, come back after a restart and are never pushed out
+  by newer tabs. Pins are kept per device.
 
 ## Tags, people and topics
 

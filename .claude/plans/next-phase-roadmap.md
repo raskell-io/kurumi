@@ -274,9 +274,10 @@ Pin a filter query with a name. Data model: SavedSearch type in
 KurumiDocument (v14→v15). Rendered in the sidebar above the folder
 tree. CRUD in store.ts.
 
-### [ ] Sticky notes bar
-Pin memories you're currently working on. Persistent across sessions.
-DEFERRED — tab bar covers the same use case.
+### [x] Sticky notes bar
+Pinned tabs (`pinnedTabIds` in `stores/workspace.ts`): left of the tab bar,
+kept per device across restarts, outside the 12-tab limit. Pin from the
+tab, right-click, or ⌘K.
 
 ### [x] Search within a memory
 Cmd+F find bar scoped to the note, Cmd+Alt+F find and replace, also

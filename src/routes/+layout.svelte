@@ -43,10 +43,13 @@
 		focusMode,
 		toggleFocusMode,
 		openTabs,
+		pinTab,
+		unpinTab,
+		togglePinTab,
+		moveTabTo,
 		touchTab,
 		touchRecent,
 		closeTab,
-		moveTab,
 		splitNoteId,
 		closeSplit
 	} from '$lib/stores/workspace';
@@ -103,7 +106,8 @@
 		HelpCircle,
 		Sun,
 		Moon,
-		Monitor
+		Monitor,
+		Pin
 	} from 'lucide-svelte';
 	import {
 		showNewNoteSnackbar,
@@ -1062,23 +1066,46 @@
 							href="/memory/{tab.id}"
 							class="tab-item"
 							class:tab-active={currentPath === `/memory/${tab.id}`}
+							class:tab-pinned={tab.pinned}
+							class:tab-group-end={tab.pinned && !$openTabs[i + 1]?.pinned && i < $openTabs.length - 1}
 							draggable="true"
-							ondragstart={(e) => { e.dataTransfer?.setData('text/plain', String(i)); e.dataTransfer!.effectAllowed = 'move'; }}
+							title={tab.pinned ? `${tab.title} (pinned; right-click to unpin)` : undefined}
+							ondragstart={(e) => { e.dataTransfer?.setData('text/plain', tab.id); e.dataTransfer!.effectAllowed = 'move'; }}
 							ondragover={(e) => e.preventDefault()}
-							ondrop={(e) => { e.preventDefault(); const from = parseInt(e.dataTransfer?.getData('text/plain') ?? '-1', 10); if (from >= 0) moveTab(from, i); }}
+							ondrop={(e) => { e.preventDefault(); const from = e.dataTransfer?.getData('text/plain'); if (from) moveTabTo(from, tab.id); }}
 							onauxclick={(e) => { if (e.button === 1) { e.preventDefault(); closeTab(tab.id); } }}
+							oncontextmenu={(e) => { e.preventDefault(); togglePinTab(tab.id); }}
 						>
 							{#if tab.icon}
 								<NoteIcon icon={tab.icon} class="h-3.5 w-3.5" />
 							{/if}
 							<span class="truncate">{tab.title || 'Untitled'}</span>
-							<button
-								class="tab-close"
-								onclick={(e) => { e.preventDefault(); e.stopPropagation(); closeTab(tab.id); }}
-								aria-label="Close tab"
-							>
-								<X class="h-3 w-3" />
-							</button>
+							{#if tab.pinned}
+								<button
+									class="tab-close tab-pin is-pinned"
+									onclick={(e) => { e.preventDefault(); e.stopPropagation(); unpinTab(tab.id); }}
+									aria-label="Unpin tab"
+									title="Unpin"
+								>
+									<Pin class="h-3 w-3" />
+								</button>
+							{:else}
+								<button
+									class="tab-close tab-pin"
+									onclick={(e) => { e.preventDefault(); e.stopPropagation(); pinTab(tab.id); }}
+									aria-label="Pin tab"
+									title="Pin: keep this tab, across restarts"
+								>
+									<Pin class="h-3 w-3" />
+								</button>
+								<button
+									class="tab-close"
+									onclick={(e) => { e.preventDefault(); e.stopPropagation(); closeTab(tab.id); }}
+									aria-label="Close tab"
+								>
+									<X class="h-3 w-3" />
+								</button>
+							{/if}
 						</a>
 					{/each}
 				</div>
@@ -1337,6 +1364,21 @@
 	.tab-item:hover {
 		background: var(--color-hover);
 		color: var(--color-text);
+	}
+
+	/* Pinned tabs ("sticky notes"): shorter, with a pin, and a gap after the group */
+	.tab-item.tab-pinned {
+		max-width: 150px;
+		padding-left: 0.625rem;
+	}
+
+	.tab-item.tab-group-end {
+		margin-right: 0.5rem;
+	}
+
+	.tab-pin.is-pinned {
+		opacity: 1;
+		color: var(--color-accent);
 	}
 
 	.tab-item.tab-active {

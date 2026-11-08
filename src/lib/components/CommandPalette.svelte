@@ -30,7 +30,7 @@
 		triggerUploadRecording
 	} from '$lib/stores/snackbar';
 	import { Search, Cloud, CloudOff, Download } from 'lucide-svelte';
-	import { recentNoteIds } from '$lib/stores/workspace';
+	import { recentNoteIds, pinnedTabIds, togglePinTab } from '$lib/stores/workspace';
 	import NoteIcon from './NoteIcon.svelte';
 	import { labsEnabled, LAB_PAGES } from '$lib/stores/labs';
 
@@ -483,7 +483,24 @@
 						}
 					}))
 				: [];
-			results = [...actions, ...labActions].filter(
+			// On a note: pin / unpin it as a tab (workspace.ts).
+			const noteId = $page.url.pathname.match(/^\/memory\/([^/]+)/)?.[1];
+			const noteActions: Command[] = noteId
+				? [
+						{
+							id: 'pin-tab',
+							type: 'action' as const,
+							title: $pinnedTabIds.includes(noteId) ? 'Unpin this note' : 'Pin this note as a tab',
+							description: 'Pinned tabs stay on the left of the tab bar, across restarts',
+							icon: 'note',
+							action: () => {
+								togglePinTab(noteId);
+								onClose();
+							}
+						}
+					]
+				: [];
+			results = [...noteActions, ...actions, ...labActions].filter(
 				(a) =>
 					a.title.toLowerCase().includes(actionQuery) ||
 					a.description?.toLowerCase().includes(actionQuery)

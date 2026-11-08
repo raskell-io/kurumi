@@ -59,11 +59,39 @@ export function touchRecent(memoryId: string): void {
 }
 
 // --- Tab bar ----------------------------------------------------------------
+//
+// Open tabs are for this session; pinned tabs ("sticky notes") stay on the
+// left, survive restarts (per device, localStorage) and don't count toward
+// the tab limit, so the notes you're working on stay one click away.
 
 const MAX_TABS = 12;
+const PINNED_KEY = 'kurumi-pinned-tabs';
 
-/** Ordered list of recently-opened memory IDs. Most recent last. */
+function loadPinned(): string[] {
+	try {
+		const parsed = JSON.parse(localStorage.getItem(PINNED_KEY) ?? '[]');
+		return Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string') : [];
+	} catch {
+		return [];
+	}
+}
+
+/** Pinned memory ids, in tab order. */
+export const pinnedTabIds = writable<string[]>(typeof localStorage === 'undefined' ? [] : loadPinned());
+pinnedTabIds.subscribe((ids) => {
+	if (typeof localStorage === 'undefined') return;
+	try {
+		localStorage.setItem(PINNED_KEY, JSON.stringify(ids));
+	} catch {
+		// Storage full or blocked: pins last for this session.
+	}
+});
+
+/** Ordered list of recently-opened (unpinned) memory IDs. Most recent last. */
 export const openTabIds = writable<string[]>([]);
+
+let pinnedNow: string[] = [];
+pinnedTabIds.subscribe((ids) => (pinnedNow = ids));
 
 /**
  * Mark a memory as just-opened. Adds it to the end of the tab bar
@@ -71,6 +99,7 @@ export const openTabIds = writable<string[]>([]);
  * position is preserved so the user can arrange them manually.
  */
 export function touchTab(memoryId: string): void {
+	if (pinnedNow.includes(memoryId)) return;
 	openTabIds.update((ids) => {
 		if (ids.includes(memoryId)) return ids; // already open, keep position
 		const next = [...ids, memoryId];
@@ -79,6 +108,44 @@ export function touchTab(memoryId: string): void {
 		}
 		return next;
 	});
+}
+
+export function isPinned(memoryId: string): boolean {
+	return pinnedNow.includes(memoryId);
+}
+
+/** Pin a note's tab (it moves to the pinned group on the left). */
+export function pinTab(memoryId: string): void {
+	if (pinnedNow.includes(memoryId)) return;
+	pinnedTabIds.update((ids) => [...ids, memoryId]);
+	openTabIds.update((ids) => ids.filter((id) => id !== memoryId));
+}
+
+/** Unpin: it stays open, as the first ordinary tab. */
+export function unpinTab(memoryId: string): void {
+	if (!pinnedNow.includes(memoryId)) return;
+	pinnedTabIds.update((ids) => ids.filter((id) => id !== memoryId));
+	openTabIds.update((ids) => [memoryId, ...ids.filter((id) => id !== memoryId)].slice(0, MAX_TABS));
+}
+
+export function togglePinTab(memoryId: string): void {
+	if (pinnedNow.includes(memoryId)) unpinTab(memoryId);
+	else pinTab(memoryId);
+}
+
+/** Move tab `fromId` to where `toId` is, within its group (pinned or not). */
+export function moveTabTo(fromId: string, toId: string): void {
+	const reorder = (ids: string[]) => {
+		const from = ids.indexOf(fromId);
+		const to = ids.indexOf(toId);
+		if (from < 0 || to < 0 || from === to) return ids;
+		const next = [...ids];
+		next.splice(from, 1);
+		next.splice(to, 0, fromId);
+		return next;
+	};
+	if (pinnedNow.includes(fromId)) pinnedTabIds.update(reorder);
+	else openTabIds.update(reorder);
 }
 
 /**
@@ -96,20 +163,23 @@ export function moveTab(fromIndex: number, toIndex: number): void {
 	});
 }
 
+/** Close a tab; a pinned one is unpinned and closed. */
 export function closeTab(memoryId: string): void {
+	pinnedTabIds.update((ids) => (ids.includes(memoryId) ? ids.filter((id) => id !== memoryId) : ids));
 	openTabIds.update((ids) => ids.filter((id) => id !== memoryId));
 }
 
 /** Derived store that resolves tab IDs to MemoryObject + title pairs
- *  so the UI can render them. Dead refs (deleted memories) are
- *  automatically dropped. */
-export const openTabs: Readable<Array<{ id: string; title: string; icon?: string }>> = derived(
-	[openTabIds, memoryObjects],
-	([$ids, $memories]) => {
+ *  so the UI can render them, pinned tabs first. Dead refs (deleted
+ *  memories) are automatically dropped. */
+export const openTabs: Readable<Array<{ id: string; title: string; icon?: string; pinned: boolean }>> = derived(
+	[pinnedTabIds, openTabIds, memoryObjects],
+	([$pinned, $ids, $memories]) => {
 		const byId = new Map($memories.map((m) => [m.id, m]));
-		return $ids.flatMap((id) => {
+		const resolve = (id: string, pinned: boolean) => {
 			const memory = byId.get(id);
-			return memory ? [{ id, title: memory.title || 'Untitled', icon: memory.icon }] : [];
-		});
+			return memory && !memory.deletedAt ? [{ id, title: memory.title || 'Untitled', icon: memory.icon, pinned }] : [];
+		};
+		return [...$pinned.flatMap((id) => resolve(id, true)), ...$ids.filter((id) => !$pinned.includes(id)).flatMap((id) => resolve(id, false))];
 	}
 );
