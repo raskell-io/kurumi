@@ -9,7 +9,7 @@
 	} from '$lib/db';
 	import ReadNav from '$lib/components/ReadNav.svelte';
 	import NoteCard from '$lib/components/NoteCard.svelte';
-	import { NotebookText, Folder, ChevronRight, Search, X, ArrowDownWideNarrow, ArrowUpRight, Check, SearchX } from 'lucide-svelte';
+	import { NotebookText, Folder, ChevronRight, Search, X, ArrowDownWideNarrow, ArrowUpRight, Check, SearchX, Highlighter } from 'lucide-svelte';
 
 	type SortOption = 'recent' | 'alphabetical' | 'oldest';
 	type ViewOption = 'all' | 'folders';
@@ -156,6 +156,9 @@
 				{allTags.length} tag{allTags.length === 1 ? '' : 's'}
 			</p>
 		</div>
+		<a href="/read/highlights" class="k-btn k-btn-sm" title="Every highlighted passage, to review">
+			<Highlighter class="h-3.5 w-3.5" /> Highlights
+		</a>
 	</header>
 
 	<!-- Controls -->

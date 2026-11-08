@@ -2369,6 +2369,26 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
+	async 'highlights: study page, quiz and save as note'(browser) {
+		const { page, errors } = await freshPage(browser);
+		await db(page, `db.addMemoryObject('Book', '# Ideas\\nSystem 1 is ==fast and automatic==.\\n\\n\\u0060\\u0060\\u0060\\n==not this==\\n\\u0060\\u0060\\u0060'); db.addMemoryObject('Other', 'a == b and c == d');`);
+		await page.goto(`${BASE}/#/read/highlights`, { waitUntil: 'load' });
+		await page.waitForSelector('.passage');
+		assert.deepEqual(await page.$$eval('.passage mark', (m) => m.map((x) => x.textContent)), ['fast and automatic']);
+		// Quiz hides the highlight in its sentence; a click shows it.
+		await page.click('.toolbar button[aria-pressed]');
+		await page.waitForSelector('.cloze .blank');
+		assert.equal(await page.$('.passage mark'), null);
+		await page.click('.cloze');
+		await page.waitForSelector('.passage mark');
+		// Save as note: quotes, linked to the source.
+		await clickText(page, 'button', 'Save as note');
+		await page.waitForFunction(() => location.hash.includes('/memory/'));
+		const id = page.url().split('/memory/')[1];
+		assert.match(await db(page, `return db.getMemoryObject(arg).bodyMarkdown;`, id), /## \[\[Book\]\]\n\n> fast and automatic/);
+		assert.deepEqual(errors, []);
+	},
+
 	async 'settings show the selected local folder'(browser) {
 		const { page, errors } = await freshPage(browser);
 		const name = await page.evaluate(async () => {

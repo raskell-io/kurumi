@@ -137,6 +137,17 @@
 			}
 		},
 		{
+			id: 'highlights',
+			type: 'action',
+			title: 'Study highlights',
+			description: 'Every highlighted passage across your notes and PDFs, in one place',
+			icon: 'read',
+			action: () => {
+				onClose();
+				goto('/read/highlights');
+			}
+		},
+		{
 			id: 'weekly-review',
 			type: 'action',
 			title: 'Write weekly review',

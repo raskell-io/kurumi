@@ -311,9 +311,10 @@ researchers.
 
 **Scope:** Medium. Scheduler is straightforward. UI is the work.
 
-### [ ] Highlighted study mode
-Read mode variant that hides everything except highlighted passages
-across all memories, stitched into a review document. DEFERRED.
+### [x] Highlighted study mode
+`/read/highlights` (`$lib/highlights.ts`): ==marks== and PDF highlights
+grouped by note with context, filter by text/tag, shuffle, a cloze quiz,
+save as note.
 
 ### [x] Quiz generation
 `generateQuizFromMemory(id)` in digest.ts: sends the memory's

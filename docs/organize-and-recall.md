@@ -167,6 +167,12 @@ dot to preview the note, `/` to search, scroll to zoom.
 
 - **Read mode** (`/read`, `Cmd/Ctrl+Shift+R`): notes as a blog to scroll
   through, filtered by folder, tag, date, person or topic.
+- **Highlights** (`/read/highlights`, or *Highlights* on the Read page,
+  ⌘K *Study highlights*): every `==highlighted==` passage across your
+  notes, and every PDF highlight, in one document grouped by note, with
+  the sentence around it and the heading it's under. Filter by words or
+  tag, shuffle, or turn on **Quiz** to hide each highlight in its sentence
+  until you click it. *Save as note* keeps the collection as quotes.
 - **Calendar** (`Cmd/Ctrl+Shift+C`): notes, memos, meetings and due
   to-dos per day.
 - **Weekly review** (`/review`): what you captured, what's overdue, what
