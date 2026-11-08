@@ -13,7 +13,8 @@ Installing it as an app gives it its own window, an icon and some extras
 - **iPhone / iPad:** Share → *Add to Home Screen*.
 - **Android:** menu → *Install app*.
 - **Desktop app:** the `.dmg` (Mac), `.exe` (Windows) or `.AppImage`
-  (Linux) on the [releases page](https://github.com/raskell-io/kurumi/releases).
+  (Linux) from **Settings → Desktop app**, which picks the right one for your
+  computer, or the [releases page](https://github.com/raskell-io/kurumi/releases).
   It keeps its own vault, separate from the browser's. The builds aren't
   signed yet: on a Mac, allow the first launch in System Settings →
   Privacy & Security → *Open Anyway*; on Windows, *More info* → *Run anyway*.
@@ -45,7 +46,7 @@ when you're done.
   citations) and what's due today.
 - **Settings (`Cmd/Ctrl+,`):** one page per section: Appearance, Profile,
   Sync, Local AI, AI assistant, Notifications, Keyboard shortcuts, Data,
-  Offline & storage, Labs, About, Danger zone.
+  Offline & storage, Desktop app, Labs, About, Danger zone.
 
 Put your name in **Settings → Profile**. Kurumi uses it to tell your
 to-dos from the ones you're [waiting for](work.md#waiting-for).

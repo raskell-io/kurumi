@@ -107,7 +107,17 @@
 		type StorageInfo
 	} from '$lib/pwa';
 	import { onMount } from 'svelte';
-	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2, RefreshCw, Wifi, Sparkles, ChevronDown, ChevronLeft, ChevronRight, Cloud, Shield, BookOpen, HardDrive } from 'lucide-svelte';
+	import { isTauri } from '$lib/desktop';
+	import {
+		latestDesktopRelease,
+		detectDesktopOS,
+		isNewerVersion,
+		formatSize,
+		FALLBACK_DOWNLOADS,
+		LATEST_RELEASE_URL,
+		type DesktopRelease
+	} from '$lib/desktop/release';
+	import { Monitor, Sun, Moon, Upload, Download, AlertTriangle, Check, X, Trash2, RefreshCw, Wifi, Sparkles, ChevronDown, ChevronLeft, ChevronRight, Cloud, Shield, BookOpen, HardDrive, ExternalLink } from 'lucide-svelte';
 	import { page } from '$app/stores';
 	import GitConflictModal from '$lib/components/GitConflictModal.svelte';
 	import {
@@ -365,6 +375,24 @@
 	const formatBytes = (n: number) =>
 		n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${Math.round(n / 1e6)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`;
 	const appVersion = __KURUMI_VERSION__;
+
+	// Desktop app: downloads (in a browser) or update check (in the app)
+	const inDesktopApp = isTauri();
+	const thisOS = detectDesktopOS();
+	const appSemver = __KURUMI_SEMVER__;
+	let desktopRelease = $state<DesktopRelease | null>(null);
+	let desktopCheck = $state<'idle' | 'checking' | 'done' | 'failed'>('idle');
+	async function checkDesktopRelease() {
+		desktopCheck = 'checking';
+		desktopRelease = await latestDesktopRelease();
+		desktopCheck = desktopRelease ? 'done' : 'failed';
+	}
+	$effect(() => {
+		if (current === 'desktop' && desktopCheck === 'idle') void checkDesktopRelease();
+	});
+	let desktopDownloads = $derived(desktopRelease?.downloads ?? FALLBACK_DOWNLOADS);
+	let ownDownload = $derived(desktopDownloads.find((d) => d.os === thisOS) ?? null);
+	let desktopUpdate = $derived(!!desktopRelease && isNewerVersion(desktopRelease.version, appSemver));
 	// Startup cost on this device (see Phase 2 notes in CLAUDE.md)
 	const loadStats = getLoadStats();
 	const sizeStats = getVaultSizeStats();
@@ -586,6 +614,7 @@
 		{ id: 'shortcuts', label: 'Keyboard shortcuts' },
 		{ id: 'data', label: 'Data' },
 		{ id: 'offline', label: 'Offline & storage' },
+		{ id: 'desktop', label: 'Desktop app' },
 		{ id: 'labs', label: 'Labs' },
 		{ id: 'about', label: 'About' },
 		{ id: 'danger', label: 'Danger zone' }
@@ -2525,6 +2554,171 @@
 				</section>
 				{/if}
 
+				<!-- Desktop app -->
+				{#if current === 'desktop'}
+				<section id="desktop" class="set-section" aria-labelledby="desktop-title">
+					<h2 id="desktop-title" class="set-section-title">Desktop app</h2>
+					{#if inDesktopApp}
+						<p class="set-section-desc">
+							You're in the Kurumi desktop app. It runs the same app as the web, with its own window and
+							folder sync built in.
+						</p>
+						<div class="set-rows">
+							<div class="set-row">
+								<div class="set-row-text">
+									<div class="set-row-label flex items-center gap-2">
+										Updates
+										{#if desktopCheck === 'done' && !desktopUpdate}<span class="k-badge k-badge-success"><Check class="h-3 w-3" />Up to date</span>{/if}
+									</div>
+									<p class="set-row-help">
+										{#if desktopCheck === 'checking'}
+											Looking for a newer version…
+										{:else if desktopUpdate && desktopRelease}
+											Kurumi {desktopRelease.version} is out (this is {appSemver}). Download and install it over this
+											one; your notes stay.
+										{:else if desktopCheck === 'failed'}
+											Couldn't reach GitHub to check. You have {appSemver}.
+										{:else}
+											You have {appSemver}, the latest. The app doesn't update itself yet: new versions are
+											downloaded and installed over it.
+										{/if}
+									</p>
+								</div>
+								{#if desktopUpdate && desktopRelease}
+									<a href={ownDownload?.url ?? desktopRelease.url} target="_blank" rel="noopener" class="k-btn k-btn-primary no-underline">
+										<Download class="h-3.5 w-3.5" />Download {desktopRelease.version}
+									</a>
+								{:else}
+									<button type="button" class="k-btn" onclick={checkDesktopRelease} disabled={desktopCheck === 'checking'}>
+										{#if desktopCheck === 'checking'}{@render spinner()}{:else}<RefreshCw class="h-3.5 w-3.5" />{/if}
+										Check again
+									</button>
+								{/if}
+							</div>
+
+							<div class="set-row">
+								<div class="set-row-text">
+									<div class="set-row-label">Your notes</div>
+									<p class="set-row-help">
+										The desktop app keeps its own notes, separate from any browser's. To bring notes over,
+										set up the same sync on both, or make a backup in the browser and restore it here.
+									</p>
+								</div>
+								<div class="flex gap-1.5">
+									<a href="/settings/sync" class="k-btn no-underline">Sync</a>
+									<a href="/settings/data" class="k-btn no-underline">Backup</a>
+								</div>
+							</div>
+
+							<div class="set-row">
+								<div class="set-row-text">
+									<div class="set-row-label">Local folder</div>
+									<p class="set-row-help">
+										Sync → Local writes your notes as markdown files to a folder you pick, on every system
+										(browsers only offer this in Chrome and Edge). The app can only reach folders you picked.
+									</p>
+								</div>
+								<a href="/settings/sync" class="k-btn no-underline">Set up</a>
+							</div>
+
+							<div class="set-row">
+								<div class="set-row-text">
+									<div class="set-row-label">How it differs from the web</div>
+									<p class="set-row-help">
+										{#if thisOS === 'windows'}
+											Microsoft Edge WebView2, the engine of Edge, which Windows keeps up to date.
+										{:else}
+											WebKit, the engine of Safari{thisOS === 'linux' ? ' (WebKitGTK)' : ''}: what works in Safari works here.
+										{/if}
+										Not in the desktop app yet: Mark done / Snooze on notifications and opening
+										<code>.md</code> files with Kurumi.
+									</p>
+								</div>
+							</div>
+						</div>
+					{:else}
+						<p class="set-section-desc">
+							Kurumi as an app for your computer: its own window and Dock or taskbar icon, and folder sync
+							in every system. Free, like the web version.
+						</p>
+
+						<div class="desktop-downloads">
+							{#each desktopDownloads as d (d.os)}
+								<a
+									href={d.url}
+									target="_blank"
+									rel="noopener"
+									class="desktop-download no-underline"
+									class:recommended={d.os === thisOS}
+								>
+									<span class="desktop-download-label">
+										{d.label}
+										{#if d.os === thisOS}<span class="k-badge">This computer</span>{/if}
+									</span>
+									<span class="desktop-download-note">{d.size ? `${d.note} · ${formatSize(d.size)}` : d.note}</span>
+									<span class="desktop-download-action">
+										<Download class="h-3.5 w-3.5" />
+										{desktopRelease ? `Download ${desktopRelease.version}` : 'Download'}
+									</span>
+								</a>
+							{/each}
+						</div>
+						<p class="mt-2 text-xs text-[var(--color-text-faint)]">
+							{#if desktopCheck === 'checking'}
+								Looking up the latest version…
+							{:else if desktopCheck === 'failed'}
+								Couldn't reach GitHub; the buttons open the download page.
+							{/if}
+							<a href={LATEST_RELEASE_URL} target="_blank" rel="noopener" class="inline-flex items-center gap-1">All downloads and release notes <ExternalLink class="h-3 w-3" /></a>
+						</p>
+
+						<div class="set-rows mt-6">
+							<div class="set-row">
+								<div class="set-row-text">
+									<div class="set-row-label">Opening it the first time</div>
+									<p class="set-row-help">
+										The app isn't signed by Apple or Microsoft yet, so the system asks first.
+										<strong>Mac:</strong> drag Kurumi to Applications and open it; when macOS refuses, go to
+										System Settings → Privacy &amp; Security and click <em>Open Anyway</em>.
+										<strong>Windows:</strong> when SmartScreen warns, click <em>More info</em> → <em>Run anyway</em>.
+										<strong>Linux:</strong> make the AppImage executable and run it.
+									</p>
+								</div>
+							</div>
+
+							<div class="set-row">
+								<div class="set-row-text">
+									<div class="set-row-label">Bringing your notes</div>
+									<p class="set-row-help">
+										The app starts empty: it keeps its own notes, apart from this browser's. Set up the same
+										sync in both, or make a backup here and restore it in the app.
+									</p>
+								</div>
+								<div class="flex gap-1.5">
+									<a href="/settings/sync" class="k-btn no-underline">Sync</a>
+									<a href="/settings/data" class="k-btn no-underline">Backup</a>
+								</div>
+							</div>
+
+							<div class="set-row">
+								<div class="set-row-text">
+									<div class="set-row-label">Or install from the browser</div>
+									<p class="set-row-help">
+										{#if platform === 'chromium'}
+											Chrome and Edge can install Kurumi as an app too (the install icon in the address bar),
+											which also keeps this browser's notes. The desktop app is the way on Safari and Firefox.
+										{:else}
+											Chrome and Edge can install Kurumi as an app from the address bar. In this browser, the
+											desktop app is the way to get a Kurumi window.
+										{/if}
+									</p>
+								</div>
+							</div>
+						</div>
+					{/if}
+				</section>
+				{/if}
+
 				<!-- About & Documentation -->
 				{#if current === 'about'}
 				<section id="about" class="set-section" aria-labelledby="about-title">
@@ -2928,6 +3122,67 @@
 
 	.settings-nav-link.danger {
 		margin-top: 0.75rem;
+	}
+
+	/* ---- Desktop app downloads ---- */
+	.desktop-downloads {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 0.625rem;
+		margin-top: 1rem;
+	}
+
+	@media (min-width: 640px) {
+		.desktop-downloads {
+			grid-template-columns: repeat(3, 1fr);
+		}
+	}
+
+	.desktop-download {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		padding: 0.875rem 1rem;
+		border: 1px solid var(--color-border);
+		border-radius: 10px;
+		color: inherit;
+		transition:
+			border-color 0.15s,
+			background 0.15s;
+	}
+
+	.desktop-download:hover {
+		border-color: var(--color-accent);
+		background: var(--color-bg-secondary);
+	}
+
+	.desktop-download.recommended {
+		border-color: var(--color-accent);
+		box-shadow: 0 0 0 3px var(--color-accent-soft);
+	}
+
+	.desktop-download-label {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 0.9375rem;
+		font-weight: 600;
+		color: var(--color-text);
+	}
+
+	.desktop-download-note {
+		font-size: 0.75rem;
+		color: var(--color-text-muted);
+	}
+
+	.desktop-download-action {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		margin-top: 0.5rem;
+		font-size: 0.8125rem;
+		font-weight: 500;
+		color: var(--color-accent);
 	}
 
 	/* ---- Sections + rows ---- */

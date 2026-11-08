@@ -12,9 +12,9 @@
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import puppeteer from 'puppeteer';
 
 const PORT = Number(process.env.E2E_PORT ?? 5298);
@@ -22,6 +22,7 @@ const BASE = `http://localhost:${PORT}`;
 const MAC_CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const THEME = process.env.THEME === 'dark' ? 'dark' : 'light';
 const OUT = new URL('../docs/images/', import.meta.url).pathname;
+const ABOUT = new URL('../static/about/', import.meta.url).pathname;
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -88,6 +89,8 @@ async function shot(page, name) {
 	const file = join(OUT, `${name}${THEME === 'dark' ? '-dark' : ''}.webp`);
 	await page.screenshot({ path: file, type: 'webp', quality: 85 });
 	console.log(`  ✓ ${file.replace(OUT, 'docs/images/')}`);
+	// Settings → About shows the note screenshot (AboutKurumi.svelte).
+	if (name === 'note') copyFileSync(file, join(ABOUT, basename(file)));
 }
 
 // The built app routes by hash (/#/projects), like on a static host.

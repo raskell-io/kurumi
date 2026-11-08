@@ -418,7 +418,9 @@ OpenAI to MMS when the API key is missing.
   data: read them through `storedHandle()` in `local-fs.ts`. A new handle
   method used by the sync must be added there too
 - `npm test` in `desktop/` = debug build + `selftest.mjs` (the app checks
-  itself from inside the webview, `KURUMI_SELFTEST`). Prerendered pages use
+  itself from inside the webview, `KURUMI_SELFTEST`). Settings → Desktop app:
+  downloads in a browser, an update check in the app (`desktop/release.ts`,
+  the GitHub releases API). Prerendered pages use
   absolute asset paths (`paths.relative: false`) because Tauri answers
   unknown routes with `index.html`. Unsigned for now (ad-hoc on macOS)
 
@@ -597,7 +599,9 @@ npm run screenshots  # production build + docs/images/*.webp from the example
 **Docs:** README.md is the short overview; user and developer guides
 live in `docs/` (index: `docs/README.md`). A user-visible change updates
 the guide that covers it; a changed screen means re-running
-`npm run screenshots` (and `THEME=dark npm run screenshots`). Images are
+`npm run screenshots` (and `THEME=dark npm run screenshots`); it also copies
+the note shot to `static/about/` for Settings → About (`AboutKurumi.svelte`,
+a landing page: keep it to the pitch, the feature tour lives in docs/). Images are
 embedded with `<picture>` (light + dark). `static/llms.txt` links the
 main guides.
 

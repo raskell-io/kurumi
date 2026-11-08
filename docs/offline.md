@@ -30,7 +30,7 @@ The [desktop app](getting-started.md#open-or-install-kurumi) runs on the
 system's web engine (Safari's on Mac) and adds local folder sync and due
 to-do reminders on every platform. Not yet: opening `.md` files with it and
 the Mark done / Snooze buttons on reminders. It updates by installing the
-new version.
+new version: Settings → Desktop app says when there's one.
 
 Apple doesn't give web apps the share sheet, file opening or background
 checks, so on iPhone and iPad those need Kurumi open. Settings → Offline
