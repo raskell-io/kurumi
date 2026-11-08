@@ -3,6 +3,7 @@
 	import { createExampleVault, EXAMPLE_VAULT_NAME } from '$lib/example-vault';
 	import { generateWeeklyReview } from '$lib/weekly-review';
 	import { livingQueryFor } from '$lib/living-notes';
+	import { pluginCommands, runPluginCommand } from '$lib/plugins/host';
 	import { search } from '$lib/search';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
@@ -515,7 +516,18 @@
 						}
 					]
 				: [];
-			results = [...noteActions, ...actions, ...labActions].filter(
+			const pluginActions: Command[] = $pluginCommands.map((c) => ({
+				id: `plugin:${c.pluginId}:${c.id}`,
+				type: 'action' as const,
+				title: c.title,
+				description: `Plugin · ${c.pluginName}`,
+				icon: 'sparkles',
+				action: () => {
+					onClose();
+					runPluginCommand(c);
+				}
+			}));
+			results = [...noteActions, ...pluginActions, ...actions, ...labActions].filter(
 				(a) =>
 					a.title.toLowerCase().includes(actionQuery) ||
 					a.description?.toLowerCase().includes(actionQuery)

@@ -2,6 +2,7 @@
 	import { autofocus } from '$lib/actions/autofocus';
 	import ShortcutSettings from '$lib/components/ShortcutSettings.svelte';
 	import AboutKurumi from '$lib/components/AboutKurumi.svelte';
+	import PluginSettings from '$lib/components/PluginSettings.svelte';
 	import { myNames } from '$lib/work';
 	import { linkSuggestionsEnabled, setLinkSuggestionsEnabled } from '$lib/editor/linkSuggest';
 	import { labsEnabled, LAB_PAGES } from '$lib/stores/labs';
@@ -648,6 +649,7 @@
 		{ id: 'data', label: 'Data' },
 		{ id: 'offline', label: 'Offline & storage' },
 		{ id: 'desktop', label: 'Desktop app' },
+		{ id: 'plugins', label: 'Plugins' },
 		{ id: 'labs', label: 'Labs' },
 		{ id: 'about', label: 'About' },
 		{ id: 'danger', label: 'Danger zone' }
@@ -2514,6 +2516,10 @@
 				{/if}
 
 				<!-- Labs -->
+				{#if current === 'plugins'}
+					<PluginSettings />
+				{/if}
+
 				{#if current === 'labs'}
 				<section id="labs" class="set-section" aria-labelledby="labs-title">
 					<h2 id="labs-title" class="set-section-title">Labs</h2>
@@ -3387,16 +3393,16 @@
 	}
 
 	/* ---- Sections + rows ---- */
-	.set-section {
+	:global(.set-section) {
 		scroll-margin-top: 1.5rem;
 		padding-top: 2.75rem;
 	}
 
-	.set-section:first-of-type {
+	:global(.set-section:first-of-type) {
 		padding-top: 0;
 	}
 
-	.set-section-title {
+	:global(.set-section-title) {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
@@ -3405,18 +3411,18 @@
 		color: var(--color-text);
 	}
 
-	.set-section-desc {
+	:global(.set-section-desc) {
 		margin-top: 0.125rem;
 		font-size: 0.8125rem;
 		color: var(--color-text-muted);
 	}
 
-	.set-rows {
+	:global(.set-rows) {
 		margin-top: 0.75rem;
 		border-top: 1px solid var(--color-border);
 	}
 
-	.set-row {
+	:global(.set-row) {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
@@ -3427,7 +3433,7 @@
 	}
 
 	/* Follow-up rows that belong to the toggle above them */
-	.set-row-nested {
+	:global(.set-row-nested) {
 		padding-left: 1rem;
 	}
 
@@ -3435,19 +3441,19 @@
 		cursor: pointer;
 	}
 
-	.set-row-text {
+	:global(.set-row-text) {
 		flex: 1 1 16rem;
 		min-width: 0;
 	}
 
-	.set-row-label {
+	:global(.set-row-label) {
 		display: block;
 		font-size: 0.875rem;
 		font-weight: 500;
 		color: var(--color-text);
 	}
 
-	.set-row-help {
+	:global(.set-row-help) {
 		margin-top: 0.125rem;
 		font-size: 0.75rem;
 		line-height: 1.45;
@@ -3455,7 +3461,7 @@
 	}
 
 	/* Full-width stacked form inside the row list (sync/AI credentials) */
-	.set-block {
+	:global(.set-block) {
 		display: flex;
 		flex-direction: column;
 		gap: 0.875rem;
@@ -3463,14 +3469,14 @@
 		border-bottom: 1px solid var(--color-border);
 	}
 
-	.set-actions {
+	:global(.set-actions) {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 0.5rem;
 	}
 
-	.set-select {
+	:global(.set-select) {
 		width: auto;
 		max-width: 100%;
 		min-width: 12rem;
@@ -3478,8 +3484,7 @@
 		font-size: 0.8125rem;
 	}
 
-	.set-section code,
-	.set-section :global(code) {
+	:global(.set-section code) {
 		font-family: var(--font-mono);
 		font-size: 0.9em;
 	}

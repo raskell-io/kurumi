@@ -457,6 +457,17 @@ OpenAI to MMS when the API key is missing.
   properties on the note (`NoteProperties.svelte`). Notion CSVs import as
   databases (`readNotionDatabase`, `inferPropertyType`)
 
+### Plugins (`src/lib/plugins/`, docs/plugins.md)
+- One JS file with a `/* kurumi-plugin {manifest} */` header; installed per
+  device (IndexedDB `kurumi-plugins`) from a URL or file after the user
+  approves its permissions (`read`, `write`; commands/notices need none)
+- Runs in `<iframe sandbox="allow-scripts">` (opaque origin) with CSP
+  `default-src 'none'`; talks to `host.ts` by postMessage, which only answers
+  that frame and checks `mayCall(permissions, method)`. Never add
+  allow-same-origin, and keep the network blocked
+- Settings → Plugins (`PluginSettings.svelte`; settings' `set-*` row styles
+  are global so components can use them); commands show in ⌘K
+
 ### Desktop app (`desktop/`)
 - Tauri 2, its own package (like `worker/`), Rust in `desktop/src-tauri/`.
   Embeds `build/` at compile time, served from `tauri://localhost`

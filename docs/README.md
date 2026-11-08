@@ -15,7 +15,8 @@ The [project README](../README.md) is the short overview.
 | [Work](work.md) | To-dos, projects, recurring meetings, decisions, open questions, proposals, inbox |
 | [AI](ai.md) | On-device models, remote providers, the agent, voice, what leaves your device |
 | [Keyboard shortcuts](keyboard-shortcuts.md) | Every shortcut, and how to change them |
-| [Labs](labs.md) | Habits, flashcards, timeline and smart folders (off by default) |
+| [Labs](labs.md) | Habits, flashcards, timeline, smart folders and scheduled workflows (off by default) |
+| [Plugins](plugins.md) | Installing plugins, what their sandbox allows, and writing one |
 
 ## Your data
 

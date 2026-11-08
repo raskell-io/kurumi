@@ -97,6 +97,8 @@ async function freshPage(browser) {
 	// The automatic daily digest would add a note 5 s after start, in the
 	// middle of a scenario: mark today's as done.
 	await page.evaluateOnNewDocument(() => {
+		// Top window only: plugin sandboxes (no storage) run this too.
+		if (window !== window.top) return;
 		const d = new Date();
 		const today = [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
 		localStorage.setItem('kurumi-last-auto-digest', today);
@@ -2539,6 +2541,58 @@ const scenarios = {
 		assert.ok(!state.notes.some((n) => n.startsWith('Sneaky')), 'a tool outside the workflow set ran');
 		// The log (opened after a manual run) links the note.
 		await page.waitForSelector('.log a');
+		assert.deepEqual(errors, []);
+	},
+
+	async 'plugins: install after approval, commands work, the sandbox holds'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const id = await db(page, `return db.addMemoryObject('Guide', '## Setup\\nInstall it.\\n\\n## Use\\nRun it, see [[Other]].').id;`);
+		const notice = () => page.$eval('.notice-toast .label', (e) => e.textContent).catch(() => '');
+		// Review the example: permissions are shown before anything runs.
+		await page.goto(`${BASE}/#/settings/plugins`, { waitUntil: 'load' });
+		await page.waitForSelector('#plugins', { timeout: 15000 });
+		await clickText(page, 'button', 'Try the example');
+		await page.waitForSelector('.approve');
+		const review = await page.$eval('.approve', (e) => e.textContent.replace(/\s+/g, ' '));
+		assert.match(review, /Install “Note tools” 1\.0\.0\?.*Read your notes.*Create and change notes.*can't use the network/);
+		await clickText(page, '.approve button', 'Install');
+		await page.waitForFunction(() => document.querySelector('#plugins')?.textContent.includes('Note tools'));
+		// Its commands are in ⌘K, and act on the open note.
+		await page.goto(`${BASE}/#/memory/${id}`, { waitUntil: 'load' });
+		await page.waitForSelector('main .ProseMirror');
+		const runCommand = async (title) => {
+			await press(page, MOD, 'k');
+			await page.waitForSelector('input[aria-label="Search notes or run an action"]');
+			await page.keyboard.type(`>${title}`);
+			await sleep(300);
+			await page.keyboard.press('Enter');
+			await sleep(800);
+		};
+		await runCommand('Note statistics');
+		assert.match(await notice(), /^Note tools: 8 words · 1 min read · 1 links · 0 open to-dos$/);
+		await runCommand('Add a table of contents');
+		await sleep(800);
+		assert.match(await db(page, `return db.getMemoryObject(arg).bodyMarkdown;`, id), /^## Contents\n\n- \[\[Guide#Setup\|Setup\]\]\n- \[\[Guide#Use\|Use\]\]\n\n## Setup/);
+		// A plugin with no permissions trying to get out of its sandbox.
+		const hostile = `/* kurumi-plugin {"id":"escape","name":"Escape","permissions":[]} */
+			(async () => {
+				const tries = {};
+				const attempt = async (name, fn) => { try { await fn(); tries[name] = 'ok'; } catch (e) { tries[name] = 'blocked'; } };
+				await attempt('dom', () => parent.document.title);
+				await attempt('storage', () => localStorage.getItem('x'));
+				await attempt('idb', () => new Promise((res, rej) => { const r = indexedDB.open('kurumi'); r.onsuccess = res; r.onerror = () => rej(r.error); }));
+				await attempt('cookie', () => { if (document.cookie === undefined) throw 0; document.cookie = 'a=b'; });
+				await attempt('fetch', () => fetch('${BASE}/').then((r) => r.text()));
+				await attempt('notes', () => kurumi.notes.list());
+				kurumi.ui.notice(JSON.stringify(tries));
+			})();`;
+		await page.evaluate(`(async () => {
+			const host = await import(performance.getEntriesByType('resource').map((e) => e.name).find((n) => n.includes('/src/lib/db/store.ts')).replace('/db/store.ts', '/plugins/host.ts'));
+			await host.installPlugin(${JSON.stringify(hostile)}, 'test');
+		})()`);
+		await page.waitForFunction(() => document.querySelector('.notice-toast .label')?.textContent.startsWith('Escape:'), { timeout: 10000 });
+		const tries = JSON.parse((await notice()).replace(/^Escape: /, ''));
+		assert.deepEqual(tries, { dom: 'blocked', storage: 'blocked', idb: 'blocked', cookie: 'blocked', fetch: 'blocked', notes: 'blocked' });
 		assert.deepEqual(errors, []);
 	},
 

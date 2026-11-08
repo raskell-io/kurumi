@@ -28,6 +28,7 @@
 	import { maybeAutoWeeklyReview } from '$lib/weekly-review';
 	import { maybeUpdateLivingNotes } from '$lib/living-notes';
 	import { runDueWorkflows } from '$lib/workflows';
+	import { startPlugins } from '$lib/plugins/host';
 	import { initSearch, syncIndex } from '$lib/search';
 	import { setupVisibilitySync, teardownVisibilitySync, setupAutoSync, teardownAutoSync, isSyncConfigured } from '$lib/sync';
 	import SyncFab from '$lib/components/SyncFab.svelte';
@@ -545,6 +546,8 @@
 			// Living notes whose topic's notes changed: soon after start, then every half hour.
 			setTimeout(() => void maybeUpdateLivingNotes().catch(() => {}), 20_000);
 			livingTimer = setInterval(() => void maybeUpdateLivingNotes().catch(() => {}), 30 * 60_000);
+			// Plugins installed on this device, each in its sandbox ($lib/plugins).
+			void startPlugins().catch(() => {});
 			// Scheduled workflows: check every minute (and once soon after start, for missed runs).
 			setTimeout(() => void runDueWorkflows().catch(() => {}), 15_000);
 			workflowTimer = setInterval(() => void runDueWorkflows().catch(() => {}), 60_000);

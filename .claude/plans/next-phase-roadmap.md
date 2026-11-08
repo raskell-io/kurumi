@@ -352,12 +352,15 @@ installed PWA receives shared content, params land as query params on
 - Markdown folder (Obsidian/Logseq/Bear/Notion/Foam): already shipped
 - Apple Notes / Google Keep / Day One: DEFERRED
 
-### [ ] Plugin / extension system
-Explicit non-goal in the original roadmap. DEFERRED — needs
-sandboxing infrastructure.
-
-**Scope:** Very large. Sandboxing is the hard part. Deferred unless
-community interest materializes.
+### [x] Plugin / extension system (first version)
+`$lib/plugins/` + Settings → Plugins, docs/plugins.md. One-file plugins
+(manifest comment), installed per device from a URL or file after the user
+approves their permissions (`read`, `write`). Each runs in an
+`<iframe sandbox="allow-scripts">` (opaque origin) with CSP `default-src
+'none'` (no network); postMessage RPC checked per call. API: ⌘K commands,
+notices, list/get/current/create/update notes. Example: static/plugins/
+note-tools.js. Next, if wanted: code-block renderers (needs HTML
+sanitising), events (note saved), a plugin directory.
 
 ---
 
