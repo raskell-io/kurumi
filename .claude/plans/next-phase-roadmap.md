@@ -377,9 +377,17 @@ GitHub Actions running `svelte-check` + `build` on PR.  `.husky`
 pre-commit running the same locally. Locks in the `0 errors / 0
 warnings` invariant.
 
-### [ ] Performance audit
-Bundle size analysis, lazy-loading opportunities, initial-paint
-profiling. The bundle has grown a lot.
+### [x] Performance audit
+Measured on the production build (2026-11-08, first visit, raw bytes):
+home page JS 790 KB → 387 KB, /read 308 KB, /actions 396 → 315 KB; first
+paint ~200 → ~140 ms. Fixes: isomorphic-git loads on first git sync
+(`gitService()` in sync/service.ts; eager code imports `$lib/git/status`,
+not the `$lib/git` barrel), JSZip on first export, the split pane (and
+with it the editor) when opened, the agent pane when opened, the command
+palette while idle; `databaseBlockViewId` moved to `$lib/database` so
+Read mode doesn't pull in ProseMirror. Left alone: the Automerge wasm
+(3.5 MB raw, the database itself) and the ONNX runtime wasm, which the
+build emits twice (2 × 21.8 MB) but nothing precaches; only deploy size.
 
 ### [ ] Realtime API verification
 Untested feature shipped against documentation alone. Needs exercise

@@ -15,10 +15,9 @@ export const isDatabaseBlock = (node: ProseMirrorNode) =>
 	node.type.name === 'code_block' && String(node.attrs.language ?? '').trim().toLowerCase() === 'database';
 
 /** The view id in a block's source: `view: <id>` or the bare id. */
-export function databaseBlockViewId(source: string): string {
-	const line = source.trim().split('\n')[0] ?? '';
-	return line.replace(/^view\s*:\s*/i, '').trim();
-}
+// In $lib/database (no editor code), so Read mode doesn't load ProseMirror for it.
+export { databaseBlockViewId } from '$lib/database';
+import { databaseBlockViewId } from '$lib/database';
 
 export function databaseBlockView(node: ProseMirrorNode, view: EditorView, getPos: () => number | undefined) {
 	const dom = document.createElement('div');

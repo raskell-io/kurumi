@@ -521,6 +521,11 @@ OpenAI to MMS when the API key is missing.
   searches don't wait for a big re-index
 - The MiniSearch index updates incrementally (`syncIndex`)
 - The tree renders 200 notes per folder level with "Show more"
+- Keep heavy modules off the first load: the layout lazy-loads the agent
+  pane, command palette and split pane; git sync loads isomorphic-git on
+  first use (import `$lib/git/status`, not the `$lib/git` barrel, from eager
+  code); JSZip loads on export. Don't import `$lib/editor/*` from components
+  every page uses (MarkdownRenderer): it pulls in ProseMirror
 
 ### Undo (global)
 - 30-entry, 5-minute in-memory undo stack

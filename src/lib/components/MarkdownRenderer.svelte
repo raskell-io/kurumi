@@ -12,7 +12,7 @@
 	import { onMount, mount, unmount, tick } from 'svelte';
 	import { loadHighlighter, highlightToHtml } from '$lib/highlight';
 	import DatabaseBlock from './database/DatabaseBlock.svelte';
-	import { databaseBlockViewId } from '$lib/editor/databaseBlock.svelte';
+	import { databaseBlockViewId } from '$lib/database';
 
 	interface Props {
 		content: string;

@@ -6,7 +6,6 @@
 import { parseWikilink, wikilinkLabel } from '$lib/wikilinks';
 import { parseCanvas, serializeCanvas } from '$lib/canvas';
 import type { MemoryObject, Folder, Vault } from '../db/types';
-import JSZip from 'jszip';
 import { getBlob } from '../db/blob-store';
 
 export type MarkdownExportFormat = 'vanilla' | 'hugo' | 'zola';
@@ -417,6 +416,8 @@ export async function downloadAsZip(
 	format: MarkdownExportFormat,
 	label = 'export'
 ): Promise<void> {
+	// Loaded on first export: the sync and git modules import this file too.
+	const { default: JSZip } = await import('jszip');
 	const zip = new JSZip();
 
 	for (const file of files) {

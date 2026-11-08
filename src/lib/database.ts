@@ -563,3 +563,9 @@ export function groupRows(
 	if (empty.length) out.push({ key: '∅', label: `No ${prop?.label ?? fieldLabel(field, properties)}`, value: null, rows: empty });
 	return out;
 }
+
+/** The view a ```database block shows: its first line (`view: <id>`, or the id alone). */
+export function databaseBlockViewId(source: string): string {
+	const line = source.trim().split('\n')[0] ?? '';
+	return line.replace(/^view\s*:\s*/i, '').trim();
+}

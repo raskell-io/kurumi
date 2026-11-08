@@ -17,12 +17,9 @@ function lockMessage(err: unknown): string | null {
 	return err instanceof SyncLockedError || err instanceof WrongPassphraseError || err instanceof NewerVaultError ? err.message : null;
 }
 import { get, derived, type Readable } from 'svelte/store';
-import {
-	isGitSyncConfigured,
-	gitSyncState,
-	syncGit,
-	testGitConnection as testGitConnectionService
-} from '$lib/git';
+// isomorphic-git is loaded on first use (`gitService`), not with the app.
+import { isGitSyncConfigured, gitSyncState } from '$lib/git/status';
+const gitService = () => import('$lib/git/service');
 import {
 	getS3Config,
 	isS3Configured,
@@ -1158,6 +1155,7 @@ async function syncGitMethod(): Promise<{ success: boolean; error?: string }> {
 		};
 
 		const lastSyncedAt = get(gitSyncState).lastSyncedAt;
+		const { syncGit } = await gitService();
 		await syncGit(
 			localMemories,
 			localFolders,

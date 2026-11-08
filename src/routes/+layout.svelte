@@ -29,12 +29,11 @@
 	import { initSearch, syncIndex } from '$lib/search';
 	import { setupVisibilitySync, teardownVisibilitySync, setupAutoSync, teardownAutoSync, isSyncConfigured } from '$lib/sync';
 	import SyncFab from '$lib/components/SyncFab.svelte';
-	import { gitSyncState } from '$lib/git';
+	import { gitSyncState } from '$lib/git/status';
 	import GitConflictModal from '$lib/components/GitConflictModal.svelte';
 	import UndoToast from '$lib/components/UndoToast.svelte';
 	import UpdateToast from '$lib/components/UpdateToast.svelte';
 	import NoticeToast from '$lib/components/NoticeToast.svelte';
-	import AgentPane from '$lib/components/AgentPane.svelte';
 	import FocusTimer from '$lib/components/FocusTimer.svelte';
 	import LockScreen from '$lib/components/LockScreen.svelte';
 	import { lockEnabled, isLocked, lock, autoLockMinutes, hasPinSet } from '$lib/stores/lock';
@@ -53,7 +52,6 @@
 		splitNoteId,
 		closeSplit
 	} from '$lib/stores/workspace';
-	import SplitPane from '$lib/components/SplitPane.svelte';
 	import ImageViewer from '$lib/components/ImageViewer.svelte';
 	import PdfViewer from '$lib/components/PdfViewer.svelte';
 	import { labsEnabled, LAB_PAGES } from '$lib/stores/labs';
@@ -72,7 +70,10 @@
 	} from '$lib/inference';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
-	import CommandPalette from '$lib/components/CommandPalette.svelte';
+	// Loaded on demand (fetched once the app is idle, so ⌘K still opens at once):
+	// they're big and most page views never open them.
+	const loadCommandPalette = () => import('$lib/components/CommandPalette.svelte');
+	const loadAgentPane = () => import('$lib/components/AgentPane.svelte');
 	import FolderTree from '$lib/components/FolderTree.svelte';
 	import VaultSelector from '$lib/components/VaultSelector.svelte';
 	import NoteIcon from '$lib/components/NoteIcon.svelte';
@@ -534,6 +535,9 @@
 					});
 				}, 5000); // delay to not compete with initial render
 			}
+			// Fetch the command palette while idle, so the first ⌘K is instant.
+			const idle = window.requestIdleCallback ?? ((fn: () => void) => setTimeout(fn, 2000));
+			idle(() => void loadCommandPalette());
 			// Last week's review, on the first start of a new week (quiet weeks get none).
 			setTimeout(() => void maybeAutoWeeklyReview().catch(() => {}), 8000);
 		});
@@ -1168,17 +1172,24 @@
 		</main>
 
 		{#if showSplit && $splitNoteId}
-			<SplitPane noteId={$splitNoteId} />
+			<!-- Loaded when first opened: it carries the editor, which most pages don't need -->
+			{#await import('$lib/components/SplitPane.svelte') then { default: SplitPane }}
+				<SplitPane noteId={$splitNoteId} />
+			{/await}
 		{/if}
 
 		{#if showAgentPane}
-			<AgentPane onClose={() => (showAgentPane = false)} />
+			{#await loadAgentPane() then { default: AgentPane }}
+				<AgentPane onClose={() => (showAgentPane = false)} />
+			{/await}
 		{/if}
 	</div>
 
 	<!-- Command Palette -->
 	{#if showSearch}
-		<CommandPalette onClose={closeSearch} onShowTemplatePicker={() => (showTemplatePicker = true)} />
+		{#await loadCommandPalette() then { default: CommandPalette }}
+			<CommandPalette onClose={closeSearch} onShowTemplatePicker={() => (showTemplatePicker = true)} />
+		{/await}
 	{/if}
 
 	<!-- Template Picker -->

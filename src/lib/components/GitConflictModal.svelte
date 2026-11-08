@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { gitSyncState, clearGitConflicts, type MemoryConflict } from '$lib/git';
+	import { gitSyncState, clearGitConflicts, type MemoryConflict } from '$lib/git/status';
 	import { updateMemoryObject } from '$lib/db';
 	import { sync } from '$lib/sync';
 	import { X, Check, ChevronLeft, ChevronRight } from 'lucide-svelte';
