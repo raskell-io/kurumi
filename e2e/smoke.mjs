@@ -2199,6 +2199,51 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
+	async 'tables: toolbar adds, sorts, aligns and deletes'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const body = '| Name | Count |\\n| --- | --- |\\n| beta | 10 |\\n| alpha | 2 |\\n';
+		const id = await db(page, `return db.addMemoryObject('Table', '${body}').id;`);
+		await page.goto(`${BASE}/#/memory/${id}`, { waitUntil: 'load' });
+		const cell = await page.waitForSelector('main .ProseMirror td:nth-child(2)');
+		await cell.click();
+		await page.waitForSelector('.kurumi-table-toolbar:not([hidden])');
+		const saved = async () => {
+			await sleep(1200);
+			return (await db(page, `return db.getMemoryObject(arg).bodyMarkdown;`, id)).trim();
+		};
+		// Sort by Count (numbers by value), then centre it.
+		await page.click('.kurumi-table-toolbar [data-action="sort-asc"]');
+		await page.click('.kurumi-table-toolbar [data-action="align-center"]');
+		let md = await saved();
+		assert.match(md, /\| alpha +\| +2 +\|\n\| beta +\| +10 +\|/);
+		assert.match(md, /\| :?-+ \| :-+: \|/);
+		// A row below, typed into, and a new column.
+		await page.click('.kurumi-table-toolbar [data-action="row-below"]');
+		await page.keyboard.type('gamma');
+		await page.click('.kurumi-table-toolbar [data-action="col-right"]');
+		md = await saved();
+		assert.equal(md.split('\n').length, 5);
+		assert.match(md, /gamma/);
+		assert.equal(md.split('\n')[0].split('|').length - 2, 3);
+		// Tab in the last cell adds a row and moves into it.
+		await page.click('main .ProseMirror tr:last-child td:last-child');
+		await page.keyboard.press('Tab');
+		await page.keyboard.type('delta');
+		md = await saved();
+		assert.match(md.split('\n').at(-1), /^\| delta /);
+		// The header row has no "insert above" and can't be deleted.
+		await page.click('main .ProseMirror th');
+		await sleep(200);
+		assert.ok(await page.$eval('.kurumi-table-toolbar [data-action="row-above"]', (b) => b.disabled));
+		// Delete the table from the menu.
+		await page.click('.kurumi-table-toolbar button[aria-label="More table actions"]');
+		await clickOnTop(page, '.kurumi-table-menu .k-menu-item', 'Delete table');
+		md = await saved();
+		assert.doesNotMatch(md, /\|/);
+		assert.ok(await page.$eval('.kurumi-table-toolbar', (b) => b.hidden));
+		assert.deepEqual(errors, []);
+	},
+
 	async 'settings show the selected local folder'(browser) {
 		const { page, errors } = await freshPage(browser);
 		const name = await page.evaluate(async () => {

@@ -69,7 +69,7 @@ Selected text takes `Cmd/Ctrl+B` / `I`.
 | ```` ```mermaid ```` | A diagram, rendered |
 | `::::columns` | Side-by-side columns; `/columns` adds them. Type in each, any blocks |
 | `$x^2$`, `$$ … $$` | Math (LaTeX), typeset by KaTeX. Typing the closing `$` turns `$…$` into a formula; click it to edit. `$$` then Enter starts a block, which shows its source while the cursor is in it. A `$` with a space after it, or a digit after the closing one, stays text: `$5 and $10` is safe |
-| Tables | Pipe tables, edited in place |
+| Tables | Pipe tables, edited in place. `Tab` / `Shift+Tab` move between cells (`Tab` in the last cell adds a row). With the cursor in a table, a bar above it inserts rows and columns, aligns the column, and sorts the table by it (numbers by value); its ⋯ menu moves or deletes rows and columns, or the whole table |
 
 ## Slash commands
 

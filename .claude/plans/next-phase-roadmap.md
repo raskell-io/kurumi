@@ -153,9 +153,11 @@ Other embed types can follow the same pattern.
 `![[Title]]` renders as a linked preview card with title + summary.
 Slash command `/memory-embed` inserts the syntax.
 
-### [ ] Native inline-editable tables
-Markdown tables with keyboard nav (Tab between cells), column add/
-remove, sort, drag-to-resize. DEFERRED — GFM tables already render.
+### [x] Native inline-editable tables
+Tab navigation (GFM preset) plus a toolbar while the cursor is in a table
+(`editor/tableToolbar.ts`, grid ops in `tableGrid.ts`): insert/move/delete
+rows and columns, align, sort. Column widths aren't stored: GFM has no
+syntax for them.
 
 ### [x] LaTeX math
 `$inline$` and `$$block$$` rendered as styled monospace blocks.

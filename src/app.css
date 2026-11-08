@@ -1338,3 +1338,67 @@ a[href^='blob:']:not([href*='://']):hover {
 .hljs-strong { font-weight: 600; }
 .hljs-deletion { background: color-mix(in srgb, #d20f39 10%, transparent); }
 .hljs-addition { background: color-mix(in srgb, #40a02b 10%, transparent); }
+
+/* Table toolbar (editor/tableToolbar.ts): above the table the cursor is in */
+.kurumi-table-toolbar {
+	position: fixed;
+	z-index: 40;
+	display: flex;
+	flex-wrap: nowrap;
+	align-items: center;
+	gap: 1px;
+	max-width: calc(100vw - 16px);
+	overflow-x: auto;
+	scrollbar-width: none;
+	padding: 2px;
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-md);
+	background: var(--color-bg);
+	box-shadow: var(--shadow-md, 0 2px 8px rgb(0 0 0 / 0.12));
+}
+.kurumi-table-toolbar[hidden] {
+	display: none;
+}
+.kurumi-table-toolbar-btn {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border-radius: var(--radius-sm);
+	color: var(--color-text-muted);
+}
+.kurumi-table-toolbar-btn:hover:not(:disabled) {
+	background: var(--color-hover);
+	color: var(--color-text);
+}
+.kurumi-table-toolbar-btn.is-active {
+	color: var(--color-accent);
+	background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+.kurumi-table-toolbar-btn:disabled {
+	opacity: 0.35;
+	cursor: default;
+}
+.kurumi-table-toolbar-sep {
+	flex: none;
+	width: 1px;
+	height: 18px;
+	margin: 0 3px;
+	background: var(--color-border);
+}
+.kurumi-table-menu {
+	position: fixed;
+	z-index: 41;
+}
+.kurumi-table-menu .k-menu-item:disabled {
+	opacity: 0.4;
+	pointer-events: none;
+}
+@media (pointer: coarse) {
+	.kurumi-table-toolbar-btn {
+		width: 34px;
+		height: 34px;
+	}
+}

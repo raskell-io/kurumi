@@ -37,6 +37,7 @@
 	import { codeBlockExitPlugin } from '$lib/editor/codeBlockExit';
 	import { mermaidPlugin } from '$lib/editor/mermaid';
 	import { codeHighlightPlugin } from '$lib/editor/codeHighlight';
+	import { tableToolbarPlugin } from '$lib/editor/tableToolbar';
 	import { mathPlugins } from '$lib/editor/math';
 	import { columnsPlugins } from '$lib/editor/columns';
 	import { audioEmbedPlugin } from '$lib/editor/audioEmbed';
@@ -611,6 +612,7 @@
 			.use(audioEmbedPlugin)
 			.use(mermaidPlugin)
 			.use(codeHighlightPlugin)
+			.use(tableToolbarPlugin)
 			.use(trailingPlugin)
 			.use(block)
 			.use(findReplacePlugin)
