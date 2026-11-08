@@ -403,9 +403,15 @@ populates the `recurrence` field in real extractions.
 Only works when PWA is installed on Chromium. Needs real-device
 testing.
 
-### [ ] Mobile device CSS audit
-~12 new routes added without phone testing. Probably has overflow /
-touch-target issues. Static audit possible, real device preferred.
+### [x] Mobile device CSS audit (emulated)
+2026-11-08: all 46 routes (example vault, Labs on) at 390×844 with touch,
+checked for page overflow, elements past the edge and small tap targets,
+plus screenshots of each. No route overflows. Fixed: to-do rows (text sat
+on its own line under the checkbox), editor tables (columns squeezed to a
+letter each; now scroll), question rows (text squeezed by the actions),
+the Vim switch (the 44px touch minimum made it a circle), the Read
+breadcrumb root (22px wide). Still worth a pass on a real phone (iOS
+Safari keyboard, safe areas), which emulation can't show.
 
 ---
 

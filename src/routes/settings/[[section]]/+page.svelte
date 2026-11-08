@@ -3497,6 +3497,10 @@
 		flex-shrink: 0;
 		width: 2rem;
 		height: 1.125rem;
+		/* A <button> switch: undo the 44px touch minimum (app.css), which made it a circle */
+		min-width: 2rem;
+		min-height: 1.125rem;
+		padding: 0;
 		border-radius: 999px;
 		background: var(--color-active);
 		appearance: none;

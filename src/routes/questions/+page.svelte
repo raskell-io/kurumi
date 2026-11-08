@@ -120,7 +120,7 @@
 	{:else}
 		<ul>
 			{#each shown as q (q.id)}
-				<li class="k-row group !items-start">
+				<li class="k-row group q-row !items-start">
 					{#if q.status === 'answered'}<CheckCircle2 class="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-accent)]" />{:else}<HelpCircle class="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-text-faint)]" />{/if}
 					<div class="min-w-0 flex-1">
 						<p class:line-through={q.status === 'dropped'}>{q.text}</p>
@@ -173,6 +173,18 @@
 	@media (hover: none) {
 		.row-actions {
 			opacity: 1;
+		}
+	}
+
+	/* Phones: the actions go under the question, so its text gets the width */
+	@media (max-width: 639px) {
+		.q-row {
+			flex-wrap: wrap;
+		}
+
+		.q-row .row-actions {
+			width: 100%;
+			justify-content: flex-end;
 		}
 	}
 </style>

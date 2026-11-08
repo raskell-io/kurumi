@@ -861,6 +861,10 @@
 	}
 
 	.markdown-content :global(:is(th, td)) {
+		min-width: 5em;
+	}
+
+	.markdown-content :global(:is(th, td)) {
 		padding: 0.4em 0.9em;
 		border: 1px solid var(--color-border);
 		text-align: left;

@@ -298,6 +298,12 @@
 			display: none;
 		}
 
+		/* Icon only on phones: keep it a comfortable tap target */
+		.crumb-root {
+			min-width: 2.25rem;
+			justify-content: center;
+		}
+
 		.search-container {
 			width: 9rem;
 		}

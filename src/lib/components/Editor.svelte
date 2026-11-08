@@ -1653,6 +1653,24 @@
 		margin: 1em 0;
 	}
 
+	/* Phones: wide tables scroll sideways instead of squeezing their columns
+	   to a letter each. The theme makes tables fixed-layout; here the table
+	   becomes its own scroller (as in Read mode) with natural column widths. */
+	@media (max-width: 768px) {
+		:global(.milkdown .ProseMirror table) {
+			display: block;
+			max-width: 100%;
+			width: max-content;
+			overflow-x: auto;
+			table-layout: auto;
+			-webkit-overflow-scrolling: touch;
+		}
+
+		:global(.milkdown .ProseMirror :is(td, th)) {
+			min-width: 6em;
+		}
+	}
+
 	:global(.milkdown th),
 	:global(.milkdown td) {
 		border: 1px solid var(--color-border);

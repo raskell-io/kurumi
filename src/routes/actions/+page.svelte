@@ -1032,21 +1032,27 @@
 		}
 	}
 
+	/* Phones: checkbox, status and text on one line, due date and actions
+	   under the text. A grid, so it holds whatever size the touch targets get. */
 	@media (max-width: 639px) {
-		.item {
+		.item:not(.editing) {
+			display: grid;
+			grid-template-columns: auto auto minmax(0, 1fr) auto;
+			grid-template-areas:
+				'select status body body'
+				'. . badges actions';
+			align-items: center;
+			row-gap: 0.25rem;
+		}
+
+		.item:not(.editing) .select-box { grid-area: select; }
+		.item:not(.editing) .status { grid-area: status; }
+		.item:not(.editing) .body { grid-area: body; }
+		.item:not(.editing) .badges { grid-area: badges; justify-self: start; }
+		.item:not(.editing) .row-actions { grid-area: actions; }
+
+		.item.editing {
 			flex-wrap: wrap;
-		}
-
-		.body {
-			flex-basis: calc(100% - 5rem);
-		}
-
-		.badges {
-			margin-left: 2.5rem;
-		}
-
-		.row-actions {
-			margin-left: auto;
 		}
 	}
 </style>
