@@ -27,6 +27,7 @@ import {
 	DEFAULT_VAULT_ID,
 	type KurumiDocument,
 	type MemoryObject,
+	type LivingConfig,
 	type Folder,
 	type Vault,
 	type Person,
@@ -2027,6 +2028,19 @@ export function setMemoryIcon(id: string, icon: string | null): void {
 		if (icon) memory.icon = icon;
 		else delete memory.icon;
 		memory.updatedAt = Date.now();
+	});
+}
+
+/**
+ * Make a note living (follow `config.query`), update its rewrite record, or
+ * stop it (null). Doesn't touch updatedAt: it isn't an edit of the text.
+ */
+export function setLivingNote(id: string, config: LivingConfig | null): void {
+	updateDoc((d) => {
+		const memory = d.memoryObjects[id];
+		if (!memory) return;
+		if (config) memory.living = deepCopy(config);
+		else delete memory.living;
 	});
 }
 

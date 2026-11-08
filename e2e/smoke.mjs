@@ -2414,6 +2414,46 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
+	async 'living notes: follow a topic, rewrite from its notes'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const mod = (path) => `performance.getEntriesByType('resource').map((e) => e.name).find((n) => n.includes('/src/lib/db/store.ts')).replace('/db/store.ts', '${path}')`;
+		// A stand-in remote provider: answers with a citation of the first source.
+		await page.evaluate(`(async () => {
+			const { inferenceRouter } = await import(${mod('/inference/index.ts')});
+			window.__asked = [];
+			inferenceRouter.register({
+				capabilities: { id: 'test-remote', target: 'remote' },
+				answerWithContext: async (input) => {
+					window.__asked.push(input);
+					return { ok: true, value: { answer: 'We launch in March [2]. Scope is fixed [1].', citations: [] } };
+				}
+			});
+		})()`);
+		const id = await db(page, `
+			db.addMemoryObject('Kickoff', 'Launch moved to March. #falcon');
+			db.addMemoryObject('Unrelated', 'Groceries.');
+			const note = db.addMemoryObject('Falcon: what we know', 'My own line.');
+			db.setLivingNote(note.id, { query: 'tag:falcon' });
+			return note.id;
+		`);
+		await page.goto(`${BASE}/#/memory/${id}`, { waitUntil: 'load' });
+		await page.waitForSelector('.living-bar');
+		assert.match(await page.$eval('.living-bar', (e) => e.textContent.replace(/\s+/g, ' ')), /follows tag:falcon · 1 matching note · not written yet/);
+		await page.click('[data-testid="living-update"]');
+		await page.waitForFunction(() => document.querySelector('.living-bar')?.textContent.includes('Rewritten from 1 note'), { timeout: 10000 });
+		const body = await db(page, `return db.getMemoryObject(arg).bodyMarkdown;`, id);
+		assert.equal(body.trim(), 'We launch in March [[Kickoff]]. Scope is fixed.');
+		// The rewrite started from the note's own text and only the matching note.
+		const asked = await page.evaluate(() => window.__asked[0].context.map((c) => c.text.slice(0, 40)));
+		assert.equal(asked.length, 2);
+		assert.match(asked[0], /^CURRENT VERSION/);
+		assert.match(asked[1], /^"Kickoff"/);
+		await page.waitForFunction(() => document.querySelector('main .ProseMirror')?.textContent.includes('We launch in March'), { timeout: 10000 });
+		// Nothing changed since: it isn't due on its own.
+		assert.equal(await page.evaluate(`(async () => (await import(${mod('/living-notes.ts')})).maybeUpdateLivingNotes(Date.now() + 7 * 3600e3))()`), 0);
+		assert.deepEqual(errors, []);
+	},
+
 	async 'settings show the selected local folder'(browser) {
 		const { page, errors } = await freshPage(browser);
 		const name = await page.evaluate(async () => {

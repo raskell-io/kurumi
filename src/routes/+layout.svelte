@@ -26,6 +26,7 @@
 	import { initHashRouter, updateHashFromPath, currentRoutePath } from '$lib/hash-router';
 	import { generateDailyDigest } from '$lib/digest';
 	import { maybeAutoWeeklyReview } from '$lib/weekly-review';
+	import { maybeUpdateLivingNotes } from '$lib/living-notes';
 	import { initSearch, syncIndex } from '$lib/search';
 	import { setupVisibilitySync, teardownVisibilitySync, setupAutoSync, teardownAutoSync, isSyncConfigured } from '$lib/sync';
 	import SyncFab from '$lib/components/SyncFab.svelte';
@@ -153,6 +154,7 @@
 	let sidebarCollapsed = $state(false);
 	let showConflictModal = $state(false);
 	let showAgentPane = $state(false);
+	let livingTimer: ReturnType<typeof setInterval> | undefined;
 	// Auto-open when a sync attempt surfaces conflicts.
 	$effect(() => {
 		if ($gitSyncState.status === 'conflict' && $gitSyncState.conflicts.length > 0) {
@@ -538,6 +540,9 @@
 			// Fetch the command palette while idle, so the first ⌘K is instant.
 			const idle = window.requestIdleCallback ?? ((fn: () => void) => setTimeout(fn, 2000));
 			idle(() => void loadCommandPalette());
+			// Living notes whose topic's notes changed: soon after start, then every half hour.
+			setTimeout(() => void maybeUpdateLivingNotes().catch(() => {}), 20_000);
+			livingTimer = setInterval(() => void maybeUpdateLivingNotes().catch(() => {}), 30 * 60_000);
 			// Last week's review, on the first start of a new week (quiet weeks get none).
 			setTimeout(() => void maybeAutoWeeklyReview().catch(() => {}), 8000);
 		});
@@ -635,6 +640,7 @@
 			window.removeEventListener('kurumi-meeting', handleMeetingEvent);
 			document.removeEventListener('visibilitychange', handleVisibility);
 			window.clearInterval(rolloverInterval);
+			clearInterval(livingTimer);
 			teardownVisibilitySync();
 			teardownAutoSync();
 			cleanupHashRouter?.();

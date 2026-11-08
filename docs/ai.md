@@ -83,6 +83,24 @@ remembers* opens it): edit or empty it to change what it knows. It
 syncs with your vault. The agent can also look through your earlier
 conversations on this device when you refer back to one.
 
+## Living notes
+
+A living note keeps itself up to date. On a note, ⌘K *Make this a living
+note*: it follows a topic (its tags, or its title as words; click the topic
+in the bar above the note to change it, to anything search understands:
+`tag:falcon`, `person:"Ana Ruiz"`, words). When notes on that topic change,
+Kurumi rewrites it, at most every six hours, or when you click
+**Update now**: a short summary and sections such as *Current state*,
+*Decisions*, *Open questions*, *Next steps*, with `[[links]]` to the notes
+each point comes from.
+
+The rewrite starts from the note as it is now, so what you write in it
+yourself is kept. Every rewrite is an ordinary edit: version history has
+the earlier text. Needs an AI provider (Settings → AI assistant); it never
+starts a local model download. *Stop* (×) keeps it as an ordinary note.
+The living setting travels with the database (Kurumi server, S3, WebDAV,
+local folder), not through git sync's markdown files.
+
 ## Voice
 
 - **Push to talk:** hold `Cmd/Ctrl+Shift+V` anywhere, speak, release.

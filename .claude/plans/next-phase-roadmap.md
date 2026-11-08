@@ -220,14 +220,13 @@ Implemented as `generateTemplateFromExamples` in digest.ts.
 
 **Scope:** Small. One inference call, standard template save.
 
-### [ ] Living notes ("evolving understanding")
-A memory subtype that auto-updates as related content accumulates.
-"My understanding of Topic X" gets rewritten by a background agent
-whenever memories tagged/mentioning Topic X change significantly.
-Version history kept.
-
-**Scope:** Medium-large. Needs change-detection + throttled rewrite +
-version tracking.
+### [x] Living notes ("evolving understanding")
+`$lib/living-notes.ts`, `MemoryObject.living` ({ query, signature,
+updatedAt, sources }): follows a search query; rewritten (answerWithContext,
+remote providers with a key only) when its sources' signature changed, at
+most every 6 h (layout timer) or on Update now. Starts from the current
+text so user edits survive; version history is the Automerge history.
+Not carried by git sync's markdown/metadata.
 
 ### [x] Semantic backlinks
 Beyond wikilinks — things that are *about* this memory, inferred via

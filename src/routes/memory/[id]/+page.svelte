@@ -15,7 +15,8 @@
 		restoreMemoryObject,
 		permanentlyDeleteMemoryObject,
 		setMemoryIcon,
-		setMemoryFavorite
+		setMemoryFavorite,
+		getMemoryObject
 	} from '$lib/db';
 	import { pushUndo } from '$lib/stores/undo';
 	import { openInSplit } from '$lib/stores/workspace';
@@ -28,6 +29,7 @@
 	import IconPicker from '$lib/components/IconPicker.svelte';
 	import NoteProjects from '$lib/components/NoteProjects.svelte';
 	import NoteProperties from '$lib/components/NoteProperties.svelte';
+	import LivingNoteBar from '$lib/components/LivingNoteBar.svelte';
 	import { setPendingAnchor, takePendingAnchor, scrollToAnchor, type NoteAnchor } from '$lib/stores/anchor';
 	import NoteRecordDialog, { type RecordKind } from '$lib/components/NoteRecordDialog.svelte';
 	import { untrack, tick } from 'svelte';
@@ -1207,6 +1209,17 @@
 							</div>
 						</details>
 					{/if}
+				{/if}
+
+				{#if memory.living}
+					<LivingNoteBar
+						{memory}
+						onrewritten={() => {
+							const fresh = getMemoryObject(memory!.id);
+							if (fresh) content = fresh.bodyMarkdown;
+							editorRevision++;
+						}}
+					/>
 				{/if}
 
 				{#if possibleDuplicate}

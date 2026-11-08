@@ -2,6 +2,7 @@
 	import { wikilinkLabel } from '$lib/wikilinks';
 	import { createExampleVault, EXAMPLE_VAULT_NAME } from '$lib/example-vault';
 	import { generateWeeklyReview } from '$lib/weekly-review';
+	import { livingQueryFor } from '$lib/living-notes';
 	import { search } from '$lib/search';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
@@ -18,6 +19,8 @@
 		todayIso,
 		addFolder,
 		openFolderAsDatabase,
+		getMemoryObject,
+		setLivingNote,
 		addCanvas
 	} from '$lib/db';
 	import { storeBlob } from '$lib/db/blob-store';
@@ -487,6 +490,18 @@
 			const noteId = $page.url.pathname.match(/^\/memory\/([^/]+)/)?.[1];
 			const noteActions: Command[] = noteId
 				? [
+						{
+							id: 'living-note',
+							type: 'action' as const,
+							title: getMemoryObject(noteId)?.living ? 'Stop this living note' : 'Make this a living note',
+							description: 'Kurumi keeps it up to date as notes on its topic change (needs an AI provider)',
+							icon: 'sparkles',
+							action: () => {
+								const note = getMemoryObject(noteId);
+								if (note) setLivingNote(noteId, note.living ? null : { query: livingQueryFor(note) });
+								onClose();
+							}
+						},
 						{
 							id: 'pin-tab',
 							type: 'action' as const,

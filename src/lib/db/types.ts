@@ -214,6 +214,8 @@ export interface MemoryObject {
 	favoriteChangedAt?: number;
 	// The recurring meeting this note is an instance of.
 	seriesId?: string;
+	// A living note: rewritten by the assistant as notes on its topic change ($lib/living-notes).
+	living?: LivingConfig;
 	// Last change to customProps. Property edits merge on this in git sync
 	// (like favorites), apart from the markdown.
 	propsChangedAt?: number;
@@ -782,4 +784,13 @@ export function createTemplate(
 		created: now,
 		modified: now
 	};
+}
+
+/** A living note's topic and what its last rewrite was made from ($lib/living-notes). */
+export interface LivingConfig {
+	query: string; // a search query: `tag:falcon`, `person:"Ana Ruiz"`, words
+	signature?: string; // the sources at the last rewrite (ids + updatedAt)
+	updatedAt?: number; // when it was last rewritten
+	sources?: string[]; // note ids that rewrite drew on
+	[key: string]: unknown; // Automerge compatibility
 }
