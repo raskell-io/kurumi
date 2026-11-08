@@ -149,7 +149,8 @@ export async function generateDailyDigest(
 			lines.push(`## To-dos due`);
 			lines.push('');
 			for (const a of dueActions.slice(0, 15)) {
-				lines.push(`- [ ] ${a.text}${a.dueDate ? ` (due ${a.dueDate})` : ''}${a.assignee ? ` — ${a.assignee}` : ''}`);
+				// A plain bullet: a checkbox would make a second copy of the to-do ($lib/note-tasks).
+				lines.push(`- ${a.text}${a.dueDate ? ` (due ${a.dueDate})` : ''}${a.assignee ? ` — ${a.assignee}` : ''}`);
 			}
 			if (dueActions.length > 15) {
 				lines.push(`- ...and ${dueActions.length - 15} more`);

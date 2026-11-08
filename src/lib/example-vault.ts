@@ -18,6 +18,8 @@ import {
 	addAgendaItem,
 	startSeriesMeeting,
 	addActionItem,
+	noteTasksEnabled,
+	reconcileNoteTasks,
 	addDecision,
 	addQuestion,
 	addPerson,
@@ -35,7 +37,7 @@ const day = (offset: number) => {
 
 /** Create the example vault, switch to it, and return the note to open first. */
 export function createExampleVault(): string {
-	return batchUpdates(() => {
+	const first = batchUpdates(() => {
 		const vault = addVault(EXAMPLE_VAULT_NAME, '🌰');
 		setCurrentVault(vault.id);
 
@@ -115,8 +117,8 @@ export function createExampleVault(): string {
 					'',
 					'## To-dos',
 					'',
-					'- [ ] Ana: final setup screens',
-					'- [ ] Sam: SSO vendor comparison',
+					`- [ ] Final setup screens @Ana Ruiz //${day(4)}`,
+					`- [ ] SSO vendor comparison @Sam Okafor //${day(6)}`,
 					'',
 					'#falcon'
 				].join('\n')
@@ -129,8 +131,11 @@ export function createExampleVault(): string {
 		addActionItem({ text: 'Write the launch announcement', dueDate: day(0), projectId: falcon.id, memoryObjectId: brief.id });
 		addActionItem({ text: 'Send interview summary to the team', dueDate: day(-2), memoryObjectId: interviews.id });
 		addActionItem({ text: 'Book the launch review room', dueDate: day(10), projectId: falcon.id });
-		addActionItem({ text: 'Final setup screens', assignee: 'Ana Ruiz', dueDate: day(4), memoryObjectId: from });
-		addActionItem({ text: 'SSO vendor comparison', assignee: 'Sam Okafor', dueDate: day(6), memoryObjectId: from });
+		// The meeting's checkboxes are to-dos themselves; without that, add them.
+		if (!lastMeeting || !noteTasksEnabled()) {
+			addActionItem({ text: 'Final setup screens', assignee: 'Ana Ruiz', dueDate: day(4), memoryObjectId: from });
+			addActionItem({ text: 'SSO vendor comparison', assignee: 'Sam Okafor', dueDate: day(6), memoryObjectId: from });
+		}
 
 		addDecision({ text: 'Signup form drops to three fields', rationale: 'Every extra field lost us ~4% of signups.', decidedOn: day(-3), decidedBy: ['Ana Ruiz'], memoryId: from, projectId: falcon.id });
 		addDecision({ text: 'Ship sample data in setup', rationale: 'Clearest signal from the customer interviews.', decidedOn: day(-3), memoryId: from, projectId: falcon.id });
@@ -164,4 +169,7 @@ export function createExampleVault(): string {
 		);
 		return start.id;
 	});
+	// The meeting's checkboxes become to-dos now, not after the usual pause.
+	reconcileNoteTasks();
+	return first;
 }

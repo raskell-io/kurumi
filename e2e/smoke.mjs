@@ -769,7 +769,7 @@ const scenarios = {
 		await page.waitForSelector('input[aria-label="Note title"]');
 		await sleep(300);
 		const body = await db(page, `let ms; db.memoryObjects.subscribe((v) => (ms = v))(); return ms.find((m) => m.title.startsWith('1:1 with Sam')).bodyMarkdown;`);
-		assert.match(body, /## Agenda\n\n- \[ \] Hiring plan/);
+		assert.match(body, /## Agenda\n\n- Hiring plan/);
 		assert.match(body, /Send the deck \(@Sam\)/);
 		assert.match(body, /Who owns the budget\? \(@Sam\)/);
 		// Profile: being Sam means nothing is waiting

@@ -3671,8 +3671,9 @@ export function startSeriesMeeting(seriesId: string): MemoryObject | undefined {
 	);
 
 	const lines = ['## Agenda', ''];
-	if (openAgenda.length) for (const a of openAgenda) lines.push(`- [ ] ${a.text}`);
-	else lines.push('- [ ] ');
+	// Plain bullets: checkboxes would be to-dos ($lib/note-tasks).
+	if (openAgenda.length) for (const a of openAgenda) lines.push(`- ${a.text}`);
+	else lines.push('- ');
 	if (todos.length) {
 		lines.push('', '## Open to-dos', '');
 		for (const a of todos) lines.push(`- ${a.text}${a.assignee ? ` (@${a.assignee})` : ''}${a.dueDate ? ` · due ${a.dueDate}` : ''}`);
