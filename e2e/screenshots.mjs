@@ -113,9 +113,15 @@ try {
 	await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 2 });
 	await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: THEME }]);
 	await page.evaluateOnNewDocument((theme) => {
+		if (window !== window.top) return; // plugin sandboxes have no storage
 		const d = new Date();
-		const today = [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
+		const iso = (x) => [x.getFullYear(), String(x.getMonth() + 1).padStart(2, '0'), String(x.getDate()).padStart(2, '0')].join('-');
+		const today = iso(d);
 		localStorage.setItem('kurumi-last-auto-digest', today);
+		// Nor last week's automatic review note (weekly-review.ts).
+		const monday = new Date(d);
+		monday.setDate(d.getDate() - ((d.getDay() + 6) % 7) - 7);
+		localStorage.setItem('kurumi-last-auto-review', iso(monday));
 		localStorage.setItem('kurumi-theme', theme);
 		// No model downloads while taking pictures.
 		localStorage.setItem('kurumi-local-inference', JSON.stringify({ preloadOnStartup: false }));
