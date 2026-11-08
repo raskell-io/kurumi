@@ -14,6 +14,7 @@
 		type SendOptions
 	} from '$lib/agent';
 	import { addMemoryObject, memoryObjects, getAllPeople, getAllTags } from '$lib/db';
+	import { ensureMemoryNote } from '$lib/agent-memory';
 	import { goto } from '$app/navigation';
 	import { startPushToTalk, type RecorderHandle } from '$lib/voice';
 	import { inferenceRouter } from '$lib/inference';
@@ -43,7 +44,8 @@
 		History,
 		Trash2,
 		Volume2,
-		VolumeX
+		VolumeX,
+		Brain
 	} from 'lucide-svelte';
 
 	// --- Props ----------------------------------------------------------------
@@ -811,6 +813,11 @@
 		}, 6000);
 	}
 
+	// The agent's memory note (agent-memory.ts); created empty if it's not there yet.
+	function openMemoryNote() {
+		goto(`/memory/${ensureMemoryNote()}`);
+	}
+
 	function saveMessageAsNote(content: string) {
 		const firstLine = content.split('\n')[0].replace(/^#+\s*/, '').slice(0, 80);
 		const title = firstLine || 'Chat note';
@@ -1120,6 +1127,9 @@
 			case 'add_reminder': return `Proposed reminder: "${tc.args.text ?? ''}"`;
 			case 'generate_daily_digest': return 'Generated daily digest';
 			case 'generate_weekly_review': return 'Wrote weekly review';
+			case 'remember': return `Remembered: "${tc.args.fact ?? ''}"`;
+			case 'forget': return `Forgot: "${tc.args.fact ?? ''}"`;
+			case 'recall_conversations': return 'Looked through past conversations';
 			case 'search_people': return `Searched people: "${tc.args.query ?? 'all'}"`;
 			case 'search_topics': return `Searched topics: "${tc.args.query ?? 'all'}"`;
 			default: return tc.name;
@@ -1286,6 +1296,15 @@
 				>
 					<FilePlus class="menu-icon h-4 w-4" />
 					<span class="flex-1">Save conversation as note</span>
+				</button>
+				<button
+					type="button"
+					role="menuitem"
+					class="k-menu-item"
+					onclick={() => { showMoreMenu = false; openMemoryNote(); }}
+				>
+					<Brain class="menu-icon h-4 w-4" />
+					<span class="flex-1">What Kurumi remembers</span>
 				</button>
 				<div class="k-menu-sep"></div>
 				<button type="button" role="menuitemcheckbox" aria-checked={soundEnabled} class="k-menu-item" onclick={toggleSound}>

@@ -36,6 +36,7 @@ import { get } from 'svelte/store';
 import { retrieveMemoryContext, buildContextBlocks } from './ask';
 import { generateDailyDigest } from './digest';
 import { generateWeeklyReview, mondayOf, addDays } from './weekly-review';
+import { remember, forget, memoryPrompt, searchConversations } from './agent-memory';
 
 const OPENAI_KEY_STORAGE = 'kurumi-openai-key';
 const AGENT_MODEL_KEY = 'kurumi-agent-model';
@@ -175,6 +176,49 @@ const TOOLS = [
 	{
 		type: 'function' as const,
 		function: {
+			name: 'remember',
+			description:
+				"Remember a lasting fact about the user for future conversations (a preference, their role, people and projects they care about). Saved in their note 'Kurumi memory'. One short fact per call. Never store passwords, keys or other secrets.",
+			parameters: {
+				type: 'object',
+				properties: {
+					fact: { type: 'string', description: 'The fact, as a short sentence about the user, e.g. "Prefers summaries as bullet points"' }
+				},
+				required: ['fact']
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'forget',
+			description: 'Forget remembered facts: removes the ones matching the text from the user\'s Kurumi memory note.',
+			parameters: {
+				type: 'object',
+				properties: {
+					fact: { type: 'string', description: 'The fact to forget, or words it contains' }
+				},
+				required: ['fact']
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
+			name: 'recall_conversations',
+			description: 'Search earlier conversations with the user on this device, e.g. when they refer to something discussed before.',
+			parameters: {
+				type: 'object',
+				properties: {
+					query: { type: 'string', description: 'Words to look for' }
+				},
+				required: ['query']
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
 			name: 'update_memory',
 			description: 'Update an existing note in the vault. Can change title, body, or tags.',
 			parameters: {
@@ -247,13 +291,26 @@ const TOOL_STATUS_LABELS: Record<string, string> = {
 	add_reminder: 'Adding reminder...',
 	generate_daily_digest: 'Generating digest...',
 	generate_weekly_review: 'Writing weekly review...',
+	remember: 'Remembering...',
+	forget: 'Forgetting...',
+	recall_conversations: 'Looking through past conversations...',
 	update_memory: 'Updating note...',
 	list_action_items: 'Listing to-dos...',
 	search_people: 'Searching people...',
 	search_topics: 'Searching topics...'
 };
 
-const SYSTEM_PROMPT = [
+/** The system prompt, built per message: today's date and what the agent remembers. */
+export function systemPrompt(): string {
+	const remembered = memoryPrompt();
+	return [
+		...SYSTEM_PROMPT_LINES,
+		`Today's date is ${todayIso()}.`,
+		...(remembered ? ['', remembered] : [])
+	].join('\n');
+}
+
+const SYSTEM_PROMPT_LINES = [
 	'You are Kurumi, an AI-native second-brain assistant.',
 	"You have access to the user's personal vault of notes, voice memos,",
 	'meetings, to-dos, and reminders.',
@@ -270,12 +327,17 @@ const SYSTEM_PROMPT = [
 	'- search_people: find people in the vault',
 	'- search_topics: find topics/projects in the vault',
 	'- generate_daily_digest / generate_weekly_review: write a digest or weekly review note',
+	'- remember / forget: keep or drop a lasting fact about the user across conversations',
+	'- recall_conversations: search earlier conversations',
 	'',
-	`Today's date is ${todayIso()}.`,
+	'When the user asks you to remember something, or tells you a lasting',
+	'preference or fact about themselves that would help in later chats,',
+	'call remember (briefly say so). When they ask you to forget, call forget.',
 	'',
 	'Keep responses concise and conversational. When you use a tool,',
-	'briefly explain what you did.'
-].join('\n');
+	'briefly explain what you did.',
+	''
+];
 
 // --- Tool execution ---------------------------------------------------------
 
@@ -338,6 +400,14 @@ async function executeTool(
 			const start = args.date ? mondayOf(String(args.date)) : undefined;
 			const memoryId = await generateWeeklyReview(start ? { start, end: addDays(start, 6) } : undefined);
 			return { ok: true, memoryId, message: 'Weekly review written' };
+		}
+		case 'remember':
+			return remember(String(args.fact ?? ''));
+		case 'forget':
+			return forget(String(args.fact ?? ''));
+		case 'recall_conversations': {
+			const hits = searchConversations(String(args.query ?? ''));
+			return { count: hits.length, conversations: hits };
 		}
 		case 'update_memory': {
 			const memoryId = String(args.memoryId ?? '');
@@ -515,7 +585,7 @@ export async function sendAgentMessage(
 	// Build the OpenAI messages array from session history
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const apiMessages: Array<Record<string, any>> = [
-		{ role: 'system', content: SYSTEM_PROMPT }
+		{ role: 'system', content: systemPrompt() }
 	];
 
 	for (const msg of session.messages) {

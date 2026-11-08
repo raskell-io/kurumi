@@ -245,12 +245,12 @@ answer with a visual graph fragment of the path taken.
 
 **Scope:** Large. Builds on the agentic chat pane.
 
-### [ ] Persistent agent memory
-Chat conversations that remember across sessions (not just
-within-turn). Each conversation gets its own memory thread with the
-history.
-
-**Scope:** Small. The data model is already memory-shaped.
+### [x] Persistent agent memory
+`$lib/agent-memory.ts`: facts in a "Kurumi memory" note per vault, managed
+by the agent's `remember` / `forget` tools and put in the system prompt of
+every conversation. `recall_conversations` searches past chats on the
+device (they were already kept per device; "Save conversation as note"
+puts one in the vault).
 
 ### [ ] Multi-step agentic workflows
 User defines a workflow in natural language ("every Monday morning:

@@ -2347,6 +2347,28 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
+	async 'agent memory: remember, prompt, forget, open the note'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const mod = (path) => `performance.getEntriesByType('resource').map((e) => e.name).find((n) => n.includes('/src/lib/db/store.ts')).replace('/db/store.ts', '${path}')`;
+		const run = (path, source) => page.evaluate(`(async () => { const m = await import(${mod(path)}); ${source} })()`);
+		await run('/agent-memory.ts', `m.remember('Prefers summaries as bullet points'); m.remember('prefers summaries as bullet points.'); m.remember('Works on Project Falcon');`);
+		await sleep(300);
+		const prompt = await run('/agent.ts', 'return m.systemPrompt();');
+		assert.match(prompt, /What you remember about the user[^]*- Prefers summaries as bullet points\n- Works on Project Falcon/);
+		assert.equal(prompt.match(/bullet points/g).length, 1);
+		assert.deepEqual(await run('/agent-memory.ts', `return m.forget('falcon').removed;`), ['Works on Project Falcon']);
+		assert.doesNotMatch(await run('/agent.ts', 'return m.systemPrompt();'), /Falcon/);
+		// The note is an ordinary note, opened from the agent pane's menu.
+		await press(page, MOD, '`');
+		await page.waitForSelector('button[aria-label="More options"]');
+		await page.click('button[aria-label="More options"]');
+		await clickText(page, '.k-menu-item', 'What Kurumi remembers');
+		await page.waitForFunction(() => location.hash.includes('/memory/agent-memory-'));
+		await page.waitForSelector('main .ProseMirror li');
+		assert.match(await page.$eval('main .ProseMirror', (e) => e.textContent), /Prefers summaries as bullet points/);
+		assert.deepEqual(errors, []);
+	},
+
 	async 'settings show the selected local folder'(browser) {
 		const { page, errors } = await freshPage(browser);
 		const name = await page.evaluate(async () => {

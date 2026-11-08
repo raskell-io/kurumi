@@ -74,6 +74,15 @@ are approved inline. Type `[[`, `@`, `#` or `//` to point it at a note,
 person, tag or date. Save the conversation, or a single answer, as a
 note. Needs an OpenAI key.
 
+**It remembers across conversations.** Tell it something lasting ("I
+prefer summaries as bullet points", "remember that Ana leads design") or
+ask it to remember, and it adds the fact to a note called **Kurumi
+memory**, which it reads at the start of every chat. Ask it to forget
+and it removes it. The note is an ordinary note (⋯ → *What Kurumi
+remembers* opens it): edit or empty it to change what it knows. It
+syncs with your vault. The agent can also look through your earlier
+conversations on this device when you refer back to one.
+
 ## Voice
 
 - **Push to talk:** hold `Cmd/Ctrl+Shift+V` anywhere, speak, release.
