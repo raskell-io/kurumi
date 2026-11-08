@@ -35,6 +35,8 @@
 	import { publishMemoryAsHtml, copyMemoryAsHtml, shareMemory } from '$lib/utils/publish';
 	import { getBlob } from '$lib/db/blob-store';
 	import { findSemanticBacklinks } from '$lib/digest';
+	import { isSemanticSearchReady } from '$lib/embeddings';
+	import { linkSuggestionsEnabled } from '$lib/editor/linkSuggest';
 	import type { MemoryObject } from '$lib/db/types';
 	import {
 		Trash2,
@@ -80,6 +82,47 @@
 	let showHistory = $state(false);
 	let relatedNotes = $state<Array<{ memory: MemoryObject; score: number }>>([]);
 	let loadingRelated = $state(false);
+
+	// "Looks like a duplicate of …": a related note that's nearly the same
+	// (embedding similarity), shown above the editor while writing. Dismissed
+	// per note on this device.
+	const DUPLICATE_SIMILARITY = 0.9;
+	let dismissedDuplicates = $state<string[]>([]);
+	let relatedTimer: ReturnType<typeof setTimeout> | undefined;
+	const duplicateKey = (id: string) => `kurumi-dup-dismissed:${id}`;
+	function loadDismissedDuplicates(id: string) {
+		try {
+			dismissedDuplicates = JSON.parse(localStorage.getItem(duplicateKey(id)) ?? '[]');
+		} catch {
+			dismissedDuplicates = [];
+		}
+	}
+	function dismissDuplicate(noteId: string, otherId: string) {
+		dismissedDuplicates = [...dismissedDuplicates, otherId];
+		try {
+			localStorage.setItem(duplicateKey(noteId), JSON.stringify(dismissedDuplicates));
+		} catch {
+			// Shown again next time.
+		}
+	}
+	let possibleDuplicate = $derived(
+		linkSuggestionsEnabled() && content.trim().length >= 80
+			? (relatedNotes.find((r) => r.score >= DUPLICATE_SIMILARITY && !r.memory.deletedAt && !dismissedDuplicates.includes(r.memory.id)) ?? null)
+			: null
+	);
+	// Re-check while writing, once the embedding model is loaded (never starts a download).
+	function scheduleRelatedRefresh(id: string) {
+		clearTimeout(relatedTimer);
+		if (!linkSuggestionsEnabled() || !isSemanticSearchReady()) return;
+		relatedTimer = setTimeout(() => {
+			findSemanticBacklinks(id, 5)
+				.then((results) => {
+					if (memory?.id === id) relatedNotes = results;
+				})
+				.catch(() => {});
+		}, 6000);
+	}
+	$effect(() => () => clearTimeout(relatedTimer));
 	let showMoreMenu = $state(false);
 	let iconPickerAnchor = $state<{ left: number; top: number; bottom: number } | null>(null);
 	let projectPicker = $state<DOMRect | null>(null);
@@ -448,6 +491,7 @@
 				unlinkedMentions = findUnlinkedMentions(id);
 				relatedNotes = [];
 				loadingRelated = true;
+				loadDismissedDuplicates(id);
 				findSemanticBacklinks(id, 5).then((results) => {
 					relatedNotes = results;
 					loadingRelated = false;
@@ -586,6 +630,7 @@
 			templateChooserDismissed = true;
 		}
 		debouncedSave();
+		if (memory) scheduleRelatedRefresh(memory.id);
 	}
 
 	function debouncedSave() {
@@ -1164,6 +1209,28 @@
 					{/if}
 				{/if}
 
+				{#if possibleDuplicate}
+					{@const other = possibleDuplicate.memory}
+					<div class="duplicate-hint" role="status">
+						<Copy class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
+						<span class="min-w-0 flex-1">
+							This looks a lot like
+							<a href="/memory/{other.id}" class="font-medium text-[var(--color-text)] hover:text-[var(--color-accent)]">“{other.title || 'Untitled'}”</a>
+							<span class="text-[var(--color-text-faint)]">({Math.round(possibleDuplicate.score * 100)}% similar)</span>
+						</span>
+						<button type="button" class="k-btn k-btn-ghost k-btn-sm" onclick={() => openInSplit(other.id)}>Compare</button>
+						<button
+							type="button"
+							class="k-btn k-btn-ghost k-btn-sm"
+							aria-label="Dismiss"
+							title="Not a duplicate"
+							onclick={() => memory && dismissDuplicate(memory.id, other.id)}
+						>
+							<X class="h-3.5 w-3.5" />
+						</button>
+					</div>
+				{/if}
+
 				<!-- Inline template chooser (shows when body is empty, vanishes on typing) -->
 				{#if shouldShowChooser}
 					<InlineTemplateChooser
@@ -1473,5 +1540,17 @@
 
 	.link-row:hover {
 		background: var(--color-hover);
+	}
+	.duplicate-hint {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin: 0 0 1rem;
+		padding: 0.5rem 0.5rem 0.5rem 0.75rem;
+		border: 1px solid color-mix(in srgb, var(--color-accent) 30%, var(--color-border));
+		border-radius: var(--radius-md);
+		background: color-mix(in srgb, var(--color-accent) 6%, var(--color-bg));
+		font-size: 0.8125rem;
+		color: var(--color-text-muted);
 	}
 </style>

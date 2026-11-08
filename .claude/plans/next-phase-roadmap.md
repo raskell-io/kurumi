@@ -175,9 +175,11 @@ picker + copy), spans in Read mode.
 from note id + text (`nt-…`) so devices don't duplicate them; /actions
 writes status, date and assignee back into the line.
 
-### [ ] Callout-style AI suggestions
-LLM-generated callouts that flag "this might be a duplicate of X" or
-"consider linking to Y" inline in the editor while writing. DEFERRED.
+### [x] Callout-style AI suggestions
+Unlinked mentions of other notes' titles are underlined in the editor
+(`editor/linkSuggest.ts`, matching in `$lib/link-suggestions.ts`; link or
+dismiss). A near-duplicate (embedding similarity ≥ 0.9) shows a bar above
+the note with Compare. Embeddings, not an LLM: instant, offline, private.
 
 ---
 

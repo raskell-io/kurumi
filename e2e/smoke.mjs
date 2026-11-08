@@ -2296,6 +2296,31 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
+	async 'link suggestions: underline, link and dismiss'(browser) {
+		const { page, errors } = await freshPage(browser);
+		await db(page, `db.addMemoryObject('Project Alpha', 'The plan.'); db.addMemoryObject('Garden', 'Plants.');`);
+		const id = await db(page, `return db.addMemoryObject('Weekly', 'Talked about project alpha today.\\n\\nThe Garden needs water.').id;`);
+		await page.goto(`${BASE}/#/memory/${id}`, { waitUntil: 'load' });
+		await page.waitForFunction(() => document.querySelectorAll('main .kurumi-link-suggestion').length === 2, { timeout: 10000 });
+		assert.deepEqual(await page.$$eval('main .kurumi-link-suggestion', (els) => els.map((e) => e.textContent)), ['project alpha', 'Garden']);
+		// Link the first: becomes [[Title|text]] in the note.
+		await page.click('main .kurumi-link-suggestion');
+		await clickOnTop(page, '.kurumi-link-suggest-menu .k-menu-item', 'Link to');
+		await sleep(1500);
+		assert.match(await db(page, `return db.getMemoryObject(arg).bodyMarkdown;`, id), /Talked about \[\[Project Alpha\|project alpha\]\] today/);
+		// Dismiss the second: gone, and stays gone after a reload.
+		await page.waitForFunction(() => document.querySelectorAll('main .kurumi-link-suggestion').length === 1, { timeout: 10000 });
+		await page.click('main .kurumi-link-suggestion');
+		await clickOnTop(page, '.kurumi-link-suggest-menu .k-menu-item', 'Dismiss');
+		await sleep(300);
+		assert.equal(await page.$$eval('main .kurumi-link-suggestion', (els) => els.length), 0);
+		await page.reload({ waitUntil: 'load' });
+		await page.waitForSelector('main .ProseMirror');
+		await sleep(2500);
+		assert.equal(await page.$$eval('main .kurumi-link-suggestion', (els) => els.length), 0);
+		assert.deepEqual(errors, []);
+	},
+
 	async 'settings show the selected local folder'(browser) {
 		const { page, errors } = await freshPage(browser);
 		const name = await page.evaluate(async () => {

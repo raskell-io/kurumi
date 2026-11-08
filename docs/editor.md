@@ -71,6 +71,19 @@ Selected text takes `Cmd/Ctrl+B` / `I`.
 | `$x^2$`, `$$ … $$` | Math (LaTeX), typeset by KaTeX. Typing the closing `$` turns `$…$` into a formula; click it to edit. `$$` then Enter starts a block, which shows its source while the cursor is in it. A `$` with a space after it, or a digit after the closing one, stays text: `$5 and $10` is safe |
 | Tables | Pipe tables, edited in place. `Tab` / `Shift+Tab` move between cells (`Tab` in the last cell adds a row). With the cursor in a table, a bar above it inserts rows and columns, aligns the column, and sorts the table by it (numbers by value); its ⋯ menu moves or deletes rows and columns, or the whole table |
 
+## Suggestions while writing
+
+When you mention another note's title without linking it, the mention gets a
+dotted underline after a short pause. Click it to **Link** it (it becomes
+`[[Title]]`, or `[[Title|your words]]` when the wording differs) or
+**Dismiss** it for this note. One-word titles are only suggested where the
+word is capitalised, so a note called *Garden* isn't offered for "the garden".
+
+When the note you're writing is nearly the same as another one, a bar above
+the text says so, with **Compare** (opens it beside this one). This uses the
+semantic search model (Settings → Local AI) and never starts a download on its
+own. Settings → Local AI → *Suggestions while writing* turns both off.
+
 ## Slash commands
 
 Type `/` for blocks: headings, lists, checkbox, quote, divider, code

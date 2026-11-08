@@ -3,6 +3,7 @@
 	import ShortcutSettings from '$lib/components/ShortcutSettings.svelte';
 	import AboutKurumi from '$lib/components/AboutKurumi.svelte';
 	import { myNames } from '$lib/work';
+	import { linkSuggestionsEnabled, setLinkSuggestionsEnabled } from '$lib/editor/linkSuggest';
 	import { labsEnabled, LAB_PAGES } from '$lib/stores/labs';
 	import {
 		exportMemoryObjectsJSON,
@@ -27,6 +28,7 @@
 		type ConflictResolution
 	} from '$lib/db';
 	let noteTasksOn = $state(typeof localStorage === 'undefined' ? true : noteTasksEnabled());
+	let writingSuggestionsOn = $state(typeof localStorage === 'undefined' ? true : linkSuggestionsEnabled());
 	import {
 		exportVaultAsMarkdown,
 		exportAllVaultsAsMarkdown,
@@ -1968,6 +1970,26 @@
 								class="switch"
 								checked={$localInferenceSettings.preloadOnStartup}
 								onchange={(e) => updateLocalInferenceSettings({ preloadOnStartup: (e.target as HTMLInputElement).checked })}
+							/>
+						</label>
+
+						<label class="set-row">
+							<div class="set-row-text">
+								<div class="set-row-label">Suggestions while writing</div>
+								<p class="set-row-help">
+									Underlines other notes' titles you mention without a link (click to link), and points
+									out a note that looks like a duplicate of the one you're writing (once the semantic
+									search model is loaded).
+								</p>
+							</div>
+							<input
+								type="checkbox"
+								class="switch"
+								checked={writingSuggestionsOn}
+								onchange={(e) => {
+									writingSuggestionsOn = (e.target as HTMLInputElement).checked;
+									setLinkSuggestionsEnabled(writingSuggestionsOn);
+								}}
 							/>
 						</label>
 

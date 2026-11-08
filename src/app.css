@@ -1402,3 +1402,15 @@ a[href^='blob:']:not([href*='://']):hover {
 		height: 34px;
 	}
 }
+
+/* Link suggestions while writing (editor/linkSuggest.ts) */
+.kurumi-link-suggestion {
+	text-decoration: underline dotted color-mix(in srgb, var(--color-accent) 70%, transparent);
+	text-decoration-thickness: 1.5px;
+	text-underline-offset: 3px;
+	cursor: pointer;
+}
+.kurumi-link-suggest-menu {
+	position: fixed;
+	z-index: 41;
+}

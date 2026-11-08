@@ -38,6 +38,7 @@
 	import { mermaidPlugin } from '$lib/editor/mermaid';
 	import { codeHighlightPlugin } from '$lib/editor/codeHighlight';
 	import { tableToolbarPlugin } from '$lib/editor/tableToolbar';
+	import { linkSuggestPlugin } from '$lib/editor/linkSuggest';
 	import { mathPlugins } from '$lib/editor/math';
 	import { columnsPlugins } from '$lib/editor/columns';
 	import { audioEmbedPlugin } from '$lib/editor/audioEmbed';
@@ -613,6 +614,7 @@
 			.use(mermaidPlugin)
 			.use(codeHighlightPlugin)
 			.use(tableToolbarPlugin)
+			.use(linkSuggestPlugin)
 			.use(trailingPlugin)
 			.use(block)
 			.use(findReplacePlugin)
