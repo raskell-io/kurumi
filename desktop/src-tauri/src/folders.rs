@@ -16,6 +16,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 use std::time::UNIX_EPOCH;
 use tauri::{ipc, AppHandle, Manager, Runtime, State};
+#[cfg(desktop)]
 use tauri_plugin_dialog::DialogExt;
 
 const FOLDERS_FILE: &str = "folders.json";
@@ -138,13 +139,24 @@ fn picked(path: PathBuf) -> Picked {
     Picked { path, name }
 }
 
+#[cfg(desktop)]
+fn pick_folder<R: Runtime>(app: &AppHandle<R>) -> Result<Option<PathBuf>, String> {
+    Ok(app.dialog().file().blocking_pick_folder().and_then(|p| p.into_path().ok()))
+}
+
+/// Phones: no folder dialog (iOS would also need security-scoped bookmarks).
+#[cfg(mobile)]
+fn pick_folder<R: Runtime>(_app: &AppHandle<R>) -> Result<Option<PathBuf>, String> {
+    Err("Local folder sync isn't available in the phone app yet. Use the Kurumi server, S3, WebDAV or Git.".into())
+}
+
 /// Shows the folder dialog; the chosen folder becomes reachable.
 #[tauri::command]
 pub async fn folder_pick<R: Runtime>(app: AppHandle<R>, folders: State<'_, Folders>) -> Result<Option<Picked>, String> {
     // The self-test can't click through a dialog.
     let chosen = match crate::selftest::folder() {
         Some(dir) => Some(dir),
-        None => app.dialog().file().blocking_pick_folder().and_then(|p| p.into_path().ok()),
+        None => pick_folder(&app)?,
     };
     let Some(chosen) = chosen else { return Ok(None) };
     let root = chosen.canonicalize().map_err(io_error)?;

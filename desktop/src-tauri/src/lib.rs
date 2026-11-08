@@ -5,12 +5,19 @@
 //! survives restarts and updates. Links to the web open in the default
 //! browser, downloads land in the Downloads folder, and local folder sync
 //! goes through folders.rs.
+//!
+//! The same crate builds the iOS and Android apps (`tauri ios|android`):
+//! there the window is the whole screen, there's no single-instance or
+//! download handling, and local folder sync isn't offered (folders.rs).
 
 mod folders;
 mod selftest;
 
+#[cfg(desktop)]
 use std::path::{Path, PathBuf};
-use tauri::webview::{DownloadEvent, NewWindowResponse};
+#[cfg(desktop)]
+use tauri::webview::DownloadEvent;
+use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, Manager, Runtime, Url, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_opener::OpenerExt;
 
@@ -28,6 +35,7 @@ fn open_outside<R: Runtime>(app: &AppHandle<R>, url: &Url) {
 }
 
 /// `name`, or `name (2)`, … if that's taken.
+#[cfg(desktop)]
 fn unique_path(dir: &Path, name: &str) -> PathBuf {
     let candidate = dir.join(name);
     if !candidate.exists() {
@@ -43,6 +51,7 @@ fn unique_path(dir: &Path, name: &str) -> PathBuf {
         .unwrap()
 }
 
+#[cfg(desktop)]
 fn create_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let nav_app = app.clone();
     let popup_app = app.clone();
@@ -98,15 +107,43 @@ fn create_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Phones: one full-screen webview on the same fixed origin; web links open
+/// in the system browser.
+#[cfg(mobile)]
+fn create_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
+    let nav_app = app.clone();
+    let popup_app = app.clone();
+    let mut builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+        .use_https_scheme(true)
+        .on_navigation(move |url| {
+            if is_app_url(url) || !matches!(url.scheme(), "http" | "https" | "mailto") {
+                return true;
+            }
+            open_outside(&nav_app, url);
+            false
+        })
+        .on_new_window(move |url, _features| {
+            open_outside(&popup_app, &url);
+            NewWindowResponse::Deny
+        });
+    if let Some(script) = selftest::script() {
+        builder = builder.initialization_script(script);
+    }
+    builder.build()?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.set_focus();
-            }
-        }))
+    let builder = tauri::Builder::default();
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+        }
+    }));
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         // Also gives the page a window.Notification for due to-dos.

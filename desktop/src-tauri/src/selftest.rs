@@ -20,15 +20,18 @@ pub fn config_dir() -> Option<PathBuf> {
     dir().map(|d| d.join("config"))
 }
 
+#[cfg_attr(mobile, allow(dead_code))] // desktop only
 pub fn downloads() -> Option<PathBuf> {
     dir().map(|d| d.join("downloads"))
 }
 
+#[cfg_attr(mobile, allow(dead_code))] // desktop only
 pub fn webview_data() -> Option<PathBuf> {
     dir().map(|d| d.join("webview"))
 }
 
 /// A WebKit data store of its own (macOS 14+), never the real vault's.
+#[cfg_attr(mobile, allow(dead_code))] // desktop only
 pub const DATA_STORE: [u8; 16] = *b"kurumi-selftest!";
 
 pub fn script() -> Option<String> {
