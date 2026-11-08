@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { wikilinkLabel } from '$lib/wikilinks';
 	import { createExampleVault, EXAMPLE_VAULT_NAME } from '$lib/example-vault';
+	import { generateWeeklyReview } from '$lib/weekly-review';
 	import { search } from '$lib/search';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
@@ -133,6 +134,18 @@
 				onClose();
 				const folder = addFolder('New database');
 				goto(`/database/${openFolderAsDatabase(folder.id).id}`);
+			}
+		},
+		{
+			id: 'weekly-review',
+			type: 'action',
+			title: 'Write weekly review',
+			description: "A note looking back at last week and ahead at this one",
+			icon: 'sparkles',
+			action: async () => {
+				onClose();
+				const id = await generateWeeklyReview();
+				if (id) goto(`/memory/${id}`);
 			}
 		},
 		{

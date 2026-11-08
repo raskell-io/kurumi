@@ -1446,6 +1446,26 @@ export function addMemoryObject(
 }
 
 /**
+ * Write a generated note (weekly review, …) under a fixed id in the current
+ * vault: created the first time, replaced after. A fixed id means two devices
+ * generating the same note end up with one.
+ */
+export function putGeneratedNote(id: string, title: string, bodyMarkdown: string): MemoryObject {
+	const existing = memoriesView()[id];
+	if (existing) {
+		if (existing.deletedAt) restoreMemoryObject(id);
+		updateMemoryObject(id, { title, bodyMarkdown });
+		return memoriesView()[id] ?? existing;
+	}
+	const memory = createMemoryObject({ title, bodyMarkdown, folderId: null, vaultId: getCurrentVaultId() });
+	memory.id = id;
+	updateDoc((d) => {
+		d.memoryObjects[id] = toStored(memory, d);
+	});
+	return memoriesView()[id] ?? memory;
+}
+
+/**
  * Create a note from a file found on disk (local folder sync): any vault,
  * keeping the file's dates and, when it carries one, its Kurumi id.
  */

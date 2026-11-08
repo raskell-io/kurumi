@@ -1119,6 +1119,7 @@
 			case 'list_action_items': return `Listed to-dos${tc.args.status ? ` (${tc.args.status})` : ''}`;
 			case 'add_reminder': return `Proposed reminder: "${tc.args.text ?? ''}"`;
 			case 'generate_daily_digest': return 'Generated daily digest';
+			case 'generate_weekly_review': return 'Wrote weekly review';
 			case 'search_people': return `Searched people: "${tc.args.query ?? 'all'}"`;
 			case 'search_topics': return `Searched topics: "${tc.args.query ?? 'all'}"`;
 			default: return tc.name;

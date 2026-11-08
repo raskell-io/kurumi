@@ -8,12 +8,15 @@
 	import { inferenceRouter } from '$lib/inference';
 	import { isAIConfigured } from '$lib/ai';
 	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
+	import { generateWeeklyReview, previousWeek, isoDate, reviewNoteId } from '$lib/weekly-review';
+	import { goto } from '$app/navigation';
 	import {
 		Calendar,
 		CheckSquare,
 		Bell,
 		Sparkles,
 		AlertCircle,
+		NotebookText,
 		ChevronLeft,
 		ChevronRight
 	} from 'lucide-svelte';
@@ -87,6 +90,24 @@
 		const today = todayIso();
 		return openActions.filter((a) => a.dueDate !== null && a.dueDate < today);
 	});
+
+	// The review note (weekly-review.ts) for the last complete Monday–Sunday
+	// week in view: open it, or write it.
+	let reviewWeek = $derived(previousWeek(isoDate(new Date(range.end))));
+	let reviewNote = $derived($memoryObjects.find((m) => m.id === reviewNoteId(reviewWeek)) ?? null);
+	let writingReview = $state(false);
+	async function writeReview() {
+		if (writingReview) return;
+		writingReview = true;
+		try {
+			const id = await generateWeeklyReview(reviewWeek);
+			if (id) goto(`/memory/${id}`);
+		} finally {
+			writingReview = false;
+		}
+	}
+	const shortDate = (iso: string) =>
+		new Date(`${iso}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
 	// Optional LLM summary of the week's activity.
 	let aiAvailable = $state(false);
@@ -216,6 +237,24 @@
 				</div>
 				<div class="stat-label">To-dos done / new</div>
 			</div>
+		</section>
+
+		<section class="alerts">
+			{#if reviewNote}
+				<a href="/memory/{reviewNote.id}" class="k-row" data-testid="review-note">
+					<NotebookText class="h-4 w-4 shrink-0 text-[var(--color-accent)]" />
+					<span class="flex-1 min-w-0">Review note for {shortDate(reviewWeek.start)} – {shortDate(reviewWeek.end)}</span>
+					<span class="row-cta">Open <ChevronRight class="h-3.5 w-3.5" /></span>
+				</a>
+			{:else}
+				<button type="button" class="k-row w-full text-left" onclick={writeReview} disabled={writingReview} data-testid="write-review">
+					<NotebookText class="h-4 w-4 shrink-0 text-[var(--color-text-faint)]" />
+					<span class="flex-1 min-w-0">
+						{writingReview ? 'Writing…' : `Write a review note for ${shortDate(reviewWeek.start)} – ${shortDate(reviewWeek.end)}`}
+					</span>
+					<span class="row-cta">Write <ChevronRight class="h-3.5 w-3.5" /></span>
+				</button>
+			{/if}
 		</section>
 
 		{#if overdueActions.length > 0 || pendingProposalsCount > 0}

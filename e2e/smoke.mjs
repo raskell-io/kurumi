@@ -100,6 +100,11 @@ async function freshPage(browser) {
 		const d = new Date();
 		const today = [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
 		localStorage.setItem('kurumi-last-auto-digest', today);
+		// Same for last week's automatic review note (weekly-review.ts).
+		const monday = new Date(d);
+		monday.setDate(d.getDate() - ((d.getDay() + 6) % 7) - 7);
+		const iso = (x) => [x.getFullYear(), String(x.getMonth() + 1).padStart(2, '0'), String(x.getDate()).padStart(2, '0')].join('-');
+		localStorage.setItem('kurumi-last-auto-review', iso(monday));
 	});
 	await page.goto(BASE, { waitUntil: 'load' });
 	await page.waitForSelector('aside');
@@ -2318,6 +2323,27 @@ const scenarios = {
 		await page.waitForSelector('main .ProseMirror');
 		await sleep(2500);
 		assert.equal(await page.$$eval('main .kurumi-link-suggestion', (els) => els.length), 0);
+		assert.deepEqual(errors, []);
+	},
+
+	async 'weekly review: written from /review, linked after'(browser) {
+		const { page, errors } = await freshPage(browser);
+		// An overdue to-do carries over into any week's review.
+		await db(page, `db.addActionItem({ text: 'Overdue thing', dueDate: '2020-01-01' });`);
+		await page.goto(`${BASE}/review`, { waitUntil: 'load' });
+		await page.waitForSelector('[data-testid="write-review"]');
+		await page.click('[data-testid="write-review"]');
+		await page.waitForFunction(() => location.hash.includes('/memory/review-'), { timeout: 15000 });
+		const id = decodeURIComponent(page.url().split('/memory/')[1]);
+		const body = await db(page, `return db.getMemoryObject(arg).bodyMarkdown;`, id);
+		assert.match(body, /## Still open/);
+		assert.match(body, /- Overdue thing \(due 2020-01-01\)/);
+		assert.doesNotMatch(body, /- \[[ x]\]/);
+		// Writing it again replaces the same note; the page now links it.
+		await page.goto(`${BASE}/review`, { waitUntil: 'load' });
+		await page.waitForSelector('[data-testid="review-note"]');
+		const count = await db(page, `let ms; db.memoryObjects.subscribe((v) => (ms = v))(); return ms.filter((m) => m.id.startsWith('review-')).length;`);
+		assert.equal(count, 1);
 		assert.deepEqual(errors, []);
 	},
 

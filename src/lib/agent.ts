@@ -35,6 +35,7 @@ import {
 import { get } from 'svelte/store';
 import { retrieveMemoryContext, buildContextBlocks } from './ask';
 import { generateDailyDigest } from './digest';
+import { generateWeeklyReview, mondayOf, addDays } from './weekly-review';
 
 const OPENAI_KEY_STORAGE = 'kurumi-openai-key';
 const AGENT_MODEL_KEY = 'kurumi-agent-model';
@@ -157,6 +158,23 @@ const TOOLS = [
 	{
 		type: 'function' as const,
 		function: {
+			name: 'generate_weekly_review',
+			description:
+				'Write the weekly review note: what happened in a week (Monday to Sunday), what is still open, and what is due the week after. Rewrites it if it exists.',
+			parameters: {
+				type: 'object',
+				properties: {
+					date: {
+						type: 'string',
+						description: 'Optional ISO date (YYYY-MM-DD) in the week to review. Defaults to last week.'
+					}
+				}
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
 			name: 'update_memory',
 			description: 'Update an existing note in the vault. Can change title, body, or tags.',
 			parameters: {
@@ -228,6 +246,7 @@ const TOOL_STATUS_LABELS: Record<string, string> = {
 	add_action_item: 'Adding to-do...',
 	add_reminder: 'Adding reminder...',
 	generate_daily_digest: 'Generating digest...',
+	generate_weekly_review: 'Writing weekly review...',
 	update_memory: 'Updating note...',
 	list_action_items: 'Listing to-dos...',
 	search_people: 'Searching people...',
@@ -250,6 +269,7 @@ const SYSTEM_PROMPT = [
 	'- list_action_items: list tasks by status',
 	'- search_people: find people in the vault',
 	'- search_topics: find topics/projects in the vault',
+	'- generate_daily_digest / generate_weekly_review: write a digest or weekly review note',
 	'',
 	`Today's date is ${todayIso()}.`,
 	'',
@@ -313,6 +333,11 @@ async function executeTool(
 			const date = args.date ? String(args.date) : undefined;
 			const memoryId = await generateDailyDigest(date);
 			return { ok: true, memoryId, message: 'Daily digest generated' };
+		}
+		case 'generate_weekly_review': {
+			const start = args.date ? mondayOf(String(args.date)) : undefined;
+			const memoryId = await generateWeeklyReview(start ? { start, end: addDays(start, 6) } : undefined);
+			return { ok: true, memoryId, message: 'Weekly review written' };
 		}
 		case 'update_memory': {
 			const memoryId = String(args.memoryId ?? '');

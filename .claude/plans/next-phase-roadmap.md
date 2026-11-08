@@ -195,9 +195,11 @@ home page button or the agent chat's generate_daily_digest tool.
 **Scope:** Small-medium. Needs the chat tool infra from Tier 1 OR a
 simpler standalone scheduled job that writes a memory.
 
-### [ ] Weekly review agent
-Same pattern but weekly, writes to `/review` or a dedicated memory.
-Integrates with the existing review page stats.
+### [x] Weekly review agent
+`$lib/weekly-review.ts`: a note for each Monday–Sunday week, written on the
+first start of the next week (quiet weeks skipped), from /review, ⌘K or the
+agent tool `generate_weekly_review`. Fixed id per vault + week, so devices
+don't duplicate it.
 
 ### [x] Proactive pattern detection
 Background analysis that surfaces observations:

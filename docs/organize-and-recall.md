@@ -170,5 +170,12 @@ dot to preview the note, `/` to search, scroll to zoom.
 - **Calendar** (`Cmd/Ctrl+Shift+C`): notes, memos, meetings and due
   to-dos per day.
 - **Weekly review** (`/review`): what you captured, what's overdue, what
-  still needs a decision, and an AI summary of the week.
+  still needs a decision, and an AI summary of the week. The first time
+  you open Kurumi in a new week it also writes a **review note** for the
+  week before (Monday to Sunday): meetings, decisions, what got done,
+  projects you worked on, what's still open (overdue, waiting for others,
+  open questions) and what's due the week after, with a short AI recap
+  when an AI provider is set up. Quiet weeks get no note. `/review` links
+  it or writes it for the week shown; ⌘K *Write weekly review* and the
+  agent chat can write it too. Writing it again replaces it.
 - **Trash:** deleted notes wait here until you restore or empty them.

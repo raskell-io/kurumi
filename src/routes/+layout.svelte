@@ -25,6 +25,7 @@
 	import { restoreStashedEdits } from '$lib/unsaved';
 	import { initHashRouter, updateHashFromPath, currentRoutePath } from '$lib/hash-router';
 	import { generateDailyDigest } from '$lib/digest';
+	import { maybeAutoWeeklyReview } from '$lib/weekly-review';
 	import { initSearch, syncIndex } from '$lib/search';
 	import { setupVisibilitySync, teardownVisibilitySync, setupAutoSync, teardownAutoSync, isSyncConfigured } from '$lib/sync';
 	import SyncFab from '$lib/components/SyncFab.svelte';
@@ -529,6 +530,8 @@
 					});
 				}, 5000); // delay to not compete with initial render
 			}
+			// Last week's review, on the first start of a new week (quiet weeks get none).
+			setTimeout(() => void maybeAutoWeeklyReview().catch(() => {}), 8000);
 		});
 
 		// Preload local inference models if enabled (default). Fire-and-forget;
