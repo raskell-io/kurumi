@@ -180,6 +180,23 @@ const TOOLS = [
 	{
 		type: 'function' as const,
 		function: {
+			name: 'propose_todo',
+			description:
+				'Propose a to-do for the user to approve (it goes to their Proposals queue, nothing is added until they approve). Use for to-dos you found or suggest while running a workflow.',
+			parameters: {
+				type: 'object',
+				properties: {
+					text: { type: 'string', description: 'What needs to be done' },
+					date: { type: 'string', description: 'Optional ISO date (YYYY-MM-DD) it is due' },
+					reason: { type: 'string', description: 'Why, in a few words (e.g. which meeting it came from)' }
+				},
+				required: ['text']
+			}
+		}
+	},
+	{
+		type: 'function' as const,
+		function: {
 			name: 'explore_graph',
 			description:
 				"Walk the user's knowledge graph from a person, project, #tag or note title: what links to it and from it, who is mentioned, its to-dos, decisions and open questions, then one step further. Use it for questions about how things connect (\"what do we know about Alice's Q4 priorities?\", \"what's going on with Project X?\"). The user sees the path you took as a graph.",
@@ -304,6 +321,12 @@ const TOOLS = [
 	}
 ];
 
+/** Tools only background workflows get (the chat has add_action_item instead). */
+const WORKFLOW_ONLY = new Set(['propose_todo']);
+
+/** What a scheduled workflow may use: reading, and proposing (never changing the vault). */
+export const WORKFLOW_TOOLS = ['search_memory', 'list_action_items', 'search_people', 'search_topics', 'explore_graph', 'propose_todo'];
+
 const TOOL_STATUS_LABELS: Record<string, string> = {
 	search_memory: 'Searching vault...',
 	create_memory: 'Creating note...',
@@ -424,6 +447,15 @@ async function executeTool(
 			const start = args.date ? mondayOf(String(args.date)) : undefined;
 			const memoryId = await generateWeeklyReview(start ? { start, end: addDays(start, 6) } : undefined);
 			return { ok: true, memoryId, message: 'Weekly review written' };
+		}
+		case 'propose_todo': {
+			const proposal = addReminderProposal({
+				memoryObjectId: '',
+				text: String(args.text ?? ''),
+				suggestedDate: args.date ? String(args.date) : todayIso(),
+				reason: args.reason ? String(args.reason) : 'Proposed by a workflow'
+			});
+			return { ok: true, proposalId: proposal.id, note: 'Waiting for the user to approve on Proposals' };
 		}
 		case 'explore_graph': {
 			const start = String(args.start ?? '');
@@ -550,6 +582,10 @@ export interface SendOptions {
 	images?: string[];
 	model?: string;
 	onUpdate?: (session: AgentSession) => void;
+	/** Only these tools (by name), e.g. read-only ones for background workflows. */
+	tools?: string[];
+	/** Added to the system prompt (workflows say what they're running). */
+	systemExtra?: string;
 }
 
 function generateId(): string {
@@ -625,7 +661,7 @@ export async function sendAgentMessage(
 	// Build the OpenAI messages array from session history
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const apiMessages: Array<Record<string, any>> = [
-		{ role: 'system', content: systemPrompt() }
+		{ role: 'system', content: options?.systemExtra ? `${systemPrompt()}\n\n${options.systemExtra}` : systemPrompt() }
 	];
 
 	for (const msg of session.messages) {
@@ -663,7 +699,7 @@ export async function sendAgentMessage(
 				body: JSON.stringify({
 					model,
 					messages: apiMessages,
-					tools: TOOLS,
+					tools: options?.tools ? TOOLS.filter((t) => options.tools!.includes(t.function.name)) : TOOLS.filter((t) => !WORKFLOW_ONLY.has(t.function.name)),
 					tool_choice: 'auto',
 					temperature: 0.3,
 					stream: true
@@ -823,7 +859,9 @@ export async function sendAgentMessage(
 				onUpdate?.(session);
 
 				try {
-					const result = await executeTool(tc.name, args);
+					// A tool outside the allowed set is refused, even if the model asks for it.
+					const allowed = options?.tools ? options.tools.includes(tc.name) : !WORKFLOW_ONLY.has(tc.name);
+					const result = allowed ? await executeTool(tc.name, args) : { ok: false, error: `Tool ${tc.name} isn't available here` };
 					toolCall.result = result;
 					toolCall.status = 'done';
 					apiMessages.push({

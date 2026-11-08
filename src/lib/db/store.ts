@@ -28,6 +28,8 @@ import {
 	type KurumiDocument,
 	type MemoryObject,
 	type LivingConfig,
+	type Workflow,
+	type WorkflowRun,
 	type Folder,
 	type Vault,
 	type Person,
@@ -4107,6 +4109,62 @@ export function setMemoryCustomProp(memoryId: string, key: string, value: unknow
 
 export function getMemoryCustomProp(memoryId: string, key: string): unknown {
 	return memoriesView()[memoryId]?.customProps?.[key] ?? null;
+}
+
+// ============ Workflows ($lib/workflows) ============
+
+export const workflows: Readable<Workflow[]> = derived([docStore, currentVaultId], ([$doc, $vaultId]) =>
+	Object.values($doc?.workflows ?? {})
+		.filter((w) => w.vaultId === $vaultId)
+		.sort((a, b) => a.createdAt - b.createdAt)
+);
+
+export function addWorkflow(w: Pick<Workflow, 'name' | 'instructions' | 'schedule' | 'output' | 'notify'>): Workflow {
+	const now = Date.now();
+	const workflow: Workflow = { id: generateId(), enabled: true, lastRunAt: null, runs: [], vaultId: getCurrentVaultId(), createdAt: now, updatedAt: now, ...deepCopy(w) };
+	updateDoc((d) => {
+		if (!d.workflows) d.workflows = {};
+		d.workflows[workflow.id] = deepCopy(workflow);
+	});
+	return workflow;
+}
+
+export function updateWorkflow(id: string, updates: Partial<Pick<Workflow, 'name' | 'instructions' | 'schedule' | 'output' | 'notify' | 'enabled'>>): void {
+	updateDoc((d) => {
+		const w = d.workflows?.[id];
+		if (!w) return;
+		for (const [k, v] of Object.entries(updates)) (w as Record<string, unknown>)[k] = typeof v === 'object' && v ? deepCopy(v) : v;
+		w.updatedAt = Date.now();
+	});
+}
+
+export function deleteWorkflow(id: string): Workflow | null {
+	const removed = doc?.workflows?.[id] ? deepCopy(doc.workflows[id]) : null;
+	updateDoc((d) => {
+		if (d.workflows) delete d.workflows[id];
+	});
+	return removed;
+}
+
+export function restoreWorkflow(w: Workflow): void {
+	updateDoc((d) => {
+		if (!d.workflows) d.workflows = {};
+		d.workflows[w.id] = deepCopy(w);
+	});
+}
+
+/** Record a run: newest first, ten kept; `lastRunAt` moves the schedule on. */
+export function recordWorkflowRun(id: string, run: WorkflowRun): void {
+	updateDoc((d) => {
+		const w = d.workflows?.[id];
+		if (!w) return;
+		// Latest wins, whatever order runs arrive in (a sync can merge them late).
+		w.lastRunAt = Math.max(w.lastRunAt ?? 0, run.at);
+		const at = w.runs.findIndex((r) => r.at < run.at);
+		w.runs.splice(at < 0 ? w.runs.length : at, 0, deepCopy(run));
+		while (w.runs.length > 10) w.runs.pop();
+		w.updatedAt = Date.now();
+	});
 }
 
 // ============ PDF highlights ============

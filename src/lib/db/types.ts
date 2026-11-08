@@ -598,6 +598,8 @@ export interface KurumiDocument {
 	meetingSeries: Record<string, MeetingSeries>;
 	/** Highlights in PDF attachments, by id (added in 0.6; absent before). */
 	pdfHighlights?: Record<string, PdfHighlight>;
+	// Scheduled agent workflows ($lib/workflows)
+	workflows?: Record<string, Workflow>;
 	currentVaultId: string;
 	version: number;
 	/** Sync end-to-end encryption is on (src/lib/sync/crypto.ts). In the
@@ -793,4 +795,39 @@ export interface LivingConfig {
 	updatedAt?: number; // when it was last rewritten
 	sources?: string[]; // note ids that rewrite drew on
 	[key: string]: unknown; // Automerge compatibility
+}
+
+/** When a workflow runs on its own. Times are local, HH:MM. */
+export interface WorkflowSchedule {
+	kind: 'manual' | 'daily' | 'weekly' | 'monthly';
+	time: string; // 'HH:MM'
+	weekday?: number; // weekly: 0 = Sunday … 6 = Saturday
+	day?: number; // monthly: 1–31 (clamped to the month's length)
+	[key: string]: unknown;
+}
+
+export interface WorkflowRun {
+	at: number;
+	status: 'ok' | 'error';
+	noteId: string | null; // the note it wrote
+	summary: string; // first words of the result, or the error
+	tools: string[]; // tools it used
+	[key: string]: unknown;
+}
+
+/** A scheduled agent workflow ($lib/workflows): instructions in plain words, run by the agent with read-only tools. */
+export interface Workflow {
+	id: string;
+	name: string;
+	instructions: string;
+	schedule: WorkflowSchedule;
+	output: 'note' | 'none'; // save the result as a note
+	notify: boolean; // browser notification when it ran
+	enabled: boolean;
+	lastRunAt: number | null;
+	runs: WorkflowRun[]; // newest first, at most 10
+	vaultId: string;
+	createdAt: number;
+	updatedAt: number;
+	[key: string]: unknown;
 }

@@ -1,6 +1,6 @@
 /**
  * Labs: features that work but aren't polished enough to show everyone
- * (habits, flashcards, timeline, smart folders). Off by default; when on,
+ * (habits, flashcards, timeline, smart folders, workflows). Off by default; when on,
  * they get a sidebar section and command-palette entries. Per device.
  */
 
@@ -31,5 +31,6 @@ export const LAB_PAGES = [
 	{ href: '/habits', label: 'Habits', description: 'Daily habit tracker with streaks' },
 	{ href: '/flashcards', label: 'Flashcards', description: 'Spaced-repetition cards from your notes' },
 	{ href: '/timeline', label: 'Timeline', description: 'Everything you captured, by date' },
-	{ href: '/smart-folders', label: 'Smart folders', description: 'Saved filters that stay up to date' }
+	{ href: '/smart-folders', label: 'Smart folders', description: 'Saved filters that stay up to date' },
+	{ href: '/workflows', label: 'Workflows', description: 'Instructions the assistant runs on a schedule' }
 ] as const;

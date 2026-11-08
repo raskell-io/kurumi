@@ -27,6 +27,7 @@
 	import { generateDailyDigest } from '$lib/digest';
 	import { maybeAutoWeeklyReview } from '$lib/weekly-review';
 	import { maybeUpdateLivingNotes } from '$lib/living-notes';
+	import { runDueWorkflows } from '$lib/workflows';
 	import { initSearch, syncIndex } from '$lib/search';
 	import { setupVisibilitySync, teardownVisibilitySync, setupAutoSync, teardownAutoSync, isSyncConfigured } from '$lib/sync';
 	import SyncFab from '$lib/components/SyncFab.svelte';
@@ -155,6 +156,7 @@
 	let showConflictModal = $state(false);
 	let showAgentPane = $state(false);
 	let livingTimer: ReturnType<typeof setInterval> | undefined;
+	let workflowTimer: ReturnType<typeof setInterval> | undefined;
 	// Auto-open when a sync attempt surfaces conflicts.
 	$effect(() => {
 		if ($gitSyncState.status === 'conflict' && $gitSyncState.conflicts.length > 0) {
@@ -543,6 +545,9 @@
 			// Living notes whose topic's notes changed: soon after start, then every half hour.
 			setTimeout(() => void maybeUpdateLivingNotes().catch(() => {}), 20_000);
 			livingTimer = setInterval(() => void maybeUpdateLivingNotes().catch(() => {}), 30 * 60_000);
+			// Scheduled workflows: check every minute (and once soon after start, for missed runs).
+			setTimeout(() => void runDueWorkflows().catch(() => {}), 15_000);
+			workflowTimer = setInterval(() => void runDueWorkflows().catch(() => {}), 60_000);
 			// Last week's review, on the first start of a new week (quiet weeks get none).
 			setTimeout(() => void maybeAutoWeeklyReview().catch(() => {}), 8000);
 		});
@@ -641,6 +646,7 @@
 			document.removeEventListener('visibilitychange', handleVisibility);
 			window.clearInterval(rolloverInterval);
 			clearInterval(livingTimer);
+			clearInterval(workflowTimer);
 			teardownVisibilitySync();
 			teardownAutoSync();
 			cleanupHashRouter?.();

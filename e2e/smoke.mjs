@@ -2489,6 +2489,59 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
+	async 'workflows: run with read-only tools, report saved as a note'(browser) {
+		const { page, errors } = await freshPage(browser);
+		await page.evaluate(() => {
+			localStorage.setItem('kurumi-openai-key', 'sk-test');
+			localStorage.setItem('kurumi-labs', '1');
+		});
+		// Stand in for OpenAI: first a tool round (one allowed, one not), then the report.
+		const requests = [];
+		await page.setRequestInterception(true);
+		page.on('request', (req) => {
+			if (!req.url().startsWith('https://api.openai.com/v1/chat/completions')) return req.continue();
+			const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, content-type', 'Access-Control-Allow-Methods': 'POST' };
+			if (req.method() === 'OPTIONS') return req.respond({ status: 204, headers: cors });
+			const body = JSON.parse(req.postData());
+			requests.push(body);
+			const sse = (chunks) => chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join('') + 'data: [DONE]\n\n';
+			const first = requests.length === 1;
+			const chunks = first
+				? [
+						{ choices: [{ delta: { tool_calls: [{ index: 0, id: 'c1', function: { name: 'propose_todo', arguments: '{"text":"Send the Q4 plan","reason":"From the kickoff"}' } }] } }] },
+						{ choices: [{ delta: { tool_calls: [{ index: 1, id: 'c2', function: { name: 'create_memory', arguments: '{"title":"Sneaky","body":"x"}' } }] } }] },
+						{ choices: [{ delta: {}, finish_reason: 'tool_calls' }] }
+					]
+				: [{ choices: [{ delta: { content: '## This week\n\nFalcon is on track.' } }] }, { choices: [{ delta: {}, finish_reason: 'stop' }] }];
+			req.respond({ status: 200, contentType: 'text/event-stream', headers: cors, body: sse(chunks) });
+		});
+		await page.goto(`${BASE}/#/workflows`, { waitUntil: 'load' });
+		await page.waitForSelector('main .k-page-title');
+		await clickText(page, 'main button', 'Monday planning');
+		await page.waitForSelector('textarea[aria-label="Instructions"]');
+		await clickText(page, 'main form button', 'Create');
+		await page.waitForSelector('[data-testid="run-workflow"]');
+		assert.match(await page.$eval('.workflow .meta', (e) => e.textContent), /Every Monday at 08:30 · next/);
+		await page.click('[data-testid="run-workflow"]');
+		await page.waitForFunction(() => document.querySelector('.workflow .last')?.textContent.includes('Last run'), { timeout: 15000 });
+		// Only read tools + propose_todo were offered.
+		assert.deepEqual(requests[0].tools.map((t) => t.function.name).sort(), ['explore_graph', 'list_action_items', 'propose_todo', 'search_memory', 'search_people', 'search_topics']);
+		assert.match(requests[0].messages[0].content, /scheduled workflow "Monday planning"/);
+		const state = await db(page, `
+			let ms; db.memoryObjects.subscribe((v) => (ms = v))();
+			let ps; db.reminderProposals.subscribe((v) => (ps = v))();
+			let ws; db.workflows.subscribe((v) => (ws = v))();
+			return { notes: ms.map((m) => m.title + ': ' + m.bodyMarkdown.trim()), proposals: ps.map((p) => p.text), run: ws[0].runs[0] };
+		`);
+		assert.equal(state.run.status, 'ok');
+		assert.deepEqual(state.proposals, ['Send the Q4 plan']);
+		assert.ok(state.notes.some((n) => /^Monday planning — \d{4}-\d{2}-\d{2}: ## This week\n\nFalcon is on track\.$/.test(n)), JSON.stringify(state.notes));
+		assert.ok(!state.notes.some((n) => n.startsWith('Sneaky')), 'a tool outside the workflow set ran');
+		// The log (opened after a manual run) links the note.
+		await page.waitForSelector('.log a');
+		assert.deepEqual(errors, []);
+	},
+
 	async 'settings show the selected local folder'(browser) {
 		const { page, errors } = await freshPage(browser);
 		const name = await page.evaluate(async () => {

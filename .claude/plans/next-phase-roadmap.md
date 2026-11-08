@@ -250,14 +250,13 @@ every conversation. `recall_conversations` searches past chats on the
 device (they were already kept per device; "Save conversation as note"
 puts one in the vault).
 
-### [ ] Multi-step agentic workflows
-User defines a workflow in natural language ("every Monday morning:
-scan last week's meetings, extract new action items, group by
-project, write a summary to a new daily note, notify me"). The
-scheduler runs it in the background.
-
-**Scope:** Large. Workflow definition language, scheduler,
-execution context, observability.
+### [x] Multi-step agentic workflows (Labs)
+`$lib/workflows.ts`, `doc.workflows`, `/workflows`: plain-language
+instructions + schedule (daily/weekly/monthly/manual), run by the agent loop
+with read-only tools + `propose_todo` (`WORKFLOW_TOOLS`; other tools are
+refused even if asked for). Result saved as a note (`wf-<id>-<date>`),
+optional notification, last 10 runs logged. Scheduler: every minute while
+the app is open, missed runs once at start; per-device opt-out.
 
 ---
 
