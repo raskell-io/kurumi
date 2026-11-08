@@ -399,9 +399,13 @@ Untested: the `proposeReminders` prompt asks GPT-4o-mini to detect
 "every week" style phrases. Need to verify the model actually
 populates the `recurrence` field in real extractions.
 
-### [ ] Periodic background sync verification
-Only works when PWA is installed on Chromium. Needs real-device
-testing.
+### [~] Periodic background sync verification
+The handler is now tested (e2e/pwa.mjs): with the app's tab closed,
+DevTools fires `periodicsync` and the worker shows the due to-do's
+notification from its cache. Registration (`ensurePeriodicSyncRegistered`)
+can't be tested headless: Chrome keeps the permission denied unless the app
+is installed with enough engagement. Still needs one check on an installed
+Chrome/Android app: chrome://serviceworker-internals lists the tag.
 
 ### [x] Mobile device CSS audit (emulated)
 2026-11-08: all 46 routes (example vault, Labs on) at 390×844 with touch,

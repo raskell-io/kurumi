@@ -8,7 +8,9 @@
  *
  * Serves build/ with `vite preview`, then in one headless Chrome profile:
  * manifest, share target POST, notification buttons, icon badge, Settings →
- * Offline & storage, and starting + editing with the network off.
+ * Offline & storage, starting + editing with the network off, and the
+ * periodic background sync handler (fired through DevTools; Chrome won't let
+ * a non-installed app register it, so registration needs a real install).
  */
 
 import { spawn } from 'node:child_process';
@@ -160,6 +162,48 @@ const checks = {
 				.catch(() => null);
 		}
 		assert.equal(actions, 'done,snooze');
+	},
+
+	// Runs after the check above (a to-do due today, notifications on).
+	async 'periodic background sync: the due check notifies with the app closed'(page, context) {
+		// Chrome only lets an installed app with enough engagement register
+		// periodic sync, and ignores an override: headless can't register, so
+		// this checks the handler. Registration needs a real install.
+		const browserCdp = await page.browser().target().createCDPSession();
+		await browserCdp.send('Browser.grantPermissions', { origin: BASE, permissions: ['periodicBackgroundSync'] }).catch(() => {});
+		await browserCdp.detach();
+		await context.overridePermissions(BASE, ['notifications']);
+		const target = await page.browser().waitForTarget((t) => t.type() === 'service_worker' && t.url().startsWith(BASE));
+		const worker = await target.worker();
+		await worker.evaluate(async () => {
+			for (const n of await self.registration.getNotifications()) n.close();
+		});
+		const probe = await page.browser().newPage();
+		const cdp = await probe.createCDPSession();
+		try {
+			const registration = new Promise((resolve) =>
+				cdp.on('ServiceWorker.workerRegistrationUpdated', ({ registrations }) => {
+					const reg = registrations.find((r) => r.scopeURL.startsWith(BASE) && !r.isDeleted);
+					if (reg) resolve(reg.registrationId);
+				})
+			);
+			await cdp.send('ServiceWorker.enable');
+			const registrationId = await registration;
+			// Close the app, then fire the sync the way the browser does in the background.
+			await page.goto('about:blank');
+			await cdp.send('ServiceWorker.dispatchPeriodicSyncEvent', { origin: BASE, registrationId, tag: 'kurumi-due-check' });
+			let shown = [];
+			for (let i = 0; i < 20 && !shown.length; i++) {
+				await sleep(250);
+				shown = await worker.evaluate(async () => (await self.registration.getNotifications()).map((n) => `${n.title}: ${n.body}`));
+			}
+			assert.ok(shown.includes('To-do due today: Pay the invoice'), `notifications: ${JSON.stringify(shown)}`);
+		} finally {
+			await cdp.detach().catch(() => {});
+			await probe.close();
+			await page.goto(BASE, { waitUntil: 'load' });
+			await page.waitForSelector('aside', { timeout: 20_000 });
+		}
 	},
 
 	async 'settings: works offline, version shown'(page) {
