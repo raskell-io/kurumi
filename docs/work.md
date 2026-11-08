@@ -36,6 +36,19 @@ assignee. Add one with `@Name` in the text to assign it.
 - **Keyboard:** `j`/`k` to move, `Space` to select several, `x` done,
   `e` edit, `d` delete, `Enter` opens the source note.
 
+**Checkboxes in notes are to-dos.** Every `- [ ]` line in any note shows
+here, linked to its note, and the two stay in step: tick the box in the
+note or mark the to-do done, and the other follows. Write the due date
+and the person on the line:
+
+```markdown
+- [ ] Send the draft to the team @Alice //2026-11-12
+```
+
+Changing the due date or assignee here writes it into the line, and
+deleting the to-do removes the line (Undo puts it back). Settings →
+Profile turns this off on a device.
+
 Today's and overdue to-dos are also on the home page and in the app icon
 badge.
 

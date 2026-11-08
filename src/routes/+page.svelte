@@ -14,6 +14,7 @@
 		todayIso,
 		vaults,
 		setCurrentVault,
+		noteTasksEnabled,
 		type ActionItem
 	} from '$lib/db';
 	import { createExampleVault, EXAMPLE_VAULT_NAME } from '$lib/example-vault';
@@ -167,9 +168,12 @@
 	let overdueCount = $derived(openItems.filter((a) => a.dueDate && a.dueDate < today).length);
 	let dueTodayCount = $derived(openItems.filter((a) => a.dueDate === today).length);
 	let inProgressCount = $derived(openItems.filter((a) => a.status === 'in_progress').length);
-	let noteTasks = $derived(openNoteTasks($memoryObjects));
-	// Show up to 5 action items and fill the card to 7 rows with note tasks.
-	let shownItems = $derived(openItems.slice(0, 5));
+	// Checkboxes in notes are to-dos themselves (note-tasks.ts) unless that's off on this device.
+	const noteTasksAreTodos = noteTasksEnabled();
+	let noteTasks = $derived(noteTasksAreTodos ? [] : openNoteTasks($memoryObjects));
+	let noteTitles = $derived(new Map($memoryObjects.map((m) => [m.id, m.title || 'Untitled'])));
+	// Show up to 5 action items (7 when note tasks are among them) and fill the card to 7 rows with note tasks.
+	let shownItems = $derived(openItems.slice(0, noteTasksAreTodos ? 7 : 5));
 	let shownNoteTasks = $derived(noteTasks.slice(0, Math.max(0, 7 - shownItems.length)));
 	let moreItems = $derived(openItems.length - shownItems.length);
 	let moreTasks = $derived(noteTasks.length - shownNoteTasks.length);
@@ -611,6 +615,12 @@
 								<Square class="h-4 w-4" />
 							</button>
 							<span class="min-w-0 flex-1 truncate text-[var(--color-text)]">{item.text}</span>
+							{#if item.id.startsWith('nt-') && item.memoryObjectId && noteTitles.has(item.memoryObjectId)}
+								{@const noteTitle = noteTitles.get(item.memoryObjectId)}
+								<a href="/memory/{item.memoryObjectId}" class="todo-source" title="Open “{noteTitle}”">
+									<NotebookText class="h-3 w-3" /><span class="truncate">{noteTitle}</span>
+								</a>
+							{/if}
 							{#if item.status === 'in_progress'}
 								<span class="shrink-0 text-xs text-[var(--color-accent)]">In progress</span>
 							{/if}

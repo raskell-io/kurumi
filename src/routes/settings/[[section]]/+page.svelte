@@ -21,9 +21,12 @@
 		optimizeVault,
 		undoOptimizeVault,
 		hasPreOptimizeCopy,
+		noteTasksEnabled,
+		setNoteTasksEnabled,
 		type ImportAnalysis,
 		type ConflictResolution
 	} from '$lib/db';
+	let noteTasksOn = $state(typeof localStorage === 'undefined' ? true : noteTasksEnabled());
 	import {
 		exportVaultAsMarkdown,
 		exportAllVaultsAsMarkdown,
@@ -1364,6 +1367,25 @@
 									)}
 							/>
 						</div>
+						<label class="set-row">
+							<div class="set-row-text">
+								<div class="set-row-label">Checkboxes in notes are to-dos</div>
+								<p class="set-row-help">
+									Every <code>- [ ]</code> line in a note shows on To-dos and stays in step with it:
+									tick either one. A <code>//date</code> on the line is its due date, an
+									<code>@Name</code> at the end who it's for.
+								</p>
+							</div>
+							<input
+								type="checkbox"
+								class="switch"
+								checked={noteTasksOn}
+								onchange={(e) => {
+									noteTasksOn = (e.target as HTMLInputElement).checked;
+									setNoteTasksEnabled(noteTasksOn);
+								}}
+							/>
+						</label>
 					</div>
 				</section>
 				{/if}

@@ -223,6 +223,10 @@ Dates like `dueDate` are `YYYY-MM-DD`.
 - `recurrence`: `none`, `daily`, `weekly`, `monthly` or `yearly`.
 - `assignee`: null means the user. A person's name makes it "waiting for".
 - `memoryObjectId`: id of the note it came from.
+- Ids starting with `nt-` are checkbox lines in a note (`- [ ] Text @Name //YYYY-MM-DD`):
+  the app keeps them in step with the line, so change the line in the note's `.md` file
+  (tick it, edit it, remove it), not the record. To add a to-do that belongs to a note,
+  add a `- [ ]` line to it.
 
 To change an existing record, edit it and set `updatedAt` (`modified` for
 people and events) to now. To delete any record, add `"deleted": true` to it

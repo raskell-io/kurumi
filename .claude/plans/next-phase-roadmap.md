@@ -169,10 +169,11 @@ lowlight (highlight.js grammars), loaded on first use: `$lib/highlight.ts`
 for tokens, decorations in `editor/codeHighlight.ts` (header with language
 picker + copy), spans in Read mode.
 
-### [ ] Inline action items
-`- [ ] text` lines inside any memory automatically become ActionItem
-entities on save, linked back to the source memory with character
-offsets. DEFERRED — needs editor integration.
+### [x] Inline action items
+`- [ ]` lines in any note are mirrored as ActionItems (`$lib/note-tasks.ts`,
+`reconcileNoteTasks` in store.ts). The line is the truth; ids are derived
+from note id + text (`nt-…`) so devices don't duplicate them; /actions
+writes status, date and assignee back into the line.
 
 ### [ ] Callout-style AI suggestions
 LLM-generated callouts that flag "this might be a duplicate of X" or

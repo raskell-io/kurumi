@@ -1,5 +1,14 @@
 import * as Automerge from '@automerge/automerge';
 import { parseWikilink } from '$lib/wikilinks';
+import {
+	fieldsFromTask,
+	insertLine,
+	parseNoteTasks,
+	removeTaskFromBody,
+	updateTaskInBody,
+	type ParsedTask,
+	type TaskChange
+} from '$lib/note-tasks';
 import { get, set, setMany, del } from 'idb-keyval';
 import { writable, derived, type Readable } from 'svelte/store';
 import { deleteBlob, getBlob } from './blob-store';
@@ -925,6 +934,9 @@ export async function initDB(): Promise<void> {
 		// Roll any overdue recurring action items forward so the user
 		// sees the next occurrence waiting instead of a stale past date.
 		rolloverRecurringActionItems();
+
+		// Checkbox lines in notes are to-dos too ($lib/note-tasks).
+		startNoteTaskSync();
 	} catch (error) {
 		console.error('Failed to initialize database:', error);
 		// Keep the unreadable data before starting fresh, so it can still be
@@ -2897,6 +2909,7 @@ export function updateActionItemStatus(id: string, status: ActionItemStatus): vo
 		if (item) {
 			item.status = status;
 			item.updatedAt = Date.now();
+			writeBackNoteTask(d, item, { checked: status === 'done' });
 		}
 	});
 }
@@ -2918,6 +2931,7 @@ export function updateActionItem(
 		if (updates.dueDate !== undefined) item.dueDate = updates.dueDate;
 		if (updates.recurrence !== undefined) item.recurrence = updates.recurrence;
 		item.updatedAt = Date.now();
+		writeBackNoteTask(d, item, { text: updates.text, assignee: updates.assignee, dueDate: updates.dueDate });
 	});
 }
 
@@ -3075,6 +3089,17 @@ export function deleteActionItem(id: string): void {
 	updateDoc((d) => {
 		const item = d.actionItems?.[id];
 		if (!item) return;
+		// A checkbox in a note: its line goes too (kept for undo), or the
+		// next reconcile would bring the to-do back.
+		if (isNoteTaskId(id) && item.memoryObjectId) {
+			const memory = d.memoryObjects[item.memoryObjectId];
+			const removed = memory && removeTaskFromBody(memory.id, plainText(memory.bodyMarkdown), id);
+			if (memory && removed) {
+				removedTaskLines.set(id, { line: removed.line, text: removed.text });
+				setMemoryText(d, memory.id, 'bodyMarkdown', removed.body);
+				memory.updatedAt = Date.now();
+			}
+		}
 		if (item.memoryObjectId) {
 			const memory = d.memoryObjects[item.memoryObjectId];
 			if (memory) {
@@ -3095,12 +3120,186 @@ export function restoreActionItem(item: ActionItem): void {
 	updateDoc((d) => {
 		if (!d.actionItems) d.actionItems = {};
 		d.actionItems[item.id] = deepCopy(item);
+		// A note checkbox deleted from /actions: put its line back.
+		const removed = removedTaskLines.get(item.id);
+		if (isNoteTaskId(item.id) && item.memoryObjectId && removed) {
+			const memory = d.memoryObjects[item.memoryObjectId];
+			const body = memory ? plainText(memory.bodyMarkdown) : '';
+			if (memory && !parseNoteTasks(memory.id, body).some((t) => t.id === item.id)) {
+				setMemoryText(d, memory.id, 'bodyMarkdown', insertLine(body, removed.line, removed.text));
+				memory.updatedAt = Date.now();
+			}
+			removedTaskLines.delete(item.id);
+			return;
+		}
 		if (item.memoryObjectId) {
 			const memory = d.memoryObjects[item.memoryObjectId];
 			if (memory && !memory.actionItems.includes(item.id)) {
 				memory.actionItems.push(item.id);
 			}
 		}
+	});
+}
+
+// ============ Note checkboxes as to-dos ($lib/note-tasks) ============
+
+const isNoteTaskId = (id: string) => id.startsWith('nt-');
+
+// Lines removed by deleting a note to-do, for undo (in memory, like the undo stack).
+const removedTaskLines = new Map<string, { line: number; text: string }>();
+
+/** Whether checkboxes in notes become to-dos on this device (Settings → To-dos). */
+export function noteTasksEnabled(): boolean {
+	try {
+		return localStorage.getItem('kurumi-note-tasks') !== 'off';
+	} catch {
+		return true;
+	}
+}
+
+export function setNoteTasksEnabled(on: boolean): void {
+	try {
+		localStorage.setItem('kurumi-note-tasks', on ? 'on' : 'off');
+	} catch {
+		// Private mode: stays on for this session.
+	}
+	if (on) {
+		reconciledBodies.clear();
+		scheduleNoteTaskSync(0);
+	}
+}
+
+/**
+ * Write a change made to a note to-do (on /actions) into its checkbox line,
+ * inside the same change. Editing the text gives the task a new id: the item
+ * moves to it, so its status and project stay.
+ */
+function writeBackNoteTask(d: KurumiDocument, item: ActionItem, change: TaskChange): void {
+	if (!isNoteTaskId(item.id) || !item.memoryObjectId) return;
+	const memory = d.memoryObjects[item.memoryObjectId];
+	if (!memory) return;
+	const body = plainText(memory.bodyMarkdown);
+	const before = parseNoteTasks(memory.id, body).find((t) => t.id === item.id);
+	const next = updateTaskInBody(memory.id, body, item.id, change);
+	if (!before || next === null || next === body) return;
+	setMemoryText(d, memory.id, 'bodyMarkdown', next);
+	memory.updatedAt = Date.now();
+	const after = parseNoteTasks(memory.id, next).find((t) => t.line === before.line);
+	if (after && after.id !== item.id && !d.actionItems![after.id]) {
+		const moved = deepCopy({ ...item, id: after.id }) as ActionItem;
+		delete d.actionItems![item.id];
+		d.actionItems![after.id] = moved;
+	}
+}
+
+// Body each note had when its to-dos were last reconciled ('' once deleted).
+const reconciledBodies = new Map<string, string>();
+let noteTaskTimer: ReturnType<typeof setTimeout> | undefined;
+let noteTaskSubscribed = false;
+
+function scheduleNoteTaskSync(delay = 800): void {
+	clearTimeout(noteTaskTimer);
+	noteTaskTimer = setTimeout(reconcileNoteTasks, delay);
+}
+
+/** Start keeping note checkboxes and to-dos in step (once, after the database loads). */
+export function startNoteTaskSync(): void {
+	if (noteTaskSubscribed) return;
+	noteTaskSubscribed = true;
+	docStore.subscribe((d) => {
+		if (d) scheduleNoteTaskSync();
+	});
+}
+
+/**
+ * Make the to-dos match the checkbox lines of every note whose body changed
+ * since the last run: new lines become to-dos, changed lines update theirs,
+ * and removed lines (or deleted notes) remove theirs. Ids come from the
+ * lines, so every device arrives at the same items.
+ */
+export function reconcileNoteTasks(): void {
+	if (!doc || batchDepth > 0 || !noteTasksEnabled()) return;
+	const memories = memoriesView();
+	const changed: MemoryObject[] = [];
+	for (const memory of Object.values(memories)) {
+		const body = memory.deletedAt || memory.type === 'canvas' ? '' : (memory.bodyMarkdown ?? '');
+		if (reconciledBodies.get(memory.id) === body) continue;
+		changed.push(memory);
+	}
+	const items = Object.values(doc.actionItems ?? {});
+	const orphans = items.filter((item) => isNoteTaskId(item.id) && (!item.memoryObjectId || !memories[item.memoryObjectId]));
+	if (changed.length === 0 && orphans.length === 0) return;
+
+	type Plan = { memory: MemoryObject; tasks: ParsedTask[]; existing: ActionItem[] };
+	const byMemory = new Map<string, ActionItem[]>();
+	for (const item of items) {
+		if (!isNoteTaskId(item.id) || !item.memoryObjectId) continue;
+		const list = byMemory.get(item.memoryObjectId) ?? [];
+		list.push(item);
+		byMemory.set(item.memoryObjectId, list);
+	}
+	const plans: Plan[] = [];
+	for (const memory of changed) {
+		const body = memory.deletedAt || memory.type === 'canvas' ? '' : (memory.bodyMarkdown ?? '');
+		const tasks = body.includes('[') ? parseNoteTasks(memory.id, body) : [];
+		const existing = byMemory.get(memory.id) ?? [];
+		reconciledBodies.set(memory.id, body);
+		if (tasks.length || existing.length) plans.push({ memory, tasks, existing });
+	}
+
+	// Only touch the document when something differs (no empty changes).
+	const differs = (item: ActionItem | undefined, fields: ReturnType<typeof fieldsFromTask>, vaultId: string) =>
+		!item ||
+		item.text !== fields.text ||
+		item.dueDate !== fields.dueDate ||
+		item.assignee !== fields.assignee ||
+		item.status !== fields.status ||
+		item.vaultId !== vaultId;
+	const work = plans.filter(({ memory, tasks, existing }) => {
+		const ids = new Set(tasks.map((t) => t.id));
+		if (existing.some((item) => !ids.has(item.id))) return true;
+		return tasks.some((task) => {
+			const item = doc.actionItems?.[task.id];
+			return differs(item, fieldsFromTask(task, item ?? null), memory.vaultId);
+		});
+	});
+	if (work.length === 0 && orphans.length === 0) return;
+
+	updateDoc((d) => {
+		if (!d.actionItems) d.actionItems = {};
+		const now = Date.now();
+		for (const { memory, tasks, existing } of work) {
+			const ids = new Set(tasks.map((t) => t.id));
+			for (const item of existing) if (!ids.has(item.id)) delete d.actionItems[item.id];
+			for (const task of tasks) {
+				const item = d.actionItems[task.id];
+				const fields = fieldsFromTask(task, item ? { text: item.text, dueDate: item.dueDate, assignee: item.assignee, status: item.status } : null);
+				if (!differs(item, fields, memory.vaultId)) continue;
+				if (item) {
+					item.text = fields.text;
+					item.dueDate = fields.dueDate;
+					item.assignee = fields.assignee;
+					item.status = fields.status;
+					item.vaultId = memory.vaultId;
+					item.updatedAt = now;
+				} else {
+					d.actionItems[task.id] = {
+						id: task.id,
+						memoryObjectId: memory.id,
+						text: fields.text,
+						assignee: fields.assignee,
+						dueDate: fields.dueDate,
+						status: fields.status,
+						confidence: 1,
+						recurrence: 'none',
+						vaultId: memory.vaultId,
+						createdAt: now,
+						updatedAt: now
+					};
+				}
+			}
+		}
+		for (const item of orphans) delete d.actionItems[item.id];
 	});
 }
 

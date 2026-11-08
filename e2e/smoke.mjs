@@ -594,9 +594,13 @@ const scenarios = {
 			db.addActionItem({ text: 'Someday task' });
 		`);
 		await page.goto(BASE, { waitUntil: 'load' });
-		await page.waitForSelector('.todo-row');
+		// The note's checkbox is a to-do too, shown with its note.
+		await page.waitForFunction(() => [...document.querySelectorAll('.todo-row')].some((r) => r.textContent.includes('Send budget')), { timeout: 10000 });
 		const rows = () => page.$$eval('.todo-row', (r) => r.map((x) => x.textContent.replace(/\s+/g, ' ').trim()));
-		assert.deepEqual((await rows()).map((r) => r.split(' ').slice(0, 2).join(' ')), ['Standup notes', 'Someday task', 'Send budget']);
+		const shown = (await rows()).map((r) => r.split(' ').slice(0, 2).join(' '));
+		assert.equal(shown[0], 'Standup notes');
+		assert.deepEqual([...shown].sort(), ['Send budget', 'Someday task', 'Standup notes']);
+		assert.ok((await rows()).some((r) => r.startsWith('Send budget') && r.includes('Plan')), 'note link missing');
 		// Quick capture saves without leaving the page
 		await page.click('.capture-input');
 		await page.keyboard.type('Call the bank');
@@ -2241,6 +2245,54 @@ const scenarios = {
 		md = await saved();
 		assert.doesNotMatch(md, /\|/);
 		assert.ok(await page.$eval('.kurumi-table-toolbar', (b) => b.hidden));
+		assert.deepEqual(errors, []);
+	},
+
+	async 'checkboxes in notes are to-dos, both ways'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const id = await db(page, `return db.addMemoryObject('Plan', '- [ ] Send the draft @Alice //2030-01-15\\n- [ ] Book the room\\n').id;`);
+		const items = () =>
+			db(page, `let a; db.actionItems.subscribe((v) => (a = v))(); return a.filter((i) => i.memoryObjectId === arg).map((i) => ({ id: i.id, text: i.text, status: i.status, dueDate: i.dueDate, assignee: i.assignee }));`, id);
+		const body = () => db(page, `return db.getMemoryObject(arg).bodyMarkdown;`, id);
+		await sleep(1500);
+		let list = await items();
+		assert.equal(list.length, 2);
+		const draft = list.find((i) => i.text === 'Send the draft');
+		assert.deepEqual([draft.dueDate, draft.assignee, draft.status], ['2030-01-15', 'Alice', 'open']);
+
+		// Ticking in the note marks the to-do done.
+		await page.goto(`${BASE}/#/memory/${id}`, { waitUntil: 'load' });
+		await page.waitForSelector('main .ProseMirror li[data-item-type="task"]');
+		await page.click('main .ProseMirror');
+		await sleep(300);
+		const box = await page.$$eval('main .ProseMirror li[data-item-type="task"]', (ls) => {
+			const r = ls.find((x) => x.textContent.includes('Book the room')).getBoundingClientRect();
+			return { x: r.left + 8, y: r.top + 12 };
+		});
+		await page.mouse.click(box.x, box.y);
+		await sleep(2500);
+		assert.match(await body(), /- \[x\] Book the room/);
+		list = await items();
+		assert.equal(list.find((i) => i.text === 'Book the room').status, 'done');
+
+		// Done on /actions ticks the line; a new due date is written into it.
+		await db(page, `db.updateActionItemStatus(arg, 'done'); db.updateActionItem(arg, { dueDate: '2030-02-01' });`, draft.id);
+		await sleep(400);
+		assert.match(await body(), /- \[x\] Send the draft @Alice \/\/2030-02-01/);
+		// Deleting the to-do removes the line; undo (restore) brings it back.
+		const saved = (await db(page, `let a; db.actionItems.subscribe((v) => (a = v))(); return a.find((i) => i.id === arg);`, draft.id));
+		await db(page, `db.deleteActionItem(arg);`, draft.id);
+		await sleep(1500);
+		assert.doesNotMatch(await body(), /Send the draft/);
+		assert.equal((await items()).length, 1);
+		await db(page, `db.restoreActionItem(arg);`, saved);
+		await sleep(1500);
+		assert.match(await body(), /Send the draft/);
+		assert.equal((await items()).length, 2);
+		// Removing the line in the note removes the to-do.
+		await db(page, `db.updateMemoryObject(arg, { bodyMarkdown: '- [x] Book the room\\n' });`, id);
+		await sleep(1500);
+		assert.deepEqual((await items()).map((i) => i.text), ['Book the room']);
 		assert.deepEqual(errors, []);
 	},
 
