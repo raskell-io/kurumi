@@ -52,6 +52,15 @@ collections, each a map from id to record:
 Migrations in `src/lib/db/store.ts` raise the schema version (now 17) as
 the document gains fields.
 
+One kind of vault is not in the document: a **linked folder** in the desktop
+app (`src/lib/linked/`, [user guide](sync.md#linked-folders-desktop-app)).
+Its notes are files that stay where they are; Kurumi holds them in memory
+only and shows them through the same store readers (`memoryObjects`,
+`getMemoryObject`, backlinks, tags). Everything that saves, syncs, backs up
+or generates reads the document alone, so nothing of a linked folder can
+end up there; `linked-isolation.test.ts` holds that line. Edits go back to
+the files through the desktop app, guarded by a hash of what was read.
+
 ## Persistence
 
 `saveDoc` writes a full snapshot (`kurumi-doc`) plus small incremental

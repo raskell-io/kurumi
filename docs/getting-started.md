@@ -15,7 +15,9 @@ Installing it as an app gives it its own window, an icon and some extras
 - **Desktop app:** the `.dmg` (Mac), `.exe` (Windows) or `.AppImage`
   (Linux) from **Settings → Desktop app**, which picks the right one for your
   computer, or the [releases page](https://github.com/raskell-io/kurumi/releases).
-  It keeps its own vault, separate from the browser's. The builds aren't
+  It keeps its own vault, separate from the browser's, and can show a folder
+  of Markdown notes you already have as a vault
+  ([linked folders](sync.md#linked-folders-desktop-app)). The builds aren't
   signed yet: on a Mac, allow the first launch in System Settings →
   Privacy & Security → *Open Anyway*; on Windows, *More info* → *Run anyway*.
 

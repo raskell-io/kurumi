@@ -23,6 +23,10 @@
 | Git: a conflict dialog | The same note changed on both sides; pick a side or combine them |
 | Local folder: permission prompt every time | Browsers ask again after a restart; click *Allow*. Installed apps keep the permission longer |
 | Two devices show different notes | Sync both, one after the other. Check that both use the same method and server (Settings → Sync) |
+| Linked folder: "Folder not found" | The folder moved or its disk isn't connected. Edit the vault (the pencil in the vault menu): *Locate…* if it moved, or reconnect the disk and *Rescan* |
+| Linked folder: changes made elsewhere don't show | The vault's dialog says whether the folder is being watched. On a network share changes take a few seconds; if watching stopped, *Rescan* |
+| Linked folder: "Saving this note is paused" | The file changed elsewhere on the lines you edited. *Resolve…* shows both; nothing is written until you choose |
+| Linked folder: a picture doesn't show | It must be a path inside the folder (relative to the note, or starting with `/` from the top) and at most 25 MB |
 
 More on the server: [sync server troubleshooting](sync-server.md#troubleshooting).
 More on the git agent: [agent/README.md](../agent/README.md).

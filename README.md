@@ -95,7 +95,7 @@ Prefer a regular app? Download it from the [latest release](https://github.com/r
 | **Windows** | `Kurumi_<version>_x64-setup.exe` |
 | **Linux** | `Kurumi_<version>_amd64.AppImage` |
 
-The builds aren't signed yet, so the first launch needs a click more: on a Mac, open the app once, then System Settings → Privacy & Security → *Open Anyway*; on Windows, *More info* → *Run anyway*. The desktop app keeps its own notes, separate from the browser's; [sync](docs/sync.md) moves them over. → [Desktop app](desktop/README.md)
+The builds aren't signed yet, so the first launch needs a click more: on a Mac, open the app once, then System Settings → Privacy & Security → *Open Anyway*; on Windows, *More info* → *Run anyway*. The desktop app keeps its own notes, separate from the browser's; [sync](docs/sync.md) moves them over. It can also [link a folder](docs/sync.md#linked-folders-desktop-app) of Markdown notes you already have and read or edit them where they are, without keeping a copy. → [Desktop app](desktop/README.md)
 
 → [Getting started](docs/getting-started.md) · [Import & export](docs/import-export.md) · [Keyboard shortcuts](docs/keyboard-shortcuts.md)
 

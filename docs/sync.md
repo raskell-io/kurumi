@@ -145,30 +145,58 @@ app shows as a vault, reading the files where they are. Kurumi keeps no copy of
 them: they aren't in its database, in backups or in anything it syncs. It only
 reads the folder unless you allow editing.
 
-Vault menu → **Link a folder…**, choose the folder, and set:
+How it differs from *Local folder* sync above: there, Kurumi's database is the
+original and the folder a mirror Kurumi writes; here the folder is the original
+and Kurumi works on it. A Kurumi sync folder can't be linked. Linked folders
+exist only on the computer they were linked on, and only in the desktop app.
+
+### Linking
+
+Vault menu → **Link a folder…** (or ⌘K → *Link a folder as a vault*), choose
+the folder, and check what Kurumi suggests from the notes it finds:
 
 - **Link key field**: the frontmatter field a `[[link]]` names a note by, such
-  as `id: project.foo`. Titles and filenames work as well. A link written by
-  its key shows the note's title.
-- **Leave out**: patterns as in a `.gitignore`; the folder's own `.gitignore`
-  can be followed too. Hidden files and folders are always left out.
+  as `id: project.foo`. Titles and filenames work as well. Empty: links go by
+  title only.
+- **Frontmatter fields**: which field holds the title (otherwise the first
+  heading, then the filename) and the summary, and which become tags
+  (`type: project` → `type/project`; a `tags` list is always read).
+- **Files left out**: patterns as in a `.gitignore`; the folder's own
+  `.gitignore` can be followed too. Hidden files and folders are always left
+  out.
+- **Allow editing**: off at first. See below.
 
-- **Frontmatter fields**: which field holds the title and the summary, and
-  which become tags (`type: project` → `type/project`). Kurumi suggests these
-  from the notes it finds.
+The same dialog (the pencil beside the vault) later shows how many notes were
+found, keys used by more than one note, and whether the folder is being
+watched, and has **Rescan**, **Reveal** (the folder in the file manager),
+**Locate…** (if the folder moved) and **Unlink**, which makes Kurumi forget
+the folder without touching it.
 
-In a linked folder you can read, search, follow links and backlinks, browse
-tags, use the graph and ask Kurumi about the notes. Changes made in the folder
-by other programs show up while Kurumi is open (if watching the folder fails,
-Kurumi tries again a few times; after that the vault's settings say so and
-**Rescan** reads it again). To-dos, projects and the other
-records stay in your Kurumi vaults, as do recordings and imports. The
-frontmatter of each note is shown under its title. **Rescan** in the vault's
-settings reads the folder again; **Unlink** makes Kurumi forget the folder
-without touching it.
+### Reading
 
-**Editing** is off until you turn on *Allow editing* in the vault's settings.
-Then:
+- Read, search, follow links and backlinks, browse tags, use the graph, Read
+  mode and Ask Kurumi. With a remote AI provider set up, text from these notes
+  is sent to it when you ask about them, as for your other vaults.
+- A link written by its key (`[[project.foo]]`) shows the note's title; in
+  the editor, put the cursor in it to see what is written. The frontmatter of
+  a note is listed under its title.
+- Pictures and recordings a note refers to by a path in the folder are shown
+  (`![](images/a.png)`, `![audio:memo](rec/a.mp3)`, or `/images/a.png` from
+  the top of the folder), up to 25 MB each. A link to another file of the
+  folder opens it; a link to another note by its path goes there. (In a note
+  you can edit, hold ⌘/Ctrl while clicking such a link.)
+- Changes made in the folder by other programs show up while Kurumi is open:
+  notes within about a second, a replaced picture when a note changes or you
+  come back to Kurumi's window. If watching the folder fails, Kurumi tries
+  again a few times; after that the vault's dialog says so and **Rescan**
+  reads the folder again.
+- **Reveal in file manager** in a note's menu shows its file.
+- If the folder isn't there at start (moved, disk unplugged), Kurumi says so,
+  shows your Kurumi vault and keeps the link for later.
+
+### Editing
+
+With *Allow editing* on:
 
 - Saving a note changes only the lines you edited. The frontmatter stays byte
   for byte, as do line endings and blank lines; a note you only looked at is
@@ -180,27 +208,28 @@ Then:
 - If the file changed elsewhere while you were editing, Kurumi merges the two
   when they touch different lines, and otherwise asks: keep yours, take the
   file's version, or combine them. Nothing is written until you choose.
+- If the file is deleted elsewhere while you have the note open, the note
+  stays on screen with a notice: save it as a new file, or discard it.
 - New notes (⌘N, or a link to a note that doesn't exist) become files: you set
   the directory, the filename pattern and what they start with, using
   `{title}`, `{date}` and `{id}`. In the frontmatter a title that YAML would
   misread (`Plan: phase 2`) is put in quotes. A blank note gets its file when
   you first type in it; one you leave untouched leaves nothing behind.
-- If a note's file is deleted elsewhere while you have it open, the note stays
-  on screen with a notice: save it as a new file, or discard it.
-- A link written by its key (`[[project.foo]]`) shows the note's title in the
-  editor too; put the cursor in it to see and edit what is written.
-- Images a note refers to by a path in the folder (`![](images/a.png)`, or
-  `/images/a.png` from the top of the folder) are shown. Images and
-  attachments can't be added from Kurumi yet.
-- **Reveal in file manager**, in a note's menu and in the vault's settings,
-  shows the file or the folder.
-- Moving, renaming and deleting files, icons, favourites and attachments stay
-  with your file manager and other tools.
 
-How it differs from *Local folder* sync above: there, Kurumi's database is the
-original and the folder a mirror Kurumi writes; here the folder is the original
-and Kurumi a reader. A Kurumi sync folder can't be linked. Linked folders exist
-only on the computer they were linked on, and only in the desktop app.
+### What a linked folder doesn't have
+
+- To-dos, projects, decisions, questions, meetings, people records, databases,
+  canvases, templates, favourites, page icons, version history and trash: they
+  live in Kurumi's database, so in your Kurumi vaults. Checkbox lines in linked
+  notes stay plain Markdown. Those pages show a way back to a Kurumi vault.
+- Recordings, uploads, imports, the daily digest, weekly reviews, living notes
+  and workflows. The assistant can read linked notes but not change them.
+- Adding pictures or attachments from Kurumi, and video.
+- Moving, renaming and deleting files, and replacing text across all notes:
+  that stays with your file manager and other tools. Kurumi never deletes a
+  file in a linked folder.
+- Sync, backup and export: the folder is yours to sync or version as you like.
+- The split view shows linked notes but doesn't edit them.
 
 ## Encryption
 
