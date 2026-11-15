@@ -21,6 +21,9 @@
 import { insertInlineMath } from './math';
 import { columnsMarkdown } from './columns-markdown';
 import { addFolder, getMemoryObject, openFolderAsDatabase } from '$lib/db';
+import { isLinkedNoteId } from '$lib/linked/backend';
+import { NO_FILES, NOT_IN_LINKED } from '$lib/linked/capabilities';
+import { showNotice } from '$lib/stores/notice';
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state';
 import { $prose } from '@milkdown/kit/utils';
 import type { EditorView } from '@milkdown/kit/prose/view';
@@ -28,6 +31,19 @@ import { turnInto, insertMarkdownBlocks, type BlockKind } from './blocks';
 import { createRegistry } from './registry';
 
 const slashKey = new PluginKey('slash-commands');
+
+/**
+ * In a note of a linked folder ($lib/linked): take the typed command out
+ * again and say why it isn't available there. Images, photos and databases
+ * are kept in Kurumi's own storage, which a file in the folder can't use.
+ */
+function refusedInLinkedNote(view: EditorView, from: number, to: number, message: string): boolean {
+	if (!isLinkedNoteId(view.dom.closest<HTMLElement>('[data-note-id]')?.dataset.noteId)) return false;
+	view.dispatch(view.state.tr.delete(from, to));
+	view.focus();
+	showNotice(message);
+	return true;
+}
 
 export interface SlashCommand {
 	id: string;
@@ -384,6 +400,7 @@ export const builtInSlashCommands: SlashCommand[] = [
 		icon: 'minus',
 		category: 'Insert',
 		execute: (view, from, to) => {
+			if (refusedInLinkedNote(view, from, to, NO_FILES)) return true;
 			// Delete the /camera text and dispatch a custom event the
 			// Editor component listens for to open the camera modal.
 			const tr = view.state.tr.delete(from, to);
@@ -400,6 +417,7 @@ export const builtInSlashCommands: SlashCommand[] = [
 		icon: 'minus',
 		category: 'Insert',
 		execute: (view, from, to) => {
+			if (refusedInLinkedNote(view, from, to, NO_FILES)) return true;
 			// Delete the /image text first
 			const tr = view.state.tr.delete(from, to);
 			view.dispatch(tr);
@@ -475,6 +493,7 @@ export const builtInSlashCommands: SlashCommand[] = [
 		icon: 'table',
 		category: 'Insert',
 		execute: (view, from, to) => {
+			if (refusedInLinkedNote(view, from, to, NOT_IN_LINKED)) return true;
 			// A new database in this note's folder, shown here as a ```database block.
 			const noteId = view.dom.closest<HTMLElement>('[data-note-id]')?.dataset.noteId;
 			const note = noteId ? getMemoryObject(noteId) : undefined;

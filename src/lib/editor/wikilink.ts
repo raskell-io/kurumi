@@ -3,6 +3,7 @@ import { Plugin, PluginKey } from '@milkdown/kit/prose/state';
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view';
 import { createRegistry } from './registry';
 import { parseWikilink, WIKILINK_PATTERN } from '$lib/wikilinks';
+import { linkedLinks } from '$lib/linked/backend';
 
 const wikilinkPluginKey = new PluginKey('wikilink');
 
@@ -23,9 +24,16 @@ export function setWikilinkClickHandler(root: Element, handler: WikilinkClickHan
  * Decorate every [[link]]. In `[[Note|text]]` the `Note|` part is hidden
  * unless the cursor is in the link, so it reads `[[text]]`; clicks go to
  * Note either way (see $lib/wikilinks).
+ *
+ * In a linked folder ($lib/linked) a link names its note by a key
+ * (`[[project.foo]]`): unless the cursor is in it, the note's title is
+ * shown in the key's place, as Read mode does. Only what is drawn changes,
+ * never the text of the note.
  */
 function findWikilinks(doc: any, selection?: { from: number; to: number }): Decoration[] {
 	const decorations: Decoration[] = [];
+	// Null in a Kurumi vault, where a link's text is the title already.
+	const keyed = linkedLinks();
 
 	doc.descendants((node: any, pos: number) => {
 		if (node.isText && node.text) {
@@ -33,7 +41,7 @@ function findWikilinks(doc: any, selection?: { from: number; to: number }): Deco
 				const start = pos + match.index!;
 				const end = start + match[0].length;
 				const inner = match[1];
-				const { target, heading, block } = parseWikilink(inner);
+				const { target, heading, block, alias } = parseWikilink(inner);
 
 				decorations.push(
 					Decoration.inline(start, end, {
@@ -46,6 +54,25 @@ function findWikilinks(doc: any, selection?: { from: number; to: number }): Deco
 
 				const bar = inner.search(/\\?\|/);
 				const editing = selection && selection.from <= end && selection.to >= start;
+				const title = keyed && !alias && target && !editing ? keyed.resolve(target)?.title.trim() : undefined;
+				if (title && title.toLowerCase() !== target.toLowerCase()) {
+					// Hide what is written between the brackets and draw the title there.
+					const attrs = { 'data-wikilink-title': target, ...(heading ? { 'data-wikilink-heading': heading } : {}), ...(block ? { 'data-wikilink-block': block } : {}) };
+					decorations.push(Decoration.inline(start + 2, end - 2, { class: 'wikilink-target-hidden' }));
+					decorations.push(
+						Decoration.widget(
+							end - 2,
+							() => {
+								const shown = document.createElement('span');
+								shown.className = 'wikilink wikilink-shown';
+								for (const [name, value] of Object.entries(attrs)) shown.setAttribute(name, value);
+								shown.textContent = heading ? `${title} › ${heading}` : title;
+								return shown;
+							},
+							{ side: -1, key: `shown:${target}:${heading ?? ''}:${title}` }
+						)
+					);
+				}
 				if (bar > 0 && !editing) {
 					const barLength = inner[bar] === '\\' ? 2 : 1;
 					decorations.push(

@@ -2925,6 +2925,9 @@ const scenarios = {
 		const editorText = await page.$eval('main .ProseMirror', (el) => el.textContent);
 		assert.ok(editorText.includes('Line one.') && !editorText.includes('project.foo') && !editorText.includes('scope'), editorText);
 		assert.match(await page.$eval('.linked-props', (el) => el.textContent), /id\s*project\.foo/);
+		// A link by key shows the note's title, as in Read mode; a link to nothing stays as written.
+		const shown = await page.$eval('main .ProseMirror', (el) => el.innerText);
+		assert.ok(shown.includes('Needs [[Bar plan]] and [[Nowhere note]].') && !shown.includes('project.bar'), shown);
 		assert.equal(await page.$eval('input[aria-label="Note title"]', (el) => el.disabled), true);
 		assert.equal(await page.$eval('main .ProseMirror', (el) => el.getAttribute('contenteditable')), 'false');
 
@@ -3035,6 +3038,18 @@ const scenarios = {
 		await openTreeNote(page, 'Foo launch');
 		const editor = () => page.$eval('main .ProseMirror', (el) => el.textContent);
 
+		// The keyed link reads as its note's title; with the cursor in it, as written.
+		const drawn = () => page.$eval('main .ProseMirror', (el) => el.innerText);
+		assert.ok((await drawn()).includes('Needs [[Bar plan]] and'), await drawn());
+		await caretAfter(page, '[['); // the first link's opening brackets
+		assert.ok((await drawn()).includes('Needs [[project.bar]] and'), await drawn());
+		await caretAfter(page, 'Line one.');
+		await sleep(300);
+		assert.ok((await drawn()).includes('Needs [[Bar plan]] and'), await drawn());
+		// Looking at it wrote nothing.
+		assert.equal(await folderFile(page, 'foo.md'), LINKED_FOO);
+		assert.equal((await folderCalls(page)).includes('linked_write'), false);
+
 		// Changed and added outside while the note is open: both appear, no prompt.
 		await changeOutside(page, 'foo.md', LINKED_FOO.replace('Line three.', 'Line three, from outside.'));
 		await changeOutside(page, 'inbox/new.md', '---\nid: note.new\ntitle: Dropped in\n---\nNew file.\n');
@@ -3051,6 +3066,9 @@ const scenarios = {
 		await page.waitForFunction(() => window.__folder.read('foo.md').includes('Line one. Mine.'), { timeout: 10000 });
 		const merged = await folderFile(page, 'foo.md');
 		assert.ok(merged.includes('status: done') && merged.includes('Line three, again.'), merged);
+		// The edit was elsewhere in the note: the link is stored as it was written.
+		assert.ok(merged.includes('\nNeeds [[project.bar]] and [[Nowhere note]].\n'), merged);
+		assert.equal(merged, onDisk.replace('status: active', 'status: done').replace('Line three, from outside.', 'Line three, again.').replace('Line one.', 'Line one. Mine.'));
 		assert.match(await noticeText(page), /Merged with a change made outside Kurumi/);
 		// Once typing pauses the editor shows the merged note.
 		await page.waitForFunction(() => document.querySelector('main .ProseMirror')?.textContent.includes('Line three, again.'), { timeout: 10000 });
@@ -3102,18 +3120,36 @@ const scenarios = {
 		const { page, errors } = await freshPage(browser, (page) => fakeDesktop(page, files, config));
 		await page.waitForFunction(() => document.querySelectorAll('.note-row').length === 1, { timeout: 15000 });
 
+		// A blank note gets its file with its first change.
 		await press(page, MOD, 'n');
-		await page.waitForFunction(() => window.__folder.read('inbox/Untitled.md') !== null, { timeout: 10000 });
-		assert.equal(await folderFile(page, 'inbox/Untitled.md'), '---\nid: note.untitled\ntitle: Untitled\n---\n');
 		await page.waitForSelector('main .ProseMirror');
 		await sleep(700);
+		assert.equal(await folderFile(page, 'inbox/Untitled.md'), null);
 		await page.click('main .ProseMirror');
 		await page.keyboard.type('First words.');
-		await page.waitForFunction(() => window.__folder.read('inbox/Untitled.md').includes('First words.'), { timeout: 10000 });
+		await page.waitForFunction(() => window.__folder.read('inbox/Untitled.md')?.includes('First words.'), { timeout: 10000 });
 		assert.equal(await folderFile(page, 'inbox/Untitled.md'), '---\nid: note.untitled\ntitle: Untitled\n---\nFirst words.');
 
-		// A link to a note that doesn't exist makes it, named after the link.
+		// Images, photos and databases need Kurumi's own storage: refused, and the note stays as it was.
+		for (const [command, notice] of [['/image', /Files can't be added/], ['/take photo', /Files can't be added/], ['/database', /isn't available in a linked folder/]]) {
+			await page.keyboard.type(` ${command}`);
+			await sleep(400);
+			await page.keyboard.press('Enter');
+			await page.waitForFunction((source) => new RegExp(source).test(document.querySelector('.notice-toast')?.textContent ?? ''), { timeout: 5000 }, notice.source);
+		}
+		await page.waitForFunction(() => /First words\.\s*$/.test(window.__folder.read('inbox/Untitled.md')), { timeout: 10000 });
+		assert.equal((await folderFile(page, 'inbox/Untitled.md')).includes('blob:'), false);
+
+		// One that is left untouched never becomes a file.
+		await press(page, MOD, 'n');
+		await page.waitForFunction(() => document.querySelector('input[aria-label="Note title"]')?.value === '', { timeout: 15000 });
+		await sleep(500);
+		assert.deepEqual(await vaultTitles(page), ['Foo launch', 'Untitled', 'Untitled']);
 		await openTreeNote(page, 'Foo launch');
+		assert.deepEqual(await vaultTitles(page), ['Foo launch', 'Untitled']);
+		assert.deepEqual(await page.evaluate(() => window.__folder.list()), ['foo.md', 'inbox/Untitled.md']);
+
+		// A link to a note that doesn't exist makes it, named after the link.
 		await page.click('main .ProseMirror .wikilink[data-wikilink-title="Nowhere note"]');
 		await page.waitForFunction(() => document.querySelector('input[aria-label="Note title"]')?.value === 'Nowhere note', { timeout: 15000 });
 		await page.waitForFunction(() => window.__folder.read('inbox/Nowhere note.md') !== null, { timeout: 10000 });
@@ -3124,6 +3160,52 @@ const scenarios = {
 		await page.evaluate(() => window.dispatchEvent(new Event('kurumi-voice-memo')));
 		await sleep(300);
 		assert.match(await noticeText(page), /Recordings and uploads aren't available in a linked folder/);
+		assert.deepEqual(errors, []);
+	},
+
+	async 'linked folder: a file deleted while its note is open'(browser) {
+		const files = { 'foo.md': LINKED_FOO, 'bar.md': LINKED_BAR };
+		const { page, errors } = await freshPage(browser, (page) => fakeDesktop(page, files, linkedConfig({ readOnly: false })));
+		await page.waitForFunction(() => document.querySelectorAll('.note-row').length === 2, { timeout: 15000 });
+		await openTreeNote(page, 'Foo launch');
+		const editor = () => page.$eval('main .ProseMirror', (el) => el.textContent);
+
+		// Typing, and the file goes: the note stays on screen with a banner.
+		await caretAfter(page, 'Line one.');
+		await page.keyboard.type(' Kept.');
+		await page.waitForFunction(() => window.__folder.read('foo.md')?.includes('Line one. Kept.'), { timeout: 10000 });
+		await changeOutside(page, 'foo.md', null);
+		await page.waitForSelector('[data-testid="linked-file-gone"]', { timeout: 10000 });
+		assert.match(await page.$eval('[data-testid="linked-file-gone"]', (el) => el.textContent), /deleted outside Kurumi/);
+		assert.ok((await editor()).includes('Line one. Kept.'));
+		assert.equal(await page.$eval('input[aria-label="Note title"]', (el) => el.value), 'Foo launch');
+		assert.deepEqual(await vaultTitles(page), ['Bar plan']);
+		// More typing is not written anywhere, and not lost either.
+		await caretAfter(page, 'Line two.');
+		await page.keyboard.type(' After it was gone.');
+		await sleep(900);
+		assert.equal(await folderFile(page, 'foo.md'), null);
+		assert.ok((await editor()).includes('Line two. After it was gone.'));
+
+		// Save as new file: the same place, the frontmatter it had, the text as it is now.
+		await clickText(page, '[data-testid="linked-file-gone"] button', 'Save as new file');
+		await page.waitForFunction(() => window.__folder.read('foo.md') !== null, { timeout: 10000 });
+		assert.equal(await folderFile(page, 'foo.md'), LINKED_FOO.replace('Line one.', 'Line one. Kept.').replace('Line two.', 'Line two. After it was gone.'));
+		await page.waitForFunction(() => !document.querySelector('[data-testid="linked-file-gone"]'), { timeout: 10000 });
+		assert.deepEqual(await vaultTitles(page), ['Bar plan', 'Foo launch']);
+		// It is an ordinary note again.
+		await caretAfter(page, 'Line three.');
+		await page.keyboard.type(' On.');
+		await page.waitForFunction(() => window.__folder.read('foo.md')?.includes('Line three. On.'), { timeout: 10000 });
+
+		// Deleted again, and let go this time: back home, nothing recreated.
+		await changeOutside(page, 'foo.md', null);
+		await page.waitForSelector('[data-testid="linked-file-gone"]', { timeout: 10000 });
+		await clickText(page, '[data-testid="linked-file-gone"] button', 'Discard');
+		await page.waitForSelector('[data-testid="home-page"]', { timeout: 10000 });
+		await sleep(500);
+		assert.equal(await folderFile(page, 'foo.md'), null);
+		assert.deepEqual(await vaultTitles(page), ['Bar plan']);
 		assert.deepEqual(errors, []);
 	},
 

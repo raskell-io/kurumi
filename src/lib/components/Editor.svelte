@@ -55,6 +55,8 @@
 	import { editorViewCtx, editorViewOptionsCtx, parserCtx, remarkStringifyOptionsCtx } from '@milkdown/kit/core';
 	import { readonlyPlugin, setEditorReadonly } from '$lib/editor/readonly';
 	import { showNotice } from '$lib/stores/notice';
+	import { NO_FILES } from '$lib/linked/capabilities';
+	import { linkedFileUrl } from '$lib/linked/backend';
 	import { registerMarkdownParser } from '$lib/editor/blocks';
 	import { block, configureBlockHandle } from '$lib/editor/blockHandle';
 	import BlockMenu from './BlockMenu.svelte';
@@ -616,7 +618,7 @@
 			// clipboard plugin handles every paste.
 			.use(
 				fileDropPlugin(async (dropped, at) => {
-					if (!mountedFiles) return showNotice("Files can't be added to a note of a linked folder yet.");
+					if (!mountedFiles) return showNotice(NO_FILES);
 					const files = dropped;
 					// Images (converted to AVIF/WebP) inline, recordings as an
 					// audio player, anything else as an attachment link; for
@@ -695,7 +697,10 @@
 		const stopCheckboxRenderer = startCheckboxRenderer(editorContainer);
 
 		// Listen for the /camera slash command's custom event
-		handleCameraEvent = () => { showCamera = true; };
+		handleCameraEvent = () => {
+			if (mountedFiles) showCamera = true;
+			else showNotice(NO_FILES);
+		};
 		if (!secondary) window.addEventListener('kurumi-open-camera', handleCameraEvent);
 
 		// Listen for external text insertion (image/camera buttons in the
@@ -729,6 +734,11 @@
 				const src = img.getAttribute('src') || '';
 				if (src.startsWith('blob:') && !src.startsWith('blob:http')) {
 					const url = await resolveBlobUrl(src);
+					if (url) img.src = url;
+				} else if (!mountedFiles && mountedNoteId && src && !/^([a-z][a-z0-9+.-]*:|\/\/|#)/i.test(src) && !img.dataset.linkedAsked) {
+					// A linked note's image beside it in the folder (see linkedFileUrl: not available yet).
+					img.dataset.linkedAsked = '1';
+					const url = await linkedFileUrl(mountedNoteId, src);
 					if (url) img.src = url;
 				}
 			}
