@@ -17,6 +17,9 @@ import {
 	setLinkedRetryDelays,
 	linkedFilePath,
 	linkedFileUrl,
+	linkedFilesRevision,
+	openLinkedFile,
+	recheckLinkedFiles,
 	linkedFolders,
 	linkedLinks,
 	linkedNote,
@@ -698,6 +701,79 @@ describe('files beside the notes', () => {
 		closeLinkedVault();
 		await settle();
 		await expect(fetch(again)).rejects.toThrow();
+	});
+
+	it('gives a file that changed in the folder a new URL, and leaves one that did not alone', async () => {
+		await openLinkedVault(readOnly);
+		const url = (await linkedFileUrl(id('projects/foo.md'), 'images/shot.png'))!;
+		const logo = (await linkedFileUrl(id('projects/foo.md'), '/assets/logo.svg'))!;
+		const revision = get(linkedFilesRevision);
+		await recheckLinkedFiles(true);
+		expect(get(linkedFilesRevision)).toBe(revision);
+		expect(await linkedFileUrl(id('projects/foo.md'), 'images/shot.png')).toBe(url);
+
+		// Replaced by another program: same length, other bytes.
+		const replaced = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 9, 9, 9]);
+		app.binary.set('projects/images/shot.png', replaced);
+		await recheckLinkedFiles(true);
+		expect(get(linkedFilesRevision)).toBe(revision + 1);
+		const fresh = (await linkedFileUrl(id('projects/foo.md'), 'images/shot.png'))!;
+		expect(fresh).not.toBe(url);
+		expect(await bytesAt(fresh)).toEqual(replaced);
+		expect(await linkedFileUrl(id('projects/foo.md'), '/assets/logo.svg')).toBe(logo);
+
+		// Gone, then back: broken, then shown again.
+		app.binary.delete('projects/images/shot.png');
+		await recheckLinkedFiles(true);
+		expect(await linkedFileUrl(id('projects/foo.md'), 'images/shot.png')).toBeNull();
+		app.binary.set('projects/images/shot.png', PNG);
+		await recheckLinkedFiles(true);
+		expect(await bytesAt((await linkedFileUrl(id('projects/foo.md'), 'images/shot.png'))!)).toEqual(PNG);
+		expect(get(linkedFilesRevision)).toBe(revision + 3);
+	});
+
+	it('looks again when a note changes in the folder, but not more than once a moment, and after a rescan', async () => {
+		await openLinkedVault(readOnly);
+		await settle();
+		const url = (await linkedFileUrl(id('projects/foo.md'), 'images/shot.png'))!;
+		const replaced = new Uint8Array([1, 2, 3]);
+		app.binary.set('projects/images/shot.png', replaced);
+		app.external('projects/foo.md', FOO.replace('Line one.', 'Line one, with a new picture.'));
+		await settle(12);
+		const fresh = (await linkedFileUrl(id('projects/foo.md'), 'images/shot.png'))!;
+		expect(fresh).not.toBe(url);
+		expect(await bytesAt(fresh)).toEqual(replaced);
+		// Right after: not read again.
+		const before = reads().length;
+		app.external('readme.md', '# Readme\n\nAgain.\n');
+		await settle(12);
+		expect(reads().length).toBe(before);
+		// A rescan lets go of what was shown; asking again reads again.
+		const revision = get(linkedFilesRevision);
+		await openLinkedVault(readOnly);
+		expect(get(linkedFilesRevision)).toBe(revision + 1);
+		expect(await bytesAt((await linkedFileUrl(id('projects/foo.md'), 'images/shot.png'))!)).toEqual(replaced);
+		expect(reads().length).toBe(before + 1);
+	});
+
+	it('does not show a file over the size limit, and says so once', async () => {
+		await openLinkedVault(readOnly);
+		app.state.maxBytes = 4;
+		expect(await linkedFileUrl(id('projects/foo.md'), 'images/shot.png')).toBeNull();
+		expect(lastNotice()).toBe("projects/images/shot.png is larger than 25 MB and isn't shown.");
+		notice.set(null);
+		await recheckLinkedFiles(true);
+		expect(get(notice)).toBeNull();
+	});
+
+	it('tells a link to a file of the folder from other links', async () => {
+		await openLinkedVault(readOnly);
+		// No window here: only what is refused before anything is opened.
+		expect(openLinkedFile(id('projects/foo.md'), 'bar.md')).toBe(false); // another note
+		expect(openLinkedFile(id('projects/foo.md'), 'https://example.com/spec.pdf')).toBe(false);
+		expect(openLinkedFile(id('projects/foo.md'), '#heading')).toBe(false);
+		expect(openLinkedFile(id('projects/foo.md'), '../../outside.pdf')).toBe(false);
+		expect(openLinkedFile('a-document-note', 'files/spec.pdf')).toBe(false);
 	});
 
 	it('reveals a note\'s file or the folder, and says so when that fails', async () => {

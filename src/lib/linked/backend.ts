@@ -307,7 +307,10 @@ export async function openLinkedVault(config: LinkedVaultConfig): Promise<void> 
 	setActiveLinkedVaultId(config.id);
 	const gen = ++generation;
 	// Files shown from the folder are read again after a scan.
-	for (const rel of [...fileUrls.keys()]) revokeFile(rel);
+	if (fileUrls.size) {
+		for (const rel of [...fileUrls.keys()]) revokeFile(rel);
+		filesRevision.update((n) => n + 1);
+	}
 	watch.set(opened.watch ?? 'events');
 	const data = buildLinkedVault(config, opened);
 	// New notes that have no file yet are not in the scan.
@@ -335,6 +338,8 @@ export function closeLinkedVault(): void {
 	void invoke('linked_close', { vault: mounted.config.id }).catch(() => {});
 	forgetSaves();
 	for (const rel of [...fileUrls.keys()]) revokeFile(rel);
+	tooLarge.clear();
+	rechecked = 0;
 	watch.set(null);
 	setMounted(null);
 }
@@ -405,7 +410,11 @@ async function poll(gen: number): Promise<void> {
 			return;
 		}
 		mounted.cursor = result.cursor;
-		if (result.changes.length) apply(mounted, result.changes);
+		if (result.changes.length) {
+			apply(mounted, result.changes);
+			// Something wrote in the folder: the pictures on screen may be among it.
+			void recheckLinkedFiles();
+		}
 		else if (Date.now() - asked < 200) {
 			// An answer at once with nothing in it: don't spin.
 			await pause(250);
@@ -784,8 +793,28 @@ export function linkedFilePath(noteRel: string, src: string): string | null {
 	return parts.length ? parts.join('/') : null;
 }
 
-// Object URLs made for files of the open vault, by path, and the notes showing them.
-const fileUrls = new Map<string, { url: Promise<string | null>; users: Set<string> }>();
+// Files of the open vault that notes are showing, by path: an object URL of
+// the bytes, a fingerprint of them, and who shows them.
+interface ShownFile {
+	url: Promise<string | null>;
+	users: Set<string>;
+	print: string | null;
+}
+const fileUrls = new Map<string, ShownFile>();
+
+const filesRevision = writable(0);
+/** Changes when a file shown from the open folder has other bytes than before: ask `linkedFileUrl` again. */
+export const linkedFilesRevision: Readable<number> = { subscribe: filesRevision.subscribe };
+
+const typeOf = (rel: string) => FILE_TYPES[rel.slice(rel.lastIndexOf('.') + 1).toLowerCase()] ?? '';
+
+/** Enough to tell two versions of a file apart: its length and a quick hash of its bytes. */
+function fingerprint(bytes: ArrayBuffer): string {
+	const view = new Uint8Array(bytes);
+	let h = 0x811c9dc5;
+	for (let i = 0; i < view.length; i++) h = Math.imul(h ^ view[i], 0x01000193) >>> 0;
+	return `${view.length}:${h.toString(16)}`;
+}
 
 function revokeFile(rel: string): void {
 	const entry = fileUrls.get(rel);
@@ -793,15 +822,32 @@ function revokeFile(rel: string): void {
 	void entry?.url.then((url) => url && URL.revokeObjectURL(url));
 }
 
+const tooLarge = new Set<string>();
+
+/** The bytes of a file of the open vault, or null (missing, too large, not readable). */
+async function readFile(open: Mounted, rel: string): Promise<ArrayBuffer | null> {
+	try {
+		return (await invoke('linked_read_bytes', { vault: open.config.id, rel })) as ArrayBuffer;
+	} catch (err) {
+		// Said once per file: the app reads files up to 25 MB.
+		if (errorName(err) === 'QuotaExceededError' && !tooLarge.has(rel)) {
+			tooLarge.add(rel);
+			showNotice(`${rel} is larger than 25 MB and isn't shown.`);
+		}
+		return null;
+	}
+}
+
 /**
  * A URL for a file of the open folder that a linked note refers to
- * (`![](images/a.png)`, `![](/assets/a.png)`), for the editor and the
- * reader to show it: its bytes, read by the desktop app, as an object URL.
- * Null when it isn't a file of the vault or can't be read (the image then
- * shows as broken, as any missing image does). The URL lasts until the
- * notes showing it are closed (`releaseLinkedFiles`; `user` tells the
- * editor and the reader of one note apart), the folder is scanned
- * again or the vault is closed. The note's text is not touched.
+ * (`![](images/a.png)`, `![audio:memo](rec/a.mp3)`, `![](/assets/a.png)`),
+ * for the editor and the reader to show it: its bytes, read by the desktop
+ * app, as an object URL. Null when it isn't a file of the vault or can't be
+ * read (it then shows as broken, as any missing image does). The URL lasts
+ * until the notes showing it are closed (`releaseLinkedFiles`; `user` tells
+ * the editor and the reader of one note apart), the file changes
+ * (`linkedFilesRevision`), the folder is scanned again or the vault is
+ * closed. The note's text is not touched.
  */
 export function linkedFileUrl(noteId: string, src: string, user = noteId): Promise<string | null> {
 	const open = mounted;
@@ -810,18 +856,18 @@ export function linkedFileUrl(noteId: string, src: string, user = noteId): Promi
 	if (!open || !rel) return Promise.resolve(null);
 	let entry = fileUrls.get(rel);
 	if (!entry) {
-		const url = invoke('linked_read_bytes', { vault: open.config.id, rel }).then(
-			(bytes) => {
-				const type = FILE_TYPES[rel.slice(rel.lastIndexOf('.') + 1).toLowerCase()] ?? '';
-				const made = URL.createObjectURL(new Blob([bytes as ArrayBuffer], { type }));
-				// Closed or scanned again while it was read: nobody will release it.
-				if (fileUrls.get(rel) !== entry) URL.revokeObjectURL(made);
-				return made;
-			},
-			() => null
-		);
-		entry = { url, users: new Set() };
+		const created: ShownFile = { url: Promise.resolve(null), users: new Set(), print: null };
+		created.url = readFile(open, rel).then((bytes) => {
+			if (!bytes) return null;
+			created.print = fingerprint(bytes);
+			const made = URL.createObjectURL(new Blob([bytes], { type: typeOf(rel) }));
+			// Closed or scanned again while it was read: nobody will release it.
+			if (fileUrls.get(rel) !== created) URL.revokeObjectURL(made);
+			return made;
+		});
+		entry = created;
 		fileUrls.set(rel, entry);
+		watchForFileChanges();
 	}
 	entry.users.add(user);
 	return entry.url;
@@ -832,6 +878,112 @@ export function releaseLinkedFiles(user: string): void {
 	for (const [rel, entry] of fileUrls) {
 		if (entry.users.delete(user) && entry.users.size === 0) revokeFile(rel);
 	}
+}
+
+// The folder's watcher reports notes only, so a picture that was replaced
+// is found by looking again: when a note changes in the folder, and when
+// the window gets the focus back (after working in another program). Not
+// more often than this, and only the files that are on screen.
+const RECHECK_EVERY = 1500;
+let rechecked = 0;
+let rechecking = false;
+
+/**
+ * Read the files that notes are showing again, and give those whose bytes
+ * changed (or that appeared or went) a new URL. `linkedFilesRevision`
+ * changes if any did. Does nothing if it ran a moment ago, unless `now`.
+ */
+export async function recheckLinkedFiles(now = false): Promise<void> {
+	const open = mounted;
+	if (!open || rechecking || !fileUrls.size || (!now && Date.now() - rechecked < RECHECK_EVERY)) return;
+	rechecking = true;
+	rechecked = Date.now();
+	let swapped = false;
+	try {
+		for (const [rel, entry] of [...fileUrls]) {
+			const before = await entry.url;
+			const bytes = await readFile(open, rel);
+			// Let go of, or replaced, meanwhile.
+			if (mounted !== open || fileUrls.get(rel) !== entry) continue;
+			const print = bytes ? fingerprint(bytes) : null;
+			if (print === entry.print) continue;
+			const url = bytes ? URL.createObjectURL(new Blob([bytes], { type: typeOf(rel) })) : null;
+			fileUrls.set(rel, { url: Promise.resolve(url), users: entry.users, print });
+			// After those showing it have had time to take the new one.
+			if (before) setTimeout(() => URL.revokeObjectURL(before), 2000);
+			swapped = true;
+		}
+	} finally {
+		rechecking = false;
+	}
+	if (swapped) filesRevision.update((n) => n + 1);
+}
+
+let watchingFiles = false;
+function watchForFileChanges(): void {
+	if (watchingFiles || typeof window === 'undefined') return;
+	watchingFiles = true;
+	window.addEventListener('focus', () => void recheckLinkedFiles());
+	document.addEventListener('visibilitychange', () => {
+		if (document.visibilityState === 'visible') void recheckLinkedFiles();
+	});
+}
+
+// Types a browser tab can show; anything else is downloaded (as for attachments of Kurumi's own notes).
+const VIEWABLE = /\.(pdf|png|jpe?g|gif|webp|avif|svg|txt|json|mp3|m4a|wav|ogg|mp4|mov|webm)$/i;
+
+/**
+ * Open a file of the folder that a linked note links to (`[spec](files/spec.pdf)`):
+ * in a new tab if a browser can show it, else as a download. Must be called
+ * from the click itself, so the tab may open. Returns whether `href` is
+ * such a file (a link to another note, a web address or an anchor is not).
+ */
+export function openLinkedFile(noteId: string, href: string): boolean {
+	const open = mounted;
+	const noteRel = open?.data.info.get(noteId)?.relPath;
+	const rel = open && noteRel ? linkedFilePath(noteRel, href) : null;
+	if (!open || !rel || /\.(md|markdown)$/i.test(rel)) return false;
+	const name = rel.slice(rel.lastIndexOf('/') + 1);
+	const tab = VIEWABLE.test(name) ? window.open('', '_blank') : null;
+	void readFile(open, rel).then((bytes) => {
+		if (!bytes) {
+			tab?.close();
+			if (!tooLarge.has(rel)) showNotice(`${rel} isn't in the folder.`);
+			return;
+		}
+		const url = URL.createObjectURL(new Blob([bytes], { type: typeOf(rel) }));
+		if (tab) tab.location.href = url;
+		else {
+			const a = Object.assign(document.createElement('a'), { href: url, download: name });
+			document.body.append(a);
+			a.click();
+			a.remove();
+		}
+		// Give the tab or download time to read it.
+		setTimeout(() => URL.revokeObjectURL(url), 60_000);
+	});
+	return true;
+}
+
+/**
+ * Click handler for a linked note's rendered text, for links by a path in
+ * the folder. A file is opened (true is returned); for another note of the
+ * vault its id is returned, for the caller to go there. A path that leads
+ * to nothing in the folder does nothing, rather than leave the app. False
+ * for every other link (web addresses, anchors) and for other notes.
+ */
+export function handleLinkedPathClick(event: MouseEvent, noteId: string | null | undefined): boolean | string {
+	const open = mounted;
+	if (!open || !noteId || !isLinkedNoteId(noteId)) return false;
+	const href = (event.target as HTMLElement | null)?.closest?.('a')?.getAttribute('href');
+	const noteRel = open.data.info.get(noteId)?.relPath;
+	if (!href || !noteRel || /^([a-z][a-z0-9+.-]*:|\/\/|#)/i.test(href)) return false;
+	event.preventDefault();
+	event.stopPropagation();
+	if (openLinkedFile(noteId, href)) return true;
+	const rel = linkedFilePath(noteRel, href);
+	const target = rel ? linkedNoteId(open.config.id, rel) : '';
+	return open.data.notes.has(target) ? target : true;
 }
 
 /** Show a note's file (or without one, the linked folder) in the file manager. Says so if that fails. */

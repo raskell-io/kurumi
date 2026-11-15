@@ -8,7 +8,8 @@
 	import { setPendingAnchor, scrollToAnchor } from '$lib/stores/anchor';
 	import { findMemoryObjectByTitle } from '$lib/db';
 	import { linkLabel } from '$lib/linked/links';
-	import { isLinkedNoteId, linkedFileUrl, releaseLinkedFiles } from '$lib/linked/backend';
+	import { goto } from '$app/navigation';
+	import { handleLinkedPathClick, isLinkedNoteId, linkedFileUrl, linkedFilesRevision, releaseLinkedFiles } from '$lib/linked/backend';
 	import { resolveBlobUrl, isBlobRef } from '$lib/utils/image';
 	import DataviewBlock from './DataviewBlock.svelte';
 	import { onMount, mount, unmount, tick } from 'svelte';
@@ -24,6 +25,21 @@
 	}
 
 	let { content, onRefClick, noteId }: Props = $props();
+
+	// A file shown here has other bytes now (or the folder was scanned again): take its new URL.
+	// A recording keeps the one it has, so that it doesn't stop playing.
+	$effect(() => {
+		void $linkedFilesRevision;
+		const id = noteId;
+		const root = contentDiv;
+		if (!id || !root || !isLinkedNoteId(id)) return;
+		void (async () => {
+			for (const img of root.querySelectorAll<HTMLImageElement>('img[data-linked-src]')) {
+				const url = await linkedFileUrl(id, img.dataset.linkedSrc!, `read:${id}`);
+				if ((url ?? img.dataset.linkedSrc!) !== img.getAttribute('src')) img.src = url ?? img.dataset.linkedSrc!;
+			}
+		})();
+	});
 
 	// Files of a linked folder shown here are let go when this goes away.
 	$effect(() => {
@@ -322,6 +338,10 @@
 
 		// Attachment links open the stored file.
 		if (handleAttachmentClick(e)) return;
+		// In a linked note, a link by a path in its folder opens that file, or goes to that note.
+		const byPath = handleLinkedPathClick(e, noteId);
+		if (typeof byPath === 'string') void goto(`/read/${byPath}`);
+		if (byPath) return;
 
 		// Images open in the full-screen viewer (unless they're a link).
 		if (target instanceof HTMLImageElement && !target.closest('a') && isViewable(target)) {
@@ -398,11 +418,19 @@
 				} else {
 					img.src = url;
 				}
-			} else if (noteId && isLinkedNoteId(noteId) && !img.dataset.linkedAsked) {
-				// A linked note's image, a file of its folder (relative to the note, or `/` from the top).
-				img.dataset.linkedAsked = '1';
+			} else if (noteId && isLinkedNoteId(noteId) && !img.dataset.linkedSrc) {
+				// A linked note's image or recording, a file of its folder (relative to the note, or `/` from the top).
+				img.dataset.linkedSrc = src;
 				const url = await linkedFileUrl(noteId, src, `read:${noteId}`);
-				if (url) img.src = url;
+				if (alt.startsWith('audio:')) {
+					const audio = document.createElement('audio');
+					audio.controls = true;
+					audio.dataset.linkedSrc = src;
+					if (url) audio.src = url;
+					img.replaceWith(audio);
+				} else if (url) {
+					img.src = url;
+				}
 			}
 		}
 		// Resolve blob: refs on audio elements

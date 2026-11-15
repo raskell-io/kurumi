@@ -12,6 +12,8 @@
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state';
 import { $prose } from '@milkdown/kit/utils';
 import type { Node as ProseMirrorNode } from '@milkdown/kit/prose/model';
+import type { EditorView } from '@milkdown/kit/prose/view';
+import { isLinkedNoteId, linkedFileUrl } from '$lib/linked/backend';
 
 const audioEmbedKey = new PluginKey('audio-embed');
 
@@ -23,12 +25,19 @@ function resolveAudioSrc(audio: HTMLAudioElement, blobRef: string) {
 	});
 }
 
+// A recording a linked note refers to by a path in its folder ($lib/linked).
+function resolveLinkedAudio(audio: HTMLAudioElement, noteId: string, src: string) {
+	void linkedFileUrl(noteId, src).then((url) => {
+		if (url) audio.src = url;
+	});
+}
+
 export const audioEmbedPlugin = $prose(() => {
 	return new Plugin({
 		key: audioEmbedKey,
 		props: {
 			nodeViews: {
-				image(node: ProseMirrorNode) {
+				image(node: ProseMirrorNode, view: EditorView) {
 					const alt = node.attrs.alt || '';
 					if (!alt.startsWith('audio:')) {
 						// Not an audio embed — let ProseMirror use default rendering.
@@ -49,8 +58,11 @@ export const audioEmbedPlugin = $prose(() => {
 					audio.style.display = 'block';
 					audio.style.margin = '0.5rem 0';
 
+					const noteId = view.dom.closest<HTMLElement>('[data-note-id]')?.dataset.noteId;
 					if (src.startsWith('blob:') && !src.startsWith('blob:http')) {
 						resolveAudioSrc(audio, src);
+					} else if (src && isLinkedNoteId(noteId) && !/^([a-z][a-z0-9+.-]*:|\/\/)/i.test(src)) {
+						resolveLinkedAudio(audio, noteId!, src);
 					} else if (src) {
 						audio.src = src;
 					}

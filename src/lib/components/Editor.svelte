@@ -56,7 +56,7 @@
 	import { readonlyPlugin, setEditorReadonly } from '$lib/editor/readonly';
 	import { showNotice } from '$lib/stores/notice';
 	import { NO_FILES } from '$lib/linked/capabilities';
-	import { linkedFileUrl, releaseLinkedFiles } from '$lib/linked/backend';
+	import { handleLinkedPathClick, linkedFileUrl, linkedFilesRevision, releaseLinkedFiles } from '$lib/linked/backend';
 	import { registerMarkdownParser } from '$lib/editor/blocks';
 	import { block, configureBlockHandle } from '$lib/editor/blockHandle';
 	import BlockMenu from './BlockMenu.svelte';
@@ -150,6 +150,7 @@
 
 	// Cleanup references for onDestroy
 	let stopCheckboxRenderer: (() => void) | undefined;
+	let stopLinkedFiles: (() => void) | undefined;
 	let handleCameraEvent: () => void;
 	let handleInsertText: (e: Event) => void;
 
@@ -735,14 +736,40 @@
 				if (src.startsWith('blob:') && !src.startsWith('blob:http')) {
 					const url = await resolveBlobUrl(src);
 					if (url) img.src = url;
-				} else if (!mountedFiles && mountedNoteId && src && !/^([a-z][a-z0-9+.-]*:|\/\/|#)/i.test(src) && !img.dataset.linkedAsked) {
+				} else if (!mountedFiles && mountedNoteId && src && !/^([a-z][a-z0-9+.-]*:|\/\/|#)/i.test(src) && !img.dataset.linkedSrc) {
 					// A linked note's image, a file of its folder: read by the desktop app.
-					img.dataset.linkedAsked = '1';
+					img.dataset.linkedSrc = src;
 					const url = await linkedFileUrl(mountedNoteId, src);
 					if (url) img.src = url;
 				}
 			}
 		};
+		// A file shown here has other bytes now (or the folder was scanned again): take its new URL.
+		const refreshLinkedImages = async () => {
+			if (!editorContainer || !mountedNoteId) return;
+			for (const img of editorContainer.querySelectorAll<HTMLImageElement>('img[data-linked-src]')) {
+				const url = await linkedFileUrl(mountedNoteId, img.dataset.linkedSrc!);
+				if ((url ?? img.dataset.linkedSrc!) !== img.getAttribute('src')) img.src = url ?? img.dataset.linkedSrc!;
+			}
+		};
+		// A linked note's links by a path in its folder: a file opens, another
+		// note is gone to. By a plain click where the note can't be edited
+		// (the link would otherwise take the whole app to that address), with
+		// ⌘/Ctrl held where it can (a plain click there places the cursor).
+		if (!mountedFiles) {
+			editorContainer.addEventListener('click', (event) => {
+				if (!mountedReadonly && !event.metaKey && !event.ctrlKey) return;
+				const byPath = handleLinkedPathClick(event, mountedNoteId);
+				if (typeof byPath === 'string') void goto(`/memory/${byPath}`);
+			});
+		}
+		let firstRevision = true;
+		if (!mountedFiles) {
+			stopLinkedFiles = linkedFilesRevision.subscribe(() => {
+				if (firstRevision) firstRevision = false;
+				else void refreshLinkedImages();
+			});
+		}
 		blobResolver = new MutationObserver(() => void resolveBlobImages());
 		blobResolver.observe(editorContainer, { childList: true, subtree: true });
 		// The note is already rendered by now, so that won't fire for its images.
@@ -760,6 +787,7 @@
 	onDestroy(() => {
 		destroyed = true;
 		blobResolver?.disconnect();
+		stopLinkedFiles?.();
 		if (!mountedFiles && mountedNoteId) releaseLinkedFiles(mountedNoteId);
 		if (editorContainer) {
 			editorContainer.removeEventListener('mouseup', checkSelection);

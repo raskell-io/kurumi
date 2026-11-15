@@ -21,7 +21,7 @@ export function fakeLinkedApp(root: string, initial: Record<string, string>, oth
 	let cursors = 1000;
 	let log: LinkedChange[] = [];
 	let waiting: { vault: string; resolve: (v: unknown) => void; reject: (e: unknown) => void } | null = null;
-	const state = { rootExists: true, watch: 'events' as 'events' | 'polling', failWrites: null as string | null, failPolls: 0, pollError: 'NotReadableError: the watcher failed' };
+	const state = { rootExists: true, watch: 'events' as 'events' | 'polling', failWrites: null as string | null, failPolls: 0, pollError: 'NotReadableError: the watcher failed', maxBytes: 25 * 1024 * 1024 };
 
 	const noteFile = (rel: string): NoteFile => {
 		const content = files.get(rel)!;
@@ -104,6 +104,7 @@ export function fakeLinkedApp(root: string, initial: Record<string, string>, oth
 			if (!rel || rel.startsWith('/') || rel.split('/').some((p: string) => !p || p === '..' || p === '.' || p.startsWith('.'))) throw `NotAllowedError: "${rel}" is not a path inside the linked folder`;
 			const bytes = binary.get(rel) ?? (files.has(rel) ? new TextEncoder().encode(files.get(rel)!) : null);
 			if (!bytes) throw `NotFoundError: ${rel} doesn't exist`;
+			if (bytes.length > state.maxBytes) throw `QuotaExceededError: ${rel} is larger than 25 MB`;
 			return bytes.slice().buffer;
 		},
 		linked_reveal: ({ vault, rel }) => {

@@ -260,7 +260,8 @@ async function fakeDesktop(page, files, config) {
 				change(rel, content, silent = false) {
 					if (content === null) store.delete(rel);
 					else store.set(rel, content);
-					if (silent) return;
+					// The watcher reports notes only.
+					if (silent || !isNote(rel)) return;
 					log.push(content === null ? { type: 'remove', rel } : { type: 'upsert', note: noteFile(rel) });
 					flush();
 				}
@@ -3281,11 +3282,13 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
-	async 'linked folder: images beside a note are shown, and the file can be revealed'(browser) {
+	async 'linked folder: images, recordings and files beside a note; reveal'(browser) {
 		const PIXEL = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
-		const NOTE = '---\nid: note.pictures\ntitle: Pictures\n---\nBeside the note: ![beside](images/shot.png)\n\nFrom the top: ![top](/images/shot.png)\n\nMissing: ![missing](images/nope.png)\n\nOutside: ![outside](../outside.png)\n';
-		const files = { 'pictures.md': NOTE, 'images/shot.png': PIXEL };
-		const { page, errors } = await freshPage(browser, (page) => fakeDesktop(page, files, linkedConfig()));
+		const NOTE = '---\nid: note.pictures\ntitle: Pictures\n---\nBeside the note: ![beside](images/shot.png)\n\nFrom the top: ![top](/images/shot.png)\n\nMissing: ![missing](images/nope.png)\n\nOutside: ![outside](../outside.png)\n\n![audio:memo](rec/memo.mp3)\n\nThe [spec](files/spec.pdf) and [another note](other.md).\n';
+		// Another one-pixel picture, with other bytes.
+		const PIXEL2 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+		const files = { 'pictures.md': NOTE, 'images/shot.png': PIXEL, 'rec/memo.mp3': btoa('ID3 not really audio'), 'files/spec.pdf': btoa('%PDF-1.4\n%fake') };
+		const { page, errors, context } = await freshPage(browser, (page) => fakeDesktop(page, files, linkedConfig()));
 		await page.waitForFunction(() => document.querySelectorAll('.note-row').length === 1, { timeout: 15000 });
 		await openTreeNote(page, 'Pictures');
 		const images = (root) =>
@@ -3301,6 +3304,26 @@ const scenarios = {
 		assert.equal(await folderFile(page, 'pictures.md'), NOTE);
 		assert.equal((await folderCalls(page)).includes('linked_write'), false);
 
+		// A recording by a path in the folder gets a player.
+		await page.waitForFunction(() => document.querySelector('main .kurumi-audio-embed audio')?.src.startsWith('blob:'), { timeout: 10000 });
+
+		// A link to a file of the folder opens it (a browser tab for a PDF); a link to a note doesn't.
+		const opened = context.waitForTarget((t) => t.url().startsWith('blob:'), { timeout: 10_000 });
+		await page.click('main .ProseMirror a[href="files/spec.pdf"]');
+		const tab = await (await opened).page();
+		assert.match(await tab.evaluate(() => fetch(location.href).then((r) => r.text())), /^%PDF-1\.4/);
+		await tab.close();
+		await page.bringToFront();
+
+		// The picture is replaced by another program. The watcher only reports
+		// notes, so it is found when the window gets the focus back.
+		await changeOutside(page, 'images/shot.png', PIXEL2);
+		await sleep(1600); // it doesn't look more often than every second and a half
+		await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+		await page.waitForFunction((old) => { const img = document.querySelector('main .ProseMirror img[alt="beside"]'); return img.src.startsWith('blob:') && img.src !== old && img.naturalWidth === 1; }, { timeout: 10000 }, inEditor.beside.src);
+		assert.equal(await page.evaluate(() => fetch(document.querySelector('main .ProseMirror img[alt="beside"]').src).then((r) => r.arrayBuffer()).then((b) => btoa(String.fromCharCode(...new Uint8Array(b))))), PIXEL2);
+		assert.equal(await folderFile(page, 'pictures.md'), NOTE);
+
 		// The note's menu shows its file in the file manager.
 		await page.click('button[aria-label="More actions"]');
 		await clickText(page, '.k-menu-item', 'Reveal in file manager');
@@ -3311,6 +3334,7 @@ const scenarios = {
 		await page.evaluate((id) => (location.hash = `/read/${id}`), id);
 		await page.waitForFunction(() => [...document.querySelectorAll('.markdown-content img')].filter((i) => i.src.startsWith('blob:') && i.naturalWidth === 1).length === 2, { timeout: 10000 });
 		const url = (await images('.markdown-content')).beside.src;
+		await page.waitForFunction(() => document.querySelector('.markdown-content audio')?.src.startsWith('blob:'), { timeout: 10000 });
 
 		// Once no note shows the file, its URL is let go.
 		await page.click('aside a[aria-label="Go to home"]');
