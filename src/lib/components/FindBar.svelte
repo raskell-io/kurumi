@@ -1,7 +1,8 @@
 <script lang="ts">
 	import type { EditorView } from '@milkdown/kit/prose/view';
 	import { onMount, onDestroy, untrack } from 'svelte';
-	import { memoryObjects, updateMemoryObject } from '$lib/db';
+	import { memoryObjects, updateMemoryObject, currentVaultCaps } from '$lib/db';
+	import { get } from 'svelte/store';
 	import { pushUndo } from '$lib/stores/undo';
 	import { autofocus } from '$lib/actions/autofocus';
 	import {
@@ -119,6 +120,11 @@
 	}
 
 	function doReplaceInAllNotes() {
+		// Not across a linked folder: that would rewrite many of its files at once.
+		if (get(currentVaultCaps).kind === 'linked') {
+			notice = 'Replacing in all notes is not available in a linked folder';
+			return;
+		}
 		const previous = otherNotes.map(({ memory }) => ({ id: memory.id, body: memory.bodyMarkdown }));
 		const total = otherCount; // read before the updates below empty it
 		const re = new RegExp(escapeRegExp(query), caseSensitive ? 'g' : 'gi');
