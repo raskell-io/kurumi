@@ -137,6 +137,36 @@ Fill in the connection details and press **Test connection**. All three
 support
 [end-to-end encryption](encryption.md).
 
+## Linked folders (desktop app)
+
+A linked folder is not sync. It is a folder of Markdown notes on your computer
+(a knowledge base, a repository of notes kept by other tools) that the desktop
+app shows as a vault, reading the files where they are. Kurumi keeps no copy of
+them: they aren't in its database, in backups or in anything it syncs, and for
+now it never writes to the folder.
+
+Vault menu → **Link a folder…**, choose the folder, and set:
+
+- **Link key field**: the frontmatter field a `[[link]]` names a note by, such
+  as `id: project.foo`. Titles and filenames work as well. A link written by
+  its key shows the note's title.
+- **Leave out**: patterns as in a `.gitignore`; the folder's own `.gitignore`
+  can be followed too. Hidden files and folders are always left out.
+
+In a linked folder you can read, search, follow links and backlinks, browse
+tags (frontmatter `type` and `status` become `type/…` and `status/…`), use the
+graph and ask Kurumi about the notes. You can't edit or create notes there yet,
+and to-dos, projects and the other records stay in your Kurumi vaults; switch
+vaults to capture. The frontmatter of each note is shown under its title and is
+left exactly as it is. **Rescan** in the vault's settings reads the folder
+again after it changed; **Unlink** makes Kurumi forget the folder without
+touching it.
+
+How it differs from *Local folder* sync above: there, Kurumi's database is the
+original and the folder a mirror Kurumi writes; here the folder is the original
+and Kurumi a reader. A Kurumi sync folder can't be linked. Linked folders exist
+only on the computer they were linked on, and only in the desktop app.
+
 ## Encryption
 
 With the Kurumi server, S3, WebDAV and Azure, a sync passphrase seals the

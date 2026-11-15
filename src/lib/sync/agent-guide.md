@@ -67,6 +67,10 @@ Before you add anything:
 A local folder may also be a git checkout run by the Kurumi sync agent. You
 don't need to commit there, the sync agent does.
 
+A folder without `.kurumi/` that the user opens in Kurumi as a *linked folder*
+is not covered by this guide: Kurumi only reads it. There, follow that folder's
+own conventions.
+
 **Local folder:** while Kurumi is open it looks for changes every few seconds
 and picks yours up within about 15 seconds, and it writes its own changes here
 just as quickly. You can work at the same time as the user: Kurumi doesn't

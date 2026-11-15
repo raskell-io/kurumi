@@ -491,6 +491,23 @@ OpenAI to MMS when the API key is missing.
   the GitHub releases API). Prerendered pages use
   absolute asset paths (`paths.relative: false`) because Tauri answers
   unknown routes with `index.html`. Unsigned for now (ad-hoc on macOS)
+- Linked folders (`src/lib/linked/`, `src-tauri/src/linked.rs`; plan in
+  `.claude/plans/linked-folder-vault.md`): a folder of Markdown notes shown as
+  a vault and read where it lies, read-only for now. Its notes live in memory
+  only (`backend.ts`; ids `lf.<vault>.<path>`, folders `lfd.…`, vault ids
+  `lv-…`, config per device in localStorage) and are **never** in the document,
+  IndexedDB, a backup or a sync upload. The rule in `store.ts`: `memoriesView()`,
+  `getCurrentVaultId()` and everything that saves, syncs, exports or generates
+  stay document-only; a reader that should show linked notes opts in
+  (`memoryObjects`, `folders`, `getMemoryObject`, `findBacklinks`, tags, …), and
+  the `doc…` exports (`docVaults`, `docCurrentVaultId`, `docMemoryObjects`, …)
+  are for sync and settings. Mutators refuse linked ids with a notice; capture
+  entry points ask `canCreateNotes()`; the UI gates on `currentVaultCaps`.
+  `linked-isolation.test.ts` guards this: if it fails, fix the path that leaked.
+  Links there resolve by key (`[[project.foo]]`, frontmatter `id`), then title,
+  then filename: always through `vaultLinkResolver` / `$lib/linked/links`.
+  Frontmatter is kept byte for byte (`frontmatter.ts`), never re-serialised.
+  `src/lib/linked/` imports nothing of the folder sync
 
 ### Offline (PWA)
 - `UpdateToast.svelte` registers the Workbox service worker (production
