@@ -3,7 +3,7 @@
 // Phase 1 writes data and exercises folder sync, then links the fixture
 // folder `<dir>/linked` as a vault and uses it through the app's own UI and
 // the real commands (linked.rs): listing, a keyed link, the watcher, an
-// edit, a conflict, a new note. Phase 2 (a restart) checks the data is
+// edit, a conflict, a new note (a file only once it has text). Phase 2 (a restart) checks the data is
 // still there, that the linked vault is current again without a dialog and
 // that a deep link opens the app.
 (() => {
@@ -53,8 +53,15 @@
 		for (const type of ['mousedown', 'mouseup', 'click']) el.dispatchEvent(new MouseEvent(type, init));
 	}
 	async function openNote(title) {
-		(await need(`"${title}" in the tree`, () => byText('.note-row', title))).click();
-		await need(`the note "${title}"`, () => document.querySelector('input[aria-label="Note title"]')?.value === title);
+		// The tree is drawn again when the vault is read again: a row found
+		// just before that is gone when clicked, so click until the note is open.
+		let clicks = 0;
+		await need(`the note "${title}" (clicked its row ${clicks} times; the page shows "${document.querySelector('input[aria-label="Note title"]')?.value}")`, () => {
+			if (document.querySelector('input[aria-label="Note title"]')?.value === title) return true;
+			byText('.note-row', title)?.click();
+			clicks++;
+			return false;
+		});
 		await need('the editor', () => document.querySelector('main .ProseMirror'));
 		await sleep(700);
 	}
@@ -86,6 +93,12 @@
 	const same = (got, want, what) => {
 		if (got !== want) throw new Error(`${what} differs ${difference(got, want)}`);
 	};
+	// Waits until the file reads `want`; says where it differs if it never does.
+	async function needFile(disk, rel, want, what = rel, ms = 15000) {
+		let got = '';
+		const read = async () => (got = await disk.read(rel).catch((e) => `(${e})`)) === want;
+		if (!(await until(read, ms))) same(got, want, what);
+	}
 	const failure = (promise) => promise.then(() => 'no error', (e) => String(e));
 
 	// The folder as it is on disk, through the plain folder commands
@@ -236,10 +249,8 @@
 		await step('linked: an edit changes its line in the file and nothing else', async () => {
 			await openNote('Foo launch');
 			typeAfter('Line two.', ' now');
-			await need('the edit in the file', async () => (await disk.read('foo.md')).includes('Line two. now'), 15000);
-			await sleep(500);
-			edited = await disk.read('foo.md');
-			same(edited, original['foo.md'].replace('Line two.', 'Line two. now'), 'foo.md');
+			edited = original['foo.md'].replace('Line two.', 'Line two. now');
+			await needFile(disk, 'foo.md', edited);
 			const head = (content) => content.slice(0, content.indexOf('\n\n# Foo'));
 			same(head(edited), head(original['foo.md']), 'the frontmatter');
 			// The app's own write isn't reported back as a change from outside.
@@ -263,26 +274,41 @@
 			const file = text(document.querySelector('[data-testid="conflict-theirs"]'));
 			if (!mine.includes('Line three. Mine.') || !file.includes('Line three, theirs.')) throw new Error(`mine: ${mine.slice(-120)} / theirs: ${file.slice(-120)}`);
 			byText('[data-testid="linked-conflict-dialog"] button', 'Keep mine').click();
-			await need('my version in the file', async () => (await disk.read('foo.md')).includes('Line three. Mine.'), 15000);
-			same(await disk.read('foo.md'), edited.replace('Line three.', 'Line three. Mine.'), 'foo.md after "Keep mine"');
+			await needFile(disk, 'foo.md', edited.replace('Line three.', 'Line three. Mine.'), 'foo.md after "Keep mine"');
 			await need('the notice to go', () => !document.querySelector('[data-testid="linked-save-issue"]'));
 		});
 
-		await step('linked: a new note is a new file', async () => {
+		await step('linked: a blank new note has no file until its first change', async () => {
+			const before = await disk.list();
 			const button = all('aside button[aria-label="New note"]').find((b) => getComputedStyle(b).display !== 'none');
 			if (!button) throw new Error('no New note button');
 			button.click();
-			await need('Untitled.md in the folder', () => disk.exists('Untitled.md'), 15000);
-			same(await disk.read('Untitled.md'), '', 'Untitled.md');
+			// Listed as "Untitled", with an empty title field and an empty editor.
 			await need('it in the tree', () => hasRow('Untitled'));
+			await need('the new note', () => document.querySelector('input[aria-label="Note title"]')?.value === '');
+			const editor = await need('its editor', () => (editorText() === '' ? document.querySelector('main .ProseMirror[contenteditable="true"]') : null));
+			// Shown, but not in the folder: left like this it would leave nothing behind.
+			await sleep(1500);
+			same((await disk.list()).join(', '), before.join(', '), 'the folder before the first change');
+			// The first words make the file, with exactly them in it.
+			editor.focus();
+			const range = document.createRange();
+			range.selectNodeContents(editor.querySelector('p') ?? editor);
+			range.collapse(false);
+			getSelection().removeAllRanges();
+			getSelection().addRange(range);
+			if (!document.execCommand('insertText', false, 'First words.')) throw new Error('the editor took no typing');
+			await need('Untitled.md in the folder', () => disk.exists('Untitled.md'), 15000);
+			await needFile(disk, 'Untitled.md', 'First words.');
 		});
 
 		await step('linked: the folder holds the notes and nothing of Kurumi', async () => {
-			await sleep(1000);
-			const names = await disk.list();
 			const expected = ['.gitignore', '.obsidian', 'Untitled.md', 'assets', 'bar.md', 'crlf.md', 'foo.md', 'node_modules', 'private', 'readme.md'];
-			if (names.join(',') !== expected.join(',')) throw new Error(names.join(', '));
+			let names = [];
+			// Once the last write has settled (its temporary file is gone).
+			if (!(await until(async () => (names = await disk.list()).join(',') === expected.join(','), 10000))) throw new Error(names.join(', '));
 			for (const rel of ['bar.md', 'crlf.md', 'readme.md']) same(await disk.read(rel), original[rel], rel);
+			same(await disk.read('Untitled.md'), 'First words.', 'Untitled.md');
 			localStorage.setItem('kurumi-selftest-foo', await disk.read('foo.md'));
 			return names.join(', ');
 		});

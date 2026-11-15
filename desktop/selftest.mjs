@@ -53,7 +53,7 @@ function linkedFolderChecks() {
 		.filter((entry) => entry.isFile())
 		.map((entry) => join(entry.parentPath ?? entry.path, entry.name).slice(linked.length + 1).replaceAll('\\', '/'))
 		.sort();
-	const expected = { ...fixture, 'foo.md': FOO.replace('Line two.', 'Line two. now').replace('Line three.', 'Line three. Mine.'), 'Untitled.md': '' };
+	const expected = { ...fixture, 'foo.md': FOO.replace('Line two.', 'Line two. now').replace('Line three.', 'Line three. Mine.'), 'Untitled.md': 'First words.' };
 	const differing = Object.entries(expected)
 		.filter(([rel, content]) => !files.includes(rel) || !readFileSync(join(linked, rel)).equals(Buffer.from(content)))
 		.map(([rel]) => rel);

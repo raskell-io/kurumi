@@ -62,7 +62,8 @@ another tool's frontmatter, written by `selftest.mjs`) as a vault through the
 app's own menus and uses it for real: the notes are listed and a link by `id`
 opens its note, a file changed from outside shows up through the watcher, an
 edit changes its line in the file and nothing else, a file changed on disk
-since it was read is not overwritten, a new note is a new file, and after the
+since it was read is not overwritten, a blank new note becomes a file with its
+first words, and after the
 restart the vault is current again without a folder dialog. At the end the
 folder must hold those edits and nothing of Kurumi. Without the variable none
 of it is active. `cargo test` in `src-tauri` covers `folders.rs` and
