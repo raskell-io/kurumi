@@ -708,12 +708,25 @@
 	$effect(() => {
 		inputRef?.focus();
 	});
+
+	// While the palette is open its input holds the focus, unless the user
+	// moves it to another control in the palette. If the focus ends up on
+	// <body> instead (something blurred the input; a click on an empty spot),
+	// take it back, so typing and Enter still reach the palette. Nothing is
+	// held once the palette is closed: this goes with it.
+	function keepFocus() {
+		setTimeout(() => {
+			const active = document.activeElement;
+			if (inputRef?.isConnected && (!active || active === document.body)) inputRef.focus();
+		});
+	}
 </script>
 
 <div
 	class="animate-backdrop fixed inset-0 z-50 flex items-stretch justify-center bg-black/30 p-0 backdrop-blur-[1px] md:items-start md:p-4 md:pt-[12vh]"
 	onclick={onClose}
 	onkeydown={handleKeydown}
+	onfocusout={keepFocus}
 	role="dialog"
 	aria-modal="true"
 	aria-label="Command palette"

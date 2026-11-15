@@ -30,8 +30,12 @@ export function initHashRouter(): () => void {
 	}
 
 	if (hashPath && hashPath !== '/') {
-		// Use replaceState to avoid adding to history
-		goto(hashPath, { replaceState: true });
+		// Use replaceState to avoid adding to history. keepFocus: this only
+		// brings the page in line with the address, it isn't the user going
+		// somewhere. Without it SvelteKit moves the focus to <body> when the
+		// route has loaded, taking it from whatever was focused meanwhile
+		// (the quick switcher opened right after a reload: Enter did nothing).
+		goto(hashPath, { replaceState: true, keepFocus: true });
 	} else {
 		// Sync current path to hash
 		updateHashFromPath(window.location.pathname);

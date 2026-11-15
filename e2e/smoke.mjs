@@ -617,6 +617,61 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
+	async 'quick switcher opened right after a reload keeps the focus'(browser) {
+		// After a reload on a note, the page for it loads a moment after the
+		// sidebar. A switcher opened in between used to lose the focus to
+		// <body> when the note page arrived (SvelteKit's focus reset at the end
+		// of the start-up navigation), so Enter did nothing. The note page is
+		// held back here to make that moment as long as a slow machine does.
+		const { page, errors } = await freshPage(browser);
+		await newNote(page, 'Beta');
+		await newNote(page, 'Alpha');
+		await page.click('button[aria-label="Add to favorites"]');
+		await sleep(800);
+		let hold = 0;
+		await page.setRequestInterception(true);
+		page.on('request', (request) => {
+			const held = hold > 0 && /routes\/memory\/(\[id\]|%5Bid%5D)\/\+page\.svelte/.test(request.url());
+			if (held) setTimeout(() => request.continue().catch(() => {}), hold);
+			else request.continue().catch(() => {});
+		});
+		const inSwitcher = () => page.evaluate(() => !!document.activeElement?.closest?.('[aria-label="Command palette"]'));
+		for (const delay of [0, 600, 1500]) {
+			hold = delay;
+			await page.reload({ waitUntil: 'domcontentloaded' });
+			// As soon as the sidebar has the notes, before the note page is there.
+			await page.waitForSelector('#favorites-list');
+			await press(page, MOD, 'o');
+			await page.waitForSelector('[role="listbox"]');
+			await page.waitForFunction(() => document.querySelector('input[aria-label="Note title"]')?.value === 'Alpha', { timeout: 20000 });
+			await sleep(300);
+			assert.ok(await inSwitcher(), `note page held ${delay}ms: the switcher lost the focus (${JSON.stringify(await pageState(page))})`);
+			const before = await pageState(page);
+			await page.keyboard.press('Enter');
+			await noteShown(page, 'Beta', { before, errors, timeout: 10000 });
+			// Back on Alpha for the next round.
+			await press(page, MOD, 'o');
+			await page.waitForSelector('[role="listbox"]');
+			await page.keyboard.press('Enter');
+			await noteShown(page, 'Alpha', { errors, timeout: 10000 });
+			await sleep(500);
+		}
+		hold = 0;
+
+		// Whatever takes the focus from the input while the switcher is open, it comes back.
+		await press(page, MOD, 'o');
+		await page.waitForSelector('[role="listbox"]');
+		await page.evaluate(() => document.activeElement.blur());
+		await page.waitForFunction(() => !!document.activeElement?.closest?.('[aria-label="Command palette"]'), { timeout: 5000 });
+		await page.keyboard.press('Enter');
+		await noteShown(page, 'Beta', { errors, timeout: 10000 });
+		// And once it is closed, it holds nothing.
+		await page.click('main .ProseMirror');
+		await sleep(200);
+		assert.equal(await page.evaluate(() => !!document.activeElement?.closest?.('.ProseMirror')), true);
+		assert.deepEqual(errors, []);
+	},
+
 	async 'wikilink hover preview shows the target'(browser) {
 		const { page, errors } = await freshPage(browser);
 		await newNote(page, 'Target');
