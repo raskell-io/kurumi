@@ -10,14 +10,15 @@
  */
 
 import { get } from 'svelte/store';
-import { currentVaultId, getMemoryObject, putGeneratedNote, updateMemoryObject } from '$lib/db';
+import { docCurrentVaultId, getMemoryObject, putGeneratedNote, updateMemoryObject } from '$lib/db';
 
 export const MEMORY_TITLE = 'Kurumi memory';
 const INTRO =
 	'What the Kurumi assistant remembers about you, from your conversations. It reads this list at the start of every chat. Edit or delete anything: the list is all it keeps.';
 const PROMPT_LIMIT = 4000;
 
-export const agentMemoryId = (vaultId = get(currentVaultId)) => `agent-memory-${vaultId}`;
+// Kept in the document's vault, also while a linked folder is the current one.
+export const agentMemoryId = (vaultId = get(docCurrentVaultId)) => `agent-memory-${vaultId}`;
 
 const BULLET = /^\s*[-*+]\s+(?!\[[ xX]\])(.+?)\s*$/;
 

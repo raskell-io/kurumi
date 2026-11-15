@@ -1,8 +1,7 @@
 <script lang="ts">
-	import { memoryObjects, folders, type MemoryObject } from '$lib/db';
+	import { memoryObjects, folders, vaultLinkResolver, type MemoryObject } from '$lib/db';
 	import { NotebookText, Heading } from 'lucide-svelte';
 	import { headingsOf } from '$lib/wikilinks';
-	import { buildLinkIndex } from '$lib/linked/links';
 	import { placePopup } from '$lib/editor/datePeopleAutocomplete';
 
 	interface Props {
@@ -84,7 +83,7 @@
 	let hashAt = $derived(query.indexOf('#'));
 	let headingNote = $derived(
 		hashAt > 0
-			? buildLinkIndex($memoryObjects).resolve(query.slice(0, hashAt).trim()) ?? null
+			? vaultLinkResolver($memoryObjects).resolve(query.slice(0, hashAt).trim()) ?? null
 			: null
 	);
 

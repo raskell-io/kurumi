@@ -1,3 +1,5 @@
+import type { VaultKind } from '$lib/linked/types';
+
 export const DEFAULT_VAULT_ID = 'default-vault';
 
 // Compact ID generator - 12 chars of base62 (~71 bits of entropy)
@@ -20,6 +22,8 @@ export interface Vault {
 	iconImage?: string; // uploaded logo as a small square data: URL; wins over `icon`
 	created: number;
 	modified: number;
+	/** Never stored: 'linked' on the display object of a linked folder ($lib/linked). */
+	kind?: VaultKind;
 }
 
 export interface Folder {

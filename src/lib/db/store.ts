@@ -1,6 +1,27 @@
 import * as Automerge from '@automerge/automerge';
 import { buildLinkIndex, extractLinkTargets, type LinkResolver } from '$lib/linked/links';
 import {
+	closeLinkedVault,
+	getOpenLinkedVaultId,
+	isLinkedFolderId,
+	isLinkedId,
+	isLinkedNoteId,
+	linkedFolder,
+	linkedFolders,
+	linkedLinks,
+	linkedNote,
+	linkedNoteInfo,
+	linkedNotes,
+	linkedRevision,
+	linkedVaultAsVault,
+	linkedVaultId,
+	openLinkedVault
+} from '$lib/linked/backend';
+import { capabilitiesFor, READ_ONLY_NOTE } from '$lib/linked/capabilities';
+import { getLinkedVault, isLinkedVaultId, linkedVaultConfigs } from '$lib/linked/config';
+import type { VaultCapabilities } from '$lib/linked/types';
+import { showNotice } from '$lib/stores/notice';
+import {
 	fieldsFromTask,
 	insertLine,
 	parseNoteTasks,
@@ -75,32 +96,59 @@ const currentVaultIdStore = writable<string>(DEFAULT_VAULT_ID);
 // Svelte store for reactive updates
 const docStore = writable<Automerge.Doc<KurumiDocument> | null>(null);
 
-// Derived store for all vaults
-export const vaults: Readable<Vault[]> = derived(docStore, ($doc) => {
+// ---- Linked folders ($lib/linked) -----------------------------------------
+//
+// A linked folder is a vault whose notes are files the desktop app reads
+// where they lie. They are never in the document. The rule that keeps it so:
+// `memoriesView()`, `getCurrentVaultId()` and everything that saves, syncs,
+// exports or generates stay document-only; only the readers below that say
+// so look at the open linked folder. The `doc…` exports are the
+// document-only twins of the stores that do (sync uses those).
+
+// Derived store for the vaults in the document
+export const docVaults: Readable<Vault[]> = derived(docStore, ($doc) => {
 	if (!$doc || !$doc.vaults) return [];
 	return Object.values($doc.vaults).sort((a, b) => a.created - b.created);
 });
 
-// Export current vault ID as readable store
-export const currentVaultId: Readable<string> = derived(
+// All vaults of this device: the document's, then its linked folders
+export const vaults: Readable<Vault[]> = derived([docVaults, linkedVaultConfigs], ([$vaults, $linked]) =>
+	$linked.length ? [...$vaults, ...$linked.map(linkedVaultAsVault)] : $vaults
+);
+
+// The document's current vault ID as readable store
+export const docCurrentVaultId: Readable<string> = derived(
 	[docStore, currentVaultIdStore],
 	([$doc, $vaultId]) => {
 		return $doc?.currentVaultId || $vaultId || DEFAULT_VAULT_ID;
 	}
 );
 
+// Current vault ID: the open linked folder on this device, else the document's
+export const currentVaultId: Readable<string> = derived(
+	[docCurrentVaultId, linkedVaultId],
+	([$vaultId, $linked]) => $linked ?? $vaultId
+);
+
 // Current vault object
 export const currentVault: Readable<Vault | undefined> = derived(
-	[docStore, currentVaultId],
-	([$doc, $vaultId]) => {
+	[docStore, currentVaultId, linkedVaultConfigs],
+	([$doc, $vaultId, $linked]) => {
+		if (isLinkedVaultId($vaultId)) {
+			const config = $linked.find((c) => c.id === $vaultId);
+			return config && linkedVaultAsVault(config);
+		}
 		if (!$doc?.vaults) return undefined;
 		return $doc.vaults[$vaultId];
 	}
 );
 
-// Derived store for memory objects (sorted by updatedAt desc) - filtered by current vault, excludes deleted
-export const memoryObjects: Readable<MemoryObject[]> = derived(
-	[docStore, currentVaultId],
+/** What the current vault can do (a linked folder: read only, no records). */
+export const currentVaultCaps: Readable<VaultCapabilities> = derived(currentVault, ($vault) => capabilitiesFor($vault));
+
+// Derived store for the document's memory objects (sorted by updatedAt desc) - filtered by its current vault, excludes deleted
+export const docMemoryObjects: Readable<MemoryObject[]> = derived(
+	[docStore, docCurrentVaultId],
 	([$doc, $vaultId]) => {
 		if (!$doc) return [];
 		return Object.values(memoriesOf($doc))
@@ -109,15 +157,21 @@ export const memoryObjects: Readable<MemoryObject[]> = derived(
 	}
 );
 
+// Memory objects of the current vault (sorted by updatedAt desc): the open linked folder's notes, else the document's
+export const memoryObjects: Readable<MemoryObject[]> = derived(
+	[docMemoryObjects, linkedVaultId, linkedRevision],
+	([$memories, $linked]) => ($linked ? linkedNotes().sort((a, b) => b.updatedAt - a.updatedAt) : $memories)
+);
+
 // Derived store for memory objects count
 export const memoryObjectsCount: Readable<number> = derived(
 	memoryObjects,
 	($memoryObjects) => $memoryObjects.length
 );
 
-// Derived store for folders (sorted by name) - filtered by current vault, excludes deleted
-export const folders: Readable<Folder[]> = derived(
-	[docStore, currentVaultId],
+// Derived store for the document's folders (sorted by name) - filtered by its current vault, excludes deleted
+export const docFolders: Readable<Folder[]> = derived(
+	[docStore, docCurrentVaultId],
 	([$doc, $vaultId]) => {
 		if (!$doc || !$doc.folders) return [];
 		return Object.values($doc.folders)
@@ -126,27 +180,35 @@ export const folders: Readable<Folder[]> = derived(
 	}
 );
 
+// Folders of the current vault (sorted by name): the open linked folder's directories, else the document's
+export const folders: Readable<Folder[]> = derived(
+	[docFolders, linkedVaultId, linkedRevision],
+	([$folders, $linked]) => ($linked ? linkedFolders().sort((a, b) => a.name.localeCompare(b.name)) : $folders)
+);
+
 // Derived store for people (sorted by name) - filtered by current vault
-export const people: Readable<Person[]> = derived(
-	[docStore, currentVaultId],
-	([$doc, $vaultId]) => {
+const peopleOf = (vaultId: Readable<string>): Readable<Person[]> =>
+	derived([docStore, vaultId], ([$doc, $vaultId]) => {
 		if (!$doc || !$doc.people) return [];
 		return Object.values($doc.people)
 			.filter((person) => person.vaultId === $vaultId)
 			.sort((a, b) => a.name.localeCompare(b.name));
-	}
-);
+	});
+export const people: Readable<Person[]> = peopleOf(currentVaultId);
+/** The same for the document's own current vault (sync). */
+export const docPeople: Readable<Person[]> = peopleOf(docCurrentVaultId);
 
 // Derived store for events (sorted by date) - filtered by current vault
-export const events: Readable<Event[]> = derived(
-	[docStore, currentVaultId],
-	([$doc, $vaultId]) => {
+const eventsOf = (vaultId: Readable<string>): Readable<Event[]> =>
+	derived([docStore, vaultId], ([$doc, $vaultId]) => {
 		if (!$doc || !$doc.events) return [];
 		return Object.values($doc.events)
 			.filter((event) => event.vaultId === $vaultId)
 			.sort((a, b) => a.date.localeCompare(b.date));
-	}
-);
+	});
+export const events: Readable<Event[]> = eventsOf(currentVaultId);
+/** The same for the document's own current vault (sync). */
+export const docEvents: Readable<Event[]> = eventsOf(docCurrentVaultId);
 
 // Derived store for templates (sorted by name) - filtered by current vault
 export const templates: Readable<Template[]> = derived(
@@ -162,9 +224,8 @@ export const templates: Readable<Template[]> = derived(
 // Derived store for action items in the current vault. Sorted so that
 // non-terminal statuses come first (open > in_progress > done/cancelled),
 // then by due date ascending (nulls last), then by createdAt descending.
-export const actionItems: Readable<ActionItem[]> = derived(
-	[docStore, currentVaultId],
-	([$doc, $vaultId]) => {
+const actionItemsOf = (vaultId: Readable<string>): Readable<ActionItem[]> =>
+	derived([docStore, vaultId], ([$doc, $vaultId]) => {
 		if (!$doc || !$doc.actionItems) return [];
 		const statusOrder: Record<ActionItemStatus, number> = {
 			open: 0,
@@ -183,8 +244,10 @@ export const actionItems: Readable<ActionItem[]> = derived(
 				if (b.dueDate) return 1;
 				return b.createdAt - a.createdAt;
 			});
-	}
-);
+	});
+export const actionItems: Readable<ActionItem[]> = actionItemsOf(currentVaultId);
+/** The same for the document's own current vault (sync). */
+export const docActionItems: Readable<ActionItem[]> = actionItemsOf(docCurrentVaultId);
 
 // Derived store for reminder proposals in the current vault. Pending
 // first, then sorted by suggestedDate asc. Decided proposals (approved/
@@ -1281,10 +1344,25 @@ export function setSyncEncrypted(on: boolean): void {
 // ============ Vault Operations ============
 
 export function setCurrentVault(vaultId: string): void {
+	if (isLinkedVaultId(vaultId)) {
+		// A linked folder is current on this device only: the document, and
+		// with it every other device, keeps its own current vault.
+		const config = getLinkedVault(vaultId);
+		if (!config) {
+			console.error('Vault not found:', vaultId);
+			return;
+		}
+		void openLinkedVault(config).catch((err) => {
+			const missing = err instanceof DOMException && err.name === 'NotFoundError';
+			showNotice(missing ? `The folder of "${config.name}" wasn't found.` : `Couldn't open "${config.name}": ${err instanceof Error ? err.message : err}`);
+		});
+		return;
+	}
 	if (!doc?.vaults?.[vaultId]) {
 		console.error('Vault not found:', vaultId);
 		return;
 	}
+	closeLinkedVault();
 	updateDoc((d) => {
 		d.currentVaultId = vaultId;
 	});
@@ -1304,7 +1382,45 @@ export function addVault(name: string, icon?: string, iconImage?: string): Vault
 }
 
 export function getVault(id: string): Vault | undefined {
+	if (isLinkedVaultId(id)) {
+		const config = getLinkedVault(id);
+		return config && linkedVaultAsVault(config);
+	}
 	return doc?.vaults?.[id];
+}
+
+/**
+ * Who a [[link]] points at among `notes`, the current vault's: by title
+ * (`options` as for buildLinkIndex), or in a linked folder by its link key
+ * and fallbacks, whatever the options.
+ */
+export function vaultLinkResolver(notes: MemoryObject[], options: { trim?: boolean; prefer?: 'first' | 'last' } = {}): LinkResolver<MemoryObject> {
+	return linkedLinks() ?? buildLinkIndex(notes, options);
+}
+
+/** What links address a note by in the current vault, when not its title (for graph-walk). */
+export function vaultLinkKeyOf(): ((note: { id: string }) => string | null | undefined) | undefined {
+	return getOpenLinkedVaultId() ? (note) => linkedNoteInfo(note.id)?.linkKeyValue : undefined;
+}
+
+/**
+ * Linked folders are read-only: for a note or folder of one, say so and
+ * return true, so the caller changes nothing.
+ */
+function refuseLinked(...ids: (string | null | undefined)[]): boolean {
+	if (!ids.some(isLinkedId)) return false;
+	showNotice(READ_ONLY_NOTE);
+	return true;
+}
+
+/**
+ * The notes of the current vault for readers that scan it (tags, dates,
+ * links, mentions): the open linked folder's, else the document's.
+ */
+function currentVaultNotes(): MemoryObject[] {
+	if (getOpenLinkedVaultId()) return linkedNotes();
+	const vaultId = getCurrentVaultId();
+	return Object.values(memoriesView()).filter((memory) => memory.vaultId === vaultId);
 }
 
 // `null` clears an optional field (Automerge can't store `undefined`);
@@ -1364,6 +1480,7 @@ export function deleteVault(id: string): { success: boolean; error?: string } {
 
 // Move memory object to a different vault
 export function moveMemoryObjectToVault(memoryId: string, targetVaultId: string): void {
+	if (refuseLinked(memoryId)) return;
 	if (!doc?.vaults?.[targetVaultId]) {
 		console.error('Target vault not found:', targetVaultId);
 		return;
@@ -1380,6 +1497,7 @@ export function moveMemoryObjectToVault(memoryId: string, targetVaultId: string)
 
 // Move folder to a different vault (including all nested content)
 export function moveFolderToVault(folderId: string, targetVaultId: string): void {
+	if (refuseLinked(folderId)) return;
 	if (!doc?.vaults?.[targetVaultId]) {
 		console.error('Target vault not found:', targetVaultId);
 		return;
@@ -1439,7 +1557,8 @@ export function addMemoryObject(
 	const memory = createMemoryObject({
 		title,
 		bodyMarkdown,
-		folderId: folderId ?? null,
+		// A linked folder's directory is not a folder of the document.
+		folderId: isLinkedId(folderId) ? null : (folderId ?? null),
 		vaultId
 	});
 	updateDoc((d) => {
@@ -1978,6 +2097,7 @@ async function runFirstSuccessful<T>(
 }
 
 export function getMemoryObject(id: string): MemoryObject | undefined {
+	if (isLinkedNoteId(id)) return linkedNote(id);
 	return memoriesView()[id];
 }
 
@@ -1985,6 +2105,8 @@ export function updateMemoryObject(
 	id: string,
 	updates: Partial<Omit<MemoryObject, 'id' | 'createdAt'>>
 ): void {
+	// Linked folders are read-only for now: nothing is written, here or to the file.
+	if (isLinkedNoteId(id)) return;
 	updateDoc((d) => {
 		const memory = d.memoryObjects[id];
 		if (!memory) return;
@@ -2024,6 +2146,7 @@ export function notePath(memory: Pick<MemoryObject, 'id' | 'type'>): string {
 
 // Set or clear (null) a note's page icon.
 export function setMemoryIcon(id: string, icon: string | null): void {
+	if (refuseLinked(id)) return;
 	updateDoc((d) => {
 		const memory = d.memoryObjects[id];
 		if (!memory) return;
@@ -2049,6 +2172,7 @@ export function setLivingNote(id: string, config: LivingConfig | null): void {
 // Pin to / unpin from Favorites. Deliberately leaves updatedAt alone:
 // starring a note isn't an edit and shouldn't reorder "recently edited".
 export function setMemoryFavorite(id: string, favorite: boolean): void {
+	if (refuseLinked(id)) return;
 	updateDoc((d) => {
 		const memory = d.memoryObjects[id];
 		if (!memory) return;
@@ -2067,6 +2191,7 @@ export const favoriteMemoryObjects: Readable<MemoryObject[]> = derived(memoryObj
 );
 
 export function deleteMemoryObject(id: string): void {
+	if (refuseLinked(id)) return;
 	updateDoc((d) => {
 		const memory = d.memoryObjects[id];
 		if (memory) {
@@ -2085,6 +2210,12 @@ export function addFolder(name: string, parentId?: string | null, inVaultId?: st
 	}
 	const vaultId = inVaultId ?? getCurrentVaultId();
 	const folder = createFolder(name, parentId ?? null, vaultId);
+	// Not in a linked folder: its directories are made outside Kurumi. The
+	// folder returned then exists nowhere.
+	if (isLinkedId(parentId) || isLinkedVaultId(inVaultId) || (!inVaultId && getOpenLinkedVaultId())) {
+		showNotice(READ_ONLY_NOTE);
+		return folder;
+	}
 	updateDoc((d) => {
 		d.folders[folder.id] = folder;
 	});
@@ -2092,10 +2223,12 @@ export function addFolder(name: string, parentId?: string | null, inVaultId?: st
 }
 
 export function getFolder(id: string): Folder | undefined {
+	if (isLinkedFolderId(id)) return linkedFolder(id);
 	return doc?.folders?.[id];
 }
 
 export function updateFolder(id: string, updates: Partial<Omit<Folder, 'id' | 'created'>>): void {
+	if (refuseLinked(id, updates.parentId)) return;
 	updateDoc((d) => {
 		const folder = d.folders[id];
 		if (folder) {
@@ -2107,6 +2240,7 @@ export function updateFolder(id: string, updates: Partial<Omit<Folder, 'id' | 'c
 }
 
 export function deleteFolder(id: string, deleteContents: boolean = false): void {
+	if (refuseLinked(id)) return;
 	const now = Date.now();
 	updateDoc((d) => {
 		const folder = d.folders[id];
@@ -2346,6 +2480,7 @@ export function cleanupOldTrash(): number {
 }
 
 export function moveMemoryObjectToFolder(memoryId: string, folderId: string | null): void {
+	if (refuseLinked(memoryId, folderId)) return;
 	updateDoc((d) => {
 		const memory = d.memoryObjects[memoryId];
 		if (memory) {
@@ -2356,6 +2491,7 @@ export function moveMemoryObjectToFolder(memoryId: string, folderId: string | nu
 }
 
 export function moveFolderToFolder(folderId: string, parentId: string | null): void {
+	if (refuseLinked(folderId, parentId)) return;
 	// Prevent moving a folder into itself or its descendants
 	if (folderId === parentId) return;
 	if (parentId && isDescendantFolder(folderId, parentId)) return;
@@ -2380,6 +2516,11 @@ function isDescendantFolder(ancestorId: string, descendantId: string): boolean {
 }
 
 export function getMemoryObjectsInFolder(folderId: string | null): MemoryObject[] {
+	if (isLinkedFolderId(folderId) || (folderId === null && getOpenLinkedVaultId())) {
+		return linkedNotes()
+			.filter((m) => m.folderId === folderId)
+			.sort((a, b) => b.updatedAt - a.updatedAt);
+	}
 	if (!doc) return [];
 	const vaultId = getCurrentVaultId();
 	return Object.values(memoriesView())
@@ -2388,6 +2529,11 @@ export function getMemoryObjectsInFolder(folderId: string | null): MemoryObject[
 }
 
 export function getSubfolders(parentId: string | null): Folder[] {
+	if (isLinkedFolderId(parentId) || (parentId === null && getOpenLinkedVaultId())) {
+		return linkedFolders()
+			.filter((folder) => folder.parentId === parentId)
+			.sort((a, b) => a.name.localeCompare(b.name));
+	}
 	if (!doc?.folders) return [];
 	const vaultId = getCurrentVaultId();
 	return Object.values(doc.folders)
@@ -2396,12 +2542,13 @@ export function getSubfolders(parentId: string | null): Folder[] {
 }
 
 export function getFolderPath(folderId: string | null): Folder[] {
-	if (!folderId || !doc?.folders) return [];
+	if (!folderId) return [];
+	const folderOf = isLinkedFolderId(folderId) ? linkedFolder : (id: string) => doc?.folders?.[id];
 	const path: Folder[] = [];
-	let current: Folder | undefined = doc.folders[folderId];
+	let current: Folder | undefined = folderOf(folderId);
 	while (current) {
 		path.unshift(current);
-		current = current.parentId ? doc.folders[current.parentId] : undefined;
+		current = current.parentId ? folderOf(current.parentId) : undefined;
 	}
 	return path;
 }
@@ -4095,6 +4242,7 @@ export function restoreDatabaseView(view: DatabaseView): void {
 
 /** Set a property value on a note; an empty value removes it. */
 export function setMemoryCustomProp(memoryId: string, key: string, value: unknown): void {
+	if (refuseLinked(memoryId)) return;
 	updateDoc((d) => {
 		const memory = d.memoryObjects[memoryId];
 		if (!memory) return;
@@ -5223,16 +5371,21 @@ export function extractTags(content: string): string[] {
 	return Array.from(tags);
 }
 
+// A note's tags: the #tags in its text, and for a note of a linked folder
+// the ones from its frontmatter (`type/project`; see $lib/linked/backend).
+function noteTags(memory: MemoryObject): string[] {
+	const tags = extractTags(memory.bodyMarkdown);
+	if (!isLinkedNoteId(memory.id)) return tags;
+	return [...new Set([...tags, ...memory.tags])];
+}
+
 // Get all unique tags across memories in current vault
 export function getAllTags(): { tag: string; count: number }[] {
 	if (!doc) return [];
-	const vaultId = getCurrentVaultId();
 	const tagCounts = new Map<string, number>();
 
-	for (const memory of Object.values(memoriesView())) {
-		if (memory.vaultId !== vaultId) continue;
-		const tags = extractTags(memory.bodyMarkdown);
-		for (const tag of tags) {
+	for (const memory of currentVaultNotes()) {
+		for (const tag of noteTags(memory)) {
 			tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
 		}
 	}
@@ -5245,14 +5398,9 @@ export function getAllTags(): { tag: string; count: number }[] {
 // Get memories with a specific tag in current vault
 export function getMemoryObjectsByTag(tag: string): MemoryObject[] {
 	if (!doc) return [];
-	const vaultId = getCurrentVaultId();
 	const lowerTag = tag.toLowerCase();
 
-	return Object.values(memoriesView()).filter((memory) => {
-		if (memory.vaultId !== vaultId) return false;
-		const tags = extractTags(memory.bodyMarkdown);
-		return tags.includes(lowerTag);
-	});
+	return currentVaultNotes().filter((memory) => noteTags(memory).includes(lowerTag));
 }
 
 export interface TagRenameSnapshot {
@@ -5420,7 +5568,6 @@ export function extractPeople(content: string): string[] {
 // case-insensitively.
 export function getAllPeople(): { name: string; count: number }[] {
 	if (!doc) return [];
-	const vaultId = getCurrentVaultId();
 	const peopleCounts = new Map<string, { name: string; count: number }>();
 
 	const bump = (rawName: string) => {
@@ -5433,8 +5580,7 @@ export function getAllPeople(): { name: string; count: number }[] {
 		}
 	};
 
-	for (const memory of Object.values(memoriesView())) {
-		if (memory.vaultId !== vaultId) continue;
+	for (const memory of currentVaultNotes()) {
 		// @-mentions in markdown
 		for (const person of extractPeople(memory.bodyMarkdown)) {
 			bump(person);
@@ -5452,11 +5598,9 @@ export function getAllPeople(): { name: string; count: number }[] {
 // @-mentions in bodyMarkdown and entities in memory.participants.
 export function getMemoryObjectsByPerson(name: string): MemoryObject[] {
 	if (!doc) return [];
-	const vaultId = getCurrentVaultId();
 	const target = name.toLowerCase();
 
-	return Object.values(memoriesView()).filter((memory) => {
-		if (memory.vaultId !== vaultId) return false;
+	return currentVaultNotes().filter((memory) => {
 		const fromMarkdown = extractPeople(memory.bodyMarkdown).some(
 			(p) => p.toLowerCase() === target
 		);
@@ -5724,11 +5868,9 @@ export function extractDates(content: string): string[] {
 // Get all unique dates across memories in current vault
 export function getAllDates(): { date: string; count: number }[] {
 	if (!doc) return [];
-	const vaultId = getCurrentVaultId();
 	const dateCounts = new Map<string, number>();
 
-	for (const memory of Object.values(memoriesView())) {
-		if (memory.vaultId !== vaultId) continue;
+	for (const memory of currentVaultNotes()) {
 		const dates = extractDates(memory.bodyMarkdown);
 		for (const date of dates) {
 			dateCounts.set(date, (dateCounts.get(date) || 0) + 1);
@@ -5743,10 +5885,8 @@ export function getAllDates(): { date: string; count: number }[] {
 // Get memories with a specific date in current vault
 export function getMemoryObjectsByDate(date: string): MemoryObject[] {
 	if (!doc) return [];
-	const vaultId = getCurrentVaultId();
 
-	return Object.values(memoriesView()).filter((memory) => {
-		if (memory.vaultId !== vaultId) return false;
+	return currentVaultNotes().filter((memory) => {
 		const dates = extractDates(memory.bodyMarkdown);
 		return dates.includes(date);
 	});
@@ -5779,11 +5919,9 @@ export function getUrlDomain(url: string): string {
 // Get all unique URLs across memories in current vault
 export function getAllLinks(): { url: string; domain: string; count: number }[] {
 	if (!doc) return [];
-	const vaultId = getCurrentVaultId();
 	const urlCounts = new Map<string, number>();
 
-	for (const memory of Object.values(memoriesView())) {
-		if (memory.vaultId !== vaultId) continue;
+	for (const memory of currentVaultNotes()) {
 		const urls = extractUrls(memory.bodyMarkdown);
 		for (const url of urls) {
 			urlCounts.set(url, (urlCounts.get(url) || 0) + 1);
@@ -5798,10 +5936,8 @@ export function getAllLinks(): { url: string; domain: string; count: number }[] 
 // Get memories containing a specific URL in current vault
 export function getMemoryObjectsByLink(url: string): MemoryObject[] {
 	if (!doc) return [];
-	const vaultId = getCurrentVaultId();
 
-	return Object.values(memoriesView()).filter((memory) => {
-		if (memory.vaultId !== vaultId) return false;
+	return currentVaultNotes().filter((memory) => {
 		const urls = extractUrls(memory.bodyMarkdown);
 		return urls.includes(url);
 	});
@@ -5827,6 +5963,7 @@ function vaultLinks(vaultId: string, trim = false): LinkResolver<MemoryObject> {
 
 // Find memories that link to a given memory (in current vault)
 export function findBacklinks(memoryId: string): MemoryObject[] {
+	if (isLinkedNoteId(memoryId)) return linkedLinks()?.backlinks(memoryId) ?? [];
 	if (!doc) return [];
 	const target = memoriesView()[memoryId];
 	if (!target) return [];
@@ -5834,8 +5971,11 @@ export function findBacklinks(memoryId: string): MemoryObject[] {
 	return vaultLinks(target.vaultId).backlinks(memoryId);
 }
 
-// Find a memory by its title in current vault (case-insensitive)
+// Find the memory a [[link]] to `title` points at in the current vault: by
+// title, case-insensitive; in a linked folder by its link key, then its fallbacks
 export function findMemoryObjectByTitle(title: string): MemoryObject | undefined {
+	const linked = linkedLinks();
+	if (linked) return linked.resolve(title);
 	if (!doc) return undefined;
 	return vaultLinks(getCurrentVaultId()).resolve(title);
 }
@@ -5860,6 +6000,14 @@ function stripWikilinks(content: string): string {
  * noise. Soft-deleted notes are ignored.
  */
 export function findUnlinkedMentions(memoryId: string): MemoryObject[] {
+	if (isLinkedNoteId(memoryId)) {
+		const note = linkedNote(memoryId);
+		const noteTitle = (note?.title ?? '').trim();
+		if (noteTitle.length < 3) return [];
+		const linking = new Set(findBacklinks(memoryId).map((memory) => memory.id));
+		const mention = wholeWordRegex(noteTitle);
+		return linkedNotes().filter((memory) => memory.id !== memoryId && !linking.has(memory.id) && mention.test(stripWikilinks(memory.bodyMarkdown ?? '')));
+	}
 	if (!doc) return [];
 	const target = memoriesView()[memoryId];
 	if (!target) return [];
@@ -5886,6 +6034,7 @@ export function findUnlinkedMentions(memoryId: string): MemoryObject[] {
  * "Link" action next to an unlinked mention.
  */
 export function linkUnlinkedMention(sourceId: string, targetTitle: string): boolean {
+	if (refuseLinked(sourceId)) return false;
 	const memory = getMemoryObject(sourceId);
 	if (!memory) return false;
 	const re = wholeWordRegex(targetTitle);

@@ -1,8 +1,7 @@
 <script lang="ts">
 	import { wikilinkLabel } from '$lib/wikilinks';
 	import { onMount, onDestroy, tick, untrack } from 'svelte';
-	import { memoryObjects, folders, extractWikilinks, type MemoryObject, type Folder } from '$lib/db';
-	import { buildLinkIndex } from '$lib/linked/links';
+	import { memoryObjects, folders, extractWikilinks, vaultLinkResolver, type MemoryObject, type Folder } from '$lib/db';
 	import { goto } from '$app/navigation';
 	import ForceGraph from 'force-graph';
 	import { Search, X, ArrowRight, ZoomIn, ZoomOut, Maximize } from 'lucide-svelte';
@@ -174,7 +173,7 @@
 	function buildGraphData(): { nodes: GraphNode[]; links: GraphLink[] } {
 		const all = memoriesData;
 		// Links match titles trimmed and case-insensitively; of two notes with one title the later wins
-		const resolver = buildLinkIndex(all, { trim: true, prefer: 'last' });
+		const resolver = vaultLinkResolver(all, { trim: true, prefer: 'last' });
 
 		// Calculate backlinks for each memory
 		const backlinkCounts = new Map<string, number>();

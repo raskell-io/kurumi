@@ -33,7 +33,8 @@ import {
 	getAllTags,
 	projects,
 	decisions,
-	questions
+	questions,
+	vaultLinkKeyOf
 } from './db';
 import { exploreGraph } from './graph-walk';
 import { get } from 'svelte/store';
@@ -466,7 +467,8 @@ async function executeTool(
 					projects: get(projects),
 					todos: get(actionItems),
 					decisions: get(decisions),
-					questions: get(questions)
+					questions: get(questions),
+					linkKeyOf: vaultLinkKeyOf()
 				},
 				{ depth: typeof args.depth === 'number' ? args.depth : 2 }
 			);

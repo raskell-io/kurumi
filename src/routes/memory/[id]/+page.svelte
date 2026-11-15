@@ -5,6 +5,7 @@
 		updateMemoryObject,
 		deleteMemoryObject,
 		findBacklinks,
+		vaultLinkResolver,
 		findUnlinkedMentions,
 		linkUnlinkedMention,
 		memoryObjects,
@@ -18,7 +19,6 @@
 		setMemoryFavorite,
 		getMemoryObject
 	} from '$lib/db';
-	import { buildLinkIndex } from '$lib/linked/links';
 	import { pushUndo } from '$lib/stores/undo';
 	import { openInSplit } from '$lib/stores/workspace';
 	import { get } from 'svelte/store';
@@ -720,7 +720,7 @@
 	// Alt+click (or "Open to the side" in the preview) opens the link in
 	// the split pane instead.
 	function handleWikilinkClick(linkTitle: string, event?: MouseEvent | { altKey: boolean }, anchor?: NoteAnchor) {
-		const links = buildLinkIndex(get(memoryObjects));
+		const links = vaultLinkResolver(get(memoryObjects));
 		// [[#Heading]], or a link to a part of this very note: just scroll there.
 		if (anchor && memory && (!linkTitle || links.isLinkTo(linkTitle, memory))) {
 			const id = memory.id;
@@ -784,7 +784,7 @@
 		if (!memory) return;
 		const all = get(memoryObjects);
 		const allFolders = get(folders);
-		downloadSingleMemory(memory, all, allFolders, { format });
+		downloadSingleMemory(memory, all, allFolders, { format, links: vaultLinkResolver(all) });
 		showMoreMenu = false;
 	}
 </script>

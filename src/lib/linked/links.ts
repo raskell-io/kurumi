@@ -18,7 +18,7 @@
  * Pure: takes notes, keeps no state outside the resolver it returns.
  */
 
-import { parseWikilink } from '$lib/wikilinks';
+import { parseWikilink, wikilinkLabel } from '$lib/wikilinks';
 
 export interface LinkableNote {
 	id: string;
@@ -71,6 +71,18 @@ export function extractLinkTargets(content: string | null | undefined): string[]
 		if (target) links.push(target);
 	}
 	return links;
+}
+
+/**
+ * What a link shows, given the note it resolves to: its alias, else what it
+ * says, except that a link naming its note by something other than the title
+ * (`[[project.foo]]`) shows the title.
+ */
+export function linkLabel(inner: string, note: { title: string } | null | undefined): string {
+	const { target, heading, alias } = parseWikilink(inner);
+	const title = note?.title.trim();
+	if (alias || !target || !title || target.toLowerCase() === title.toLowerCase()) return wikilinkLabel(inner);
+	return heading ? `${title} › ${heading}` : title;
 }
 
 const titleOf = (note: LinkableNote) => note.title ?? '';

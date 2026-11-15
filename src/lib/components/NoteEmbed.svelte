@@ -1,8 +1,7 @@
 <script lang="ts">
 	import { memoryObjects } from '$lib/db';
 	import { parseWikilink, markdownSection, markdownBlock, stripBlockIds, editablePart, replacePart } from '$lib/wikilinks';
-	import { updateMemoryObject } from '$lib/db';
-	import { buildLinkIndex } from '$lib/linked/links';
+	import { updateMemoryObject, vaultLinkResolver } from '$lib/db';
 	import { Pencil, Check } from 'lucide-svelte';
 	import { setPendingAnchor } from '$lib/stores/anchor';
 	import { goto } from '$app/navigation';
@@ -18,7 +17,7 @@
 
 	let link = $derived(parseWikilink(inner));
 	let title = $derived(link.target);
-	let target = $derived(buildLinkIndex($memoryObjects).resolve(title));
+	let target = $derived(vaultLinkResolver($memoryObjects).resolve(title));
 	// Drop the embedded note's own frontmatter.
 	let whole = $derived((target?.bodyMarkdown ?? '').replace(/^---\n[\s\S]*?\n---\n/, ''));
 	let part = $derived(

@@ -13,7 +13,7 @@
 import { get } from 'svelte/store';
 import {
 	actionItems,
-	currentVaultId,
+	docCurrentVaultId,
 	decisions,
 	meetingSeries,
 	memoryObjects,
@@ -67,8 +67,8 @@ export function previousWeek(today: string): Week {
 	return { start, end: addDays(start, 6) };
 }
 
-/** One review per week and vault. */
-export const reviewNoteId = (week: Week, vaultId = get(currentVaultId)) => `review-${vaultId}-${week.start}`;
+/** One review per week and vault (of the document: reviews aren't written for linked folders). */
+export const reviewNoteId = (week: Week, vaultId = get(docCurrentVaultId)) => `review-${vaultId}-${week.start}`;
 export const reviewTitle = (week: Week) => `Weekly review — ${week.start} to ${week.end}`;
 
 export interface ReviewData {

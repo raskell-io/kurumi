@@ -3,7 +3,8 @@
  * Supports: Vanilla Markdown, Hugo, Zola
  */
 
-import { parseWikilink, wikilinkLabel } from '$lib/wikilinks';
+import { parseWikilink } from '$lib/wikilinks';
+import { buildLinkIndex, linkLabel, type LinkResolver } from '$lib/linked/links';
 import { parseCanvas, serializeCanvas } from '$lib/canvas';
 import type { MemoryObject, Folder, Vault } from '../db/types';
 import { getBlob } from '../db/blob-store';
@@ -13,6 +14,8 @@ export type MarkdownExportFormat = 'vanilla' | 'hugo' | 'zola';
 export interface ExportOptions {
 	format: MarkdownExportFormat;
 	includeMetadata?: boolean; // For vanilla format
+	/** Who [[links]] point at, when not by title among the exported notes (a linked folder). */
+	links?: Pick<LinkResolver<MemoryObject>, 'resolve'>;
 }
 
 export interface ExportFile {
@@ -208,17 +211,17 @@ export function convertWikilinks(
 	content: string,
 	memories: MemoryObject[],
 	current: MemoryObject,
-	folders: Folder[]
+	folders: Folder[],
+	links: Pick<LinkResolver<MemoryObject>, 'resolve'> = buildLinkIndex(memories)
 ): string {
 	return content.replace(/\[\[([^[\]\n]+?)\]\]/g, (match, inner: string) => {
-		const title = parseWikilink(inner).target.toLowerCase();
-		const target = memories.find((m) => m.title.toLowerCase() === title);
+		const target = links.resolve(parseWikilink(inner).target);
 		if (!target) {
 			// Keep original if target not found
 			return match;
 		}
 		const relativePath = calculateRelativePath(current, target, folders);
-		return `[${wikilinkLabel(inner)}](${relativePath})`;
+		return `[${linkLabel(inner, target)}](${relativePath})`;
 	});
 }
 
@@ -347,7 +350,7 @@ export function exportMemoryToMarkdown(
 			break;
 	}
 
-	let body = convertWikilinks(memory.bodyMarkdown, memories, memory, folders);
+	let body = convertWikilinks(memory.bodyMarkdown, memories, memory, folders, options.links);
 	let extras = buildExtraSections(memory);
 	if (assets) {
 		body = linkAssets(body, assets.names, assets.depth);

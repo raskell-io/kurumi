@@ -7,6 +7,7 @@
 	import { parseWikilink, wikilinkLabel, markdownSection, markdownBlock } from '$lib/wikilinks';
 	import { setPendingAnchor, scrollToAnchor } from '$lib/stores/anchor';
 	import { findMemoryObjectByTitle } from '$lib/db';
+	import { linkLabel } from '$lib/linked/links';
 	import { resolveBlobUrl, isBlobRef } from '$lib/utils/image';
 	import DataviewBlock from './DataviewBlock.svelte';
 	import { onMount, mount, unmount, tick } from 'svelte';
@@ -206,10 +207,14 @@
 		// Process wikilinks [[Title]], [[Title|alias]], [[Title#Heading]]
 		html = html.replace(/\[\[([^[\]\n]+?)\]\]/g, (_, inner: string) => {
 			const { target, heading, block } = parseWikilink(inner);
-			const label = wikilinkLabel(inner);
 			const anchor = `${heading ? ` data-heading="${escapeAttr(heading)}"` : ''}${block ? ` data-block="${escapeAttr(block)}"` : ''}`;
-			if (!target && anchor) return `<a href="#" class="wikilink"${anchor}>${label}</a>`;
+			const written = wikilinkLabel(inner);
+			if (!target && anchor) return `<a href="#" class="wikilink"${anchor}>${written}</a>`;
 			const memory = target ? findMemoryObjectByTitle(target) : undefined;
+			// A link by key ([[project.foo]] in a linked folder) shows the note's
+			// title, which unlike the link's own text isn't HTML yet.
+			const label =
+				memory && linkLabel(inner, memory) !== written ? `${escapeHtml(memory.title.trim())}${heading ? ` › ${heading}` : ''}` : written;
 			if (memory) {
 				return `<a href="/read/${memory.id}" class="wikilink" title="${escapeAttr(target)}" data-note="${memory.id}"${anchor}>${label}</a>`;
 			}

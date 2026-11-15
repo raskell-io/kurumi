@@ -1,13 +1,15 @@
+// Sync only ever sees the document: the `doc…` stores never contain a linked
+// folder ($lib/linked), whichever vault is current on this device.
 import {
 	getDocBinary,
 	mergeDoc,
-	memoryObjects,
-	folders,
-	vaults,
-	currentVaultId,
-	people,
-	events,
-	actionItems
+	docMemoryObjects as memoryObjects,
+	docFolders as folders,
+	docVaults as vaults,
+	docCurrentVaultId as currentVaultId,
+	docPeople as people,
+	docEvents as events,
+	docActionItems as actionItems
 } from '$lib/db';
 import { setSyncing, setSyncSuccess, setSyncError, syncState } from './status';
 import { openFromSync, sealForSync, encryptingTransport, SyncLockedError, WrongPassphraseError } from './crypto';
@@ -806,6 +808,11 @@ async function importMetadataRecords(files: MetadataFile[], lastSyncedAt: number
 	}
 }
 
+/** The vaults the folder mirror writes: the document's current one, or all of the document's. */
+export function mirroredVaultIds(allVaults: boolean): string[] {
+	return allVaults ? get(vaults).map((v) => v.id) : [get(currentVaultId)];
+}
+
 // After the mirror has been written, drop each imported file whose note
 // now lives under a different (Kurumi-named) path, so it isn't imported
 // twice. Only when both exist as separate files: on a case-insensitive
@@ -815,7 +822,7 @@ async function removeImportedOriginals(
 	allVaults: boolean
 ): Promise<void> {
 	const dirNames = vaultDirNames(get(vaults));
-	const mirrored = allVaults ? get(vaults).map((v) => v.id) : [get(currentVaultId)];
+	const mirrored = mirroredVaultIds(allVaults);
 	// Where each note in the mirror now lives, and the paths that are taken.
 	const canonicalOf = new Map<string, string>();
 	for (const vaultId of mirrored) {

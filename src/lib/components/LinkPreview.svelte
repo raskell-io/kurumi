@@ -8,7 +8,7 @@
 	 * last-edited time and opening text. Moving the pointer onto the card keeps
 	 * it open so the "Open" action is reachable.
 	 */
-	import { memoryObjects, folders } from '$lib/db';
+	import { memoryObjects, folders, vaultLinkResolver } from '$lib/db';
 	import { FileText, FilePlus } from 'lucide-svelte';
 	import NoteIcon from './NoteIcon.svelte';
 	import type { MemoryObject } from '$lib/db/types';
@@ -33,8 +33,7 @@
 
 	let target = $derived.by((): MemoryObject | null => {
 		if (!linkTitle) return null;
-		const wanted = linkTitle.toLowerCase();
-		return $memoryObjects.find((m) => (m.title || '').toLowerCase() === wanted) ?? null;
+		return vaultLinkResolver($memoryObjects).resolve(linkTitle) ?? null;
 	});
 
 	let folderName = $derived(
@@ -154,6 +153,10 @@
 				{#if target.icon}<NoteIcon icon={target.icon} class="h-4 w-4" />{/if}
 				<span class="truncate">{target.title || 'Untitled'}</span>
 			</div>
+			{#if linkTitle.trim().toLowerCase() !== (target.title || '').trim().toLowerCase()}
+				<!-- Linked by a key rather than the title (a linked folder) -->
+				<div class="truncate font-mono text-xs text-[var(--color-text-faint)]">{linkTitle}</div>
+			{/if}
 			{#if excerpt}
 				<p class="mt-1 line-clamp-4 text-[0.8125rem] leading-relaxed text-[var(--color-text-muted)]">{excerpt}</p>
 			{:else}

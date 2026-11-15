@@ -2,8 +2,7 @@
 	import { stashEdit } from '$lib/unsaved';
 	import { goto } from '$app/navigation';
 	import { untrack } from 'svelte';
-	import { memoryObjects, addMemoryObject, updateMemoryObject } from '$lib/db';
-	import { buildLinkIndex } from '$lib/linked/links';
+	import { memoryObjects, addMemoryObject, updateMemoryObject, vaultLinkResolver } from '$lib/db';
 	import { closeSplit, openInSplit } from '$lib/stores/workspace';
 	import Editor from './Editor.svelte';
 	import NoteIcon from './NoteIcon.svelte';
@@ -70,7 +69,7 @@
 	}
 
 	function handleWikilink(linkTitle: string) {
-		const target = buildLinkIndex($memoryObjects).resolve(linkTitle);
+		const target = vaultLinkResolver($memoryObjects).resolve(linkTitle);
 		openInSplit(target ? target.id : addMemoryObject(linkTitle, '').id);
 	}
 
