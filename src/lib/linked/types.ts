@@ -32,9 +32,15 @@ export interface LinkedVaultConfig {
 	ignore: string[];
 	respectGitignore: boolean;
 	readOnly: boolean;
-	/** Frontmatter field to stamp on save (not used while vaults are read-only). */
+	/** Frontmatter field set to today (or now) when a note's text is saved. */
 	updatedField: string | null;
 	updatedFormat: 'date' | 'datetime';
+	/** Where new notes go, relative to the folder ('' = its top). */
+	newNoteDir: string;
+	/** Filename of a new note, without `.md`: `{title}`, `{date}` and `{id}` are filled in. */
+	newNoteFilename: string;
+	/** What a new note starts with (its frontmatter), with the same placeholders. Empty = nothing. */
+	newNoteTemplate: string;
 	created: number;
 }
 
@@ -70,6 +76,29 @@ export interface OpenedFolder {
 	dirs: string[];
 	/** Files left out for being too large or unreadable. */
 	skipped: number;
+	/** How changes are noticed: file system events, or (network shares) looking again now and then. */
+	watch?: 'events' | 'polling';
+}
+
+/** One change in the folder, as `linked_changes` reports it. A rename is a remove and an upsert. */
+export type LinkedChange = { type: 'upsert'; note: NoteFile } | { type: 'remove'; rel: string };
+
+/** What `linked_changes` returns. `rescan` means: open the vault again, this cursor is spent. */
+export interface LinkedChanges {
+	cursor: number;
+	changes: LinkedChange[];
+	rescan: boolean;
+}
+
+/** A save that is waiting for the user: nothing is written until it is resolved. */
+export interface LinkedSaveIssue {
+	/** 'conflict': the file changed where the edit did. 'deleted': the file is gone. 'error': the write failed. */
+	kind: 'conflict' | 'deleted' | 'error';
+	message: string;
+	/** What Kurumi would write. */
+	mine: { title?: string; body: string };
+	/** The body in the file now (conflict). */
+	theirs?: string;
 }
 
 /** What the backend keeps about a linked note besides its MemoryObject. */

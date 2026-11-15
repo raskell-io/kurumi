@@ -2,6 +2,7 @@ import * as Automerge from '@automerge/automerge';
 import { buildLinkIndex, extractLinkTargets, type LinkResolver } from '$lib/linked/links';
 import {
 	closeLinkedVault,
+	createLinkedNote,
 	getOpenLinkedVaultId,
 	isLinkedFolderId,
 	isLinkedId,
@@ -15,9 +16,11 @@ import {
 	linkedRevision,
 	linkedVaultAsVault,
 	linkedVaultId,
-	openLinkedVault
+	linkedWritable,
+	openLinkedVault,
+	saveLinkedNote
 } from '$lib/linked/backend';
-import { capabilitiesFor, NO_NEW_NOTES, READ_ONLY_NOTE } from '$lib/linked/capabilities';
+import { capabilitiesFor, NO_CAPTURE, NO_NEW_NOTES, NOT_IN_LINKED, READ_ONLY_NOTE } from '$lib/linked/capabilities';
 import { getLinkedVault, isLinkedVaultId, linkedVaultConfigs } from '$lib/linked/config';
 import type { VaultCapabilities } from '$lib/linked/types';
 import { showNotice } from '$lib/stores/notice';
@@ -144,7 +147,9 @@ export const currentVault: Readable<Vault | undefined> = derived(
 );
 
 /** What the current vault can do (a linked folder: read only, no records). */
-export const currentVaultCaps: Readable<VaultCapabilities> = derived(currentVault, ($vault) => capabilitiesFor($vault));
+export const currentVaultCaps: Readable<VaultCapabilities> = derived([currentVault, linkedVaultConfigs], ([$vault, $linked]) =>
+	capabilitiesFor($vault, $linked.find((c) => c.id === $vault?.id)?.readOnly ?? true)
+);
 
 // Derived store for the document's memory objects (sorted by updatedAt desc) - filtered by its current vault, excludes deleted
 export const docMemoryObjects: Readable<MemoryObject[]> = derived(
@@ -1404,23 +1409,27 @@ export function vaultLinkKeyOf(): ((note: { id: string }) => string | null | und
 }
 
 /**
- * Whether a note may be created now. Not while a linked folder is the
- * current vault: says so and returns false. For the UI's capture entry
- * points, before they call addMemoryObject.
+ * Whether something may be created now, for the UI's entry points before
+ * they create it; says why not and returns false otherwise. A 'note' can be
+ * created in a Kurumi vault and in a linked folder whose settings allow
+ * editing; a 'capture' (recording, upload: they need the document) only in
+ * a Kurumi vault.
  */
-export function canCreateNotes(): boolean {
+export function canCreateNotes(kind: 'note' | 'capture' = 'note'): boolean {
 	if (!getOpenLinkedVaultId()) return true;
-	showNotice(NO_NEW_NOTES);
+	if (kind === 'note' && linkedWritable()) return true;
+	showNotice(kind === 'capture' ? NO_CAPTURE : NO_NEW_NOTES);
 	return false;
 }
 
 /**
- * Linked folders are read-only: for a note or folder of one, say so and
- * return true, so the caller changes nothing.
+ * What Kurumi doesn't do to a note or folder of a linked folder (move,
+ * rename, delete, icons, favourites, properties): say so and return true,
+ * so the caller changes nothing.
  */
 function refuseLinked(...ids: (string | null | undefined)[]): boolean {
 	if (!ids.some(isLinkedId)) return false;
-	showNotice(READ_ONLY_NOTE);
+	showNotice(linkedWritable() ? NOT_IN_LINKED : READ_ONLY_NOTE);
 	return true;
 }
 
@@ -1564,6 +1573,11 @@ export function addMemoryObject(
 		doc = Automerge.from<KurumiDocument>(createEmptyDocument());
 		docStore.set(doc);
 	}
+	// In a linked folder that allows editing, a new note is a new file there
+	// ($lib/linked). In a read-only one the UI doesn't get here; if it does,
+	// the note lands in the document's own vault, never in limbo.
+	const linked = createLinkedNote(title, bodyMarkdown, folderId);
+	if (linked) return linked;
 	const vaultId = getCurrentVaultId();
 	const memory = createMemoryObject({
 		title,
@@ -2116,8 +2130,13 @@ export function updateMemoryObject(
 	id: string,
 	updates: Partial<Omit<MemoryObject, 'id' | 'createdAt'>>
 ): void {
-	// Linked folders are read-only for now: nothing is written, here or to the file.
-	if (isLinkedNoteId(id)) return;
+	// A linked note is a file: its text (and title, where that is a
+	// frontmatter field) goes there, never into the document. Other fields
+	// have no place in the file and are dropped.
+	if (isLinkedNoteId(id)) {
+		if (updates.title !== undefined || updates.bodyMarkdown !== undefined) saveLinkedNote(id, { title: updates.title, bodyMarkdown: updates.bodyMarkdown });
+		return;
+	}
 	updateDoc((d) => {
 		const memory = d.memoryObjects[id];
 		if (!memory) return;
@@ -2221,10 +2240,10 @@ export function addFolder(name: string, parentId?: string | null, inVaultId?: st
 	}
 	const vaultId = inVaultId ?? getCurrentVaultId();
 	const folder = createFolder(name, parentId ?? null, vaultId);
-	// Not in a linked folder: its directories are made outside Kurumi. The
-	// folder returned then exists nowhere.
+	// Not in a linked folder: its directories come with its files (a new
+	// note's directory is made with it). The folder returned exists nowhere.
 	if (isLinkedId(parentId) || isLinkedVaultId(inVaultId) || (!inVaultId && getOpenLinkedVaultId())) {
-		showNotice(READ_ONLY_NOTE);
+		showNotice(linkedWritable() ? NOT_IN_LINKED : READ_ONLY_NOTE);
 		return folder;
 	}
 	updateDoc((d) => {
@@ -6045,7 +6064,10 @@ export function findUnlinkedMentions(memoryId: string): MemoryObject[] {
  * "Link" action next to an unlinked mention.
  */
 export function linkUnlinkedMention(sourceId: string, targetTitle: string): boolean {
-	if (refuseLinked(sourceId)) return false;
+	if (isLinkedNoteId(sourceId) && !linkedWritable()) {
+		showNotice(READ_ONLY_NOTE);
+		return false;
+	}
 	const memory = getMemoryObject(sourceId);
 	if (!memory) return false;
 	const re = wholeWordRegex(targetTitle);

@@ -87,6 +87,7 @@ beforeAll(async () => {
 	});
 	(globalThis as any).__TAURI_INTERNALS__ = {
 		invoke: async (cmd: string, args: any) => {
+			if (cmd === 'linked_changes') return new Promise(() => {}); // nothing changes in the folder
 			calls.push(cmd);
 			if (cmd === 'linked_open') {
 				if (args.root !== ROOT) throw `NotFoundError: ${args.root} doesn't exist`;

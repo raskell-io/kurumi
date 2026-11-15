@@ -38,6 +38,9 @@ export function newLinkedVaultConfig(fields: { name: string; path: string } & Pa
 		readOnly: true,
 		updatedField: null,
 		updatedFormat: 'date',
+		newNoteDir: '',
+		newNoteFilename: '{title}',
+		newNoteTemplate: '',
 		created: Date.now(),
 		...fields
 	};
@@ -68,6 +71,9 @@ export function validateLinkedVaultConfig(raw: unknown): LinkedVaultConfig | nul
 		readOnly: typeof r.readOnly === 'boolean' ? r.readOnly : true,
 		updatedField: field(r.updatedField, null),
 		updatedFormat: r.updatedFormat === 'datetime' ? 'datetime' : 'date',
+		newNoteDir: typeof r.newNoteDir === 'string' ? r.newNoteDir.replace(/^\/+|\/+$/g, '') : '',
+		newNoteFilename: typeof r.newNoteFilename === 'string' && r.newNoteFilename.trim() ? r.newNoteFilename.trim() : base.newNoteFilename,
+		newNoteTemplate: typeof r.newNoteTemplate === 'string' ? r.newNoteTemplate : '',
 		created: typeof r.created === 'number' ? r.created : base.created
 	};
 }

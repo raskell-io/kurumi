@@ -114,3 +114,58 @@ export function readFrontmatterFields(raw: string): Record<string, string | stri
 	}
 	return fields;
 }
+
+// ---- Editing one field ------------------------------------------------------
+
+interface ScalarLine {
+	/** Offsets of the value in `raw` (inside the quotes, if quoted). */
+	start: number;
+	end: number;
+	quote: '' | '"' | "'";
+	value: string;
+}
+
+/** The line `key: value` of the block, if its value is one plain or simply quoted scalar. */
+function scalarLine(raw: string, key: string): ScalarLine | null {
+	if (!/^\uFEFF?---[ \t]*\r?\n/.test(raw)) return null;
+	const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	// At the start of a line: a nested key (indented) is another field.
+	const line = new RegExp(`(^|\\n)(${escaped}[ \\t]*:[ \\t]+)([^\\r\\n]*?)([ \\t]*)(?=\\r?\\n)`).exec(raw);
+	if (!line) return null;
+	const text = line[3];
+	const start = line.index + line[1].length + line[2].length;
+	if (!text) return null; // nothing, or a block that starts on the next line
+	if (text[0] === '"') {
+		// Escapes would need a YAML writer to keep them right.
+		if (text.length < 2 || !text.endsWith('"') || /["\\]/.test(text.slice(1, -1))) return null;
+		return { start: start + 1, end: start + text.length - 1, quote: '"', value: text.slice(1, -1) };
+	}
+	if (text[0] === "'") {
+		if (text.length < 2 || !text.endsWith("'") || text.slice(1, -1).includes("'")) return null;
+		return { start: start + 1, end: start + text.length - 1, quote: "'", value: text.slice(1, -1) };
+	}
+	// Plain: not a list, map, block text, anchor, alias or tag, and no comment after it.
+	if (/^[[{|>&*!%@`]/.test(text) || /\s#/.test(text) || /:\s/.test(text) || text.endsWith(':')) return null;
+	return { start, end: start + text.length, quote: '', value: text };
+}
+
+/** A field's value if `setScalarField` could change it: a single-line scalar. Else null. */
+export function scalarFieldValue(raw: string, key: string): string | null {
+	return scalarLine(raw, key)?.value ?? null;
+}
+
+/**
+ * `raw` with the value of the existing line `key: value` replaced, and
+ * nothing else touched: the quoting style, the spacing and every other byte
+ * stay. Returns `raw` unchanged when the key is missing, its value isn't a
+ * single-line scalar, or `value` can't be written in the line's style
+ * without escaping.
+ */
+export function setScalarField(raw: string, key: string, value: string): string {
+	const line = scalarLine(raw, key);
+	if (!line || line.value === value || /[\r\n]/.test(value)) return raw;
+	if (line.quote === '"' && /["\\]/.test(value)) return raw;
+	if (line.quote === "'" && value.includes("'")) return raw;
+	if (!line.quote && (!value || value !== value.trim() || /^[[{|>&*!%@`'"#?-]/.test(value) || /\s#/.test(value) || /:\s/.test(value) || value.endsWith(':'))) return raw;
+	return raw.slice(0, line.start) + value + raw.slice(line.end);
+}

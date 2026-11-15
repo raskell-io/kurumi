@@ -68,6 +68,8 @@ function fakeApp(files: NoteFile[] = FILES) {
 	};
 	(globalThis as any).__TAURI_INTERNALS__ = {
 		invoke: async (cmd: string, args: any) => {
+			// The long poll for changes (linked-live.test.ts): nothing ever changes here.
+			if (cmd === 'linked_changes') return new Promise(() => {});
 			calls.push({ cmd, args });
 			const run = commands[cmd];
 			if (!run) throw `NotSupportedError: unknown command ${cmd}`;
@@ -336,6 +338,8 @@ describe('src/lib/linked', () => {
 			const source = readFileSync(join(dir, name), 'utf8');
 			const imports = [...source.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1]);
 			for (const path of imports) {
+				// The line merge (sync/text-merge) is the one shared piece: it is pure.
+				if (path === '$lib/sync/text-merge') continue;
 				expect(path, `${name} imports ${path}`).not.toMatch(/local-fs|claude-instructions|agent-guide|sync\/|git\/|db\/store|\$lib\/db$/);
 			}
 		}
