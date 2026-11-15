@@ -27,7 +27,11 @@
 		databaseViews,
 		openFolderAsDatabase,
 		addCanvas,
-		notePath
+		notePath,
+		docVaults,
+		currentVaultCaps,
+		canCreateNotes,
+		vaultLinkResolver
 	} from '$lib/db';
 	import { openInSplit } from '$lib/stores/workspace';
 	import {
@@ -176,8 +180,13 @@
 		}
 	}
 
+	// A linked folder ($lib/linked) is read-only: its tree is for browsing.
+	// Nothing in it is created, renamed, moved or deleted from here.
+	let readOnly = $derived(!$currentVaultCaps.editNotes);
+
 	function handleFolderContextMenu(e: MouseEvent, folderId: string) {
 		e.preventDefault();
+		if (readOnly) return; // every entry of a folder's menu changes something
 		contextMenuFolder = folderId;
 		contextMenuNote = null;
 		contextMenuPosition = { x: e.clientX, y: e.clientY };
@@ -195,6 +204,7 @@
 	function openRowMenu(e: MouseEvent, type: 'note' | 'folder', id: string) {
 		e.preventDefault();
 		e.stopPropagation();
+		if (readOnly && type === 'folder') return;
 		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
 		contextMenuNote = type === 'note' ? id : null;
 		contextMenuFolder = type === 'folder' ? id : null;
@@ -222,6 +232,7 @@
 
 	function handleCreateFolder(parentId: string | null) {
 		closeContextMenu();
+		if (!canCreateNotes()) return;
 		creatingFolderIn = parentId ?? 'root';
 		newFolderName = '';
 		// Expand parent if creating inside a folder
@@ -232,6 +243,7 @@
 
 	function handleCreateNote(folderId: string | null) {
 		closeContextMenu();
+		if (!canCreateNotes()) return;
 		// Delegate to the layout's template chooser if available;
 		// otherwise fall back to creating a blank note directly.
 		if (onNewNoteInFolder) {
@@ -302,6 +314,7 @@
 	function handleDoubleClick(e: MouseEvent, type: 'folder' | 'note', id: string) {
 		e.preventDefault();
 		e.stopPropagation();
+		if (readOnly) return;
 		if (type === 'folder') {
 			handleRenameFolder(id);
 		} else {
@@ -332,7 +345,10 @@
 		const memory = $memoryObjects.find((m) => m.id === noteId);
 		closeContextMenu();
 		if (!memory) return;
-		void navigator.clipboard?.writeText(`[[${memory.title || 'Untitled'}]]`);
+		// In a linked folder a link names the note by its key, and shows its title.
+		const title = memory.title || 'Untitled';
+		const key = vaultLinkResolver($memoryObjects).keyOf(memory) || 'Untitled';
+		void navigator.clipboard?.writeText(key === title ? `[[${title}]]` : `[[${key}|${title}]]`);
 	}
 
 	// Open next to the current note (split view). Without a note open,
@@ -375,6 +391,10 @@
 
 	// Drag and drop handlers
 	function handleDragStart(e: DragEvent, item: DragItem) {
+		if (readOnly) {
+			e.preventDefault();
+			return;
+		}
 		draggedItem = item;
 		if (e.dataTransfer) {
 			e.dataTransfer.effectAllowed = 'move';
@@ -460,6 +480,7 @@
 
 	// Touch drag handlers
 	function handleTouchStart(e: TouchEvent, item: DragItem, label: string) {
+		if (readOnly) return;
 		const touch = e.touches[0];
 		touchStartPos = { x: touch.clientX, y: touch.clientY };
 
@@ -643,7 +664,7 @@
 
 	function handleSwipeStart(e: TouchEvent, item: SwipeItem) {
 		// Don't start swipe if we're in drag mode
-		if (touchDragActive || !item) return;
+		if (touchDragActive || !item || readOnly) return;
 
 		const touch = e.touches[0];
 		swipeStartX = touch.clientX;
@@ -977,6 +998,7 @@
 	<div class="group/tree mb-0.5 flex items-center gap-0.5 pl-2 pr-0.5">
 		<span class="flex-1 text-[0.6875rem] font-semibold tracking-[0.02em] text-[var(--color-text-faint)]">Notes</span>
 		<div class="flex items-center opacity-60 transition-opacity group-hover/tree:opacity-100 focus-within:opacity-100">
+			{#if !readOnly}
 			<button
 				onclick={() => handleCreateNote(selectedFolderId)}
 				class="k-icon-btn !h-6 !w-6"
@@ -993,6 +1015,7 @@
 			>
 				<FolderPlus class="h-3.5 w-3.5" />
 			</button>
+			{/if}
 			<button onclick={cycleSortOrder} class="k-icon-btn !h-6 !w-6" title={getSortTooltip()} aria-label={getSortTooltip()}>
 				<ArrowUpNarrowWide class="h-3.5 w-3.5" />
 			</button>
@@ -1329,7 +1352,7 @@
 			<Trash2 class="h-4 w-4" />
 			Delete
 		</button>
-		{#if $vaults.length > 1}
+		{#if $docVaults.length > 1}
 			<div class="k-menu-sep"></div>
 			<div class="relative">
 				<button
@@ -1344,7 +1367,7 @@
 				</button>
 				{#if showVaultSubmenu}
 					<div class="k-menu absolute left-full top-0 ml-1 !min-w-[140px]">
-						{#each $vaults.filter((v) => v.id !== $currentVaultId) as vault (vault.id)}
+						{#each $docVaults.filter((v) => v.id !== $currentVaultId) as vault (vault.id)}
 							<button
 								onclick={() => {
 									moveFolderToVault(contextMenuFolder!, vault.id);
@@ -1377,10 +1400,12 @@
 		role="menu"
 		tabindex="-1"
 	>
+		{#if !readOnly}
 		<button onclick={() => handleRenameNote(contextMenuNote!)} class="k-menu-item">
 			<Pencil class="h-4 w-4" />
 			Rename
 		</button>
+		{/if}
 		<button onclick={() => copyNoteLink(contextMenuNote!)} class="k-menu-item">
 			<Link2 class="h-4 w-4" />
 			Copy [[link]]
@@ -1389,6 +1414,7 @@
 			<Columns2 class="h-4 w-4" />
 			Open to the side
 		</button>
+		{#if !readOnly}
 		<button
 			onclick={() => {
 				if (memory) setMemoryFavorite(memory.id, !memory.favoritedAt);
@@ -1408,7 +1434,7 @@
 				Move to Root
 			</button>
 		{/if}
-		{#if $vaults.length > 1}
+		{#if $docVaults.length > 1}
 			<div class="relative">
 				<button
 					onclick={() => (showVaultSubmenu = !showVaultSubmenu)}
@@ -1422,7 +1448,7 @@
 				</button>
 				{#if showVaultSubmenu}
 					<div class="k-menu absolute left-full top-0 ml-1 !min-w-[140px]">
-						{#each $vaults.filter((v) => v.id !== $currentVaultId) as vault (vault.id)}
+						{#each $docVaults.filter((v) => v.id !== $currentVaultId) as vault (vault.id)}
 							<button
 								onclick={() => {
 									moveMemoryObjectToVault(contextMenuNote!, vault.id);
@@ -1446,6 +1472,7 @@
 			<Trash2 class="h-4 w-4" />
 			Move to trash
 		</button>
+		{/if}
 	</div>
 {/if}
 

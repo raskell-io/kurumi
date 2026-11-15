@@ -15,7 +15,7 @@
  * arrays that don't belong in the CRDT.
  */
 
-import { createStore, set, del, entries } from 'idb-keyval';
+import { createStore, set, del, delMany, entries, keys } from 'idb-keyval';
 import { loadPipeline, getModelStatus } from './inference/local-models';
 import {
 	getLocalInferenceSettings,
@@ -374,6 +374,23 @@ export async function deleteEmbedding(memoryId: string): Promise<void> {
 		await del(memoryId, embeddingsStore);
 		vectorCache?.delete(memoryId);
 		embedInputs.delete(memoryId);
+	} catch {
+		// Ignore — best effort
+	}
+}
+
+/**
+ * Drop the stored embeddings of every note whose id starts with `prefix`
+ * (the notes of a linked folder that was unlinked: `lf.<vault>.`).
+ */
+export async function deleteEmbeddingsWithPrefix(prefix: string): Promise<void> {
+	try {
+		const ids = (await keys<string>(embeddingsStore)).filter((id) => typeof id === 'string' && id.startsWith(prefix));
+		await delMany(ids, embeddingsStore);
+		for (const id of ids) {
+			vectorCache?.delete(id);
+			embedInputs.delete(id);
+		}
 	} catch {
 		// Ignore — best effort
 	}

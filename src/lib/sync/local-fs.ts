@@ -56,6 +56,19 @@ async function storedHandle(): Promise<FileSystemDirectoryHandle | undefined> {
 	return reviveFolderHandle(await get(IDB_KEY)) as FileSystemDirectoryHandle | undefined;
 }
 
+/**
+ * Where the sync folder is, in the desktop app (a browser never tells). For
+ * refusing to open that same folder as a linked folder.
+ */
+export async function getLocalFSFolderPath(): Promise<string | null> {
+	try {
+		const path = ((await storedHandle()) as { path?: unknown } | undefined)?.path;
+		return typeof path === 'string' ? path : null;
+	} catch {
+		return null;
+	}
+}
+
 function setConfiguredFlag(configured: boolean): void {
 	if (typeof localStorage === 'undefined') return;
 	if (configured) localStorage.setItem(CONFIGURED_KEY, '1');

@@ -11,10 +11,13 @@
 		exportFullJSON,
 		analyzeImport,
 		importJSON,
-		memoryObjects,
-		folders,
-		vaults,
-		currentVaultId,
+		// Settings are about the document (export, backup, sync, reset): the
+		// document-only stores, also while a linked folder is the current vault.
+		docMemoryObjects as memoryObjects,
+		docFolders as folders,
+		docVaults as vaults,
+		docCurrentVaultId as currentVaultId,
+		currentVault,
 		getVaultContents,
 		syncEncrypted,
 		getLoadStats,
@@ -1406,6 +1409,11 @@
 					<p class="set-section-desc">
 						Keep your memories in sync across devices with storage you own.
 					</p>
+					{#if $currentVault?.kind === 'linked'}
+						<p class="set-section-desc">
+							Linked folders aren't synced by Kurumi: “{$currentVault.name}” is read from its folder on this computer. Sync continues for your Kurumi vaults.
+						</p>
+					{/if}
 					<div class="set-rows">
 						<div class="set-row">
 							<div class="set-row-text">

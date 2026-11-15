@@ -7,7 +7,11 @@
 	import { imageToIconDataUrl } from '$lib/utils/image';
 	import type { Vault } from '$lib/db/types';
 	import VaultIcon from './VaultIcon.svelte';
-	import { ChevronDown, Plus, Pencil, Check, X, Search, Archive, Trash2, AlertTriangle, Upload } from 'lucide-svelte';
+	import { ChevronDown, Plus, Pencil, Check, X, Search, Archive, Trash2, AlertTriangle, Upload, Link2 } from 'lucide-svelte';
+	import LinkedVaultDialog from './LinkedVaultDialog.svelte';
+	import { linkedProblem } from '$lib/linked/backend';
+	import { getLinkedVault } from '$lib/linked/config';
+	import type { LinkedVaultConfig } from '$lib/linked/types';
 
 	let showDropdown = $state(false);
 	let showCreateModal = $state(false);
@@ -16,6 +20,8 @@
 	let showDeleteConfirm = $state(false);
 	let deleteConfirmName = $state('');
 	let deleteError = $state<string | null>(null);
+	// Linked folders ($lib/linked) have their own dialog: `true` links a new one.
+	let linkedDialog = $state<LinkedVaultConfig | true | null>(null);
 
 	// Form state (shared between create and edit)
 	let formName = $state('');
@@ -44,8 +50,19 @@
 		showCreateModal = true;
 	}
 
+	function openLinkDialog() {
+		showDropdown = false;
+		showCreateModal = false;
+		linkedDialog = true;
+	}
+
 	function openEditModal(vault: Vault, event: MouseEvent) {
 		event.stopPropagation();
+		if (vault.kind === 'linked') {
+			showDropdown = false;
+			linkedDialog = getLinkedVault(vault.id) ?? null;
+			return;
+		}
 		resetForm();
 		formName = vault.name;
 		formIconId = vault.icon || null;
@@ -196,6 +213,8 @@
 	>
 		{#if $currentVault?.icon || $currentVault?.iconImage}
 			<VaultIcon vault={$currentVault} class="h-4 w-4 text-[var(--color-accent)]" />
+		{:else if $currentVault?.kind === 'linked'}
+			<span title="Linked folder"><Link2 class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" aria-label="Linked folder" /></span>
 		{/if}
 		<span class="truncate text-sm font-semibold text-[var(--color-text)]">
 			{$currentVault?.name || 'Select Vault'}
@@ -224,6 +243,13 @@
 								class="h-4 w-4 {isCurrent && (vault.icon || vault.iconImage) ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]'}"
 							/>
 							<span class="flex-1 truncate">{vault.name}</span>
+							{#if vault.kind === 'linked'}
+								{#if $linkedProblem?.vaultId === vault.id}
+									<span class="shrink-0 text-xs text-[var(--color-danger)]">{$linkedProblem.kind === 'missing' ? 'Folder not found' : "Can't be read"}</span>
+								{:else}
+									<span class="flex shrink-0 items-center gap-1 text-xs text-[var(--color-text-faint)]" title="Linked folder: notes are read from a folder on this computer"><Link2 class="h-3 w-3" /> Linked</span>
+								{/if}
+							{/if}
 						</button>
 						<button
 							onclick={(e) => openEditModal(vault, e)}
@@ -257,6 +283,10 @@
 				<Plus class="h-4 w-4" />
 				<span>New vault</span>
 			</button>
+			<button onclick={openLinkDialog} class="k-menu-item text-[var(--color-text-muted)]" role="menuitem">
+				<Link2 class="h-4 w-4" />
+				<span>Link a folder…</span>
+			</button>
 		</div>
 	{/if}
 </div>
@@ -284,6 +314,13 @@
 			<h2 id="vault-dialog-title" class="mb-4 text-base font-semibold text-[var(--color-text)]">
 				{showEditModal ? 'Edit vault' : 'New vault'}
 			</h2>
+
+			{#if showCreateModal}
+				<p class="-mt-2 mb-4 text-sm text-[var(--color-text-muted)]">
+					A vault kept by Kurumi. Already have a folder of Markdown notes?
+					<button type="button" class="text-[var(--color-accent)] hover:underline" onclick={openLinkDialog}>Link a folder</button> instead.
+				</p>
+			{/if}
 
 			<div class="space-y-4">
 				<div>
@@ -492,6 +529,10 @@
 			</div>
 		</div>
 	</div>
+{/if}
+
+{#if linkedDialog}
+	<LinkedVaultDialog config={linkedDialog === true ? undefined : linkedDialog} onclose={() => (linkedDialog = null)} />
 {/if}
 
 <style>

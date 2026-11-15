@@ -17,8 +17,15 @@
 		favoriteMemoryObjects,
 		questions,
 		vaultNeedsNewerApp,
-		todayIso
+		todayIso,
+		currentVaultCaps,
+		canCreateNotes
 	} from '$lib/db';
+	import { isTauri } from '$lib/desktop';
+	import { openLinkedVault } from '$lib/linked/backend';
+	import { getActiveLinkedVaultId, getLinkedVault } from '$lib/linked/config';
+	import { showNotice } from '$lib/stores/notice';
+	import LinkedVaultNotice from '$lib/components/LinkedVaultNotice.svelte';
 	import { myNames, isWaitingFor } from '$lib/work';
 	import { importRecording } from '$lib/incoming';
 	import { bootPwa } from '$lib/pwa-boot';
@@ -137,7 +144,7 @@
 	async function handleUploadFile(event: Event) {
 		const input = event.target as HTMLInputElement;
 		const file = input.files?.[0];
-		if (!file) return;
+		if (!file || !canCreateNotes()) return;
 
 		uploadingFile = true;
 		try {
@@ -190,7 +197,7 @@
 		const unsubscribe = triggerVoiceCapture.subscribe((value) => {
 			if (value) {
 				captureMode = 'voice-memo';
-				showVoiceCapture = true;
+				showVoiceCapture = canCreateNotes();
 				triggerVoiceCapture.set(false);
 			}
 		});
@@ -202,7 +209,7 @@
 		const unsubscribe = triggerMeetingCapture.subscribe((value) => {
 			if (value) {
 				captureMode = 'meeting';
-				showVoiceCapture = true;
+				showVoiceCapture = canCreateNotes();
 				triggerMeetingCapture.set(false);
 			}
 		});
@@ -213,7 +220,7 @@
 	$effect(() => {
 		const unsubscribe = triggerUploadRecording.subscribe((value) => {
 			if (value) {
-				uploadFileInput?.click();
+				if (canCreateNotes()) uploadFileInput?.click();
 				triggerUploadRecording.set(false);
 			}
 		});
@@ -318,6 +325,16 @@
 	]);
 
 	let currentPath = $derived(currentRoutePath($page.route.id, $page.params, $page.url.pathname));
+
+	// Pages about what a linked folder doesn't have ($lib/linked): records of
+	// the document, generated notes, and tools that rewrite many notes. In a
+	// linked folder they show one shared notice instead (LinkedVaultNotice).
+	const RECORD_PAGES = [
+		'/actions', '/proposals', '/drafts', '/inbox', '/calendar', '/daily', '/review',
+		'/projects', '/meetings', '/decisions', '/questions', '/people', '/templates', '/trash',
+		'/tags', '/topics', '/habits', '/flashcards', '/workflows', '/database', '/canvas', '/smart-folders'
+	];
+	const isRecordPage = (path: string) => RECORD_PAGES.some((page) => path === page || path.startsWith(`${page}/`));
 
 	function isActive(href: string): boolean {
 		const path = currentPath;
@@ -512,9 +529,20 @@
 		}
 
 		// Initialize async stuff
-		initDB().then(() => {
+		initDB().then(async () => {
 			// Edits a reload cut off (see $lib/unsaved), before anything renders
 			restoreStashedEdits();
+			// The linked folder that was current on this device (desktop app):
+			// scan it before the first render. If it isn't there (moved, disk
+			// unplugged) the document's own vault stays current and the vault
+			// menu says "Folder not found"; nothing is forgotten.
+			const linked = isTauri() ? getLinkedVault(getActiveLinkedVaultId() ?? '') : undefined;
+			if (linked) {
+				await openLinkedVault(linked).catch((err) => {
+					const missing = err instanceof DOMException && err.name === 'NotFoundError';
+					showNotice(missing ? `The folder of "${linked.name}" wasn't found. Showing your Kurumi vault instead.` : `Couldn't open "${linked.name}". Showing your Kurumi vault instead.`);
+				});
+			}
 			initSearch();
 			setupVisibilitySync();
 			setupAutoSync();
@@ -608,11 +636,11 @@
 
 		// Listen for voice/meeting capture requests from note pages
 		const handleVoiceMemoEvent = () => {
-			showVoiceCapture = true;
+			showVoiceCapture = canCreateNotes();
 			captureMode = 'voice-memo';
 		};
 		const handleMeetingEvent = () => {
-			showVoiceCapture = true;
+			showVoiceCapture = canCreateNotes();
 			captureMode = 'meeting';
 		};
 		window.addEventListener('kurumi-voice-memo', handleVoiceMemoEvent);
@@ -667,12 +695,14 @@
 	});
 
 	async function handleNewNote() {
+		if (!canCreateNotes()) return;
 		const memory = addMemoryObject();
 		if (isMobile) sidebarOpen = false;
 		await goto(`/memory/${memory.id}`);
 	}
 
 	async function handleNewNoteInFolder(folderId: string | null) {
+		if (!canCreateNotes()) return;
 		const memory = addMemoryObject(undefined, undefined, folderId);
 		if (isMobile) sidebarOpen = false;
 		await goto(`/memory/${memory.id}`);
@@ -793,6 +823,7 @@
 				<button
 					onclick={handleNewNote}
 					class="k-icon-btn"
+					class:hidden={!$currentVaultCaps.createNotes}
 					title="New note ({modKey}N)"
 					aria-label="New note"
 				>
@@ -822,7 +853,7 @@
 						<span class="flex-1 truncate text-left">Search</span>
 						<span class="k-kbd hidden md:inline-flex">{modKey}K</span>
 					</button>
-					{#each primaryNav as item (item.href)}
+					{#each primaryNav.filter((item) => $currentVaultCaps.records || item.href === '/') as item (item.href)}
 						{@const count = item.count?.() ?? 0}
 						<a
 							href={item.href}
@@ -842,7 +873,7 @@
 				</div>
 
 				<!-- Work: projects, meetings, decisions, questions -->
-				<div class="px-2 pt-3">
+				<div class="px-2 pt-3" class:hidden={!$currentVaultCaps.records}>
 					<button
 						onclick={() => (showWork = !showWork)}
 						class="section-label w-full"
@@ -905,7 +936,7 @@
 				{/if}
 
 				<!-- Labs (Settings → Labs) -->
-				{#if $labsEnabled}
+				{#if $labsEnabled && $currentVaultCaps.records}
 					<div class="px-2 pt-3">
 						<button
 							onclick={() => (showLabs = !showLabs)}
@@ -1007,7 +1038,7 @@
 				class="flex items-center justify-between gap-0.5 border-t border-[var(--color-border)] px-2 pt-2"
 				style="padding-bottom: max(0.625rem, env(safe-area-inset-bottom, 0px));"
 			>
-				{#each footerNav as item (item.label)}
+				{#each footerNav.filter((item) => $currentVaultCaps.records || item.href !== '/trash') as item (item.label)}
 					<a
 						href={item.href}
 						onclick={handleNoteClick}
@@ -1170,6 +1201,7 @@
 					type="button"
 					onclick={handleNewNote}
 					class="rounded-lg p-2 text-[var(--color-text-muted)] hover:bg-[var(--color-hover)]"
+					class:hidden={!$currentVaultCaps.createNotes}
 					aria-label="New note"
 					title="New note"
 				>
@@ -1182,7 +1214,11 @@
 			<!-- Pages that manage their own scrolling (notes, graph, canvas) are
 			     h-full and never overflow this; everything else scrolls here. -->
 			<div class="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-				{@render children()}
+				{#if !$currentVaultCaps.records && isRecordPage(currentPath)}
+					<LinkedVaultNotice />
+				{:else}
+					{@render children()}
+				{/if}
 			</div>
 		</main>
 

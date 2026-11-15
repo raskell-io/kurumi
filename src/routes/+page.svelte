@@ -15,6 +15,8 @@
 		vaults,
 		setCurrentVault,
 		noteTasksEnabled,
+		canCreateNotes,
+		currentVaultCaps,
 		type ActionItem
 	} from '$lib/db';
 	import { createExampleVault, EXAMPLE_VAULT_NAME } from '$lib/example-vault';
@@ -85,6 +87,7 @@
 	}
 
 	function handleNewNote() {
+		if (!canCreateNotes()) return;
 		const memory = addMemoryObject();
 		goto(`/memory/${memory.id}`);
 		showNewNoteSnackbar.set(true);
@@ -97,7 +100,7 @@
 		const params = $page.url.searchParams;
 		const newKind = params.get('new');
 		// Replace the shortcut URL, so Back doesn't create another note.
-		if (newKind === 'note') return void goto(`/memory/${addMemoryObject().id}`, { replaceState: true });
+		if (newKind === 'note') return void goto(canCreateNotes() ? `/memory/${addMemoryObject().id}` : '/', { replaceState: true });
 		if (newKind === 'voice') {
 			goto('/', { replaceState: true });
 			triggerVoiceCapture.set(true);
@@ -136,6 +139,7 @@
 		}
 		// Title: the first line, cut at a word near 80 characters. The full
 		// text goes in the body when it's longer than that.
+		if (!canCreateNotes()) return;
 		const firstLine = text.split('\n')[0];
 		const title = firstLine.length <= 80 ? firstLine : firstLine.slice(0, 80).replace(/\s+\S*$/, '') + '…';
 		const memory = addMemoryObject(title, text === title ? '' : text, null);
@@ -543,7 +547,7 @@
 		</header>
 
 		<!-- Capture: quick thought, new note, voice, meeting, today -->
-		<section class="capture mb-6" aria-label="Capture">
+		<section class="capture mb-6" class:hidden={!$currentVaultCaps.createNotes} aria-label="Capture">
 			<div class="capture-box">
 				<input
 					bind:value={captureText}

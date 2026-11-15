@@ -22,7 +22,9 @@
 		openFolderAsDatabase,
 		getMemoryObject,
 		setLivingNote,
-		addCanvas
+		addCanvas,
+		currentVaultCaps,
+		docVaults
 	} from '$lib/db';
 	import { storeBlob } from '$lib/db/blob-store';
 	import { getIconById } from '$lib/icons/vault-icons';
@@ -49,7 +51,8 @@
 	let newVaultName = $state('');
 
 	async function handleMarkdownExport(format: MarkdownExportFormat) {
-		const vault = $vaults.find((v) => v.id === $currentVaultId);
+		// A vault of the document; a linked folder is Markdown files already.
+		const vault = $docVaults.find((v) => v.id === $currentVaultId);
 		if (!vault) return;
 
 		const vaultMemories = $memoryObjects.filter((m) => m.vaultId === vault.id);
@@ -70,6 +73,15 @@
 		noteIcon?: string; // For notes with a page icon (emoji or image)
 		action: () => void;
 	}
+
+	// Not offered in a linked folder ($lib/linked): creating notes, the
+	// document's records and tools, and exporting what is already files.
+	const NOT_IN_LINKED = new Set([
+		'new-note', 'new-voice-memo', 'new-meeting', 'upload-recording', 'new-canvas', 'new-database', 'new-from-template',
+		'weekly-review', 'daily-note', 'actions', 'proposals', 'drafts', 'review', 'tags-manage', 'topics-manage',
+		'projects', 'meetings', 'decisions', 'questions', 'people', 'templates',
+		'export-vanilla', 'export-hugo', 'export-zola'
+	]);
 
 	const actions: Command[] = [
 		{
@@ -527,7 +539,13 @@
 					runPluginCommand(c);
 				}
 			}));
-			results = [...noteActions, ...pluginActions, ...actions, ...labActions].filter(
+			const linked = !$currentVaultCaps.records;
+			results = [
+				...noteActions.filter((a) => !linked || a.id !== 'living-note'),
+				...pluginActions,
+				...actions.filter((a) => !linked || !NOT_IN_LINKED.has(a.id)),
+				...(linked ? [] : labActions)
+			].filter(
 				(a) =>
 					a.title.toLowerCase().includes(actionQuery) ||
 					a.description?.toLowerCase().includes(actionQuery)

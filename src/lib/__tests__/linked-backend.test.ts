@@ -28,6 +28,7 @@ import {
 } from '$lib/linked/backend';
 import { newLinkedVaultConfig, validateLinkedVaultConfig } from '$lib/linked/config';
 import { capabilitiesFor } from '$lib/linked/capabilities';
+import { linkRefusal, pickLinkedFolder, SYNC_FOLDER_REFUSAL } from '$lib/linked/pick';
 import type { NoteFile, OpenedFolder } from '$lib/linked/types';
 
 const ROOT = '/picked/knowledge';
@@ -285,6 +286,46 @@ describe('linked vault settings', () => {
 		expect(capabilitiesFor({ kind: 'linked' })).toEqual({ kind: 'linked', editNotes: false, createNotes: false, records: false, sync: false, generated: false });
 		expect(capabilitiesFor({})).toMatchObject({ kind: 'kurumi', editNotes: true, records: true, sync: true });
 		expect(capabilitiesFor(undefined).kind).toBe('kurumi');
+	});
+});
+
+describe('choosing a folder to link', () => {
+	function folders(existing: string[]) {
+		(globalThis as any).__TAURI_INTERNALS__ = {
+			invoke: async (cmd: string, args?: { path: string; dir: boolean }) => {
+				const { path, dir } = args ?? { path: '', dir: false };
+				if (cmd === 'folder_pick') return { path: '/picked/notes', name: 'notes' };
+				if (cmd !== 'fs_open') throw `NotSupportedError: ${cmd}`;
+				const entry = existing.find((e) => e.replace(/\/$/, '') === path);
+				if (!entry) throw `NotFoundError: ${path} doesn't exist`;
+				if (entry.endsWith('/') !== dir) throw `TypeMismatchError: ${path} is not the expected kind of entry`;
+				return null;
+			}
+		};
+	}
+	const picked = { path: '/picked/notes', name: 'notes' };
+
+	it('accepts an ordinary folder, also one that has a .kurumi folder without metadata', async () => {
+		folders(['/picked/notes/.git/', '/picked/notes/.kurumi/']);
+		expect(await pickLinkedFolder()).toEqual(picked);
+		expect(await linkRefusal(picked)).toBeNull();
+		expect(await linkRefusal(picked, '/somewhere/else')).toBeNull();
+	});
+
+	it('refuses a Kurumi sync folder', async () => {
+		folders(['/picked/notes/kurumi-sync.bin']);
+		expect(await linkRefusal(picked)).toBe(SYNC_FOLDER_REFUSAL);
+		folders(['/picked/notes/.kurumi/', '/picked/notes/.kurumi/metadata.json']);
+		expect(await linkRefusal(picked)).toBe(SYNC_FOLDER_REFUSAL);
+		// A directory of that name isn't the sync file.
+		folders(['/picked/notes/kurumi-sync.bin/']);
+		expect(await linkRefusal(picked)).toBeNull();
+	});
+
+	it('refuses the folder Local sync is set up with', async () => {
+		folders([]);
+		expect(await linkRefusal(picked, '/picked/notes/')).toBe(SYNC_FOLDER_REFUSAL);
+		expect(await linkRefusal({ path: 'C:\\Users\\me\\notes', name: 'notes' }, 'C:\\Users\\me\\notes\\')).toBe(SYNC_FOLDER_REFUSAL);
 	});
 });
 
