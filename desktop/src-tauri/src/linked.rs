@@ -4,7 +4,8 @@
 //! The web side (src/lib/linked/) opens a vault with `linked_open`, which
 //! scans a folder the user picked in the system dialog (folders.rs), returns
 //! its notes and starts watching it. What changes in the folder afterwards is
-//! kept in a log per vault, which `linked_changes` hands out as a long poll.
+//! kept in a log per vault, which `linked_changes` hands out as a long poll:
+//! notes with their text, and of other files those the page has read.
 //! `linked_read` re-reads one note, `linked_write` replaces one if it still
 //! is what the web side last saw (by hash), `linked_create` adds one.
 //! `linked_read_bytes` reads a file a note refers to (an image), and
@@ -101,6 +102,11 @@ struct Vault {
     /// Wakes the long polls.
     signal: watch::Sender<Signal>,
     watcher: Mutex<Option<Watcher>>,
+    /// The other files (images, attachments) the page has read with
+    /// `linked_read_bytes` since the vault was opened, with their time and
+    /// size then; None for one that wasn't there. Only these are watched:
+    /// a folder can hold any number of files no note shows.
+    files: Mutex<HashMap<String, Option<(f64, u64)>>>,
 }
 
 #[derive(Clone, Copy)]
@@ -206,18 +212,23 @@ pub struct Opened {
 /// `{ "type": "upsert", "note": NoteFile }` for a note that is new or has
 /// other content, `{ "type": "remove", "rel": "…" }` for one that is gone
 /// (deleted, renamed away, now ignored or no longer readable as a note).
+/// For a file that isn't a note and that the page has read:
+/// `{ "type": "file", "rel": "…", "size": bytes, "mtime": ms }` when it is
+/// new or has another size or time (its content isn't sent, or looked at),
+/// and the same `remove` when it is gone.
 #[derive(Serialize, Clone, Debug)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Change {
     Upsert { note: NoteFile },
     Remove { rel: String },
+    File { rel: String, size: u64, mtime: f64 },
 }
 
 impl Change {
     fn weight(&self) -> usize {
         match self {
             Change::Upsert { note } => note.content.len(),
-            Change::Remove { .. } => 0,
+            Change::Remove { .. } | Change::File { .. } => 0,
         }
     }
 }
@@ -521,6 +532,46 @@ impl Vault {
         gone.sort();
         let mut changes: Vec<Change> = gone.iter().flat_map(|rel| index.forget(rel)).collect();
         changes.append(&mut upserts);
+        changes.append(&mut self.file_changes(None));
+        changes
+    }
+
+    /// Time and size of the file at `rel`, if it is a file of the vault now.
+    fn file_stamp(&self, rel: &str) -> Option<(f64, u64)> {
+        let parts: Vec<&str> = rel.split('/').collect();
+        if self.rules.ignores(&self.root, &parts, false) {
+            return None;
+        }
+        let path = parts.iter().fold(self.root.clone(), |path, part| path.join(part));
+        let meta = fs::metadata(&path).ok().filter(|meta| meta.is_file())?;
+        let inside = path.canonicalize().is_ok_and(|resolved| resolved.starts_with(&self.root));
+        inside.then(|| (modified_ms(&meta), meta.len()))
+    }
+
+    /// What became of the files the page has read: all of them, or the one
+    /// at `at` and those below it. By time and size only: a file of 25 MB
+    /// isn't read to find out that nothing happened to it.
+    fn file_changes(&self, at: Option<&str>) -> Vec<Change> {
+        let mut files = self.files.lock().unwrap();
+        let below = at.map(|rel| format!("{rel}/"));
+        let concerned = |rel: &String| match (at, &below) {
+            (Some(at), Some(below)) => rel == at || rel.starts_with(below),
+            _ => true,
+        };
+        let mut rels: Vec<String> = files.keys().filter(|rel| concerned(rel)).cloned().collect();
+        rels.sort();
+        let mut changes = Vec::new();
+        for rel in rels {
+            let now = self.file_stamp(&rel);
+            if files.get(&rel) == Some(&now) {
+                continue;
+            }
+            files.insert(rel.clone(), now);
+            changes.push(match now {
+                Some((mtime, size)) => Change::File { rel, size, mtime },
+                None => Change::Remove { rel },
+            });
+        }
         changes
     }
 
@@ -528,14 +579,17 @@ impl Vault {
     fn refresh(&self, index: &mut Index, path: &Path, rel: &str) -> Vec<Change> {
         // A symlink that now leads out of the folder counts as gone.
         let inside = path.canonicalize().is_ok_and(|resolved| resolved.starts_with(&self.root));
-        match stat(path) {
+        let mut changes: Vec<Change> = match stat(path) {
             Some((mtime, size)) if inside && is_markdown(rel) => {
                 index.settle(rel, load(path, rel.to_owned()), mtime, size).into_iter().collect()
             }
             // Nothing there, or nothing that can be a note: also a removed
             // or renamed directory, whose notes go with it.
             _ => index.forget(rel),
-        }
+        };
+        // And a file the page has read, or a directory that held some.
+        changes.append(&mut self.file_changes(Some(rel)));
+        changes
     }
 
     /// A batch from the watcher. The kinds of the events are hardly used:
@@ -665,6 +719,7 @@ fn open(
         log: Mutex::new(Log { first, entries: VecDeque::new(), bytes: 0 }),
         signal: watch::Sender::new(Signal { head: first, closed: false }),
         watcher: Mutex::new(None),
+        files: Mutex::new(HashMap::new()),
     });
     let (scanned, watch) = {
         // The watcher starts first and waits for the index, so nothing that
@@ -691,7 +746,8 @@ fn close(linked: &Linked, vault: &str) {
 }
 
 /// What changed since `cursor`, waiting up to `wait` for something to tell.
-async fn changes(linked: &Linked, vault: &str, cursor: u64, wait: Duration) -> Result<Changes, String> {
+/// `files`: whether the caller knows `file` changes; left out otherwise.
+async fn changes(linked: &Linked, vault: &str, cursor: u64, files: bool, wait: Duration) -> Result<Changes, String> {
     let waited = linked.get(vault)?;
     let mut signal = waited.signal.subscribe();
     // An error is the wait running out: then there is nothing to tell.
@@ -702,8 +758,11 @@ async fn changes(linked: &Linked, vault: &str, cursor: u64, wait: Duration) -> R
         let head = current.log.lock().unwrap().head();
         return Ok(Changes { cursor: head, changes: Vec::new(), rescan: true });
     }
-    let log = waited.log.lock().unwrap();
-    Ok(log.since(cursor))
+    let mut since = waited.log.lock().unwrap().since(cursor);
+    if !files {
+        since.changes.retain(|change| !matches!(change, Change::File { .. }));
+    }
+    Ok(since)
 }
 
 /// The entry `rel` names (`is_dir`: whether it is to be a directory), if it
@@ -741,7 +800,20 @@ fn read_bytes(folders: &Folders, linked: &Linked, vault: &str, rel: &str) -> Res
     let vault = linked.get(vault)?;
     let path = entry_path(folders, &vault, rel, false)?;
     let too_large = || format!("QuotaExceededError: {rel:?} is larger than 25 MB");
-    let meta = fs::metadata(&path).map_err(|e| if e.kind() == ErrorKind::NotFound { not_found(&path) } else { io_error(e) })?;
+    // From here on the page hears what becomes of this file: also of one
+    // that isn't there yet. (Notes are reported as notes.)
+    let watched = |stamp: Option<(f64, u64)>| {
+        if !is_markdown(rel) {
+            vault.files.lock().unwrap().insert(rel.to_owned(), stamp);
+        }
+    };
+    let meta = fs::metadata(&path).map_err(|e| {
+        if e.kind() != ErrorKind::NotFound {
+            return io_error(e);
+        }
+        watched(None);
+        not_found(&path)
+    })?;
     if !meta.is_file() {
         return Err(type_mismatch(&path));
     }
@@ -752,6 +824,8 @@ fn read_bytes(folders: &Folders, linked: &Linked, vault: &str, rel: &str) -> Res
     if bytes.len() as u64 > MAX_FILE_BYTES {
         return Err(too_large());
     }
+    // As it was before the read: a change during it is then still news.
+    watched(Some((modified_ms(&meta), meta.len())));
     Ok(bytes)
 }
 
@@ -864,10 +938,17 @@ pub fn linked_open(
 
 /// A long poll: answers as soon as the folder changed after `cursor`, with
 /// nothing after 25 s, and at once when the vault is closed (an error) or
-/// opened again (`rescan`).
+/// opened again (`rescan`). With `files: true` it also tells of the files
+/// read with `linked_read_bytes` (`file` changes); a page that doesn't ask
+/// for them gets the changes it has always got.
 #[tauri::command]
-pub async fn linked_changes(vault: String, cursor: u64, linked: State<'_, Linked>) -> Result<Changes, String> {
-    changes(&linked, &vault, cursor, LONG_POLL).await
+pub async fn linked_changes(
+    vault: String,
+    cursor: u64,
+    files: Option<bool>,
+    linked: State<'_, Linked>,
+) -> Result<Changes, String> {
+    changes(&linked, &vault, cursor, files.unwrap_or(false), LONG_POLL).await
 }
 
 /// One note of an open vault, as it is on disk now.
@@ -1235,7 +1316,7 @@ mod tests {
     }
 
     fn poll(linked: &Linked, cursor: u64, wait: Duration) -> Result<Changes, String> {
-        tauri::async_runtime::block_on(changes(linked, VAULT, cursor, wait))
+        tauri::async_runtime::block_on(changes(linked, VAULT, cursor, true, wait))
     }
 
     /// `+rel` for an upsert, `-rel` for a remove.
@@ -1245,6 +1326,7 @@ mod tests {
             .map(|change| match change {
                 Change::Upsert { note } => format!("+{}", note.rel),
                 Change::Remove { rel } => format!("-{rel}"),
+                Change::File { rel, .. } => format!("~{rel}"),
             })
             .collect()
     }
@@ -1852,5 +1934,169 @@ mod tests {
         }
         assert!(target(Some("notes/missing.md")).unwrap_err().starts_with("NotFoundError"));
         assert!(reveal_target(&folders, &linked, "lf.other", None).unwrap_err().starts_with("InvalidStateError"));
+    }
+
+    // --- Changes to the files the page has read ---
+
+    fn filed(changes: &[Change], rel: &str, size: u64) -> bool {
+        changes.iter().any(|c| matches!(c, Change::File { rel: file, size: bytes, mtime } if file == rel && *bytes == size && *mtime > 0.0))
+    }
+
+    #[test]
+    fn the_watcher_reports_files_the_page_has_read() {
+        let (_tmp, folders, linked, root) = setup_with(FAST);
+        put(&root, "a.md", "a");
+        put(&root, "assets/pic.png", "one");
+        put(&root, "assets/other.png", "other");
+        put(&root, "assets/.hidden.png", "hidden");
+        put(&root, "private/p.png", "private");
+        let opened = open_as(&folders, &linked, &root, &["private/"], true);
+        assert_eq!(opened.watch, WatchMode::Events);
+        let mut cursor = opened.cursor;
+        let mut all = Vec::new();
+
+        assert_eq!(read_bytes(&folders, &linked, VAULT, "assets/pic.png").unwrap(), b"one");
+        // Asked for before it exists: the page hears when it does.
+        assert!(read_bytes(&folders, &linked, VAULT, "assets/later.png").unwrap_err().starts_with("NotFoundError"));
+        // Refused: never watched.
+        assert!(read_bytes(&folders, &linked, VAULT, "private/p.png").is_err());
+        assert!(read_bytes(&folders, &linked, VAULT, "assets/.hidden.png").is_err());
+
+        // Modified.
+        put(&root, "assets/pic.png", "two!");
+        all.extend(wait_for(&linked, &mut cursor, |c| filed(c, "assets/pic.png", 4)));
+        // Replaced: written beside it, renamed over it.
+        put(&root, "assets/pic.tmp", "three33");
+        fs::rename(root.join("assets").join("pic.tmp"), root.join("assets").join("pic.png")).unwrap();
+        all.extend(wait_for(&linked, &mut cursor, |c| filed(c, "assets/pic.png", 7)));
+        // Deleted, and there again.
+        fs::remove_file(root.join("assets").join("pic.png")).unwrap();
+        all.extend(wait_for(&linked, &mut cursor, |c| removed(c, "assets/pic.png")));
+        put(&root, "assets/pic.png", "four");
+        all.extend(wait_for(&linked, &mut cursor, |c| filed(c, "assets/pic.png", 4)));
+        put(&root, "assets/later.png", "later");
+        all.extend(wait_for(&linked, &mut cursor, |c| filed(c, "assets/later.png", 5)));
+        // With its directory.
+        fs::rename(root.join("assets"), root.join("moved")).unwrap();
+        all.extend(wait_for(&linked, &mut cursor, |c| {
+            c.iter().filter(|c| matches!(c, Change::Remove { rel } if rel.starts_with("assets/"))).count() == 2
+        }));
+
+        // Files the page hasn't read, and those the vault leaves out, are
+        // not reported: these come before the notes that are waited for.
+        put(&root, "moved/other.png", "changed");
+        put(&root, "moved/pic.png", "not at the path that was read");
+        put(&root, "moved/.hidden.png", "changed");
+        put(&root, "private/p.png", "changed");
+        put(&root, "new.png", "new");
+        put(&root, "a.md", "aa");
+        all.extend(wait_for(&linked, &mut cursor, |c| upserted(c, "a.md", "aa")));
+        put(&root, "b.md", "b");
+        all.extend(wait_for(&linked, &mut cursor, |c| upserted(c, "b.md", "b")));
+        for change in told(&all) {
+            let known = ["~assets/pic.png", "-assets/pic.png", "~assets/later.png", "-assets/later.png", "+a.md", "+b.md"];
+            assert!(known.contains(&change.as_str()), "{change} in {:?}", told(&all));
+        }
+    }
+
+    #[test]
+    fn files_are_compared_by_time_and_size_and_only_once_read() {
+        let (_tmp, folders, linked, root) = setup();
+        put(&root, "a.md", "a");
+        put(&root, "assets/pic.png", "one");
+        put(&root, "assets/other.png", "other");
+        open_as(&folders, &linked, &root, &[], true);
+
+        // Not read yet: not watched.
+        put(&root, "assets/pic.png", "two!");
+        assert!(resync(&linked).is_empty());
+        read_bytes(&folders, &linked, VAULT, "assets/pic.png").unwrap();
+        // A note read as bytes is still reported as a note, once.
+        read_bytes(&folders, &linked, VAULT, "a.md").unwrap();
+        assert!(resync(&linked).is_empty());
+
+        put(&root, "assets/pic.png", "three");
+        put(&root, "assets/other.png", "changed");
+        put(&root, "a.md", "aa");
+        assert_eq!(told(&resync(&linked)), ["+a.md", "~assets/pic.png"]);
+        assert!(resync(&linked).is_empty(), "nothing happened since");
+
+        fs::remove_file(root.join("assets").join("pic.png")).unwrap();
+        assert_eq!(told(&resync(&linked)), ["-assets/pic.png"]);
+        assert!(resync(&linked).is_empty());
+        put(&root, "assets/pic.png", "four");
+        let back = resync(&linked);
+        assert!(filed(&back, "assets/pic.png", 4) && back.len() == 1, "{:?}", told(&back));
+        // A directory in its place is no file.
+        fs::remove_file(root.join("assets").join("pic.png")).unwrap();
+        fs::create_dir(root.join("assets").join("pic.png")).unwrap();
+        assert_eq!(told(&resync(&linked)), ["-assets/pic.png"]);
+        fs::remove_dir(root.join("assets").join("pic.png")).unwrap();
+        put(&root, "assets/pic.png", "five5");
+
+        // Read again after a change: the page has what is there, no news.
+        assert_eq!(read_bytes(&folders, &linked, VAULT, "assets/pic.png").unwrap(), b"five5");
+        assert!(resync(&linked).is_empty());
+
+        // Opening the vault again starts over: nothing is watched.
+        open_as(&folders, &linked, &root, &[], true);
+        put(&root, "assets/pic.png", "six666");
+        assert!(resync(&linked).is_empty());
+    }
+
+    #[test]
+    fn files_the_page_has_read_are_polled_too() {
+        let (_tmp, folders, linked, root) = setup_with(POLLING);
+        put(&root, "assets/pic.png", "one");
+        put(&root, "assets/other.png", "other");
+        let opened = open_as(&folders, &linked, &root, &[], true);
+        assert_eq!(opened.watch, WatchMode::Polling);
+        let mut cursor = opened.cursor;
+        read_bytes(&folders, &linked, VAULT, "assets/pic.png").unwrap();
+
+        put(&root, "assets/other.png", "changed");
+        put(&root, "assets/pic.png", "two!");
+        let all = wait_for(&linked, &mut cursor, |c| filed(c, "assets/pic.png", 4));
+        assert_eq!(told(&all), ["~assets/pic.png"]);
+        fs::remove_file(root.join("assets").join("pic.png")).unwrap();
+        let all = wait_for(&linked, &mut cursor, |c| removed(c, "assets/pic.png"));
+        assert_eq!(told(&all), ["-assets/pic.png"]);
+    }
+
+    #[test]
+    fn file_changes_go_only_to_a_page_that_asks_for_them() {
+        let (_tmp, folders, linked, root) = setup();
+        put(&root, "a.md", "a");
+        put(&root, "assets/pic.png", "one");
+        let cursor = open_as(&folders, &linked, &root, &[], true).cursor;
+        let vault = linked.get(VAULT).unwrap();
+        read_bytes(&folders, &linked, VAULT, "assets/pic.png").unwrap();
+        put(&root, "assets/pic.png", "two!");
+        put(&root, "a.md", "aa");
+        vault.publish(resync(&linked));
+
+        let ask = |files: bool| tauri::async_runtime::block_on(changes(&linked, VAULT, cursor, files, PATIENCE)).unwrap();
+        // As before for a page that doesn't know them: the note, and the cursor moves past both.
+        let plain = ask(false);
+        assert_eq!(told(&plain.changes), ["+a.md"]);
+        assert_eq!((plain.cursor, plain.rescan), (cursor + 2, false));
+        let with_files = ask(true);
+        assert_eq!(told(&with_files.changes), ["+a.md", "~assets/pic.png"]);
+        assert_eq!(with_files.cursor, cursor + 2);
+
+        let json = serde_json::to_value(&with_files).unwrap();
+        let file = json["changes"][1].as_object().unwrap();
+        let mut keys: Vec<&str> = file.keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(keys, ["mtime", "rel", "size", "type"]);
+        assert_eq!((&file["type"], &file["rel"], &file["size"]), (&"file".into(), &"assets/pic.png".into(), &4.into()));
+        assert!(file["mtime"].as_f64().unwrap() > 0.0);
+
+        // Only a file change: the plain poll comes back with nothing but the new cursor.
+        put(&root, "assets/pic.png", "three");
+        vault.publish(resync(&linked));
+        let plain = tauri::async_runtime::block_on(changes(&linked, VAULT, cursor + 2, false, PATIENCE)).unwrap();
+        assert!(plain.changes.is_empty() && !plain.rescan);
+        assert_eq!(plain.cursor, cursor + 3);
     }
 }
