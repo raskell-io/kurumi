@@ -24,6 +24,10 @@ serde_json = "1"
 # Linked folder vaults (linked.rs): gitignore-style scanning, content hashes.
 ignore = "=0.4.33"
 sha2 = "=0.10.9"
+# Watching a linked folder; tokio (already Tauri's runtime) for the long poll.
+notify = "=8.2.2"
+notify-debouncer-full = "=0.7.0"
+tokio = { version = "=1.54.1", features = ["sync", "time"] }
 
 # Desktop only: phones have one instance anyway.
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]

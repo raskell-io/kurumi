@@ -166,6 +166,7 @@ pub fn run() {
             folders::fs_write,
             folders::fs_remove,
             linked::linked_open,
+            linked::linked_changes,
             linked::linked_read,
             linked::linked_close,
             selftest::selftest_report,
