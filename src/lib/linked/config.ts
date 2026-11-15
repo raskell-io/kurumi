@@ -13,7 +13,7 @@ const ACTIVE_KEY = 'kurumi-active-linked-vault';
 export const DEFAULT_IGNORE = ['.git/', '.obsidian/', '.trash/', 'node_modules/', 'target/', '.kurumi/', '.claude/'];
 
 /** Ids of linked vaults start with this; document vault ids (12 letters and digits, or 'default-vault') never do. */
-export const LINKED_VAULT_PREFIX = 'lv-';
+const LINKED_VAULT_PREFIX = 'lv-';
 export const isLinkedVaultId = (id: string | null | undefined): boolean => !!id && id.startsWith(LINKED_VAULT_PREFIX);
 
 function newId(): string {
@@ -101,13 +101,6 @@ function write(list: LinkedVaultConfig[]): void {
 		// Private mode: the link lasts until the window closes.
 	}
 	configs.set(sorted);
-}
-
-/** Read the list again from storage (tests, another window). */
-export function reloadLinkedVaults(): LinkedVaultConfig[] {
-	const list = read();
-	configs.set(list);
-	return list;
 }
 
 export function getLinkedVaults(): LinkedVaultConfig[] {

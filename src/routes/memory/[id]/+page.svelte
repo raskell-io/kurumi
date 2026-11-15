@@ -485,8 +485,8 @@
 		goto('/');
 	}
 
-	// A note of a linked folder ($lib/linked) is shown as it is in its file:
-	// nothing here saves it, and what belongs to the document (icon,
+	// A note of a linked folder ($lib/linked) is a file: its text is saved
+	// to that file (below), and what belongs to the document (icon,
 	// favourite, projects, records, history, trash) isn't offered.
 	let linked = $derived(!!memory && isLinkedNoteId(memory.id));
 	// Unless its vault's settings allow editing, it is read-only.

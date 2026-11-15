@@ -3160,7 +3160,8 @@ const scenarios = {
 		assert.equal(await folderFile(page, 'foo.md'), theirs, 'written while the conflict was open');
 		await clickText(page, '[data-testid="linked-save-issue"] button', 'Resolve');
 		await page.waitForSelector('[data-testid="linked-conflict-dialog"]');
-		assert.ok((await page.$eval('[data-testid="conflict-mine"]', (el) => el.textContent)).includes('Line two. Mine too. And more.'));
+		// What was typed after the banner appeared is in it too, once the editor has reported it.
+		await page.waitForFunction(() => document.querySelector('[data-testid="conflict-mine"]').textContent.includes('Line two. Mine too. And more.'), { timeout: 10000 });
 		assert.ok((await page.$eval('[data-testid="conflict-theirs"]', (el) => el.textContent)).includes('Line two, theirs.'));
 		await clickText(page, '[data-testid="linked-conflict-dialog"] button', 'Keep mine');
 		await page.waitForFunction(() => window.__folder.read('foo.md').includes('Line two. Mine too. And more.'), { timeout: 10000 });

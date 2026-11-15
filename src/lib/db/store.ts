@@ -146,7 +146,7 @@ export const currentVault: Readable<Vault | undefined> = derived(
 	}
 );
 
-/** What the current vault can do (a linked folder: read only, no records). */
+/** What the current vault can do (a linked folder: notes only, editable if its settings say so). */
 export const currentVaultCaps: Readable<VaultCapabilities> = derived([currentVault, linkedVaultConfigs], ([$vault, $linked]) =>
 	capabilitiesFor($vault, $linked.find((c) => c.id === $vault?.id)?.readOnly ?? true)
 );

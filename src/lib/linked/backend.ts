@@ -1001,7 +1001,6 @@ export async function revealLinkedFile(noteId?: string): Promise<void> {
 // ---- Readers (for $lib/db) ------------------------------------------------
 
 export const getOpenLinkedVaultId = (): string | null => mounted?.config.id ?? null;
-export const getOpenLinkedVaultConfig = (): LinkedVaultConfig | null => mounted?.config ?? null;
 
 /** The open vault's notes, in path order. */
 export const linkedNotes = (): MemoryObject[] => (mounted ? [...mounted.data.notes.values()] : []);
