@@ -405,6 +405,47 @@ async function savedBody(page, title, pattern, timeout = 8000) {
 	);
 }
 
+// What the page looks like to someone at the keyboard: where it is, which
+// note it shows, where the focus is, and the quick switcher if it is open.
+const pageState = (page) =>
+	page.evaluate(() => {
+		const active = document.activeElement;
+		const describe = (el) =>
+			el ? `${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ''}${el.getAttribute('aria-label') ? `[aria-label="${el.getAttribute('aria-label')}"]` : ''}${el.className && typeof el.className === 'string' ? `.${el.className.split(/\s+/).slice(0, 2).join('.')}` : ''}` : null;
+		const options = [...document.querySelectorAll('[role="option"]')];
+		return {
+			url: location.href,
+			titleField: document.querySelector('input[aria-label="Note title"]')?.value ?? null,
+			editorNote: document.querySelector('main [data-note-id]')?.getAttribute('data-note-id') ?? null,
+			focus: describe(active),
+			focusInSwitcher: !!active?.closest?.('[aria-label="Command palette"]'),
+			switcherOpen: !!document.querySelector('[role="listbox"]'),
+			switcherSelected: options.find((o) => o.getAttribute('aria-selected') === 'true')?.textContent.replace(/\s+/g, ' ').trim() ?? null,
+			switcherOptions: options.map((o) => o.textContent.replace(/\s+/g, ' ').trim()),
+			recent: localStorage.getItem('kurumi-recent-notes')
+		};
+	});
+
+// Wait for the note page to show the note titled `title`. If it never does,
+// the error says what the page showed instead, what it looked like `before`
+// the step that should have opened the note (from pageState), which notes
+// exist, and the page errors so far.
+async function noteShown(page, title, { before = null, errors = [], timeout = 30000 } = {}) {
+	try {
+		await page.waitForFunction((title) => document.querySelector('input[aria-label="Note title"]')?.value === title, { timeout }, title);
+	} catch {
+		const now = await pageState(page);
+		const notes = await db(page, `let ms; db.allMemoryObjects.subscribe((v) => (ms = v))(); return ms.map((m) => ({ id: m.id, title: m.title, vault: m.vaultId }));`).catch((err) => `unreadable: ${err.message}`);
+		assert.fail(
+			`The note "${title}" was not shown within ${timeout}ms.\n` +
+				`now: ${JSON.stringify(now)}\n` +
+				`before the step: ${JSON.stringify(before)}\n` +
+				`notes in the store: ${JSON.stringify(notes)}\n` +
+				`page errors: ${JSON.stringify(errors)}`
+		);
+	}
+}
+
 async function typeInEditor(page, text, selector = 'main .ProseMirror') {
 	// The stored body of the note that is open (null on other pages).
 	const stored = () =>
@@ -546,8 +587,11 @@ const scenarios = {
 		assert.match(items[0], /Beta/, `first switcher item: ${items[0]}`);
 		assert.match(items[0], /Recently opened/);
 		assert.ok(!items.some((i) => i.includes('Alpha')), 'current note listed in switcher');
+		// Enter opens the first item. (This step has timed out on CI and never
+		// locally: if it does again, the error shows where the key went.)
+		const before = await pageState(page);
 		await page.keyboard.press('Enter');
-		await page.waitForFunction(() => document.querySelector('input[aria-label="Note title"]')?.value === 'Beta');
+		await noteShown(page, 'Beta', { before, errors });
 		assert.deepEqual(errors, []);
 	},
 
