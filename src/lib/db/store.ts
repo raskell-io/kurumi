@@ -1,5 +1,5 @@
 import * as Automerge from '@automerge/automerge';
-import { parseWikilink } from '$lib/wikilinks';
+import { buildLinkIndex, extractLinkTargets, type LinkResolver } from '$lib/linked/links';
 import {
 	fieldsFromTask,
 	insertLine,
@@ -5208,12 +5208,7 @@ export async function importJSON(
 // [[Title#Heading]] all count as Title (see $lib/wikilinks). Also reads
 // Milkdown's escaped form \[\[Title]], which older notes may hold.
 export function extractWikilinks(content: string): string[] {
-	const links: string[] = [];
-	for (const match of (content ?? '').matchAll(/\\?\[\\?\[([^[\]\n]+?)\\?\]\\?\]/g)) {
-		const { target } = parseWikilink(match[1]);
-		if (target) links.push(target);
-	}
-	return links;
+	return extractLinkTargets(content);
 }
 
 // Extract hashtags from content
@@ -5812,31 +5807,37 @@ export function getMemoryObjectsByLink(url: string): MemoryObject[] {
 	});
 }
 
+// The link resolver of a vault ($lib/linked/links, title mode), kept until
+// the document changes. `trim` ignores spaces around titles.
+let vaultLinksDoc: unknown = null;
+const vaultLinksCache = new Map<string, LinkResolver<MemoryObject>>();
+function vaultLinks(vaultId: string, trim = false): LinkResolver<MemoryObject> {
+	if (vaultLinksDoc !== doc) {
+		vaultLinksDoc = doc;
+		vaultLinksCache.clear();
+	}
+	const cacheKey = `${trim ? 'trim' : 'raw'}:${vaultId}`;
+	let links = vaultLinksCache.get(cacheKey);
+	if (!links) {
+		links = buildLinkIndex(Object.values(memoriesView()).filter((memory) => memory.vaultId === vaultId), { trim });
+		vaultLinksCache.set(cacheKey, links);
+	}
+	return links;
+}
+
 // Find memories that link to a given memory (in current vault)
 export function findBacklinks(memoryId: string): MemoryObject[] {
 	if (!doc) return [];
 	const target = memoriesView()[memoryId];
 	if (!target) return [];
 
-	const vaultId = target.vaultId;
-	const targetTitle = target.title.toLowerCase();
-
-	return Object.values(memoriesView()).filter((memory) => {
-		if (memory.id === memoryId) return false;
-		if (memory.vaultId !== vaultId) return false;
-		const links = extractWikilinks(memory.bodyMarkdown);
-		return links.some((link) => link.toLowerCase() === targetTitle);
-	});
+	return vaultLinks(target.vaultId).backlinks(memoryId);
 }
 
 // Find a memory by its title in current vault (case-insensitive)
 export function findMemoryObjectByTitle(title: string): MemoryObject | undefined {
 	if (!doc) return undefined;
-	const vaultId = getCurrentVaultId();
-	const lowerTitle = title.toLowerCase();
-	return Object.values(memoriesView()).find(
-		(memory) => memory.vaultId === vaultId && memory.title.toLowerCase() === lowerTitle
-	);
+	return vaultLinks(getCurrentVaultId()).resolve(title);
 }
 
 // Build a regex matching `term` as a whole word, case-insensitively.
@@ -5866,7 +5867,7 @@ export function findUnlinkedMentions(memoryId: string): MemoryObject[] {
 	const title = (target.title ?? '').trim();
 	if (title.length < 3) return [];
 	const vaultId = target.vaultId;
-	const lowerTitle = title.toLowerCase();
+	const linking = new Set(vaultLinks(vaultId, true).backlinks(memoryId).map((memory) => memory.id));
 	const mentionRe = wholeWordRegex(title);
 
 	return Object.values(memoriesView()).filter((memory) => {
@@ -5874,8 +5875,7 @@ export function findUnlinkedMentions(memoryId: string): MemoryObject[] {
 		if (memory.vaultId !== vaultId) return false;
 		if (memory.deletedAt) return false;
 		// Already links to the target → it's a backlink, not an unlinked mention.
-		const links = extractWikilinks(memory.bodyMarkdown);
-		if (links.some((link) => link.toLowerCase() === lowerTitle)) return false;
+		if (linking.has(memory.id)) return false;
 		return mentionRe.test(stripWikilinks(memory.bodyMarkdown ?? ''));
 	});
 }

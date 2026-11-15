@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Graph from '$lib/components/Graph.svelte';
 	import { memoryObjects, extractWikilinks, type MemoryObject } from '$lib/db';
+	import { buildLinkIndex } from '$lib/linked/links';
 	import { Link2 } from 'lucide-svelte';
 
 	// Store subscription for Svelte 5 runes mode
@@ -15,12 +16,12 @@
 
 	// Count total links across all memories
 	let linkCount = $derived.by(() => {
-		const memoryMap = new Map(memoriesData.map((m) => [m.title.toLowerCase(), m.id]));
+		const links = buildLinkIndex(memoriesData);
 		let count = 0;
 		for (const memory of memoriesData) {
 			const wikilinks = extractWikilinks(memory.bodyMarkdown);
 			for (const link of wikilinks) {
-				if (memoryMap.has(link.toLowerCase())) {
+				if (links.resolve(link)) {
 					count++;
 				}
 			}

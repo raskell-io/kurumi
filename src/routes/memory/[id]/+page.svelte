@@ -18,6 +18,7 @@
 		setMemoryFavorite,
 		getMemoryObject
 	} from '$lib/db';
+	import { buildLinkIndex } from '$lib/linked/links';
 	import { pushUndo } from '$lib/stores/undo';
 	import { openInSplit } from '$lib/stores/workspace';
 	import { get } from 'svelte/store';
@@ -719,15 +720,15 @@
 	// Alt+click (or "Open to the side" in the preview) opens the link in
 	// the split pane instead.
 	function handleWikilinkClick(linkTitle: string, event?: MouseEvent | { altKey: boolean }, anchor?: NoteAnchor) {
+		const links = buildLinkIndex(get(memoryObjects));
 		// [[#Heading]], or a link to a part of this very note: just scroll there.
-		if (anchor && (!linkTitle || linkTitle.toLowerCase() === memory?.title.toLowerCase()) && memory) {
+		if (anchor && memory && (!linkTitle || links.isLinkTo(linkTitle, memory))) {
 			const id = memory.id;
 			void scrollToAnchor(() => document.querySelector(`[data-note-id="${id}"]`), anchor, 500);
 			return;
 		}
 		// Find memory by title (case-insensitive)
-		const all = get(memoryObjects);
-		const target = all.find((m) => m.title.toLowerCase() === linkTitle.toLowerCase());
+		const target = links.resolve(linkTitle);
 		if (target && anchor) setPendingAnchor(target.id, anchor);
 
 		if (event?.altKey) {

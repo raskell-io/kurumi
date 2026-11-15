@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { untrack } from 'svelte';
 	import { memoryObjects, addMemoryObject, updateMemoryObject } from '$lib/db';
+	import { buildLinkIndex } from '$lib/linked/links';
 	import { closeSplit, openInSplit } from '$lib/stores/workspace';
 	import Editor from './Editor.svelte';
 	import NoteIcon from './NoteIcon.svelte';
@@ -69,7 +70,7 @@
 	}
 
 	function handleWikilink(linkTitle: string) {
-		const target = $memoryObjects.find((m) => m.title.toLowerCase() === linkTitle.toLowerCase());
+		const target = buildLinkIndex($memoryObjects).resolve(linkTitle);
 		openInSplit(target ? target.id : addMemoryObject(linkTitle, '').id);
 	}
 

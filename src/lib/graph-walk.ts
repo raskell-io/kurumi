@@ -11,6 +11,7 @@
  */
 
 import { parseWikilink } from '$lib/wikilinks';
+import { buildLinkIndex } from '$lib/linked/links';
 
 export type GraphNodeKind = 'note' | 'person' | 'project' | 'tag' | 'todo' | 'decision' | 'question';
 
@@ -42,6 +43,8 @@ export interface GraphData {
 	todos: { id: string; text: string; status: string; dueDate: string | null; assignee: string | null; memoryObjectId: string | null; projectId?: string | null }[];
 	decisions: { id: string; text: string; rationale: string; decidedOn: string; decidedBy: string[]; memoryId: string | null; projectId: string | null }[];
 	questions: { id: string; text: string; status: string; assignee: string | null; memoryId: string | null; projectId: string | null }[];
+	/** What [[links]] address a note by, when not its title (see $lib/linked/links). */
+	linkKeyOf?: (note: GraphData['notes'][number]) => string | null | undefined;
 }
 
 const MENTION = /@([A-Z][a-zA-Z]+(?: [A-Z][a-zA-Z]+)*)/g;
@@ -55,15 +58,15 @@ const clip = (s: string, n = 220) => {
 /** Index the records once for walking. */
 function index(data: GraphData) {
 	const notes = data.notes.filter((n) => !n.deletedAt);
-	const byTitle = new Map<string, (typeof notes)[number]>();
-	for (const n of notes) if (n.title) byTitle.set(key(n.title), n);
+	// By title: untitled notes can't be linked to; of two with one title the later wins.
+	const links = buildLinkIndex(notes, { linkKeyOf: data.linkKeyOf, fallbacks: [(n) => n.title || null], prefer: data.linkKeyOf ? 'first' : 'last', trim: true });
 	const linksOut = new Map<string, string[]>();
 	const linksIn = new Map<string, string[]>();
 	const mentions = new Map<string, string[]>(); // note id → people
 	for (const n of notes) {
 		const targets = new Set<string>();
 		for (const m of n.bodyMarkdown.matchAll(LINK)) {
-			const target = byTitle.get(key(parseWikilink(m[1]).target));
+			const target = links.resolve(parseWikilink(m[1]).target);
 			if (target && target.id !== n.id) targets.add(target.id);
 		}
 		linksOut.set(n.id, [...targets]);
@@ -72,7 +75,7 @@ function index(data: GraphData) {
 		for (const m of n.bodyMarkdown.matchAll(MENTION)) people.add(m[1]);
 		mentions.set(n.id, [...people]);
 	}
-	return { notes, byId: new Map(notes.map((n) => [n.id, n])), byTitle, linksOut, linksIn, mentions };
+	return { notes, byId: new Map(notes.map((n) => [n.id, n])), links, linksOut, linksIn, mentions };
 }
 
 type Index = ReturnType<typeof index>;
@@ -91,7 +94,7 @@ export function resolveStart(query: string, data: GraphData, idx: Index = index(
 	if (person) return personNode(person, 0, data, idx);
 	const project = exact(data.projects, (p) => p.name);
 	if (project) return projectNode(project, 0);
-	const note = idx.byTitle.get(q);
+	const note = idx.links.resolve(q);
 	if (note) return noteNode(note, 0);
 	const tags = new Set(idx.notes.flatMap((n) => (n.tags ?? []).map(key)));
 	if (tags.has(q)) return tagNode(q, 0, idx);

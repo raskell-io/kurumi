@@ -14,6 +14,7 @@ import { get } from 'svelte/store';
 import { memoryObjects, type MemoryObject } from '$lib/db';
 import { parseWikilink } from '$lib/wikilinks';
 import { buildTitleIndex, findLinkSuggestions, linkFor, type TitleEntry } from '$lib/link-suggestions';
+import { buildLinkIndex, type LinkResolver } from '$lib/linked/links';
 
 const key = new PluginKey<DecorationSet>('kurumi-link-suggest');
 const MAX_SUGGESTIONS = 12;
@@ -55,11 +56,13 @@ function dismiss(noteId: string, targetId: string) {
 // The title index, rebuilt when the notes change.
 let indexFor: MemoryObject[] | null = null;
 let index = new Map<string, TitleEntry>();
+let indexLinks: LinkResolver<TitleEntry> = buildLinkIndex<TitleEntry>([]);
 function titleIndex(): Map<string, TitleEntry> {
 	const notes = get(memoryObjects);
 	if (notes !== indexFor) {
 		indexFor = notes;
 		index = buildTitleIndex(notes.filter((m) => m.type !== 'canvas'));
+		indexLinks = buildLinkIndex([...index.values()]);
 	}
 	return index;
 }
@@ -76,13 +79,14 @@ function compute(state: EditorState, noteId: string | undefined): DecorationSet 
 	// Not this note, not notes it already links to, not dismissed ones.
 	const skip = noteId ? dismissed(noteId) : new Set<string>();
 	if (noteId) skip.add(noteId);
-	const linked = new Set<string>();
 	state.doc.descendants((node) => {
 		if (!node.isText) return true;
-		for (const match of node.text!.matchAll(/\[\[([^\]\n]+)\]\]/g)) linked.add(parseWikilink(match[1]).target.toLowerCase());
+		for (const match of node.text!.matchAll(/\[\[([^\]\n]+)\]\]/g)) {
+			const linked = indexLinks.resolve(parseWikilink(match[1]).target);
+			if (linked) skip.add(linked.id);
+		}
 		return false;
 	});
-	for (const entry of idx.values()) if (linked.has(entry.title.toLowerCase())) skip.add(entry.id);
 
 	const decorations: Decoration[] = [];
 	state.doc.descendants((node, pos, parent) => {

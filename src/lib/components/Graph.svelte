@@ -2,6 +2,7 @@
 	import { wikilinkLabel } from '$lib/wikilinks';
 	import { onMount, onDestroy, tick, untrack } from 'svelte';
 	import { memoryObjects, folders, extractWikilinks, type MemoryObject, type Folder } from '$lib/db';
+	import { buildLinkIndex } from '$lib/linked/links';
 	import { goto } from '$app/navigation';
 	import ForceGraph from 'force-graph';
 	import { Search, X, ArrowRight, ZoomIn, ZoomOut, Maximize } from 'lucide-svelte';
@@ -172,15 +173,15 @@
 
 	function buildGraphData(): { nodes: GraphNode[]; links: GraphLink[] } {
 		const all = memoriesData;
-		// Map memory titles (trimmed and lowercased) to their IDs for link matching
-		const memoryMap = new Map(all.map((m) => [m.title.trim().toLowerCase(), m.id]));
+		// Links match titles trimmed and case-insensitively; of two notes with one title the later wins
+		const resolver = buildLinkIndex(all, { trim: true, prefer: 'last' });
 
 		// Calculate backlinks for each memory
 		const backlinkCounts = new Map<string, number>();
 		for (const memory of all) {
 			const wikilinks = extractWikilinks(memory.bodyMarkdown);
 			for (const link of wikilinks) {
-				const targetId = memoryMap.get(link.trim().toLowerCase());
+				const targetId = resolver.resolve(link)?.id;
 				if (targetId) {
 					backlinkCounts.set(targetId, (backlinkCounts.get(targetId) || 0) + 1);
 				}
@@ -207,8 +208,7 @@
 		for (const memory of all) {
 			const wikilinks = extractWikilinks(memory.bodyMarkdown);
 			for (const link of wikilinks) {
-				// Trim and lowercase to match against memoryMap
-				const targetId = memoryMap.get(link.trim().toLowerCase());
+				const targetId = resolver.resolve(link)?.id;
 				if (targetId && targetId !== memory.id) {
 					links.push({ source: memory.id, target: targetId });
 				}
