@@ -170,6 +170,8 @@ pub fn run() {
             linked::linked_read,
             linked::linked_write,
             linked::linked_create,
+            linked::linked_read_bytes,
+            linked::linked_reveal,
             linked::linked_close,
             selftest::selftest_report,
         ])

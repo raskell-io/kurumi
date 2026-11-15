@@ -7,6 +7,8 @@
 //! kept in a log per vault, which `linked_changes` hands out as a long poll.
 //! `linked_read` re-reads one note, `linked_write` replaces one if it still
 //! is what the web side last saw (by hash), `linked_create` adds one.
+//! `linked_read_bytes` reads a file a note refers to (an image), and
+//! `linked_reveal` shows one in the system's file manager.
 //!
 //! What a scan leaves out, the other commands refuse and the watcher doesn't
 //! report: hidden entries, the vault's ignore patterns, `.gitignore` if
@@ -34,11 +36,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tauri::State;
+use tauri::{ipc, State};
 use tokio::sync::watch;
 
 /// Larger Markdown files are counted as skipped, not loaded or written.
 const MAX_NOTE_BYTES: u64 = 2 * 1024 * 1024;
+/// Larger images and attachments aren't handed to the page.
+const MAX_FILE_BYTES: u64 = 25 * 1024 * 1024;
 /// How long the watcher waits for a path to settle before reporting it.
 const DEBOUNCE: Duration = Duration::from_millis(300);
 /// Without a watcher the folder is compared with what's known this often.
@@ -702,15 +706,12 @@ async fn changes(linked: &Linked, vault: &str, cursor: u64, wait: Duration) -> R
     Ok(log.since(cursor))
 }
 
-/// The file `rel` names, if it may be a note of the vault: a plain relative
-/// path to a Markdown file that the rules don't leave out and that doesn't
-/// lead out of the folder.
-fn note_path(folders: &Folders, vault: &Vault, rel: &str) -> Result<PathBuf, String> {
+/// The entry `rel` names (`is_dir`: whether it is to be a directory), if it
+/// is one of the vault's: a plain relative path that the rules don't leave
+/// out and that doesn't lead out of the folder.
+fn entry_path(folders: &Folders, vault: &Vault, rel: &str, is_dir: bool) -> Result<PathBuf, String> {
     let parts = rel_parts(rel)?;
-    if !parts.last().is_some_and(|name| is_markdown(name)) {
-        return Err(format!("NotAllowedError: {rel:?} is not a Markdown file"));
-    }
-    if vault.rules.ignores(&vault.root, &parts, false) {
+    if vault.rules.ignores(&vault.root, &parts, is_dir) {
         return Err(format!("NotAllowedError: {rel:?} is excluded by the linked folder's ignore rules"));
     }
     let path = parts.iter().fold(vault.root.clone(), |path, part| path.join(part));
@@ -718,10 +719,56 @@ fn note_path(folders: &Folders, vault: &Vault, rel: &str) -> Result<PathBuf, Str
     folders.authorize(&path.to_string_lossy())
 }
 
+/// The file `rel` names, if it may be a note of the vault: as entry_path,
+/// and a Markdown file.
+fn note_path(folders: &Folders, vault: &Vault, rel: &str) -> Result<PathBuf, String> {
+    if !rel.rsplit('/').next().is_some_and(is_markdown) {
+        rel_parts(rel)?;
+        return Err(format!("NotAllowedError: {rel:?} is not a Markdown file"));
+    }
+    entry_path(folders, vault, rel, false)
+}
+
 fn read(folders: &Folders, linked: &Linked, vault: &str, rel: &str) -> Result<NoteFile, String> {
     let vault = linked.get(vault)?;
     let path = note_path(folders, &vault, rel)?;
     load(&path, rel.to_owned())
+}
+
+/// The bytes of a file a note refers to (an image, an attachment): any
+/// file of the vault, not only Markdown, up to 25 MB.
+fn read_bytes(folders: &Folders, linked: &Linked, vault: &str, rel: &str) -> Result<Vec<u8>, String> {
+    let vault = linked.get(vault)?;
+    let path = entry_path(folders, &vault, rel, false)?;
+    let too_large = || format!("QuotaExceededError: {rel:?} is larger than 25 MB");
+    let meta = fs::metadata(&path).map_err(|e| if e.kind() == ErrorKind::NotFound { not_found(&path) } else { io_error(e) })?;
+    if !meta.is_file() {
+        return Err(type_mismatch(&path));
+    }
+    if meta.len() > MAX_FILE_BYTES {
+        return Err(too_large());
+    }
+    let bytes = fs::read(&path).map_err(io_error)?;
+    if bytes.len() as u64 > MAX_FILE_BYTES {
+        return Err(too_large());
+    }
+    Ok(bytes)
+}
+
+/// What to show in the file manager: a file or directory of the vault, or
+/// without `rel` the linked folder itself. It has to exist.
+fn reveal_target(folders: &Folders, linked: &Linked, vault: &str, rel: Option<&str>) -> Result<PathBuf, String> {
+    let vault = linked.get(vault)?;
+    let Some(rel) = rel.filter(|rel| !rel.is_empty()) else {
+        return if vault.root.is_dir() { Ok(vault.root.clone()) } else { Err(not_found(&vault.root)) };
+    };
+    // Whether it is a directory decides which ignore patterns apply.
+    let is_dir = rel_parts(rel)?.iter().fold(vault.root.clone(), |path, part| path.join(part)).is_dir();
+    let path = entry_path(folders, &vault, rel, is_dir)?;
+    if !path.exists() {
+        return Err(not_found(&path));
+    }
+    Ok(path)
 }
 
 fn fits(content: &str) -> Result<(), String> {
@@ -856,6 +903,34 @@ pub fn linked_create(
     linked: State<'_, Linked>,
 ) -> Result<Written, String> {
     create(&folders, &linked, &vault, &rel, &content)
+}
+
+/// A file of the vault as raw bytes: the page gets an ArrayBuffer.
+#[tauri::command(async)]
+pub fn linked_read_bytes(
+    vault: String,
+    rel: String,
+    folders: State<'_, Folders>,
+    linked: State<'_, Linked>,
+) -> Result<ipc::Response, String> {
+    read_bytes(&folders, &linked, &vault, &rel).map(ipc::Response::new)
+}
+
+/// Shows a note (or any file or directory of the vault) in the system's
+/// file manager, selected in its folder; without `rel`, the linked folder.
+#[tauri::command(async)]
+pub fn linked_reveal(
+    vault: String,
+    rel: Option<String>,
+    folders: State<'_, Folders>,
+    linked: State<'_, Linked>,
+) -> Result<(), String> {
+    let path = reveal_target(&folders, &linked, &vault, rel.as_deref())?;
+    // The self-test checks the path, without opening windows on the desktop.
+    if crate::selftest::dir().is_some() {
+        return Ok(());
+    }
+    tauri_plugin_opener::reveal_item_in_dir(&path).map_err(|e| format!("UnknownError: {e}"))
 }
 
 /// Stops watching and forgets the vault; fine if it wasn't open.
@@ -1676,5 +1751,106 @@ mod tests {
 
         assert_eq!(names(&tmp.path().join("outside")), ["secret.md"]);
         assert_eq!(fs::read(tmp.path().join("outside").join("secret.md")).unwrap(), b"outside");
+    }
+
+    // --- Other files of the vault ---
+
+    #[test]
+    fn read_bytes_returns_any_file_of_the_vault_as_it_is() {
+        let (tmp, folders, linked, root) = setup();
+        let image: Vec<u8> = (0..=255u8).cycle().take(70_000).collect();
+        put(tmp.path(), "secret.png", "outside");
+        put(&root, ".gitignore", "build/\n");
+        put(&root, "assets/pic.png", &image);
+        put(&root, "assets/empty.bin", "");
+        put(&root, "a.md", "\u{feff}a\r\n");
+        put(&root, "private/c.png", "c");
+        put(&root, "build/out.png", "out");
+        put(&root, ".git/config", "git");
+        put(&root, "assets/.hidden.png", "hidden");
+        open_as(&folders, &linked, &root, &["private/"], true);
+
+        assert_eq!(read_bytes(&folders, &linked, VAULT, "assets/pic.png").unwrap(), image);
+        assert_eq!(read_bytes(&folders, &linked, VAULT, "assets/empty.bin").unwrap(), b"");
+        assert_eq!(read_bytes(&folders, &linked, VAULT, "a.md").unwrap(), "\u{feff}a\r\n".as_bytes());
+
+        let absolute = root.join("assets").join("pic.png").to_string_lossy().into_owned();
+        let refused = [
+            "../secret.png",
+            "assets/../../secret.png",
+            "./assets/pic.png",
+            "/assets/pic.png",
+            absolute.as_str(),
+            "",
+            "private/c.png",
+            "build/out.png",
+            ".git/config",
+            ".gitignore",
+            "assets/.hidden.png",
+        ];
+        for rel in refused {
+            let error = read_bytes(&folders, &linked, VAULT, rel).unwrap_err();
+            assert!(error.starts_with("NotAllowedError"), "{rel}: {error}");
+        }
+        assert!(read_bytes(&folders, &linked, VAULT, "assets/missing.png").unwrap_err().starts_with("NotFoundError"));
+        assert!(read_bytes(&folders, &linked, VAULT, "assets").unwrap_err().starts_with("TypeMismatchError"));
+        assert!(read_bytes(&folders, &linked, "lf.other", "a.md").unwrap_err().starts_with("InvalidStateError"));
+    }
+
+    #[test]
+    fn read_bytes_has_a_size_limit() {
+        let (_tmp, folders, linked, root) = setup();
+        put(&root, "fits.bin", vec![7u8; MAX_FILE_BYTES as usize]);
+        put(&root, "big.bin", vec![7u8; MAX_FILE_BYTES as usize + 1]);
+        open_as(&folders, &linked, &root, &[], true);
+        assert_eq!(read_bytes(&folders, &linked, VAULT, "fits.bin").unwrap().len(), MAX_FILE_BYTES as usize);
+        let error = read_bytes(&folders, &linked, VAULT, "big.bin").unwrap_err();
+        assert!(error.starts_with("QuotaExceededError"), "{error}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_bytes_and_reveal_do_not_follow_symlinks_out_of_the_folder() {
+        use std::os::unix::fs::symlink;
+        let (tmp, folders, linked, root) = setup();
+        put(tmp.path(), "outside/secret.png", "outside");
+        put(&root, "assets/pic.png", "pic");
+        symlink(tmp.path().join("outside"), root.join("out")).unwrap();
+        symlink(tmp.path().join("outside").join("secret.png"), root.join("leak.png")).unwrap();
+        symlink(root.join("assets").join("pic.png"), root.join("alias.png")).unwrap();
+        open_as(&folders, &linked, &root, &[], true);
+
+        assert_eq!(read_bytes(&folders, &linked, VAULT, "alias.png").unwrap(), b"pic");
+        for rel in ["leak.png", "out/secret.png"] {
+            assert!(read_bytes(&folders, &linked, VAULT, rel).unwrap_err().starts_with("NotAllowedError"), "{rel}");
+            assert!(reveal_target(&folders, &linked, VAULT, Some(rel)).unwrap_err().starts_with("NotAllowedError"), "{rel}");
+        }
+        assert!(reveal_target(&folders, &linked, VAULT, Some("out")).unwrap_err().starts_with("NotAllowedError"));
+    }
+
+    #[test]
+    fn reveal_reaches_only_what_the_vault_shows() {
+        let (tmp, folders, linked, root) = setup();
+        put(tmp.path(), "secret.md", "outside");
+        put(&root, "notes/a.md", "a");
+        put(&root, "notes/pic.png", "pic");
+        put(&root, "private/c.md", "c");
+        put(&root, ".git/config", "git");
+        open_as(&folders, &linked, &root, &["private/"], true);
+
+        let target = |rel: Option<&str>| reveal_target(&folders, &linked, VAULT, rel);
+        assert_eq!(target(None).unwrap(), root);
+        assert_eq!(target(Some("")).unwrap(), root);
+        assert_eq!(target(Some("notes/a.md")).unwrap(), root.join("notes").join("a.md"));
+        assert_eq!(target(Some("notes/pic.png")).unwrap(), root.join("notes").join("pic.png"));
+        assert_eq!(target(Some("notes")).unwrap(), root.join("notes"));
+
+        let absolute = tmp.path().join("secret.md").to_string_lossy().into_owned();
+        for rel in ["..", "../secret.md", "notes/../../secret.md", absolute.as_str(), "/etc", "private", "private/c.md", ".git", ".git/config"] {
+            let error = target(Some(rel)).unwrap_err();
+            assert!(error.starts_with("NotAllowedError"), "{rel}: {error}");
+        }
+        assert!(target(Some("notes/missing.md")).unwrap_err().starts_with("NotFoundError"));
+        assert!(reveal_target(&folders, &linked, "lf.other", None).unwrap_err().starts_with("InvalidStateError"));
     }
 }
