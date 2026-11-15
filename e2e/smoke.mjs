@@ -377,11 +377,48 @@ async function db(page, source, arg) {
 const bodyOf = (page, title) =>
 	db(page, `let ms; db.allMemoryObjects.subscribe((v) => (ms = v))(); return ms.find((m) => m.title === arg)?.bodyMarkdown ?? null;`, title);
 
+// Wait until the stored body of the note titled `title` matches `pattern`,
+// and return it. An edit reaches the store about half a second after the
+// last keystroke (the editor reports it 200ms late, autosave waits 300ms
+// more), longer on a busy machine: a fixed pause before reading the body
+// fails there, and reads '' (the first save holds everything typed). If it
+// never matches, the error says what was where: the store, the editor, and
+// the text stashed for the next start (src/lib/unsaved.ts).
+async function savedBody(page, title, pattern, timeout = 8000) {
+	const started = Date.now();
+	let body = null;
+	while (Date.now() - started < timeout) {
+		body = await bodyOf(page, title);
+		if (body !== null && pattern.test(body)) return body;
+		await sleep(50);
+	}
+	const seen = await page.evaluate(() => ({
+		editor: document.querySelector('main .ProseMirror')?.textContent ?? null,
+		title: document.querySelector('input[aria-label="Note title"]')?.value ?? null,
+		stash: localStorage.getItem('kurumi-unsaved-edits'),
+		url: location.href
+	}));
+	assert.fail(
+		`"${title}" was not saved as ${pattern} within ${timeout}ms.\n` +
+			`stored body: ${JSON.stringify(body)}\neditor text: ${JSON.stringify(seen.editor)}\ntitle field: ${JSON.stringify(seen.title)}\n` +
+			`stashed edits: ${seen.stash}\nat: ${seen.url}`
+	);
+}
+
 async function typeInEditor(page, text, selector = 'main .ProseMirror') {
+	// The stored body of the note that is open (null on other pages).
+	const stored = () =>
+		db(page, `const id = (location.hash || location.pathname).match(/\\/memory\\/([^/?#]+)/)?.[1]; return id ? (db.getMemoryObject(decodeURIComponent(id))?.bodyMarkdown ?? null) : null;`);
+	const before = selector === 'main .ProseMirror' && text.trim() ? await stored() : null;
 	await page.click(selector);
 	await press(page, MOD, 'End');
 	await page.keyboard.type(text);
-	await sleep(700); // editor debounce + autosave
+	if (before === null) return sleep(700); // editor debounce + autosave
+	// Until autosave has stored it: about half a second, more on a busy
+	// machine (a fixed pause was too short there, see savedBody).
+	const started = Date.now();
+	while (Date.now() - started < 8000 && (await stored()) === before) await sleep(50);
+	await sleep(150);
 }
 
 // The editor's HTML without attributes.
@@ -890,8 +927,8 @@ const scenarios = {
 		// The cursor ends up after the link
 		await page.keyboard.type('signed');
 		await page.waitForFunction(() => /brief\.pdf\s+signed/.test(document.querySelector('main .ProseMirror').textContent));
-		await sleep(700);
-		assert.match(await bodyOf(page, 'Files'), /\[brief\.pdf\]\(blob:[0-9A-Za-z]+\) signed/);
+		// Once autosave has run (not after a fixed pause: see savedBody).
+		await savedBody(page, 'Files', /\[brief\.pdf\]\(blob:[0-9A-Za-z]+\) signed/);
 		// A PDF opens in Kurumi's viewer (this one isn't a real PDF: it says so),
 		// which can open the stored file in a new tab
 		await chip.click();
@@ -928,9 +965,8 @@ const scenarios = {
 		assert.match(typed, /last words/);
 		await page.reload({ waitUntil: 'load' });
 		await page.waitForSelector('main .ProseMirror');
-		await sleep(800);
-		const body = await bodyOf(page, 'Files');
-		assert.match(body, /last words/);
+		// Saved on pagehide, or restored from the stash at this start.
+		const body = await savedBody(page, 'Files', /last words/);
 		// Typed at the start of the line, before the chip: not part of the link
 		assert.match(body, /last words \[brief\.pdf\]\(blob:/);
 		assert.deepEqual(errors, []);
