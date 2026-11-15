@@ -36,7 +36,7 @@ attaches them to the GitHub release (`.github/workflows/desktop.yml`).
 | Web feature | In the desktop app |
 |---|---|
 | Local folder sync (`showDirectoryPicker`, which WebKit lacks) | `src/lib/desktop/folder-handle.ts` stands in for the File System Access API, backed by `src-tauri/src/folders.rs`. Its commands only reach folders picked in the system dialog (remembered in `folders.json` in the app's config folder), also after resolving symlinks |
-| Linked folder vaults (a folder of Markdown notes used in place) | `src-tauri/src/linked.rs`: `linked_open` scans a picked folder (`.md` / `.markdown`, skipping hidden entries, the vault's ignore patterns and, if asked, `.gitignore`) and watches it; `linked_changes` is a long poll for what changed (file events, or a comparison every 5 s where the watcher can't start); `linked_write` replaces a note only if its hash is still the one the app saw, `linked_create` never replaces one. Only inside picked folders, like `folders.rs` |
+| Linked folder vaults (a folder of Markdown notes used in place) | `src-tauri/src/linked.rs`: `linked_open` scans a picked folder (`.md` / `.markdown`, skipping hidden entries, the vault's ignore patterns and, if asked, `.gitignore`) and watches it; `linked_changes` is a long poll for what changed (file events, or a comparison every 5 s where the watcher can't start); `linked_write` replaces a note only if its hash is still the one the app saw, `linked_create` never replaces one; `linked_read_bytes` hands the page an image or attachment (up to 25 MB) and `linked_reveal` shows a note in the file manager. Only inside picked folders, like `folders.rs` |
 | Service worker | None: WebKit has none on `tauri:`. The files are on disk, so it starts offline and updates with the app (`isDesktopApp()` in `src/lib/pwa.ts`) |
 | Due to-do notifications | `tauri-plugin-notification` provides `window.Notification`; no Mark done / Snooze buttons |
 | Downloads (exports, backups) | Saved to the Downloads folder (`on_download` in `lib.rs`) |
@@ -57,8 +57,16 @@ temp dir (a separate WebKit store on macOS), answers the folder dialog with
 `<dir>/folder` and injects `src-tauri/src/selftest.js`, which checks the
 origin, folder sync through the real commands (and that paths outside are
 refused), downloads, notifications, a deep link, and that data and the
-picked folder survive the restart. Without the variable none of it is
-active. `cargo test` in `src-tauri` covers `folders.rs` and `linked.rs`.
+picked folder survive the restart. It also links `<dir>/linked` (notes with
+another tool's frontmatter, written by `selftest.mjs`) as a vault through the
+app's own menus and uses it for real: the notes are listed and a link by `id`
+opens its note, a file changed from outside shows up through the watcher, an
+edit changes its line in the file and nothing else, a file changed on disk
+since it was read is not overwritten, a new note is a new file, and after the
+restart the vault is current again without a folder dialog. At the end the
+folder must hold those edits and nothing of Kurumi. Without the variable none
+of it is active. `cargo test` in `src-tauri` covers `folders.rs` and
+`linked.rs`.
 
 ## Signing
 

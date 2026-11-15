@@ -173,6 +173,8 @@ pub fn run() {
             linked::linked_read_bytes,
             linked::linked_reveal,
             linked::linked_close,
+            selftest::selftest_dialogs,
+            selftest::selftest_folder,
             selftest::selftest_report,
         ])
         .run(tauri::generate_context!())
