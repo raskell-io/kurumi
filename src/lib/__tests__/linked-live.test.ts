@@ -12,7 +12,11 @@ import {
 	isLinkedDraft,
 	linkedGoneNote,
 	recreateLinkedNote,
+	releaseLinkedFiles,
+	revealLinkedFile,
 	setLinkedRetryDelays,
+	linkedFilePath,
+	linkedFileUrl,
 	linkedFolders,
 	linkedLinks,
 	linkedNote,
@@ -628,5 +632,84 @@ describe('template values in frontmatter', () => {
 	it('leaves a template without frontmatter alone', () => {
 		expect(renderNoteTemplate('# {title}\n\ntitle: {title}\n', 'A: b')).toBe('# A: b\n\ntitle: A: b\n');
 		expect(renderNoteTemplate('', 'A: b')).toBe('');
+	});
+});
+
+describe('files beside the notes', () => {
+	const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+	const reads = () => app.calls.filter((c) => c.cmd === 'linked_read_bytes').map((c) => c.args.rel);
+	const bytesAt = async (url: string) => new Uint8Array(await (await fetch(url)).arrayBuffer());
+	beforeEach(() => {
+		app.uninstall();
+		app = fakeLinkedApp(ROOT, files(), { 'projects/images/shot.png': PNG, 'assets/logo.svg': new TextEncoder().encode('<svg/>') });
+	});
+
+	it('resolves a link relative to the note, or from the top of the folder, never outside it', () => {
+		expect(linkedFilePath('projects/foo.md', 'images/shot.png')).toBe('projects/images/shot.png');
+		expect(linkedFilePath('projects/foo.md', './images/shot.png?v=2#x')).toBe('projects/images/shot.png');
+		expect(linkedFilePath('projects/foo.md', '../assets/logo.svg')).toBe('assets/logo.svg');
+		expect(linkedFilePath('projects/foo.md', '/assets/logo.svg')).toBe('assets/logo.svg');
+		expect(linkedFilePath('projects/foo.md', 'my%20shots/a%20b.png')).toBe('projects/my shots/a b.png');
+		expect(linkedFilePath('readme.md', 'a\\b.png')).toBe('a/b.png');
+		for (const outside of ['../../etc/passwd', '../../../x.png', '/../x.png']) expect(linkedFilePath('projects/foo.md', outside), outside).toBeNull();
+		expect(linkedFilePath('readme.md', '../x.png')).toBeNull();
+		for (const notAPath of ['https://example.com/a.png', 'data:image/png;base64,AAAA', 'blob:abc', '//cdn.example.com/a.png', '#anchor', '', '/']) expect(linkedFilePath('readme.md', notAPath), notAPath).toBeNull();
+	});
+
+	it('reads the bytes once and hands out an object URL with the file\'s type', async () => {
+		await openLinkedVault(readOnly);
+		const url = await linkedFileUrl(id('projects/foo.md'), 'images/shot.png');
+		expect(url).toMatch(/^blob:/);
+		expect(await bytesAt(url!)).toEqual(PNG);
+		expect((await (await fetch(url!)).blob()).type).toBe('image/png');
+		// Another note showing the same file, and the reader of the same note: the same URL, no second read.
+		expect(await linkedFileUrl(id('readme.md'), 'projects/images/shot.png')).toBe(url);
+		expect(await linkedFileUrl(id('projects/foo.md'), './images/shot.png', 'read:foo')).toBe(url);
+		expect(reads()).toEqual(['projects/images/shot.png']);
+		expect((await (await fetch((await linkedFileUrl(id('projects/foo.md'), '/assets/logo.svg'))!)).blob()).type).toBe('image/svg+xml');
+	});
+
+	it('answers null for what is missing, outside the folder or not in a linked note', async () => {
+		await openLinkedVault(readOnly);
+		expect(await linkedFileUrl(id('projects/foo.md'), 'images/nope.png')).toBeNull();
+		expect(await linkedFileUrl(id('projects/foo.md'), '../../outside.png')).toBeNull();
+		expect(await linkedFileUrl(id('projects/foo.md'), 'https://example.com/a.png')).toBeNull();
+		expect(await linkedFileUrl('some-document-note', 'images/shot.png')).toBeNull();
+		// Only the one that is a path in the vault was asked for.
+		expect(reads()).toEqual(['projects/images/nope.png']);
+		closeLinkedVault();
+		expect(await linkedFileUrl(id('projects/foo.md'), 'images/shot.png')).toBeNull();
+	});
+
+	it('lets go of a URL when the last note showing it closes, and of all when the vault closes', async () => {
+		await openLinkedVault(readOnly);
+		const url = (await linkedFileUrl(id('projects/foo.md'), 'images/shot.png'))!;
+		await linkedFileUrl(id('readme.md'), 'projects/images/shot.png');
+		releaseLinkedFiles(id('projects/foo.md'));
+		await settle();
+		expect(await bytesAt(url)).toEqual(PNG); // still shown by the other note
+		releaseLinkedFiles(id('readme.md'));
+		await settle();
+		await expect(fetch(url)).rejects.toThrow();
+		// Asked again: read again.
+		const again = (await linkedFileUrl(id('projects/foo.md'), 'images/shot.png'))!;
+		expect(again).not.toBe(url);
+		expect(reads()).toHaveLength(2);
+		closeLinkedVault();
+		await settle();
+		await expect(fetch(again)).rejects.toThrow();
+	});
+
+	it('reveals a note\'s file or the folder, and says so when that fails', async () => {
+		await openLinkedVault(readOnly);
+		await revealLinkedFile(id('projects/foo.md'));
+		await revealLinkedFile();
+		expect(app.calls.filter((c) => c.cmd === 'linked_reveal').map((c) => c.args)).toEqual([
+			{ vault: readOnly.id, rel: 'projects/foo.md' },
+			{ vault: readOnly.id, rel: '' }
+		]);
+		app.files.delete('projects/foo.md');
+		await revealLinkedFile(id('projects/foo.md'));
+		expect(lastNotice()).toMatch(/no longer in the folder/);
 	});
 });

@@ -204,7 +204,7 @@
 
 		<!-- Content: the editor's typography, scaled up from the renderer's compact default -->
 		<div class="reader-body">
-			<MarkdownRenderer content={memory.bodyMarkdown} onRefClick={handleRefClick} />
+			<MarkdownRenderer content={memory.bodyMarkdown} onRefClick={handleRefClick} noteId={memory.id} />
 		</div>
 
 		{#if outgoingLinks.length > 0 || backlinks.length > 0 || semanticLinks.length > 0}

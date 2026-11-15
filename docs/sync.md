@@ -189,8 +189,11 @@ Then:
   on screen with a notice: save it as a new file, or discard it.
 - A link written by its key (`[[project.foo]]`) shows the note's title in the
   editor too; put the cursor in it to see and edit what is written.
-- Images and attachments can't be added to these notes yet, and images stored
-  beside a note are not shown yet.
+- Images a note refers to by a path in the folder (`![](images/a.png)`, or
+  `/images/a.png` from the top of the folder) are shown. Images and
+  attachments can't be added from Kurumi yet.
+- **Reveal in file manager**, in a note's menu and in the vault's settings,
+  shows the file or the folder.
 - Moving, renaming and deleting files, icons, favourites and attachments stay
   with your file manager and other tools.
 

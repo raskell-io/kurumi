@@ -8,6 +8,7 @@
 	import { setPendingAnchor, scrollToAnchor } from '$lib/stores/anchor';
 	import { findMemoryObjectByTitle } from '$lib/db';
 	import { linkLabel } from '$lib/linked/links';
+	import { isLinkedNoteId, linkedFileUrl, releaseLinkedFiles } from '$lib/linked/backend';
 	import { resolveBlobUrl, isBlobRef } from '$lib/utils/image';
 	import DataviewBlock from './DataviewBlock.svelte';
 	import { onMount, mount, unmount, tick } from 'svelte';
@@ -18,9 +19,18 @@
 	interface Props {
 		content: string;
 		onRefClick?: (type: 'person' | 'date' | 'tag', value: string, position: { x: number; y: number }) => void;
+		/** The note being rendered, when it is one: a linked note's images are files of its folder. */
+		noteId?: string;
 	}
 
-	let { content, onRefClick }: Props = $props();
+	let { content, onRefClick, noteId }: Props = $props();
+
+	// Files of a linked folder shown here are let go when this goes away.
+	$effect(() => {
+		const id = noteId;
+		if (!id || !isLinkedNoteId(id)) return;
+		return () => releaseLinkedFiles(`read:${id}`);
+	});
 
 	// Extract ```kurumi code blocks before marked processes them so
 	// they render as live query widgets instead of <pre><code>.
@@ -388,6 +398,11 @@
 				} else {
 					img.src = url;
 				}
+			} else if (noteId && isLinkedNoteId(noteId) && !img.dataset.linkedAsked) {
+				// A linked note's image, a file of its folder (relative to the note, or `/` from the top).
+				img.dataset.linkedAsked = '1';
+				const url = await linkedFileUrl(noteId, src, `read:${noteId}`);
+				if (url) img.src = url;
 			}
 		}
 		// Resolve blob: refs on audio elements

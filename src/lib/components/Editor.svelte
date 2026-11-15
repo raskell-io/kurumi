@@ -56,7 +56,7 @@
 	import { readonlyPlugin, setEditorReadonly } from '$lib/editor/readonly';
 	import { showNotice } from '$lib/stores/notice';
 	import { NO_FILES } from '$lib/linked/capabilities';
-	import { linkedFileUrl } from '$lib/linked/backend';
+	import { linkedFileUrl, releaseLinkedFiles } from '$lib/linked/backend';
 	import { registerMarkdownParser } from '$lib/editor/blocks';
 	import { block, configureBlockHandle } from '$lib/editor/blockHandle';
 	import BlockMenu from './BlockMenu.svelte';
@@ -736,7 +736,7 @@
 					const url = await resolveBlobUrl(src);
 					if (url) img.src = url;
 				} else if (!mountedFiles && mountedNoteId && src && !/^([a-z][a-z0-9+.-]*:|\/\/|#)/i.test(src) && !img.dataset.linkedAsked) {
-					// A linked note's image beside it in the folder (see linkedFileUrl: not available yet).
+					// A linked note's image, a file of its folder: read by the desktop app.
 					img.dataset.linkedAsked = '1';
 					const url = await linkedFileUrl(mountedNoteId, src);
 					if (url) img.src = url;
@@ -760,6 +760,7 @@
 	onDestroy(() => {
 		destroyed = true;
 		blobResolver?.disconnect();
+		if (!mountedFiles && mountedNoteId) releaseLinkedFiles(mountedNoteId);
 		if (editorContainer) {
 			editorContainer.removeEventListener('mouseup', checkSelection);
 		}

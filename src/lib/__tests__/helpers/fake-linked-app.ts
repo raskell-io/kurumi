@@ -11,8 +11,10 @@ export function fakeHash(content: string): string {
 	return h.toString(16).padStart(8, '0') + content.length.toString(16);
 }
 
-export function fakeLinkedApp(root: string, initial: Record<string, string>) {
+export function fakeLinkedApp(root: string, initial: Record<string, string>, otherFiles: Record<string, Uint8Array> = {}) {
 	const files = new Map(Object.entries(initial));
+	// Files that aren't notes (images beside them).
+	const binary = new Map(Object.entries(otherFiles));
 	const calls: { cmd: string; args: any }[] = [];
 	const open = new Map<string, { cursor: number; readOnly: boolean }>();
 	let clock = 1_700_000_000_000;
@@ -97,6 +99,18 @@ export function fakeLinkedApp(root: string, initial: Record<string, string>) {
 			files.set(rel, content);
 			return { hash: fakeHash(content), mtime: ++clock };
 		},
+		linked_read_bytes: ({ vault, rel }) => {
+			vaultOf(vault);
+			if (!rel || rel.startsWith('/') || rel.split('/').some((p: string) => !p || p === '..' || p === '.' || p.startsWith('.'))) throw `NotAllowedError: "${rel}" is not a path inside the linked folder`;
+			const bytes = binary.get(rel) ?? (files.has(rel) ? new TextEncoder().encode(files.get(rel)!) : null);
+			if (!bytes) throw `NotFoundError: ${rel} doesn't exist`;
+			return bytes.slice().buffer;
+		},
+		linked_reveal: ({ vault, rel }) => {
+			vaultOf(vault);
+			if (rel && !files.has(rel) && !binary.has(rel)) throw `NotFoundError: ${rel} doesn't exist`;
+			return null;
+		},
 		linked_close: ({ vault }) => {
 			open.delete(vault);
 			if (waiting && waiting.vault === vault) {
@@ -118,6 +132,7 @@ export function fakeLinkedApp(root: string, initial: Record<string, string>) {
 
 	return {
 		files,
+		binary,
 		calls,
 		state,
 		/** The commands called, without the long poll. */

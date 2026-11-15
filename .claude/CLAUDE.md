@@ -518,8 +518,8 @@ OpenAI to MMS when the API key is missing.
   file until its first change (`isLinkedDraft`), and a note whose file was
   deleted outside stays open as `linkedGoneNote` until saved anew or discarded.
   Keyed links are drawn as titles by a decoration (`editor/wikilink.ts`).
-  Images beside a note: `linkedFileUrl` is the seam, waiting for a byte-read
-  command.
+  Images beside a note are read with `linked_read_bytes` into object URLs
+  (`linkedFileUrl`, released with the note); `linked_reveal` shows a file.
   Browser tests fake the desktop app (`fakeDesktop` in `e2e/smoke.mjs`).
   `linked-isolation.test.ts` guards this: if it fails, fix the path that leaked.
   Links there resolve by key (`[[project.foo]]`, frontmatter `id`), then title,

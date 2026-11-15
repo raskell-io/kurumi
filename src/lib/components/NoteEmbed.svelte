@@ -99,7 +99,7 @@
 			<p class="note-embed-empty">{link.heading ? `No heading “${link.heading}” in this note.` : 'That block isn’t in this note any more.'}</p>
 		{:else if body.trim()}
 			<div class="note-embed-body">
-				<MarkdownRenderer content={body} />
+				<MarkdownRenderer content={body} noteId={target?.id} />
 			</div>
 		{:else}
 			<p class="note-embed-empty">Empty note</p>

@@ -134,7 +134,11 @@ async function freshPage(browser, setup) {
 
 const LINKED_ROOT = '/fake/knowledge';
 
-/** Before the app loads: the fake desktop app over `files` (path → text), and optionally a linked vault already set up. */
+/**
+ * Before the app loads: the fake desktop app over `files` (path → text; for
+ * a file that isn't Markdown, its bytes in base64), and optionally a linked
+ * vault already set up.
+ */
 async function fakeDesktop(page, files, config) {
 	await page.evaluateOnNewDocument(
 		(files, root, config) => {
@@ -147,6 +151,8 @@ async function fakeDesktop(page, files, config) {
 			};
 			const open = new Map();
 			const calls = [];
+			const revealed = [];
+			const isNote = (rel) => /\.(md|markdown)$/i.test(rel);
 			let clock = Date.now();
 			let cursors = 1000;
 			let log = [];
@@ -183,8 +189,8 @@ async function fakeDesktop(page, files, config) {
 					log = [];
 					open.set(vault, { cursor: ++cursors, readOnly });
 					const dirs = new Set();
-					for (const rel of store.keys()) if (rel.includes('/')) dirs.add(rel.slice(0, rel.lastIndexOf('/')));
-					return { cursor: cursors, notes: [...store.keys()].map(noteFile), dirs: [...dirs], skipped: 0, watch: 'events' };
+					for (const rel of store.keys()) if (isNote(rel) && rel.includes('/')) dirs.add(rel.slice(0, rel.lastIndexOf('/')));
+					return { cursor: cursors, notes: [...store.keys()].filter(isNote).map(noteFile), dirs: [...dirs], skipped: 0, watch: 'events' };
 				},
 				linked_changes: ({ vault, cursor }) => {
 					if (cursor !== vaultOf(vault).cursor) return { cursor: 0, changes: [], rescan: true };
@@ -215,6 +221,19 @@ async function fakeDesktop(page, files, config) {
 					store.set(rel, content);
 					return { hash: hash(content), mtime: ++clock };
 				},
+				linked_read_bytes: ({ vault, rel }) => {
+					vaultOf(vault);
+					if (!rel || rel.split('/').some((part) => !part || part === '..' || part === '.' || part.startsWith('.'))) throw `NotAllowedError: "${rel}" is not a path inside the linked folder`;
+					if (!store.has(rel)) throw `NotFoundError: ${rel} doesn't exist`;
+					const text = store.get(rel);
+					return (isNote(rel) ? new TextEncoder().encode(text) : Uint8Array.from(atob(text), (c) => c.charCodeAt(0))).buffer;
+				},
+				linked_reveal: ({ vault, rel }) => {
+					vaultOf(vault);
+					if (rel && !store.has(rel)) throw `NotFoundError: ${rel} doesn't exist`;
+					revealed.push(rel ?? '');
+					return null;
+				},
 				linked_close: ({ vault }) => {
 					open.delete(vault);
 					if (waiting && waiting.vault === vault) {
@@ -237,6 +256,7 @@ async function fakeDesktop(page, files, config) {
 				read: (rel) => (store.has(rel) ? store.get(rel) : null),
 				list: () => [...store.keys()].sort(),
 				calls: () => calls.filter((c) => c !== 'linked_changes'),
+				revealed: () => revealed,
 				change(rel, content, silent = false) {
 					if (content === null) store.delete(rel);
 					else store.set(rel, content);
@@ -3203,6 +3223,45 @@ const scenarios = {
 		await sleep(500);
 		assert.equal(await folderFile(page, 'foo.md'), null);
 		assert.deepEqual(await vaultTitles(page), ['Bar plan']);
+		assert.deepEqual(errors, []);
+	},
+
+	async 'linked folder: images beside a note are shown, and the file can be revealed'(browser) {
+		const PIXEL = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+		const NOTE = '---\nid: note.pictures\ntitle: Pictures\n---\nBeside the note: ![beside](images/shot.png)\n\nFrom the top: ![top](/images/shot.png)\n\nMissing: ![missing](images/nope.png)\n\nOutside: ![outside](../outside.png)\n';
+		const files = { 'pictures.md': NOTE, 'images/shot.png': PIXEL };
+		const { page, errors } = await freshPage(browser, (page) => fakeDesktop(page, files, linkedConfig()));
+		await page.waitForFunction(() => document.querySelectorAll('.note-row').length === 1, { timeout: 15000 });
+		await openTreeNote(page, 'Pictures');
+		const images = (root) =>
+			page.$$eval(`${root} img`, (imgs) => Object.fromEntries(imgs.filter((i) => i.alt).map((i) => [i.alt, { blob: i.src.startsWith('blob:'), width: i.naturalWidth, src: i.src }])));
+
+		// The two that are files of the folder are read and drawn; the others stay broken.
+		await page.waitForFunction(() => [...document.querySelectorAll('main .ProseMirror img')].filter((i) => i.src.startsWith('blob:') && i.naturalWidth === 1).length === 2, { timeout: 10000 });
+		const inEditor = await images('main .ProseMirror');
+		assert.ok(inEditor.beside.blob && inEditor.top.blob, JSON.stringify(inEditor));
+		assert.equal(inEditor.beside.src, inEditor.top.src, 'one file, read once');
+		assert.ok(!inEditor.missing.blob && !inEditor.outside.blob, JSON.stringify(inEditor));
+		// Showing them changed nothing in the note.
+		assert.equal(await folderFile(page, 'pictures.md'), NOTE);
+		assert.equal((await folderCalls(page)).includes('linked_write'), false);
+
+		// The note's menu shows its file in the file manager.
+		await page.click('button[aria-label="More actions"]');
+		await clickText(page, '.k-menu-item', 'Reveal in file manager');
+		assert.deepEqual(await page.evaluate(() => window.__folder.revealed()), ['pictures.md']);
+
+		// Read mode draws them too.
+		const id = await page.evaluate(() => location.hash.split('/').pop());
+		await page.evaluate((id) => (location.hash = `/read/${id}`), id);
+		await page.waitForFunction(() => [...document.querySelectorAll('.markdown-content img')].filter((i) => i.src.startsWith('blob:') && i.naturalWidth === 1).length === 2, { timeout: 10000 });
+		const url = (await images('.markdown-content')).beside.src;
+
+		// Once no note shows the file, its URL is let go.
+		await page.click('aside a[aria-label="Go to home"]');
+		await page.waitForSelector('[data-testid="home-page"]', { timeout: 10000 });
+		await page.waitForFunction((url) => fetch(url).then(() => false, () => true), { timeout: 10000 }, url);
+		assert.equal(await folderFile(page, 'pictures.md'), NOTE);
 		assert.deepEqual(errors, []);
 	},
 

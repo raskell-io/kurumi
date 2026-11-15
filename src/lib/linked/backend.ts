@@ -306,6 +306,8 @@ export async function openLinkedVault(config: LinkedVaultConfig): Promise<void> 
 	problem.set(null);
 	setActiveLinkedVaultId(config.id);
 	const gen = ++generation;
+	// Files shown from the folder are read again after a scan.
+	for (const rel of [...fileUrls.keys()]) revokeFile(rel);
 	watch.set(opened.watch ?? 'events');
 	const data = buildLinkedVault(config, opened);
 	// New notes that have no file yet are not in the scan.
@@ -332,6 +334,7 @@ export function closeLinkedVault(): void {
 	recoveries = 0;
 	void invoke('linked_close', { vault: mounted.config.id }).catch(() => {});
 	forgetSaves();
+	for (const rel of [...fileUrls.keys()]) revokeFile(rel);
 	watch.set(null);
 	setMounted(null);
 }
@@ -754,16 +757,93 @@ export function createLinkedNote(title?: string, body?: string, folderId?: strin
 
 // ---- Files beside the notes ------------------------------------------------
 
+const FILE_TYPES: Record<string, string> = {
+	png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif', svg: 'image/svg+xml', bmp: 'image/bmp',
+	mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', m4a: 'audio/mp4', mp4: 'video/mp4', webm: 'video/webm', pdf: 'application/pdf'
+};
+
 /**
- * SEAM, not implemented: a URL for a file of the open folder that a note
- * links to relatively (`![](images/a.png)`), so the editor and the reader
- * can show it. It needs a command of the desktop app that reads the bytes
- * of a file inside the linked root (with a size cap), which doesn't exist
- * yet; until it does this answers null and such images don't render. The
- * editor already asks here (Editor.svelte, `resolveBlobImages`).
+ * Where in the vault a note's link to a file points: relative to the note's
+ * directory, or with a leading `/` to the top of the folder. Null for what
+ * isn't a path in the vault: a URL, an anchor, or one that climbs out of it.
  */
-export async function linkedFileUrl(_noteId: string, _src: string): Promise<string | null> {
-	return null;
+export function linkedFilePath(noteRel: string, src: string): string | null {
+	if (!src || /^([a-z][a-z0-9+.-]*:|\/\/|#)/i.test(src)) return null;
+	let path = src.replace(/[?#].*$/, '');
+	try {
+		path = decodeURIComponent(path);
+	} catch {
+		// Not percent-encoded after all: as written.
+	}
+	const parts = path.startsWith('/') ? [] : noteRel.split('/').slice(0, -1);
+	for (const part of path.replace(/\\/g, '/').split('/')) {
+		if (!part || part === '.') continue;
+		if (part !== '..') parts.push(part);
+		else if (!parts.pop()) return null; // above the folder
+	}
+	return parts.length ? parts.join('/') : null;
+}
+
+// Object URLs made for files of the open vault, by path, and the notes showing them.
+const fileUrls = new Map<string, { url: Promise<string | null>; users: Set<string> }>();
+
+function revokeFile(rel: string): void {
+	const entry = fileUrls.get(rel);
+	fileUrls.delete(rel);
+	void entry?.url.then((url) => url && URL.revokeObjectURL(url));
+}
+
+/**
+ * A URL for a file of the open folder that a linked note refers to
+ * (`![](images/a.png)`, `![](/assets/a.png)`), for the editor and the
+ * reader to show it: its bytes, read by the desktop app, as an object URL.
+ * Null when it isn't a file of the vault or can't be read (the image then
+ * shows as broken, as any missing image does). The URL lasts until the
+ * notes showing it are closed (`releaseLinkedFiles`; `user` tells the
+ * editor and the reader of one note apart), the folder is scanned
+ * again or the vault is closed. The note's text is not touched.
+ */
+export function linkedFileUrl(noteId: string, src: string, user = noteId): Promise<string | null> {
+	const open = mounted;
+	const noteRel = open?.data.info.get(noteId)?.relPath ?? gone.get(noteId)?.rel;
+	const rel = open && noteRel ? linkedFilePath(noteRel, src) : null;
+	if (!open || !rel) return Promise.resolve(null);
+	let entry = fileUrls.get(rel);
+	if (!entry) {
+		const url = invoke('linked_read_bytes', { vault: open.config.id, rel }).then(
+			(bytes) => {
+				const type = FILE_TYPES[rel.slice(rel.lastIndexOf('.') + 1).toLowerCase()] ?? '';
+				const made = URL.createObjectURL(new Blob([bytes as ArrayBuffer], { type }));
+				// Closed or scanned again while it was read: nobody will release it.
+				if (fileUrls.get(rel) !== entry) URL.revokeObjectURL(made);
+				return made;
+			},
+			() => null
+		);
+		entry = { url, users: new Set() };
+		fileUrls.set(rel, entry);
+	}
+	entry.users.add(user);
+	return entry.url;
+}
+
+/** The note is no longer shown (`user`: as given to linkedFileUrl): let go of the files only it was showing. */
+export function releaseLinkedFiles(user: string): void {
+	for (const [rel, entry] of fileUrls) {
+		if (entry.users.delete(user) && entry.users.size === 0) revokeFile(rel);
+	}
+}
+
+/** Show a note's file (or without one, the linked folder) in the file manager. Says so if that fails. */
+export async function revealLinkedFile(noteId?: string): Promise<void> {
+	const open = mounted;
+	if (!open) return;
+	const rel = noteId ? (open.data.info.get(noteId)?.relPath ?? '') : '';
+	try {
+		await invoke('linked_reveal', { vault: open.config.id, rel });
+	} catch (err) {
+		showNotice(errorName(err) === 'NotFoundError' ? 'That file is no longer in the folder.' : `Couldn't show it in the file manager: ${errorText(err)}`);
+	}
 }
 
 // ---- Readers (for $lib/db) ------------------------------------------------

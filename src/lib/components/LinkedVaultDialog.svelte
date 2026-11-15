@@ -11,7 +11,7 @@
 	import { currentVaultId, docCurrentVaultId, setCurrentVault } from '$lib/db';
 	import { isTauri } from '$lib/desktop';
 	import { deleteEmbeddingsWithPrefix } from '$lib/embeddings';
-	import { linkedNoteId, linkedProblem, linkedRevision, linkedStats, linkedWatch, openLinkedVault, rescanLinkedVault } from '$lib/linked/backend';
+	import { linkedNoteId, linkedProblem, linkedRevision, linkedStats, linkedWatch, openLinkedVault, rescanLinkedVault, revealLinkedFile } from '$lib/linked/backend';
 	import { DEFAULT_IGNORE, newLinkedVaultConfig, removeLinkedVault, saveLinkedVault } from '$lib/linked/config';
 	import { linkRefusal, pickLinkedFolder, probeFolder, type Conventions, type PickedFolder } from '$lib/linked/pick';
 	import type { LinkedVaultConfig } from '$lib/linked/types';
@@ -336,6 +336,10 @@
 							<span class="flex-1" data-testid="linked-stats">
 								{stats.notes} {stats.notes === 1 ? 'note' : 'notes'} in {stats.folders} {stats.folders === 1 ? 'folder' : 'folders'}{#if stats.skipped > 0}, {stats.skipped} skipped (too large or not text){/if}
 							</span>
+							<button type="button" class="k-btn k-btn-ghost k-btn-sm" onclick={() => void revealLinkedFile()} title="Show the folder in the file manager">
+								<FolderOpen class="h-3.5 w-3.5" />
+								Reveal
+							</button>
 							<button type="button" class="k-btn k-btn-ghost k-btn-sm" onclick={rescan} disabled={busy} title="Read the folder again">
 								<RefreshCw class="h-3.5 w-3.5 {busy ? 'animate-spin' : ''}" />
 								Rescan

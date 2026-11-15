@@ -30,10 +30,12 @@
 		linkedSaveIssues,
 		linkedTitleEditable,
 		recreateLinkedNote,
+		revealLinkedFile,
 		resolveLinkedIssue,
 		saveLinkedNote
 	} from '$lib/linked/backend';
 	import { writeBack, type EditBase } from '$lib/linked/write-back';
+	import { isTauri } from '$lib/desktop';
 	import LinkedConflictDialog from '$lib/components/LinkedConflictDialog.svelte';
 	import { NO_NEW_NOTES } from '$lib/linked/capabilities';
 	import { showNotice } from '$lib/stores/notice';
@@ -90,7 +92,8 @@
 		FolderKanban,
 		Gavel,
 		ListChecks,
-		AlertTriangle
+		AlertTriangle,
+		FolderOpen
 	} from 'lucide-svelte';
 	import { triggerSearch } from '$lib/stores/snackbar';
 	import CameraCapture from '$lib/components/CameraCapture.svelte';
@@ -1072,6 +1075,12 @@
 						<button class="k-menu-item" role="menuitem" onclick={() => { if (memory) shareMemory(memory); showMoreMenu = false; }}>
 							<Share2 class="h-4 w-4 text-[var(--color-text-muted)]" /> Share…
 						</button>
+						{#if linked && !fileGone && isTauri()}
+						<div class="k-menu-sep"></div>
+						<button class="k-menu-item" role="menuitem" onclick={() => { showMoreMenu = false; if (memory) void revealLinkedFile(memory.id); }}>
+							<FolderOpen class="h-4 w-4 text-[var(--color-text-muted)]" /> Reveal in file manager
+						</button>
+						{/if}
 						{#if !linked}
 						<div class="k-menu-sep"></div>
 						<button class="k-menu-item danger" role="menuitem" onclick={handleDelete}>
