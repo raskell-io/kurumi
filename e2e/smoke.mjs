@@ -95,6 +95,9 @@ async function freshPage(browser, setup) {
 	openContexts.push(context);
 	const page = await context.newPage();
 	await page.setViewport({ width: 1400, height: 900 });
+	// CPU_THROTTLE=4 runs the page four times slower, like a busy CI runner:
+	// for chasing failures that only show there.
+	if (process.env.CPU_THROTTLE) await page.emulateCPUThrottling(Number(process.env.CPU_THROTTLE));
 	const errors = [];
 	page.on('pageerror', (err) => errors.push(err.message));
 	// The automatic daily digest would add a note 5 s after start, in the
@@ -654,6 +657,21 @@ const scenarios = {
 		await press(page, MOD, 'z');
 		await sleep(600);
 		assert.equal(await bodyOf(page, 'Other'), 'Project Falcon kickoff\n', 'undo did not restore the other note');
+		assert.deepEqual(errors, []);
+	},
+
+	async 'leaving a note right after typing keeps the text and breaks nothing'(browser) {
+		// The editor reports changes 200ms late; a note left sooner than that
+		// used to leave those reports running against a destroyed editor
+		// ("Context editorView not found", once per keystroke).
+		const { page, errors } = await freshPage(browser);
+		await newNote(page, 'Quick');
+		await page.click('main .ProseMirror');
+		await page.keyboard.type('typed and gone');
+		await press(page, MOD, 'n'); // no pause: straight on to a new note
+		await page.waitForFunction(() => document.querySelector('input[aria-label="Note title"]')?.value === '', { timeout: 15000 });
+		await sleep(800);
+		assert.equal(await bodyOf(page, 'Quick'), 'typed and gone\n');
 		assert.deepEqual(errors, []);
 	},
 

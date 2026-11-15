@@ -454,6 +454,29 @@
 
 	let blobResolver: MutationObserver | undefined;
 
+	/**
+	 * Destroy a Milkdown editor without its change listener firing afterwards.
+	 * The listener reports each change 200ms late, on a timer of its own that
+	 * can't be cancelled; one that runs after the editor is gone serialises a
+	 * document whose view no longer exists and throws ("Context editorView not
+	 * found"), once per keystroke of the last 200ms. Leaving a note right
+	 * after typing did that. Nothing is lost by unsubscribing: `onchange`
+	 * ignores calls after destroy, and the note page saves the live text
+	 * before it leaves.
+	 */
+	function destroyEditor(instance: Editor) {
+		try {
+			instance.action((ctx) => {
+				const { listeners } = ctx.get(listenerCtx);
+				listeners.markdownUpdated.length = 0;
+				listeners.updated.length = 0;
+			});
+		} catch {
+			// Not far enough along to have listeners.
+		}
+		void instance.destroy();
+	}
+
 	let vimMode = $state<VimMode | null>(null);
 
 	onMount(async () => {
@@ -650,7 +673,7 @@
 		// Unmounted while Milkdown was starting (e.g. quick note switch):
 		// tear the editor down instead of wiring it to a detached container.
 		if (destroyed || !editorContainer) {
-			editor.destroy();
+			destroyEditor(editor);
 			editor = null;
 			return;
 		}
@@ -733,7 +756,7 @@
 		window.removeEventListener('kurumi-open-camera', handleCameraEvent);
 		window.removeEventListener('kurumi-insert-text', handleInsertText);
 		stopCheckboxRenderer?.();
-		editor?.destroy();
+		if (editor) destroyEditor(editor);
 		if (editorContainer) {
 			setWikilinkClickHandler(editorContainer, null);
 			setEditorReadonly(editorContainer, false);
