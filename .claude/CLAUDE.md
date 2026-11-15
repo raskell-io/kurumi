@@ -493,7 +493,8 @@ OpenAI to MMS when the API key is missing.
   unknown routes with `index.html`. Unsigned for now (ad-hoc on macOS)
 - Linked folders (`src/lib/linked/`, `src-tauri/src/linked.rs`; plan in
   `.claude/plans/linked-folder-vault.md`): a folder of Markdown notes shown as
-  a vault and read where it lies, read-only for now. Its notes live in memory
+  a vault and read where it lies; read-only unless "Allow editing" is on in the
+  vault's dialog. Its notes live in memory
   only (`backend.ts`; ids `lf.<vault>.<path>`, folders `lfd.…`, vault ids
   `lv-…`, config per device in localStorage) and are **never** in the document,
   IndexedDB, a backup or a sync upload. The rule in `store.ts`: `memoriesView()`,
@@ -501,8 +502,19 @@ OpenAI to MMS when the API key is missing.
   stay document-only; a reader that should show linked notes opts in
   (`memoryObjects`, `folders`, `getMemoryObject`, `findBacklinks`, tags, …), and
   the `doc…` exports (`docVaults`, `docCurrentVaultId`, `docMemoryObjects`, …)
-  are for sync and settings. Mutators refuse linked ids with a notice; capture
-  entry points ask `canCreateNotes()`; the UI gates on `currentVaultCaps`.
+  are for sync and settings. `updateMemoryObject` / `addMemoryObject` on linked
+  ids go to the files (`saveLinkedNote`, `createLinkedNote`: hash-guarded
+  `linked_write` / `linked_create`, never the document); other mutators refuse
+  with a notice; capture entry points ask `canCreateNotes()` (`'capture'` for
+  recordings and uploads, which need the document); the UI gates on
+  `currentVaultCaps`. A long poll (`linked_changes`) applies outside changes.
+  Saving: the note page maps the editor's text back onto the file's
+  (`write-back.ts`, against the editor's serialisation of the untouched note
+  from `onready`), so only edited lines change and an untouched note is never
+  written; a file that changed meanwhile is merged by lines or held for the
+  user (`linkedSaveIssues`, banner + `LinkedConflictDialog`). One frontmatter
+  line may be edited (`setScalarField`: title, "updated"), nothing else.
+  Browser tests fake the desktop app (`fakeDesktop` in `e2e/smoke.mjs`).
   `linked-isolation.test.ts` guards this: if it fails, fix the path that leaked.
   Links there resolve by key (`[[project.foo]]`, frontmatter `id`), then title,
   then filename: always through `vaultLinkResolver` / `$lib/linked/links`.

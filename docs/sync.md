@@ -142,8 +142,8 @@ support
 A linked folder is not sync. It is a folder of Markdown notes on your computer
 (a knowledge base, a repository of notes kept by other tools) that the desktop
 app shows as a vault, reading the files where they are. Kurumi keeps no copy of
-them: they aren't in its database, in backups or in anything it syncs, and for
-now it never writes to the folder.
+them: they aren't in its database, in backups or in anything it syncs. It only
+reads the folder unless you allow editing.
 
 Vault menu → **Link a folder…**, choose the folder, and set:
 
@@ -153,14 +153,36 @@ Vault menu → **Link a folder…**, choose the folder, and set:
 - **Leave out**: patterns as in a `.gitignore`; the folder's own `.gitignore`
   can be followed too. Hidden files and folders are always left out.
 
+- **Frontmatter fields**: which field holds the title and the summary, and
+  which become tags (`type: project` → `type/project`). Kurumi suggests these
+  from the notes it finds.
+
 In a linked folder you can read, search, follow links and backlinks, browse
-tags (frontmatter `type` and `status` become `type/…` and `status/…`), use the
-graph and ask Kurumi about the notes. You can't edit or create notes there yet,
-and to-dos, projects and the other records stay in your Kurumi vaults; switch
-vaults to capture. The frontmatter of each note is shown under its title and is
-left exactly as it is. **Rescan** in the vault's settings reads the folder
-again after it changed; **Unlink** makes Kurumi forget the folder without
-touching it.
+tags, use the graph and ask Kurumi about the notes. Changes made in the folder
+by other programs show up while Kurumi is open. To-dos, projects and the other
+records stay in your Kurumi vaults, as do recordings and imports. The
+frontmatter of each note is shown under its title. **Rescan** in the vault's
+settings reads the folder again; **Unlink** makes Kurumi forget the folder
+without touching it.
+
+**Editing** is off until you turn on *Allow editing* in the vault's settings.
+Then:
+
+- Saving a note changes only the lines you edited. The frontmatter stays byte
+  for byte, as do line endings and blank lines; a note you only looked at is
+  never written. (A line you edit is written the way Kurumi's editor writes
+  Markdown, so an edited table row comes back padded.)
+- The title can be edited where it is a plain frontmatter field; files aren't
+  renamed. An "updated" field, if you name one, is set to today when a note's
+  text is saved.
+- If the file changed elsewhere while you were editing, Kurumi merges the two
+  when they touch different lines, and otherwise asks: keep yours, take the
+  file's version, or combine them. Nothing is written until you choose.
+- New notes (⌘N, or a link to a note that doesn't exist) become files: you set
+  the directory, the filename pattern and what they start with, using
+  `{title}`, `{date}` and `{id}`.
+- Moving, renaming and deleting files, icons, favourites and attachments stay
+  with your file manager and other tools.
 
 How it differs from *Local folder* sync above: there, Kurumi's database is the
 original and the folder a mirror Kurumi writes; here the folder is the original

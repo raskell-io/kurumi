@@ -86,8 +86,11 @@ async function launchBrowser(profileDir) {
 // scenarios' app instances (timers, workers) don't pile up and stall Chrome.
 const openContexts = [];
 
-/** Fresh browser profile + page at the app root, with errors collected. */
-async function freshPage(browser) {
+/**
+ * Fresh browser profile + page at the app root, with errors collected.
+ * `setup(page)` runs before the app loads (scripts for the new document).
+ */
+async function freshPage(browser, setup) {
 	const context = await browser.createBrowserContext();
 	openContexts.push(context);
 	const page = await context.newPage();
@@ -108,11 +111,192 @@ async function freshPage(browser) {
 		const iso = (x) => [x.getFullYear(), String(x.getMonth() + 1).padStart(2, '0'), String(x.getDate()).padStart(2, '0')].join('-');
 		localStorage.setItem('kurumi-last-auto-review', iso(monday));
 	});
+	if (setup) await setup(page);
 	await page.goto(BASE, { waitUntil: 'load' });
 	await page.waitForSelector('aside');
 	await sleep(800);
 	return { page, errors, context };
 }
+
+// ------------------------------------------------- linked folders (desktop)
+//
+// The desktop app can't be started here, so these scenarios give the page
+// what the app would: `window.__TAURI_INTERNALS__.invoke`, answering
+// folder_pick and the linked_* commands (desktop/src-tauri/src/linked.rs)
+// from files kept in memory, with the same contract: hash-guarded writes
+// (ConflictError), a long poll for changes, errors as "NameError: …". They
+// show that the app's side works in a real browser. They don't cover the
+// real file system, the real watcher or Tauri's bridge (Rust's own tests
+// and the desktop selftest do).
+
+const LINKED_ROOT = '/fake/knowledge';
+
+/** Before the app loads: the fake desktop app over `files` (path → text), and optionally a linked vault already set up. */
+async function fakeDesktop(page, files, config) {
+	await page.evaluateOnNewDocument(
+		(files, root, config) => {
+			if (window !== window.top) return;
+			const store = new Map(Object.entries(files));
+			const hash = (text) => {
+				let h = 0x811c9dc5;
+				for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0;
+				return h.toString(16).padStart(8, '0') + text.length.toString(16);
+			};
+			const open = new Map();
+			const calls = [];
+			let clock = Date.now();
+			let cursors = 1000;
+			let log = [];
+			let waiting = null;
+			const noteFile = (rel) => ({ rel, content: store.get(rel), hash: hash(store.get(rel)), mtime: ++clock, size: store.get(rel).length });
+			const flush = () => {
+				if (!waiting || !log.length) return;
+				const { vault, resolve } = waiting;
+				waiting = null;
+				const changes = log;
+				log = [];
+				open.get(vault).cursor = ++cursors;
+				resolve({ cursor: cursors, changes, rescan: false });
+			};
+			const vaultOf = (vault) => {
+				if (!open.has(vault)) throw `InvalidStateError: the linked folder ${vault} isn't open`;
+				return open.get(vault);
+			};
+			const checkRel = (rel) => {
+				if (!rel || rel.split('/').some((part) => !part || part === '..' || part.startsWith('.'))) throw `NotAllowedError: "${rel}" is not a path inside the linked folder`;
+				if (!/\.(md|markdown)$/i.test(rel)) throw `NotAllowedError: "${rel}" is not a Markdown file`;
+			};
+			const commands = {
+				folder_pick: () => ({ path: root, name: root.slice(root.lastIndexOf('/') + 1) }),
+				fs_open: ({ path }) => {
+					throw `NotFoundError: ${path} doesn't exist`;
+				},
+				linked_open: ({ vault, root: asked, readOnly }) => {
+					if (asked !== root) throw `NotFoundError: ${asked} doesn't exist`;
+					if (waiting && waiting.vault === vault) {
+						waiting.resolve({ cursor: 0, changes: [], rescan: true });
+						waiting = null;
+					}
+					log = [];
+					open.set(vault, { cursor: ++cursors, readOnly });
+					const dirs = new Set();
+					for (const rel of store.keys()) if (rel.includes('/')) dirs.add(rel.slice(0, rel.lastIndexOf('/')));
+					return { cursor: cursors, notes: [...store.keys()].map(noteFile), dirs: [...dirs], skipped: 0, watch: 'events' };
+				},
+				linked_changes: ({ vault, cursor }) => {
+					if (cursor !== vaultOf(vault).cursor) return { cursor: 0, changes: [], rescan: true };
+					return new Promise((resolve, reject) => {
+						waiting = { vault, resolve, reject };
+						flush();
+					});
+				},
+				linked_read: ({ vault, rel }) => {
+					vaultOf(vault);
+					checkRel(rel);
+					if (!store.has(rel)) throw `NotFoundError: ${rel} doesn't exist`;
+					return noteFile(rel);
+				},
+				linked_write: ({ vault, rel, expectedHash, content }) => {
+					if (vaultOf(vault).readOnly) throw 'NotAllowedError: this linked folder is read-only';
+					checkRel(rel);
+					if (!store.has(rel)) throw `NotFoundError: ${rel} doesn't exist`;
+					const current = hash(store.get(rel));
+					if (current !== expectedHash) throw `ConflictError: ${current}`;
+					store.set(rel, content);
+					return { hash: hash(content), mtime: ++clock };
+				},
+				linked_create: ({ vault, rel, content }) => {
+					if (vaultOf(vault).readOnly) throw 'NotAllowedError: this linked folder is read-only';
+					checkRel(rel);
+					if (store.has(rel)) throw `InvalidModificationError: ${rel} already exists`;
+					store.set(rel, content);
+					return { hash: hash(content), mtime: ++clock };
+				},
+				linked_close: ({ vault }) => {
+					open.delete(vault);
+					if (waiting && waiting.vault === vault) {
+						waiting.reject(`InvalidStateError: the linked folder ${vault} isn't open`);
+						waiting = null;
+					}
+					return null;
+				}
+			};
+			window.__TAURI_INTERNALS__ = {
+				invoke: async (cmd, args) => {
+					calls.push(cmd);
+					if (!commands[cmd]) throw `NotSupportedError: unknown command ${cmd}`;
+					return commands[cmd](args ?? {});
+				}
+			};
+			// For the scenario: the folder's files, the commands called, and
+			// "something else changed a file" (silent: the watcher hasn't noticed).
+			window.__folder = {
+				read: (rel) => (store.has(rel) ? store.get(rel) : null),
+				list: () => [...store.keys()].sort(),
+				calls: () => calls.filter((c) => c !== 'linked_changes'),
+				change(rel, content, silent = false) {
+					if (content === null) store.delete(rel);
+					else store.set(rel, content);
+					if (silent) return;
+					log.push(content === null ? { type: 'remove', rel } : { type: 'upsert', note: noteFile(rel) });
+					flush();
+				}
+			};
+			// A linked vault from an earlier run of the app (only on the first load).
+			if (config && !localStorage.getItem('kurumi-linked-vaults')) {
+				localStorage.setItem('kurumi-linked-vaults', JSON.stringify([config]));
+				localStorage.setItem('kurumi-active-linked-vault', config.id);
+			}
+		},
+		files,
+		LINKED_ROOT,
+		config ?? null
+	);
+}
+
+const linkedConfig = (settings = {}) => ({ id: 'lv-smoke001', name: 'Knowledge', path: LINKED_ROOT, created: 1, ...settings });
+const folderFile = (page, rel) => page.evaluate((rel) => window.__folder.read(rel), rel);
+const folderCalls = (page) => page.evaluate(() => window.__folder.calls());
+const changeOutside = (page, rel, content, silent = false) => page.evaluate((rel, content, silent) => window.__folder.change(rel, content, silent), rel, content, silent);
+const noticeText = (page) => page.evaluate(() => document.querySelector('.notice-toast')?.textContent.trim() ?? '');
+const VAULT_MENU = 'aside button.flex.max-w-full';
+// Titles of the current vault's notes (also those in folders the tree hasn't opened).
+const vaultTitles = (page) => db(page, `let ms; db.memoryObjects.subscribe((v) => (ms = v))(); return ms.map((m) => m.title).sort();`);
+
+// Open a note from the tree and wait for its editor.
+async function openTreeNote(page, title) {
+	await clickText(page, '.note-row', title);
+	await page.waitForFunction((title) => document.querySelector('input[aria-label="Note title"]')?.value === title, { timeout: 15000 }, title);
+	await page.waitForSelector('main .ProseMirror');
+	await sleep(700);
+}
+
+// Put the caret right after `text` in the editor (as a click there would).
+async function caretAfter(page, text) {
+	const found = await page.evaluate((text) => {
+		const pm = document.querySelector('main .ProseMirror');
+		const walker = document.createTreeWalker(pm, NodeFilter.SHOW_TEXT);
+		for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+			const at = node.textContent.indexOf(text);
+			if (at < 0) continue;
+			pm.focus();
+			const range = document.createRange();
+			range.setStart(node, at + text.length);
+			range.collapse(true);
+			const selection = getSelection();
+			selection.removeAllRanges();
+			selection.addRange(range);
+			return true;
+		}
+		return false;
+	}, text);
+	assert.ok(found, `"${text}" is not in the editor`);
+	await sleep(200);
+}
+
+const LINKED_FOO =
+	'---\nid: project.foo\ntype: project\nscope: "team"\ntitle: Foo launch\nsummary: Ship it.\nstatus: active\nsource: https://example.com/a#b\nupdated: 2026-01-02\npaths:\n  - src/a\n  - src/b\n---\n\n# Foo\n\nLine one.\nLine two.\nLine three.\n\nNeeds [[project.bar]] and [[Nowhere note]].\n';
+const LINKED_BAR = '---\nid: project.bar\ntitle: Bar plan\n---\nThe bar plan, after [[project.foo|the launch]].\n';
 
 // Click the first element matching `selector` whose text includes `text`.
 async function clickText(page, selector, text) {
@@ -2612,6 +2796,247 @@ const scenarios = {
 		const shown = await page.$eval('[data-testid="local-folder-name"]', (el) => el.textContent.trim());
 		assert.equal(shown, name);
 		await page.waitForFunction(() => document.querySelector('[data-testid="local-folder-entries"]')?.textContent.includes('.kurumi/'), { timeout: 30000 });
+		assert.deepEqual(errors, []);
+	},
+
+	async 'linked folder: link, follow a keyed link, read-only refuses edits'(browser) {
+		const files = { 'foo.md': LINKED_FOO, 'bar.md': LINKED_BAR, 'readme.md': '# Readme\n\nPlain text.\n' };
+		const { page, errors } = await freshPage(browser, (page) => fakeDesktop(page, files));
+
+		// Link it from the vault menu; the dialog looks at the notes first.
+		await page.click(VAULT_MENU);
+		await clickText(page, '.k-menu-item', 'Link a folder');
+		await clickText(page, '[data-testid="linked-vault-dialog"] button', 'Choose folder');
+		await page.waitForFunction((root) => document.querySelector('[data-testid="linked-folder-path"]')?.textContent.trim() === root, {}, LINKED_ROOT);
+		await page.waitForSelector('[data-testid="linked-conventions"]');
+		assert.match(await page.$eval('[data-testid="linked-conventions"]', (el) => el.textContent), /3 notes, 2 with frontmatter: id \(100%\)/);
+		assert.equal(await page.$eval('#linked-name', (el) => el.value), 'knowledge');
+		assert.equal(await page.$eval('#linked-key', (el) => el.value), 'id');
+		assert.equal(await page.$eval('[data-testid="linked-allow-editing"]', (el) => el.checked), false);
+		await clickText(page, '[data-testid="linked-vault-dialog"] button', 'Link folder');
+		await page.waitForFunction(() => document.querySelectorAll('.note-row').length === 3, { timeout: 15000 });
+		assert.match(await page.$eval(VAULT_MENU, (b) => b.textContent), /knowledge/);
+		assert.deepEqual((await treeRowText(page)).sort(), ['Bar plan', 'Foo launch', 'Readme']);
+		// Records live in Kurumi vaults: no To-dos in the sidebar, no new-note button.
+		assert.equal(await page.evaluate(() => [...document.querySelectorAll('aside .nav-row')].some((a) => a.textContent.includes('To-dos'))), false);
+		assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('aside button[aria-label="New note"]')).display), 'none');
+
+		// A note: its text without the frontmatter, which is listed under the title.
+		await openTreeNote(page, 'Foo launch');
+		assert.match(await page.$eval('[data-testid="linked-chip"]', (el) => el.textContent), /Read-only/);
+		const editorText = await page.$eval('main .ProseMirror', (el) => el.textContent);
+		assert.ok(editorText.includes('Line one.') && !editorText.includes('project.foo') && !editorText.includes('scope'), editorText);
+		assert.match(await page.$eval('.linked-props', (el) => el.textContent), /id\s*project\.foo/);
+		assert.equal(await page.$eval('input[aria-label="Note title"]', (el) => el.disabled), true);
+		assert.equal(await page.$eval('main .ProseMirror', (el) => el.getAttribute('contenteditable')), 'false');
+
+		// Typing changes nothing, on screen or in the file.
+		await caretAfter(page, 'Line one.');
+		await page.keyboard.type(' typed');
+		await sleep(900);
+		assert.ok(!(await page.$eval('main .ProseMirror', (el) => el.textContent)).includes('typed'));
+		assert.equal(await folderFile(page, 'foo.md'), LINKED_FOO);
+
+		// [[project.bar]] is the note whose frontmatter id is project.bar.
+		await page.click('main .ProseMirror .wikilink[data-wikilink-title="project.bar"]');
+		await page.waitForFunction(() => document.querySelector('input[aria-label="Note title"]')?.value === 'Bar plan', { timeout: 15000 });
+		await page.waitForSelector('main .ProseMirror');
+		// And it knows who links to it.
+		await page.waitForFunction(() => [...document.querySelectorAll('.link-section')].some((s) => s.textContent.includes('Foo launch')), { timeout: 10000 });
+
+		// A new note isn't on offer here; a link to nothing creates nothing.
+		await press(page, MOD, 'n');
+		assert.match(await noticeText(page), /read-only linked folder/);
+		await clickText(page, '.note-row', 'Foo launch');
+		await page.waitForSelector('main .ProseMirror .wikilink[data-wikilink-title="Nowhere note"]');
+		await page.click('main .ProseMirror .wikilink[data-wikilink-title="Nowhere note"]');
+		await sleep(500);
+		assert.equal(await page.$eval('input[aria-label="Note title"]', (el) => el.value), 'Foo launch');
+
+		// Nothing but scanning ever reached the folder.
+		assert.deepEqual([...new Set(await folderCalls(page))].sort(), ['fs_open', 'folder_pick', 'linked_close', 'linked_open'].sort());
+		assert.deepEqual(await page.evaluate(() => window.__folder.list()), Object.keys(files).sort());
+		for (const [rel, content] of Object.entries(files)) assert.equal(await folderFile(page, rel), content, rel);
+		// Back to the Kurumi vault: its own (empty) list, and capture again.
+		await page.click(VAULT_MENU);
+		await clickText(page, '.k-menu-item button[role="menuitemradio"]', 'Default');
+		await page.waitForFunction(() => document.querySelectorAll('.note-row').length === 0);
+		assert.equal(await page.evaluate(() => [...document.querySelectorAll('aside .nav-row')].some((a) => a.textContent.includes('To-dos'))), true);
+		assert.deepEqual(errors, []);
+	},
+
+	async 'linked folder: an edit changes only its line in the file'(browser) {
+		// What the editor rewrites when it serialises a note: none of it may reach the file.
+		const corpus = {
+			'a-frontmatter.md': LINKED_FOO.replace('Line two.', 'EDIT HERE'),
+			'b-table.md': '# Table\n\n| Name | Value |\n|------|------:|\n| a | 1 |\n| [[Alpha\\|first]] | x \\| y |\n\nEDIT HERE\n',
+			'c-escapes.md': '# Escapes\n\nA snake_case_name and 2 * 3 * 4 and a_b.\nBrackets [not a link] and [[Wiki Link]] and [[Wiki#Head|alias]].\n\n* star bullet\n* star two\n\nEDIT HERE\n',
+			'd-code.md': '# Code\n\n```rust\nfn main() {\n    println!("hi");\n}\n```\n\n    indented code\n\n~~~\ntilde fence\n~~~\n\nEDIT HERE\n',
+			'e-lists.md': '# Lists\n\n- one\n- two\n  - nested a\n    1. deep one\n- three\n\n1. first\n2. second\n\n- [ ] todo\n- [x] done\n\nEDIT HERE\n',
+			'f-crlf.md': '---\r\nid: note.crlf\r\n---\r\n# CRLF\r\n\r\nLine one\r\nLine two\r\n\r\nEDIT HERE\r\n',
+			'g-loose.md': '\n# Loose\n\n- item one\n\n- item two\n\nText\n\n\n\nTriple blank above.\n\nEDIT HERE\n\n\n',
+			'h-misc.md': 'Setext heading\n==============\n\n> quote line\n> second\n\nText with trailing spaces  \nhard break. A [link](https://example.com "t").\n\nEDIT HERE'
+		};
+		const titles = { 'a-frontmatter.md': 'Foo launch', 'b-table.md': 'Table', 'c-escapes.md': 'Escapes', 'd-code.md': 'Code', 'e-lists.md': 'Lists', 'f-crlf.md': 'CRLF', 'g-loose.md': 'Loose', 'h-misc.md': 'Setext heading' };
+		const { page, errors } = await freshPage(browser, (page) => fakeDesktop(page, corpus, linkedConfig({ readOnly: false })));
+		// The vault that was current comes back at start, without a dialog.
+		await page.waitForFunction(() => document.querySelectorAll('.note-row').length === 8, { timeout: 15000 });
+		assert.match(await page.$eval(VAULT_MENU, (b) => b.textContent), /Knowledge/);
+
+		// Opening and clicking around writes nothing.
+		for (const rel of ['b-table.md', 'c-escapes.md', 'h-misc.md']) {
+			await openTreeNote(page, titles[rel]);
+			assert.equal(await page.$eval('main .ProseMirror', (el) => el.getAttribute('contenteditable')), 'true');
+			await page.click('main .ProseMirror');
+			await sleep(500);
+		}
+		await clickText(page, '.note-row', 'Lists');
+		await sleep(800);
+		assert.equal((await folderCalls(page)).includes('linked_write'), false, 'a note was written without an edit');
+		for (const [rel, content] of Object.entries(corpus)) assert.equal(await folderFile(page, rel), content, `${rel} changed without an edit`);
+
+		// One typed change: that line, and not one other byte.
+		for (const [rel, original] of Object.entries(corpus)) {
+			await openTreeNote(page, titles[rel]);
+			await caretAfter(page, 'EDIT HERE');
+			await page.keyboard.type(' now');
+			await sleep(1100);
+			assert.equal(await folderFile(page, rel), original.replace('EDIT HERE', 'EDIT HERE now'), `${rel}: more than the edited line changed`);
+		}
+		// The frontmatter of the first, byte for byte.
+		const written = await folderFile(page, 'a-frontmatter.md');
+		assert.equal(written.slice(0, written.indexOf('\n\n# Foo')), LINKED_FOO.slice(0, LINKED_FOO.indexOf('\n\n# Foo')));
+
+		// The title is a frontmatter field here: changing it changes that line.
+		await openTreeNote(page, 'Foo launch');
+		assert.equal(await page.$eval('input[aria-label="Note title"]', (el) => el.disabled), false);
+		await page.click('input[aria-label="Note title"]');
+		await press(page, MOD, 'End');
+		await page.keyboard.type(' 2');
+		await sleep(900);
+		assert.equal(await folderFile(page, 'a-frontmatter.md'), corpus['a-frontmatter.md'].replace('EDIT HERE', 'EDIT HERE now').replace('title: Foo launch', 'title: Foo launch 2'));
+		// Where it comes from a heading it can't be changed here.
+		await openTreeNote(page, 'Table');
+		assert.equal(await page.$eval('input[aria-label="Note title"]', (el) => el.disabled), true);
+
+		// A table cell: its row comes back padded, the other rows stay.
+		await caretAfter(page, '1');
+		await page.keyboard.type('0');
+		await sleep(1100);
+		const table = (await folderFile(page, 'b-table.md')).split('\n');
+		const before = corpus['b-table.md'].replace('EDIT HERE', 'EDIT HERE now').split('\n');
+		assert.equal(table.length, before.length);
+		assert.deepEqual(table.filter((line, i) => line !== before[i]).map((line) => line.replace(/\s+/g, ' ')), ['| a | 10 |']);
+		assert.deepEqual(errors, []);
+	},
+
+	async 'linked folder: outside changes show up, merge, or ask'(browser) {
+		const files = { 'foo.md': LINKED_FOO, 'bar.md': LINKED_BAR };
+		const { page, errors } = await freshPage(browser, (page) => fakeDesktop(page, files, linkedConfig({ readOnly: false })));
+		await page.waitForFunction(() => document.querySelectorAll('.note-row').length === 2, { timeout: 15000 });
+		await openTreeNote(page, 'Foo launch');
+		const editor = () => page.$eval('main .ProseMirror', (el) => el.textContent);
+
+		// Changed and added outside while the note is open: both appear, no prompt.
+		await changeOutside(page, 'foo.md', LINKED_FOO.replace('Line three.', 'Line three, from outside.'));
+		await changeOutside(page, 'inbox/new.md', '---\nid: note.new\ntitle: Dropped in\n---\nNew file.\n');
+		await page.waitForFunction(() => document.querySelector('main .ProseMirror')?.textContent.includes('Line three, from outside.'), { timeout: 10000 });
+		assert.deepEqual(await vaultTitles(page), ['Bar plan', 'Dropped in', 'Foo launch']);
+		assert.equal(await page.$('[data-testid="linked-save-issue"]'), null);
+		await sleep(600);
+
+		// Changed outside on another line while typing here (the watcher hasn't said so yet): merged.
+		const onDisk = await folderFile(page, 'foo.md');
+		await changeOutside(page, 'foo.md', onDisk.replace('status: active', 'status: done').replace('Line three, from outside.', 'Line three, again.'), true);
+		await caretAfter(page, 'Line one.');
+		await page.keyboard.type(' Mine.');
+		await page.waitForFunction(() => window.__folder.read('foo.md').includes('Line one. Mine.'), { timeout: 10000 });
+		const merged = await folderFile(page, 'foo.md');
+		assert.ok(merged.includes('status: done') && merged.includes('Line three, again.'), merged);
+		assert.match(await noticeText(page), /Merged with a change made outside Kurumi/);
+		// Once typing pauses the editor shows the merged note.
+		await page.waitForFunction(() => document.querySelector('main .ProseMirror')?.textContent.includes('Line three, again.'), { timeout: 10000 });
+		assert.ok((await editor()).includes('Line one. Mine.'));
+		await sleep(600);
+
+		// The same line changed in both places: nothing is written, and the app asks.
+		const theirs = (await folderFile(page, 'foo.md')).replace('Line two.', 'Line two, theirs.');
+		await changeOutside(page, 'foo.md', theirs, true);
+		await caretAfter(page, 'Line two.');
+		await page.keyboard.type(' Mine too.');
+		await page.waitForSelector('[data-testid="linked-save-issue"]', { timeout: 10000 });
+		assert.equal(await folderFile(page, 'foo.md'), theirs);
+		await page.keyboard.type(' And more.');
+		await sleep(900);
+		assert.equal(await folderFile(page, 'foo.md'), theirs, 'written while the conflict was open');
+		await clickText(page, '[data-testid="linked-save-issue"] button', 'Resolve');
+		await page.waitForSelector('[data-testid="linked-conflict-dialog"]');
+		assert.ok((await page.$eval('[data-testid="conflict-mine"]', (el) => el.textContent)).includes('Line two. Mine too. And more.'));
+		assert.ok((await page.$eval('[data-testid="conflict-theirs"]', (el) => el.textContent)).includes('Line two, theirs.'));
+		await clickText(page, '[data-testid="linked-conflict-dialog"] button', 'Keep mine');
+		await page.waitForFunction(() => window.__folder.read('foo.md').includes('Line two. Mine too. And more.'), { timeout: 10000 });
+		assert.equal(await page.$('[data-testid="linked-save-issue"]'), null);
+		const kept = await folderFile(page, 'foo.md');
+		assert.ok(!kept.includes('Line two, theirs.') && kept.includes('status: done') && kept.startsWith('---\nid: project.foo\n'), kept);
+
+		// And the other way: take the file's version.
+		const theirs2 = kept.replace('Line one. Mine.', 'Line one, theirs.');
+		await changeOutside(page, 'foo.md', theirs2, true);
+		await caretAfter(page, 'Line one. Mine.');
+		await page.keyboard.type(' Again.');
+		await page.waitForSelector('[data-testid="linked-save-issue"]', { timeout: 10000 });
+		await clickText(page, '[data-testid="linked-save-issue"] button', 'Resolve');
+		await clickText(page, '[data-testid="linked-conflict-dialog"] button', "Take the file's version");
+		await page.waitForFunction(() => document.querySelector('main .ProseMirror')?.textContent.includes('Line one, theirs.'), { timeout: 10000 });
+		assert.equal(await folderFile(page, 'foo.md'), theirs2);
+		assert.ok(!(await editor()).includes('Again.'));
+
+		// A file removed outside disappears from the list.
+		await changeOutside(page, 'inbox/new.md', null);
+		await sleep(500);
+		assert.deepEqual(await vaultTitles(page), ['Bar plan', 'Foo launch']);
+		assert.deepEqual(errors, []);
+	},
+
+	async 'linked folder: new notes are files, also from a link to nothing'(browser) {
+		const files = { 'foo.md': LINKED_FOO };
+		const config = linkedConfig({ readOnly: false, newNoteDir: 'inbox', newNoteTemplate: '---\nid: note.{id}\ntitle: {title}\n---\n' });
+		const { page, errors } = await freshPage(browser, (page) => fakeDesktop(page, files, config));
+		await page.waitForFunction(() => document.querySelectorAll('.note-row').length === 1, { timeout: 15000 });
+
+		await press(page, MOD, 'n');
+		await page.waitForFunction(() => window.__folder.read('inbox/Untitled.md') !== null, { timeout: 10000 });
+		assert.equal(await folderFile(page, 'inbox/Untitled.md'), '---\nid: note.untitled\ntitle: Untitled\n---\n');
+		await page.waitForSelector('main .ProseMirror');
+		await sleep(700);
+		await page.click('main .ProseMirror');
+		await page.keyboard.type('First words.');
+		await page.waitForFunction(() => window.__folder.read('inbox/Untitled.md').includes('First words.'), { timeout: 10000 });
+		assert.equal(await folderFile(page, 'inbox/Untitled.md'), '---\nid: note.untitled\ntitle: Untitled\n---\nFirst words.');
+
+		// A link to a note that doesn't exist makes it, named after the link.
+		await openTreeNote(page, 'Foo launch');
+		await page.click('main .ProseMirror .wikilink[data-wikilink-title="Nowhere note"]');
+		await page.waitForFunction(() => document.querySelector('input[aria-label="Note title"]')?.value === 'Nowhere note', { timeout: 15000 });
+		await page.waitForFunction(() => window.__folder.read('inbox/Nowhere note.md') !== null, { timeout: 10000 });
+		assert.equal(await folderFile(page, 'inbox/Nowhere note.md'), '---\nid: note.nowhere-note\ntitle: Nowhere note\n---\n');
+		assert.equal(await folderFile(page, 'foo.md'), LINKED_FOO);
+		assert.deepEqual(await vaultTitles(page), ['Foo launch', 'Nowhere note', 'Untitled']);
+		// Recordings still belong to Kurumi vaults.
+		await page.evaluate(() => window.dispatchEvent(new Event('kurumi-voice-memo')));
+		await sleep(300);
+		assert.match(await noticeText(page), /Recordings and uploads aren't available in a linked folder/);
+		assert.deepEqual(errors, []);
+	},
+
+	async 'linked folder: a folder that is gone leaves the Kurumi vault current'(browser) {
+		const { page, errors } = await freshPage(browser, (page) => fakeDesktop(page, { 'a.md': '# A\n' }, linkedConfig({ path: '/fake/unplugged' })));
+		await page.waitForFunction(() => document.querySelector('.notice-toast')?.textContent.includes("wasn't found"), { timeout: 15000 });
+		assert.match(await page.$eval(VAULT_MENU, (b) => b.textContent), /Default/);
+		await page.click(VAULT_MENU);
+		assert.ok(await page.evaluate(() => [...document.querySelectorAll('.k-menu-item')].some((i) => i.textContent.includes('Knowledge') && i.textContent.includes('Folder not found'))));
+		// Nothing was forgotten: the vault is still listed and can be located later.
+		assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem('kurumi-linked-vaults'))).length, 1);
 		assert.deepEqual(errors, []);
 	}
 };

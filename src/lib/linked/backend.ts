@@ -82,10 +82,11 @@ export interface LinkedVaultData {
 const stem = (rel: string) => rel.slice(rel.lastIndexOf('/') + 1).replace(/\.(md|markdown)$/i, '');
 const one = (value: string | string[] | undefined): string | null => (typeof value === 'string' && value.trim() ? value.trim() : null);
 
-/** The first `# Heading` outside fenced code. */
+/** The first level-one heading outside fenced code: `# Heading`, or a line underlined with `===`. */
 function firstHeading(body: string): string | null {
 	let fence: string | null = null;
-	for (const line of body.split(/\r?\n/)) {
+	const lines = body.split(/\r?\n/);
+	for (const [index, line] of lines.entries()) {
 		const marker = line.trimStart().match(/^(`{3,}|~{3,})/)?.[1];
 		if (fence) {
 			if (marker && marker[0] === fence[0] && marker.length >= fence.length) fence = null;
@@ -97,6 +98,7 @@ function firstHeading(body: string): string | null {
 		}
 		const heading = /^#\s+(.+?)\s*#*\s*$/.exec(line);
 		if (heading) return heading[1].trim() || null;
+		if (line.trim() && /^=+\s*$/.test(lines[index + 1] ?? '') && !/^\s*([-*+>]|\d+[.)])\s/.test(line)) return line.trim();
 	}
 	return null;
 }
