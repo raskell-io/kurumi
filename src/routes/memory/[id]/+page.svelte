@@ -20,7 +20,9 @@
 		getMemoryObject,
 		currentVaultCaps
 	} from '$lib/db';
-	import { isLinkedNoteId, linkedNoteInfo } from '$lib/linked/backend';
+	import { isLinkedNoteId, linkedNoteInfo, linkedSaveIssues, linkedTitleEditable, resolveLinkedIssue, saveLinkedNote } from '$lib/linked/backend';
+	import { writeBack, type EditBase } from '$lib/linked/write-back';
+	import LinkedConflictDialog from '$lib/components/LinkedConflictDialog.svelte';
 	import { NO_NEW_NOTES } from '$lib/linked/capabilities';
 	import { showNotice } from '$lib/stores/notice';
 	import { pushUndo } from '$lib/stores/undo';
@@ -75,7 +77,8 @@
 		Smile,
 		FolderKanban,
 		Gavel,
-		ListChecks
+		ListChecks,
+		AlertTriangle
 	} from 'lucide-svelte';
 	import { triggerSearch } from '$lib/stores/snackbar';
 	import CameraCapture from '$lib/components/CameraCapture.svelte';
@@ -439,8 +442,46 @@
 	// A note of a linked folder ($lib/linked) is shown as it is in its file:
 	// nothing here saves it, and what belongs to the document (icon,
 	// favourite, projects, records, history, trash) isn't offered.
-	let readOnly = $derived(!!memory && isLinkedNoteId(memory.id));
-	let linkedInfo = $derived(memory && readOnly ? linkedNoteInfo(memory.id) : undefined);
+	let linked = $derived(!!memory && isLinkedNoteId(memory.id));
+	// Unless its vault's settings allow editing, it is read-only.
+	let readOnly = $derived(linked && !$currentVaultCaps.editNotes);
+	let linkedInfo = $derived(memory && linked ? linkedNoteInfo(memory.id) : undefined);
+	// Files aren't renamed: the title can change only where it is a frontmatter field.
+	let titleLocked = $derived(!!memory && linked && !linkedTitleEditable(memory.id));
+	// A save that waits for the user (the file changed on the same lines, was deleted, or the write failed).
+	let saveIssue = $derived(memory && linked ? $linkedSaveIssues.get(memory.id) : undefined);
+	let showConflict = $state(false);
+
+	// Saving a linked note. The editor re-serialises the whole text, so what
+	// is written is the file's own text with only the user's changes applied
+	// (linked/write-back.ts), worked out against what the editor made of the
+	// untouched note when it opened it.
+	let editBase: (EditBase & { id: string }) | null = null;
+	// The file text the editor's content stands for: what was loaded, then what was last handed over to save.
+	let shownBody = '';
+
+	function handleEditorReady(normalized: string, original: string, noteId?: string) {
+		if (!noteId || !isLinkedNoteId(noteId)) return;
+		// Only a note shown as it is in its file can be saved back onto it.
+		editBase = original === getMemoryObject(noteId)?.bodyMarkdown ? { id: noteId, original, normalized } : null;
+		if (editBase) shownBody = original;
+	}
+
+	/** The text a linked note's file should get for what the editor holds, or null if that can't be known. */
+	function fileBody(id: string, serialized: string): string | null {
+		return editBase && editBase.id === id ? writeBack(editBase, serialized) : null;
+	}
+
+	/** Save a note's title and the editor's text. */
+	function saveNote(id: string, noteTitle: string, serialized: string) {
+		if (!isLinkedNoteId(id)) return updateMemoryObject(id, { title: noteTitle, bodyMarkdown: serialized });
+		const body = fileBody(id, serialized);
+		if (body === null) return;
+		// Based on what this editor last stood for, so a change made in the
+		// file since is merged in rather than overwritten.
+		saveLinkedNote(id, { title: noteTitle, bodyMarkdown: body, basedOn: shownBody });
+		shownBody = body;
+	}
 
 	// A canvas opens on its board, not in the editor (links, tabs, search all land here).
 	$effect(() => {
@@ -475,7 +516,7 @@
 
 	// Derived: show template chooser when body is empty AND not dismissed.
 	let shouldShowChooser = $derived(
-		!readOnly &&
+		!linked &&
 		!templateChooserDismissed &&
 		!content.trim() &&
 		memory?.type === 'note'
@@ -501,6 +542,9 @@
 						: null;
 				title = memory!.title;
 				content = memory!.bodyMarkdown;
+				shownBody = content;
+				editBase = null;
+				showConflict = false;
 				backlinks = findBacklinks(id);
 				unlinkedMentions = findUnlinkedMentions(id);
 				relatedNotes = [];
@@ -606,7 +650,7 @@
 	}
 
 	function handleTitleChange(e: Event) {
-		if (readOnly) return;
+		if (readOnly || titleLocked) return;
 		const target = e.target as HTMLInputElement;
 		// Keep the stored default so links, sync and exports still have a name;
 		// the input shows an empty field with an "Untitled" placeholder instead.
@@ -623,13 +667,30 @@
 	$effect(() => {
 		const body = memory?.bodyMarkdown;
 		if (body === undefined) return;
+		// A linked note: the file changed outside Kurumi. Asked again once
+		// typing has paused, and not while a save waits for the user.
+		void externalRetry;
+		const waiting = !!saveIssue;
 		untrack(() => {
 			if (!memory || memory.id !== initializedForId) return;
-			if (pendingSave || body === content || Date.now() - lastKeyAt < 1500) return;
+			if (linked) {
+				if (waiting || body === shownBody) return;
+				if (pendingSave || Date.now() - lastKeyAt < 1500) {
+					clearTimeout(externalTimer);
+					externalTimer = setTimeout(() => externalRetry++, 1600);
+					return;
+				}
+				shownBody = body;
+				editBase = null;
+				hasLocalEdits = false;
+			} else if (pendingSave || body === content || Date.now() - lastKeyAt < 1500) return;
 			content = body;
 			editorRevision++;
 		});
 	});
+	let externalRetry = $state(0);
+	let externalTimer: ReturnType<typeof setTimeout> | undefined;
+	$effect(() => () => clearTimeout(externalTimer));
 
 	function handleContentChange(markdown: string, changedId?: string) {
 		// Milkdown debounces this callback 200ms, so it can arrive after the
@@ -664,10 +725,7 @@
 	function flushPendingSave() {
 		clearTimeout(saveTimeout);
 		if (pendingSave) {
-			updateMemoryObject(pendingSave.id, {
-				title: pendingSave.title,
-				bodyMarkdown: pendingSave.content
-			});
+			saveNote(pendingSave.id, pendingSave.title, pendingSave.content);
 			pendingSave = null;
 		}
 	}
@@ -682,7 +740,7 @@
 		const live = editorRef?.getCurrentMarkdown();
 		const body = live ?? content;
 		content = body;
-		updateMemoryObject(memory.id, { title, bodyMarkdown: body });
+		saveNote(memory.id, title, body);
 	}
 
 	// Flush before any client-side navigation. beforeNavigate fires while we're
@@ -699,7 +757,11 @@
 	$effect(() => {
 		const save = () => {
 			saveLiveContent();
-			if (memory && hasLocalEdits && !readOnly) stashEdit(memory.id, title, content);
+			if (!memory || !hasLocalEdits || readOnly) return;
+			if (!linked) return stashEdit(memory.id, title, content);
+			// A linked note: the text for its file, and the file it was made for.
+			const body = fileBody(memory.id, content);
+			if (body !== null) stashEdit(memory.id, title, body, linkedNoteInfo(memory.id)?.baseHash);
 		};
 		const typed = (e: Event) => {
 			if ((e.target as HTMLElement | null)?.closest?.('main .ProseMirror')) hasLocalEdits = true;
@@ -847,9 +909,13 @@
 				</span>
 			</nav>
 
-			{#if readOnly}
-				<span class="k-chip shrink-0" title="This note is a file in a linked folder. Kurumi shows it and doesn't change it.">
-					<Link2 class="h-3 w-3" /> Linked folder · Read-only
+			{#if linked}
+				<span
+					class="k-chip shrink-0"
+					data-testid="linked-chip"
+					title={readOnly ? "This note is a file in a linked folder. Kurumi shows it and doesn't change it." : 'This note is a file in a linked folder. Edits are saved to the file.'}
+				>
+					<Link2 class="h-3 w-3" /> {readOnly ? 'Linked folder · Read-only' : 'Linked folder'}
 				</span>
 			{/if}
 
@@ -876,7 +942,7 @@
 			<button onclick={() => triggerSearch.set(true)} class="k-icon-btn md:hidden" aria-label="Search">
 				<Search class="h-4 w-4" />
 			</button>
-			{#if !readOnly}
+			{#if !linked}
 			<button
 				onclick={() => setMemoryFavorite(memory!.id, !memory!.favoritedAt)}
 				class="k-icon-btn"
@@ -909,7 +975,7 @@
 					<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 					<div class="fixed inset-0 z-40" onclick={() => (showMoreMenu = false)}></div>
 					<div class="k-menu absolute right-0 top-full z-50 mt-1 w-60" role="menu">
-						{#if !readOnly}
+						{#if !linked}
 						<div class="k-menu-label">Insert</div>
 						<button class="k-menu-item" role="menuitem" onclick={() => { showMoreMenu = false; handleImageUpload(); }}>
 							<ImagePlus class="h-4 w-4 text-[var(--color-text-muted)]" /> Image
@@ -963,7 +1029,7 @@
 						<button class="k-menu-item" role="menuitem" onclick={() => { if (memory) shareMemory(memory); showMoreMenu = false; }}>
 							<Share2 class="h-4 w-4 text-[var(--color-text-muted)]" /> Share…
 						</button>
-						{#if !readOnly}
+						{#if !linked}
 						<div class="k-menu-sep"></div>
 						<button class="k-menu-item danger" role="menuitem" onclick={handleDelete}>
 							<Trash2 class="h-4 w-4" /> Move to trash
@@ -973,6 +1039,20 @@
 				{/if}
 			</div>
 		</div>
+
+		{#if saveIssue}
+			<!-- Nothing is written to the file until this is settled -->
+			<div class="flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-2 text-sm text-[var(--color-text)]" role="alert" data-testid="linked-save-issue">
+				<AlertTriangle class="h-4 w-4 shrink-0 text-[var(--color-danger)]" />
+				<span class="min-w-0 flex-1">{saveIssue.message} Saving this note is paused.</span>
+				{#if saveIssue.kind === 'conflict'}
+					<button class="k-btn k-btn-primary k-btn-sm" onclick={() => (showConflict = true)}>Resolve…</button>
+				{:else}
+					<button class="k-btn k-btn-primary k-btn-sm" onclick={() => resolveLinkedIssue(memory!.id, 'mine')}>{saveIssue.kind === 'deleted' ? 'Save as new file' : 'Try again'}</button>
+					<button class="k-btn k-btn-ghost k-btn-sm" onclick={() => resolveLinkedIssue(memory!.id, 'theirs')}>Discard my changes</button>
+				{/if}
+			</div>
+		{/if}
 
 		{#if extractingReminders || extractionResult}
 			<div class="animate-dropdown absolute right-4 top-12 z-30 flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-xs text-[var(--color-text)] shadow-[var(--shadow-md)]" role="status">
@@ -1010,7 +1090,7 @@
 							<NoteIcon icon={memory.icon} class="h-16 w-16 text-[3.5rem]" />
 						</button>
 					{/if}
-					<div class="insert-bar -ml-1.5 mb-1 flex items-center gap-0.5" class:hidden={readOnly}>
+					<div class="insert-bar -ml-1.5 mb-1 flex items-center gap-0.5" class:hidden={linked}>
 						{#if !memory.icon}
 							<button onclick={openIconPicker} class="insert-btn" title="Add icon">
 								<Smile class="h-3.5 w-3.5" /> Icon
@@ -1044,7 +1124,8 @@
 						oninput={handleTitleChange}
 						onkeydown={handleTitleKeydown}
 						placeholder="Untitled"
-						disabled={readOnly}
+						disabled={readOnly || titleLocked}
+						title={titleLocked && !readOnly ? "This note's title comes from its heading or filename: change it there" : undefined}
 						aria-label="Note title"
 						class="title-input mb-3 w-full bg-transparent font-bold text-[var(--color-text)] md:mb-5"
 						style="font-family: var(--font-editor);"
@@ -1308,6 +1389,8 @@
 						content={initializedForId === memory.id ? content : memory.bodyMarkdown}
 						noteId={memory.id}
 						readonly={readOnly}
+						files={!linked}
+						onready={handleEditorReady}
 						onchange={handleContentChange}
 						onWikilinkClick={handleWikilinkClick}
 						placeholder={readOnly
@@ -1463,6 +1546,10 @@
 			</a>
 		</div>
 	</div>
+{/if}
+
+{#if showConflict && memory && saveIssue?.kind === 'conflict'}
+	<LinkedConflictDialog noteId={memory.id} title={memory.title || 'Untitled'} issue={saveIssue} onclose={() => (showConflict = false)} />
 {/if}
 
 <style>

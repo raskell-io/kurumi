@@ -2,7 +2,8 @@
 	/**
 	 * Linking a folder as a vault, and the settings of one that is linked
 	 * ($lib/linked): a folder of Markdown notes the desktop app reads where it
-	 * lies. Kurumi keeps no copy of it and, for now, never writes to it.
+	 * lies. Kurumi keeps no copy of it, and writes to it only when editing is
+	 * turned on here.
 	 */
 	import { goto } from '$app/navigation';
 	import { portal } from '$lib/actions/portal';
@@ -10,9 +11,9 @@
 	import { currentVaultId, docCurrentVaultId, setCurrentVault } from '$lib/db';
 	import { isTauri } from '$lib/desktop';
 	import { deleteEmbeddingsWithPrefix } from '$lib/embeddings';
-	import { linkedNoteId, linkedProblem, linkedRevision, linkedStats, openLinkedVault, rescanLinkedVault } from '$lib/linked/backend';
+	import { linkedNoteId, linkedProblem, linkedRevision, linkedStats, linkedWatch, openLinkedVault, rescanLinkedVault } from '$lib/linked/backend';
 	import { DEFAULT_IGNORE, newLinkedVaultConfig, removeLinkedVault, saveLinkedVault } from '$lib/linked/config';
-	import { linkRefusal, pickLinkedFolder, type PickedFolder } from '$lib/linked/pick';
+	import { linkRefusal, pickLinkedFolder, probeFolder, type Conventions, type PickedFolder } from '$lib/linked/pick';
 	import type { LinkedVaultConfig } from '$lib/linked/types';
 	import { getLocalFSFolderPath } from '$lib/sync/local-fs';
 	import { AlertTriangle, FolderOpen, Link2, RefreshCw, Unlink } from 'lucide-svelte';
@@ -30,13 +31,27 @@
 	// The dialog is opened for one vault and closed again: read once.
 	const editing = untrack(() => config);
 	const desktop = isTauri();
+	const defaults = editing ?? newLinkedVaultConfig({ name: '', path: '' });
 
 	let folder = $state<PickedFolder | null>(editing ? { path: editing.path, name: editing.name } : null);
-	let name = $state(editing?.name ?? '');
+	let name = $state(defaults.name);
 	// Empty = notes are linked by their title.
-	let keyField = $state(editing ? (editing.linkKey === 'frontmatter' ? editing.linkKeyField : '') : 'id');
+	let keyField = $state(defaults.linkKey === 'frontmatter' ? defaults.linkKeyField : '');
 	let ignore = $state((editing?.ignore ?? DEFAULT_IGNORE).join('\n'));
-	let respectGitignore = $state(editing?.respectGitignore ?? true);
+	let respectGitignore = $state(defaults.respectGitignore);
+	// Conventions: which frontmatter fields mean what. Empty = not used.
+	let titleField = $state(defaults.titleField ?? '');
+	let summaryField = $state(defaults.summaryField ?? '');
+	let tagFields = $state(defaults.tagFields.join(', '));
+	// Editing.
+	let allowEditing = $state(!defaults.readOnly);
+	let updatedField = $state(defaults.updatedField ?? '');
+	let updatedFormat = $state(defaults.updatedFormat);
+	let newNoteDir = $state(defaults.newNoteDir);
+	let newNoteFilename = $state(defaults.newNoteFilename);
+	let newNoteTemplate = $state(defaults.newNoteTemplate);
+
+	let found = $state<Conventions | null>(null);
 	let error = $state<string | null>(null);
 	let busy = $state(false);
 	let confirmUnlink = $state(false);
@@ -49,6 +64,8 @@
 	});
 
 	const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
+	const lines = (text: string) => text.split('\n').map((line) => line.trim()).filter(Boolean);
+	const percent = (count: number, of: number) => `${Math.round((count / Math.max(of, 1)) * 100)}%`;
 
 	async function chooseFolder() {
 		error = null;
@@ -63,6 +80,14 @@
 			}
 			folder = picked;
 			if (!name.trim()) name = picked.name;
+			if (!editing) {
+				// A first look at the notes, to suggest the settings below.
+				found = await probeFolder(picked, lines(ignore), respectGitignore).catch(() => null);
+				if (found) {
+					keyField = found.keyField ?? '';
+					titleField = found.titleField ?? '';
+				}
+			}
 		} catch (err) {
 			error = message(err);
 		} finally {
@@ -70,14 +95,23 @@
 		}
 	}
 
-	function settings(): Pick<LinkedVaultConfig, 'name' | 'linkKey' | 'linkKeyField' | 'ignore' | 'respectGitignore'> {
+	function settings(): Partial<LinkedVaultConfig> {
 		const field = keyField.trim();
 		return {
 			name: name.trim(),
 			linkKey: field ? 'frontmatter' : 'title',
 			linkKeyField: field || 'id',
-			ignore: ignore.split('\n').map((line) => line.trim()).filter(Boolean),
-			respectGitignore
+			ignore: lines(ignore),
+			respectGitignore,
+			titleField: titleField.trim() || null,
+			summaryField: summaryField.trim() || null,
+			tagFields: tagFields.split(',').map((f) => f.trim()).filter(Boolean),
+			readOnly: !allowEditing,
+			updatedField: updatedField.trim() || null,
+			updatedFormat,
+			newNoteDir: newNoteDir.trim().replace(/^\/+|\/+$/g, ''),
+			newNoteFilename: newNoteFilename.trim() || '{title}',
+			newNoteTemplate
 		};
 	}
 
@@ -85,7 +119,7 @@
 		if (!folder || !name.trim() || busy) return;
 		error = null;
 		busy = true;
-		const created = newLinkedVaultConfig({ path: folder.path, ...settings() });
+		const created = newLinkedVaultConfig({ name: name.trim(), path: folder.path, ...settings() });
 		saveLinkedVault(created);
 		try {
 			await openLinkedVault(created);
@@ -107,7 +141,8 @@
 		const updated: LinkedVaultConfig = { ...editing, ...settings(), path: folder.path };
 		saveLinkedVault(updated);
 		try {
-			// The open vault, or one whose folder was just located, is read again.
+			// The open vault, or one whose folder was just located, is read again
+			// (its notes depend on these settings).
 			if (isOpen || missing) await openLinkedVault(updated);
 			onclose();
 		} catch (err) {
@@ -151,10 +186,11 @@
 	aria-modal="true"
 	aria-labelledby="linked-dialog-title"
 	tabindex="-1"
+	data-testid="linked-vault-dialog"
 >
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-	<div class="k-dialog p-5" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="document">
+	<div class="k-dialog max-h-[90vh] overflow-y-auto p-5" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="document">
 		<h2 id="linked-dialog-title" class="mb-1 flex items-center gap-2 text-base font-semibold text-[var(--color-text)]">
 			<Link2 class="h-4 w-4 text-[var(--color-text-muted)]" />
 			{editing ? 'Linked folder' : 'Link a folder'}
@@ -170,14 +206,14 @@
 			</div>
 		{:else}
 			<p class="mb-4 text-sm text-[var(--color-text-muted)]">
-				Kurumi shows the Markdown notes of this folder as a vault and keeps no copy of them. It is read-only for now: nothing in the folder is changed.
+				Kurumi shows the Markdown notes of this folder as a vault and keeps no copy of them. It only reads the folder unless you turn on editing below.
 			</p>
 
 			<div class="space-y-4">
 				<div>
 					<span class="k-label">Folder</span>
 					<div class="flex items-center gap-2">
-						<span class="min-w-0 flex-1 truncate rounded-md border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2.5 py-1.5 font-mono text-xs text-[var(--color-text-muted)]" title={folder?.path}>
+						<span class="min-w-0 flex-1 truncate rounded-md border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2.5 py-1.5 font-mono text-xs text-[var(--color-text-muted)]" title={folder?.path} data-testid="linked-folder-path">
 							{folder?.path ?? 'No folder chosen'}
 						</span>
 						<button type="button" class="k-btn k-btn-ghost k-btn-sm shrink-0" onclick={chooseFolder} disabled={busy}>
@@ -189,6 +225,11 @@
 						<p class="mt-1.5 flex items-start gap-1.5 text-xs text-[var(--color-danger)]">
 							<AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" />
 							<span>{missing.kind === 'missing' ? 'Folder not found. If it was moved, locate it; if its disk is unplugged, plug it in and rescan.' : missing.message}</span>
+						</p>
+					{/if}
+					{#if found}
+						<p class="k-help" data-testid="linked-conventions">
+							{found.notes} {found.notes === 1 ? 'note' : 'notes'}, {found.withFrontmatter} with frontmatter{#if found.fields.length}: {found.fields.slice(0, 6).map((f) => `${f.name} (${percent(f.count, found!.withFrontmatter)})`).join(', ')}{/if}. The settings below start from that.
 						</p>
 					{/if}
 				</div>
@@ -207,16 +248,80 @@
 						</p>
 					</div>
 
-					<div>
-						<label for="linked-ignore" class="k-label">Leave out</label>
-						<textarea id="linked-ignore" bind:value={ignore} rows="5" class="k-input font-mono text-xs" spellcheck="false"></textarea>
-						<p class="k-help">One pattern per line, as in a .gitignore. Hidden files and folders are always left out.</p>
-					</div>
+					<details class="group rounded-md border border-[var(--color-border)] px-3 py-2">
+						<summary class="cursor-pointer text-sm font-medium text-[var(--color-text)]">Frontmatter fields</summary>
+						<div class="mt-3 space-y-3">
+							<div>
+								<label for="linked-title-field" class="k-label">Title field</label>
+								<input id="linked-title-field" type="text" bind:value={titleField} class="k-input font-mono" placeholder="title" autocapitalize="off" spellcheck="false" />
+								<p class="k-help">Notes without it, or with this empty, are titled by their first heading, else their filename.</p>
+							</div>
+							<div>
+								<label for="linked-summary-field" class="k-label">Summary field</label>
+								<input id="linked-summary-field" type="text" bind:value={summaryField} class="k-input font-mono" placeholder="summary" autocapitalize="off" spellcheck="false" />
+							</div>
+							<div>
+								<label for="linked-tag-fields" class="k-label">Fields shown as tags</label>
+								<input id="linked-tag-fields" type="text" bind:value={tagFields} class="k-input font-mono" placeholder="type, status" autocapitalize="off" spellcheck="false" />
+								<p class="k-help">Comma-separated. <code>type: project</code> becomes the tag <code>type/project</code>. A <code>tags</code> list is always read.</p>
+							</div>
+						</div>
+					</details>
 
-					<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
-						<input type="checkbox" bind:checked={respectGitignore} />
-						Also leave out what the folder's .gitignore excludes
-					</label>
+					<details class="group rounded-md border border-[var(--color-border)] px-3 py-2">
+						<summary class="cursor-pointer text-sm font-medium text-[var(--color-text)]">Files left out</summary>
+						<div class="mt-3 space-y-3">
+							<div>
+								<label for="linked-ignore" class="k-label">Leave out</label>
+								<textarea id="linked-ignore" bind:value={ignore} rows="5" class="k-input font-mono text-xs" spellcheck="false"></textarea>
+								<p class="k-help">One pattern per line, as in a .gitignore. Hidden files and folders are always left out.</p>
+							</div>
+							<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
+								<input type="checkbox" bind:checked={respectGitignore} />
+								Also leave out what the folder's .gitignore excludes
+							</label>
+						</div>
+					</details>
+
+					<div class="rounded-md border border-[var(--color-border)] px-3 py-2">
+						<label class="flex items-start gap-2 text-sm text-[var(--color-text)]">
+							<input type="checkbox" class="mt-0.5" bind:checked={allowEditing} data-testid="linked-allow-editing" />
+							<span>
+								<span class="font-medium">Allow editing</span>
+								<span class="block text-xs text-[var(--color-text-muted)]">
+									Kurumi then saves your changes to the files: only the lines you changed, the frontmatter untouched, and never over a change made elsewhere.
+								</span>
+							</span>
+						</label>
+						{#if allowEditing}
+							<div class="mt-3 space-y-3 border-t border-[var(--color-border)] pt-3">
+								<div class="flex items-end gap-2">
+									<div class="min-w-0 flex-1">
+										<label for="linked-updated-field" class="k-label">"Updated" field</label>
+										<input id="linked-updated-field" type="text" bind:value={updatedField} class="k-input font-mono" placeholder="none" autocapitalize="off" spellcheck="false" />
+									</div>
+									<select class="k-input !w-auto" bind:value={updatedFormat} aria-label="Format of the updated field">
+										<option value="date">Date</option>
+										<option value="datetime">Date and time</option>
+									</select>
+								</div>
+								<p class="k-help !mt-1">If a note has this frontmatter field, saving a change to its text sets it to today.</p>
+								<div>
+									<label for="linked-new-dir" class="k-label">New notes go to</label>
+									<input id="linked-new-dir" type="text" bind:value={newNoteDir} class="k-input font-mono" placeholder="the top of the folder" autocapitalize="off" spellcheck="false" />
+								</div>
+								<div>
+									<label for="linked-new-name" class="k-label">New note filename</label>
+									<input id="linked-new-name" type="text" bind:value={newNoteFilename} class="k-input font-mono" placeholder={'{title}'} autocapitalize="off" spellcheck="false" />
+								</div>
+								<div>
+									<label for="linked-new-template" class="k-label">New notes start with</label>
+									<textarea id="linked-new-template" bind:value={newNoteTemplate} rows="4" class="k-input font-mono text-xs" spellcheck="false" placeholder={'---\nid: note.{id}\ntitle: {title}\ncreated: {date}\n---'}></textarea>
+									<p class="k-help"><code>{'{title}'}</code>, <code>{'{date}'}</code> and <code>{'{id}'}</code> (the title as a slug) are filled in. Empty: the file starts with nothing.</p>
+								</div>
+							</div>
+						{/if}
+					</div>
 
 					{#if !editing}
 						<p class="text-xs text-[var(--color-text-faint)]">
@@ -228,7 +333,7 @@
 				{#if stats}
 					<div class="rounded-md border border-[var(--color-border)] px-3 py-2 text-xs text-[var(--color-text-muted)]">
 						<div class="flex items-center gap-2">
-							<span class="flex-1">
+							<span class="flex-1" data-testid="linked-stats">
 								{stats.notes} {stats.notes === 1 ? 'note' : 'notes'} in {stats.folders} {stats.folders === 1 ? 'folder' : 'folders'}{#if stats.skipped > 0}, {stats.skipped} skipped (too large or not text){/if}
 							</span>
 							<button type="button" class="k-btn k-btn-ghost k-btn-sm" onclick={rescan} disabled={busy} title="Read the folder again">
@@ -236,6 +341,15 @@
 								Rescan
 							</button>
 						</div>
+						<p class="mt-1.5" data-testid="linked-watch">
+							{#if $linkedWatch === 'events'}
+								Changes in the folder show up here right away.
+							{:else if $linkedWatch === 'polling'}
+								Watching is limited on this disk: changes in the folder show up after a few seconds.
+							{:else}
+								Watching the folder stopped. Rescan reads it again.
+							{/if}
+						</p>
 						{#if stats.duplicates.length > 0}
 							<p class="mt-1.5">
 								{stats.duplicates.length} {stats.duplicates.length === 1 ? 'key is' : 'keys are'} used by more than one note (links go to the first by path):

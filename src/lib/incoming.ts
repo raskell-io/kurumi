@@ -4,7 +4,7 @@
  */
 
 import { addMemoryObject, addMeetingMemo, canCreateNotes, transcribeMemoryAudio, updateMemoryObject } from '$lib/db';
-import { NO_NEW_NOTES } from '$lib/linked/capabilities';
+import { NO_CAPTURE, NO_NEW_NOTES } from '$lib/linked/capabilities';
 import { storeBlob } from '$lib/db/blob-store';
 import { parseMarkdownFile } from '$lib/git/convert';
 import { processAndStoreImage } from '$lib/utils/image';
@@ -16,7 +16,7 @@ const isText = (f: File) => /\.(md|markdown|txt)$/i.test(f.name) || f.type === '
 
 /** An audio or video file becomes a recording memo and is transcribed. Returns the memo id. */
 export async function importRecording(file: File): Promise<string> {
-	if (!canCreateNotes()) throw new Error(NO_NEW_NOTES);
+	if (!canCreateNotes('capture')) throw new Error(NO_CAPTURE);
 	const mimeType = file.type || 'audio/webm';
 	const ref = await storeBlob(file, mimeType);
 	const now = Date.now();
@@ -55,7 +55,7 @@ export interface Shared {
  */
 export async function importShared({ title = '', text = '', url = '', files = [] }: Shared): Promise<string[]> {
 	// Not into a linked folder: it says so, and nothing is created.
-	if (!canCreateNotes()) return [];
+	if (!canCreateNotes('capture')) return [];
 	const ids: string[] = [];
 	const images: string[] = [];
 	const attachments: { name: string; markdown: string }[] = [];

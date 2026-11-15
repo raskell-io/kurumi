@@ -54,6 +54,7 @@
 	import { isAIConfigured } from '$lib/ai';
 	import { editorViewCtx, editorViewOptionsCtx, parserCtx, remarkStringifyOptionsCtx } from '@milkdown/kit/core';
 	import { readonlyPlugin, setEditorReadonly } from '$lib/editor/readonly';
+	import { showNotice } from '$lib/stores/notice';
 	import { registerMarkdownParser } from '$lib/editor/blocks';
 	import { block, configureBlockHandle } from '$lib/editor/blockHandle';
 	import BlockMenu from './BlockMenu.svelte';
@@ -90,6 +91,13 @@
 		// Show the note without letting it be changed (a linked folder's note).
 		// Read when the editor mounts.
 		readonly?: boolean;
+		// Called once the editor shows the note, with its own serialisation of
+		// the untouched text and the text it was given. A linked note's saves
+		// are worked out against these (linked/write-back.ts).
+		onready?: (normalized: string, original: string, noteId?: string) => void;
+		// Pasted and dropped files become Kurumi blobs; false where those
+		// can't be kept (a linked folder's note).
+		files?: boolean;
 	}
 
 	let {
@@ -100,7 +108,9 @@
 		currentFolderId = null,
 		noteId,
 		secondary = false,
-		readonly = false
+		readonly = false,
+		onready,
+		files = true
 	}: Props = $props();
 
 	/**
@@ -439,6 +449,7 @@
 	const mountedNoteId = untrack(() => noteId);
 	const mountedContent = untrack(() => content);
 	const mountedReadonly = untrack(() => readonly);
+	const mountedFiles = untrack(() => files);
 	let destroyed = false;
 
 	let blobResolver: MutationObserver | undefined;
@@ -581,7 +592,9 @@
 			// Before clipboard: ProseMirror asks plugins in order and the
 			// clipboard plugin handles every paste.
 			.use(
-				fileDropPlugin(async (files, at) => {
+				fileDropPlugin(async (dropped, at) => {
+					if (!mountedFiles) return showNotice("Files can't be added to a note of a linked folder yet.");
+					const files = dropped;
 					// Images (converted to AVIF/WebP) inline, recordings as an
 					// audio player, anything else as an attachment link; for
 					// drops at the drop point, later ones after the earlier.
@@ -644,6 +657,8 @@
 
 		editor.action((ctx) => registerMarkdownParser(ctx.get(editorViewCtx), ctx.get(parserCtx)));
 		readyEditor = editor;
+		const untouched = getCurrentMarkdown();
+		if (untouched !== null) onready?.(untouched, mountedContent || '', mountedNoteId);
 
 		isTouch = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
 		editorContainer.addEventListener('focusin', trackFocus);

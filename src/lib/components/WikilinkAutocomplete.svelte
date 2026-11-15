@@ -105,11 +105,18 @@
 				.slice(0, 10)
 				.map((h, i) => ({ id: `${i}:${h.text}`, title: h.text, sub: `Heading ${h.level}`, value: `${title}#${h.text}`, heading: true, sameFolder: false }));
 		}
+		// In a linked folder a link names a note by its key and shows its title.
+		const links = vaultLinkResolver($memoryObjects);
+		const linkTo = (n: MemoryObject) => {
+			const noteTitle = n.title || 'Untitled';
+			const key = links.keyOf(n) || noteTitle;
+			return key === noteTitle ? noteTitle : `${key}|${noteTitle}`;
+		};
 		return filteredNotes.map((n) => ({
 			id: n.id,
 			title: n.title || 'Untitled',
 			sub: getFolderName(n.folderId),
-			value: n.title || 'Untitled',
+			value: linkTo(n),
 			heading: false,
 			sameFolder: n.folderId === currentFolderId
 		}));

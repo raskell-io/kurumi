@@ -97,6 +97,18 @@
 			}
 		},
 		{
+			id: 'link-folder',
+			type: 'action',
+			title: 'Link a folder as a vault',
+			description: 'Show a folder of Markdown notes as a vault, read where it is (desktop app)',
+			icon: 'vault',
+			action: () => {
+				onClose();
+				// The vault menu owns the dialog (VaultSelector).
+				window.dispatchEvent(new Event('kurumi-link-folder'));
+			}
+		},
+		{
 			id: 'new-voice-memo',
 			type: 'action',
 			title: 'Record voice memo',
@@ -543,7 +555,8 @@
 			results = [
 				...noteActions.filter((a) => !linked || a.id !== 'living-note'),
 				...pluginActions,
-				...actions.filter((a) => !linked || !NOT_IN_LINKED.has(a.id)),
+				// A new note, where the linked folder's settings allow editing.
+				...actions.filter((a) => !linked || !NOT_IN_LINKED.has(a.id) || (a.id === 'new-note' && $currentVaultCaps.createNotes)),
 				...(linked ? [] : labActions)
 			].filter(
 				(a) =>

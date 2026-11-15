@@ -187,6 +187,12 @@
 		}
 	}
 
+	// ⌘K "Link a folder as a vault" (CommandPalette).
+	$effect(() => {
+		window.addEventListener('kurumi-link-folder', openLinkDialog);
+		return () => window.removeEventListener('kurumi-link-folder', openLinkDialog);
+	});
+
 	$effect(() => {
 		if (showDropdown) {
 			document.addEventListener('click', handleClickOutside);

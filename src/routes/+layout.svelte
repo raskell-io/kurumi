@@ -29,7 +29,7 @@
 	import { myNames, isWaitingFor } from '$lib/work';
 	import { importRecording } from '$lib/incoming';
 	import { bootPwa } from '$lib/pwa-boot';
-	import { restoreStashedEdits } from '$lib/unsaved';
+	import { restoreStashedEdits, restoreLinkedStashes } from '$lib/unsaved';
 	import { initHashRouter, updateHashFromPath, currentRoutePath } from '$lib/hash-router';
 	import { generateDailyDigest } from '$lib/digest';
 	import { maybeAutoWeeklyReview } from '$lib/weekly-review';
@@ -144,7 +144,7 @@
 	async function handleUploadFile(event: Event) {
 		const input = event.target as HTMLInputElement;
 		const file = input.files?.[0];
-		if (!file || !canCreateNotes()) return;
+		if (!file || !canCreateNotes('capture')) return;
 
 		uploadingFile = true;
 		try {
@@ -197,7 +197,7 @@
 		const unsubscribe = triggerVoiceCapture.subscribe((value) => {
 			if (value) {
 				captureMode = 'voice-memo';
-				showVoiceCapture = canCreateNotes();
+				showVoiceCapture = canCreateNotes('capture');
 				triggerVoiceCapture.set(false);
 			}
 		});
@@ -209,7 +209,7 @@
 		const unsubscribe = triggerMeetingCapture.subscribe((value) => {
 			if (value) {
 				captureMode = 'meeting';
-				showVoiceCapture = canCreateNotes();
+				showVoiceCapture = canCreateNotes('capture');
 				triggerMeetingCapture.set(false);
 			}
 		});
@@ -220,7 +220,7 @@
 	$effect(() => {
 		const unsubscribe = triggerUploadRecording.subscribe((value) => {
 			if (value) {
-				if (canCreateNotes()) uploadFileInput?.click();
+				if (canCreateNotes('capture')) uploadFileInput?.click();
 				triggerUploadRecording.set(false);
 			}
 		});
@@ -538,7 +538,7 @@
 			// menu says "Folder not found"; nothing is forgotten.
 			const linked = isTauri() ? getLinkedVault(getActiveLinkedVaultId() ?? '') : undefined;
 			if (linked) {
-				await openLinkedVault(linked).catch((err) => {
+				await openLinkedVault(linked).then(restoreLinkedStashes, (err) => {
 					const missing = err instanceof DOMException && err.name === 'NotFoundError';
 					showNotice(missing ? `The folder of "${linked.name}" wasn't found. Showing your Kurumi vault instead.` : `Couldn't open "${linked.name}". Showing your Kurumi vault instead.`);
 				});
@@ -636,11 +636,11 @@
 
 		// Listen for voice/meeting capture requests from note pages
 		const handleVoiceMemoEvent = () => {
-			showVoiceCapture = canCreateNotes();
+			showVoiceCapture = canCreateNotes('capture');
 			captureMode = 'voice-memo';
 		};
 		const handleMeetingEvent = () => {
-			showVoiceCapture = canCreateNotes();
+			showVoiceCapture = canCreateNotes('capture');
 			captureMode = 'meeting';
 		};
 		window.addEventListener('kurumi-voice-memo', handleVoiceMemoEvent);

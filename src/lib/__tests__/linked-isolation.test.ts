@@ -30,21 +30,23 @@ import { maybeUpdateLivingNotes } from '$lib/living-notes';
 import { runDueWorkflows } from '$lib/workflows';
 import { importMarkdownFile, importShared } from '$lib/incoming';
 import type { KurumiDocument } from '$lib/db/types';
-import type { NoteFile } from '$lib/linked/types';
+import { fakeLinkedApp, settle } from './helpers/fake-linked-app';
+import { restoreLinkedStashes, restoreStashedEdits, stashEdit } from '$lib/unsaved';
+import { linkedNoteInfo, linkedSaveIssues } from '$lib/linked/backend';
 
 const MARK = 'LINKED-ONLY-TEXT';
 const ROOT = '/picked/knowledge';
-const note = (rel: string, content: string): NoteFile => ({ rel, content, hash: `h-${rel}`, mtime: 1_700_000_000_000, size: content.length });
-const FILES = [
-	note('projects/foo.md', `---\nid: project.foo\ntitle: Foo ${MARK}\ntype: project\n---\n${MARK} body.\n\n- [ ] ${MARK} task\n\nSee [[project.bar]] with @Ada Lovelace on //2031-01-02. #${MARK.toLowerCase()}\n`),
-	note('projects/bar.md', `---\nid: project.bar\n---\n# Bar\n\n${MARK} again, back to [[project.foo|foo]].\n- [ ] ${MARK} second task\n`)
-];
+const FILES: Record<string, string> = {
+	'projects/foo.md': `---\nid: project.foo\ntitle: Foo ${MARK}\ntype: project\n---\n${MARK} body.\n\n- [ ] ${MARK} task\n\nSee [[project.bar]] with @Ada Lovelace on //2031-01-02. #${MARK.toLowerCase()}\n`,
+	'projects/bar.md': `---\nid: project.bar\n---\n# Bar\n\n${MARK} again, back to [[project.foo|foo]].\n- [ ] ${MARK} second task\n`
+};
 const config = newLinkedVaultConfig({ id: 'lv-isolated', name: `Knowledge ${MARK}`, path: ROOT });
 const fooId = linkedNoteId(config.id, 'projects/foo.md');
 const barId = linkedNoteId(config.id, 'projects/bar.md');
 const dirId = linkedFolderId(config.id, 'projects');
 
-const calls: string[] = [];
+let app: ReturnType<typeof fakeLinkedApp>;
+const calls = () => app.commandsCalled();
 const storage = new Map<string, string>();
 
 /** Everything a leak could show up as. */
@@ -85,18 +87,7 @@ beforeAll(async () => {
 		setItem: (k: string, v: string) => void storage.set(k, String(v)),
 		removeItem: (k: string) => void storage.delete(k)
 	});
-	(globalThis as any).__TAURI_INTERNALS__ = {
-		invoke: async (cmd: string, args: any) => {
-			if (cmd === 'linked_changes') return new Promise(() => {}); // nothing changes in the folder
-			calls.push(cmd);
-			if (cmd === 'linked_open') {
-				if (args.root !== ROOT) throw `NotFoundError: ${args.root} doesn't exist`;
-				return { cursor: 1, notes: FILES, dirs: ['projects'], skipped: 0 };
-			}
-			if (cmd === 'linked_close') return null;
-			throw `NotSupportedError: ${cmd} must not be called`;
-		}
-	};
+	app = fakeLinkedApp(ROOT, FILES);
 
 	// A document with two vaults and a note with a checkbox line.
 	const second = db.addVault('Second');
@@ -112,7 +103,7 @@ beforeAll(async () => {
 
 afterAll(() => {
 	db.setCurrentVault(docVaultId);
-	delete (globalThis as any).__TAURI_INTERNALS__;
+	app.uninstall();
 	vi.unstubAllGlobals();
 });
 
@@ -225,7 +216,8 @@ describe('with a linked vault current', () => {
 		expect(Object.keys(savedDoc().folders)).toEqual([]);
 		expectClean(await everythingPersisted(), 'after mutators');
 		// Only scanning ever reached the folder.
-		expect(new Set(calls)).toEqual(new Set(['linked_open']));
+		expect(new Set(calls())).toEqual(new Set(['linked_open']));
+		expect(Object.fromEntries(app.files)).toEqual(FILES);
 	});
 
 	it('nothing is generated from its notes, and capture is refused', async () => {
@@ -256,6 +248,57 @@ describe('with a linked vault current', () => {
 		db.permanentlyDeleteMemoryObject(created.id);
 	});
 
+	it('with editing turned on, saves and new notes go to the files and nowhere else', async () => {
+		saveLinkedVault({ ...config, readOnly: false, updatedField: 'updated' });
+		db.setCurrentVault(config.id); // opens it again with the new setting
+		await vi.waitFor(() => expect(get(db.currentVaultCaps).editNotes).toBe(true));
+		await settle();
+		const heads = Automerge.getHeads(savedDoc());
+
+		// An edit through the store: one line of the file, frontmatter as it was.
+		const body = db.getMemoryObject(fooId)!.bodyMarkdown;
+		db.updateMemoryObject(fooId, { bodyMarkdown: body.replace(`${MARK} body.`, `${MARK} body, edited.`), tags: ['ignored'], folderId: null });
+		await settle();
+		expect(app.files.get('projects/foo.md')).toBe(FILES['projects/foo.md'].replace(`${MARK} body.`, `${MARK} body, edited.`));
+		expect(db.getMemoryObject(fooId)).toMatchObject({ folderId: dirId, title: `Foo ${MARK}` });
+		expect(db.linkUnlinkedMention(barId, 'again')).toBe(true);
+		await settle();
+		expect(app.files.get('projects/bar.md')).toContain('[[again]]');
+
+		// A new note is a new file, not a record.
+		expect(db.canCreateNotes()).toBe(true);
+		expect(db.canCreateNotes('capture')).toBe(false);
+		const created = db.addMemoryObject(`New ${MARK}`, `${MARK} text.\n`, dirId);
+		await settle();
+		expect(created.id.startsWith('lf.')).toBe(true);
+		expect(app.files.get(`projects/New ${MARK}.md`)).toBe(`${MARK} text.\n`);
+		expect(get(db.memoryObjects).map((m) => m.id)).toContain(created.id);
+
+		// An edit from before a restart: written if the file is as it was, held if not.
+		stashEdit(fooId, `Foo ${MARK}`, `${MARK} stashed.\n`, linkedNoteInfo(fooId)!.baseHash);
+		stashEdit(barId, 'Bar', `${MARK} stashed too.\n`, 'hash-of-an-older-file');
+		stashEdit(docNoteId, 'Document note', 'In the document, stashed.\n');
+		expect(restoreStashedEdits()).toBe(1);
+		expect(db.getMemoryObject(docNoteId)!.bodyMarkdown).toBe('In the document, stashed.\n');
+		const headsAfterDocEdit = Automerge.getHeads(savedDoc());
+		expect(restoreLinkedStashes()).toBe(2);
+		await settle();
+		expect(app.files.get('projects/foo.md')!.endsWith(`---\n${MARK} stashed.\n`)).toBe(true);
+		expect(app.files.get('projects/bar.md')).not.toContain('stashed too');
+		expect(get(linkedSaveIssues).get(barId)).toMatchObject({ kind: 'conflict', mine: { body: `${MARK} stashed too.\n` } });
+		expect(storage.get('kurumi-unsaved-edits')).toBeUndefined();
+
+		// None of it reached the document or what is stored. (The one change
+		// to the document above is the stash of its own note.)
+		expect(headsAfterDocEdit).not.toEqual(heads);
+		expect(Automerge.getHeads(savedDoc())).toEqual(headsAfterDocEdit);
+		expect(get(db.docMemoryObjects).map((m) => m.id)).toEqual([docNoteId]);
+		expect(savedDoc().currentVaultId).toBe(docVaultId);
+		expectClean(await everythingPersisted(), 'after saving and creating in the linked folder');
+		expectClean(db.exportFullJSON(), 'exportFullJSON() after saving');
+		expect(new Set(calls())).toEqual(new Set(['linked_open', 'linked_write', 'linked_create']));
+	});
+
 	it('switching back closes it and tells the document nothing new', async () => {
 		db.setCurrentVault(docVaultId);
 		expect(get(linkedVaultId)).toBeNull();
@@ -265,7 +308,7 @@ describe('with a linked vault current', () => {
 		expect(db.findMemoryObjectByTitle('project.bar')).toBeUndefined();
 		expect(db.findMemoryObjectByTitle('document note')?.id).toBe(docNoteId);
 		expect(storage.get('kurumi-active-linked-vault')).toBeUndefined();
-		expect(calls.at(-1)).toBe('linked_close');
+		expect(calls().at(-1)).toBe('linked_close');
 		expectClean(await everythingPersisted(), 'after switching back');
 
 		// And a missing folder leaves the document's vault current.

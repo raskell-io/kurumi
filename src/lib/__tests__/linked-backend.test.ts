@@ -28,7 +28,7 @@ import {
 } from '$lib/linked/backend';
 import { newLinkedVaultConfig, validateLinkedVaultConfig } from '$lib/linked/config';
 import { capabilitiesFor } from '$lib/linked/capabilities';
-import { linkRefusal, pickLinkedFolder, SYNC_FOLDER_REFUSAL } from '$lib/linked/pick';
+import { detectConventions, linkRefusal, pickLinkedFolder, SYNC_FOLDER_REFUSAL } from '$lib/linked/pick';
 import type { NoteFile, OpenedFolder } from '$lib/linked/types';
 
 const ROOT = '/picked/knowledge';
@@ -328,6 +328,17 @@ describe('choosing a folder to link', () => {
 		folders([]);
 		expect(await linkRefusal(picked, '/picked/notes/')).toBe(SYNC_FOLDER_REFUSAL);
 		expect(await linkRefusal({ path: 'C:\\Users\\me\\notes', name: 'notes' }, 'C:\\Users\\me\\notes\\')).toBe(SYNC_FOLDER_REFUSAL);
+	});
+});
+
+describe('detecting a folder\'s conventions', () => {
+	it('finds the key and title fields most notes have', () => {
+		const found = detectConventions(FILES);
+		expect(found).toMatchObject({ notes: 5, withFrontmatter: 3, keyField: 'id', titleField: null });
+		expect(found.fields[0]).toEqual({ name: 'id', count: 3 });
+		expect(found.fields.map((f) => f.name)).toEqual(expect.arrayContaining(['type', 'title', 'status', 'summary']));
+		expect(detectConventions([{ content: '# Plain\n' }, { content: '---\nslug: a\ntitle: A\n---\n' }])).toMatchObject({ withFrontmatter: 1, keyField: 'slug', titleField: 'title' });
+		expect(detectConventions([])).toMatchObject({ notes: 0, keyField: null, titleField: null, fields: [] });
 	});
 });
 

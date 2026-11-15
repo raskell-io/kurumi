@@ -180,9 +180,10 @@
 		}
 	}
 
-	// A linked folder ($lib/linked) is read-only: its tree is for browsing.
-	// Nothing in it is created, renamed, moved or deleted from here.
-	let readOnly = $derived(!$currentVaultCaps.editNotes);
+	// A linked folder's tree ($lib/linked) is for browsing: nothing in it is
+	// renamed, moved or deleted from here (its files are the folder's own
+	// business). New notes only where its settings allow editing.
+	let readOnly = $derived($currentVaultCaps.kind === 'linked');
 
 	function handleFolderContextMenu(e: MouseEvent, folderId: string) {
 		e.preventDefault();
@@ -998,7 +999,7 @@
 	<div class="group/tree mb-0.5 flex items-center gap-0.5 pl-2 pr-0.5">
 		<span class="flex-1 text-[0.6875rem] font-semibold tracking-[0.02em] text-[var(--color-text-faint)]">Notes</span>
 		<div class="flex items-center opacity-60 transition-opacity group-hover/tree:opacity-100 focus-within:opacity-100">
-			{#if !readOnly}
+			{#if $currentVaultCaps.createNotes}
 			<button
 				onclick={() => handleCreateNote(selectedFolderId)}
 				class="k-icon-btn !h-6 !w-6"
@@ -1007,6 +1008,8 @@
 			>
 				<SquarePen class="h-3.5 w-3.5" />
 			</button>
+			{/if}
+			{#if !readOnly}
 			<button
 				onclick={() => handleCreateFolder(selectedFolderId)}
 				class="k-icon-btn !h-6 !w-6"

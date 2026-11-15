@@ -38,6 +38,7 @@
 		exportAllVaultsAsMarkdown,
 		type MarkdownExportFormat
 	} from '$lib/utils/markdown-export';
+	import { showNotice } from '$lib/stores/notice';
 	import { importObsidianVault, type ObsidianImportResult } from '$lib/utils/obsidian-import';
 	import { importRoamJSON, type RoamImportResult } from '$lib/utils/roam-import';
 	import { importEvernoteEnex, type EvernoteImportResult } from '$lib/utils/evernote-import';
@@ -1006,7 +1007,16 @@
 		fileInputRef?.click();
 	}
 
+	// Imports make many notes (and folders, records) at once: into a Kurumi
+	// vault, never into a linked folder.
+	function importsBlocked(): boolean {
+		if ($currentVault?.kind !== 'linked') return false;
+		showNotice(`Imports go into Kurumi vaults. Switch from “${$currentVault.name}” to a Kurumi vault first.`);
+		return true;
+	}
+
 	async function handleObsidianImport() {
+		if (importsBlocked()) return;
 		isImportingObsidian = true;
 		obsidianImportResult = null;
 		try {
@@ -1023,7 +1033,7 @@
 	async function handleRoamFileSelect(event: Event) {
 		const input = event.target as HTMLInputElement;
 		const file = input.files?.[0];
-		if (!file) return;
+		if (!file || importsBlocked()) return;
 		isImportingRoam = true;
 		roamImportResult = null;
 		try {
@@ -1041,7 +1051,7 @@
 	async function handleEvernoteFileSelect(event: Event) {
 		const input = event.target as HTMLInputElement;
 		const file = input.files?.[0];
-		if (!file) return;
+		if (!file || importsBlocked()) return;
 		isImportingEvernote = true;
 		evernoteImportResult = null;
 		try {
@@ -1055,7 +1065,7 @@
 	async function handleNotionFileSelect(event: Event) {
 		const input = event.target as HTMLInputElement;
 		const file = input.files?.[0];
-		if (!file) return;
+		if (!file || importsBlocked()) return;
 		isImportingNotion = true;
 		notionImportResult = null;
 		try {
