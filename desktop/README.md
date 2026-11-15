@@ -36,6 +36,7 @@ attaches them to the GitHub release (`.github/workflows/desktop.yml`).
 | Web feature | In the desktop app |
 |---|---|
 | Local folder sync (`showDirectoryPicker`, which WebKit lacks) | `src/lib/desktop/folder-handle.ts` stands in for the File System Access API, backed by `src-tauri/src/folders.rs`. Its commands only reach folders picked in the system dialog (remembered in `folders.json` in the app's config folder), also after resolving symlinks |
+| Linked folder vaults (a folder of Markdown notes read in place) | `src-tauri/src/linked.rs`: `linked_open` scans a picked folder (`.md` / `.markdown`, skipping hidden entries, the vault's ignore patterns and, if asked, `.gitignore`), `linked_read` re-reads one note. Read-only so far, and only inside picked folders, like `folders.rs` |
 | Service worker | None: WebKit has none on `tauri:`. The files are on disk, so it starts offline and updates with the app (`isDesktopApp()` in `src/lib/pwa.ts`) |
 | Due to-do notifications | `tauri-plugin-notification` provides `window.Notification`; no Mark done / Snooze buttons |
 | Downloads (exports, backups) | Saved to the Downloads folder (`on_download` in `lib.rs`) |
@@ -57,7 +58,7 @@ temp dir (a separate WebKit store on macOS), answers the folder dialog with
 origin, folder sync through the real commands (and that paths outside are
 refused), downloads, notifications, a deep link, and that data and the
 picked folder survive the restart. Without the variable none of it is
-active. `cargo test` in `src-tauri` covers `folders.rs`.
+active. `cargo test` in `src-tauri` covers `folders.rs` and `linked.rs`.
 
 ## Signing
 

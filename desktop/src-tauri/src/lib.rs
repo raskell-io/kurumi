@@ -4,13 +4,15 @@
 //! Linux, https://tauri.localhost on Windows), so the vault in IndexedDB
 //! survives restarts and updates. Links to the web open in the default
 //! browser, downloads land in the Downloads folder, and local folder sync
-//! goes through folders.rs.
+//! goes through folders.rs. Linked folder vaults (notes read in place from a
+//! picked folder) go through linked.rs.
 //!
 //! The same crate builds the iOS and Android apps (`tauri ios|android`):
 //! there the window is the whole screen, there's no single-instance or
 //! download handling, and local folder sync isn't offered (folders.rs).
 
 mod folders;
+mod linked;
 mod selftest;
 
 #[cfg(desktop)]
@@ -150,6 +152,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             app.manage(folders::Folders::load(app.handle()));
+            app.manage(linked::Linked::default());
             create_window(app.handle())?;
             Ok(())
         })
@@ -162,6 +165,9 @@ pub fn run() {
             folders::fs_read,
             folders::fs_write,
             folders::fs_remove,
+            linked::linked_open,
+            linked::linked_read,
+            linked::linked_close,
             selftest::selftest_report,
         ])
         .run(tauri::generate_context!())

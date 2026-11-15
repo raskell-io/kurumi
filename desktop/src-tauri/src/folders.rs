@@ -42,7 +42,7 @@ impl Folders {
     }
 
     #[cfg(test)]
-    fn with_roots(roots: Vec<PathBuf>) -> Self {
+    pub(crate) fn with_roots(roots: Vec<PathBuf>) -> Self {
         Folders { roots: Mutex::new(roots), file: None }
     }
 
@@ -59,9 +59,14 @@ impl Folders {
         }
     }
 
+    /// Whether `path` is one of the picked folders itself, not just inside one.
+    pub(crate) fn is_root(&self, path: &Path) -> bool {
+        self.roots.lock().unwrap().iter().any(|r| r == path)
+    }
+
     /// `path` if it lies inside a picked folder, also after resolving
     /// symlinks, so nothing outside can be reached.
-    fn authorize(&self, path: &str) -> Result<PathBuf, String> {
+    pub(crate) fn authorize(&self, path: &str) -> Result<PathBuf, String> {
         let path = PathBuf::from(path);
         let denied = || format!("NotAllowedError: {} is outside the folders you picked", path.display());
         // By name too: in Windows \\?\ paths `..` isn't parsed as ParentDir.
@@ -86,7 +91,7 @@ impl Folders {
     }
 }
 
-fn io_error(e: std::io::Error) -> String {
+pub(crate) fn io_error(e: std::io::Error) -> String {
     let name = match e.kind() {
         ErrorKind::NotFound => "NotFoundError",
         ErrorKind::PermissionDenied => "NotAllowedError",
@@ -96,11 +101,11 @@ fn io_error(e: std::io::Error) -> String {
     format!("{name}: {e}")
 }
 
-fn not_found(path: &Path) -> String {
+pub(crate) fn not_found(path: &Path) -> String {
     format!("NotFoundError: {} doesn't exist", path.display())
 }
 
-fn type_mismatch(path: &Path) -> String {
+pub(crate) fn type_mismatch(path: &Path) -> String {
     format!("TypeMismatchError: {} is not the expected kind of entry", path.display())
 }
 
@@ -119,13 +124,13 @@ pub struct Entry {
     modified: f64,
 }
 
+/// Milliseconds since the epoch, like File.lastModified.
+pub(crate) fn modified_ms(meta: &fs::Metadata) -> f64 {
+    meta.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_millis() as f64).unwrap_or(0.0)
+}
+
 fn entry(path: &Path, meta: &fs::Metadata) -> Entry {
-    let modified = meta
-        .modified()
-        .ok()
-        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_millis() as f64)
-        .unwrap_or(0.0);
+    let modified = modified_ms(meta);
     Entry {
         name: path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
         dir: meta.is_dir(),
