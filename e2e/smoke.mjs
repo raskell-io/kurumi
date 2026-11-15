@@ -384,12 +384,14 @@ const bodyOf = (page, title) =>
 // fails there, and reads '' (the first save holds everything typed). If it
 // never matches, the error says what was where: the store, the editor, and
 // the text stashed for the next start (src/lib/unsaved.ts).
+// `pattern` is a regular expression, the exact text, or a function of the body.
 async function savedBody(page, title, pattern, timeout = 8000) {
+	const matches = typeof pattern === 'function' ? pattern : typeof pattern === 'string' ? (body) => body === pattern : (body) => pattern.test(body);
 	const started = Date.now();
 	let body = null;
 	while (Date.now() - started < timeout) {
 		body = await bodyOf(page, title);
-		if (body !== null && pattern.test(body)) return body;
+		if (body !== null && matches(body)) return body;
 		await sleep(50);
 	}
 	const seen = await page.evaluate(() => ({
@@ -399,7 +401,7 @@ async function savedBody(page, title, pattern, timeout = 8000) {
 		url: location.href
 	}));
 	assert.fail(
-		`"${title}" was not saved as ${pattern} within ${timeout}ms.\n` +
+		`"${title}" was not saved as ${typeof pattern === 'string' ? JSON.stringify(pattern) : pattern} within ${timeout}ms.\n` +
 			`stored body: ${JSON.stringify(body)}\neditor text: ${JSON.stringify(seen.editor)}\ntitle field: ${JSON.stringify(seen.title)}\n` +
 			`stashed edits: ${seen.stash}\nat: ${seen.url}`
 	);
@@ -639,7 +641,7 @@ const scenarios = {
 		await page.click('button[aria-label="Restore Q3 plan"]');
 		await sleep(500);
 		assert.ok((await treeRowText(page)).includes('Q3 plan'), 'note not restored');
-		assert.equal(await bodyOf(page, 'Q3 plan'), 'Budget for Falcon\n');
+		assert.equal(await savedBody(page, 'Q3 plan', 'Budget for Falcon\n'), 'Budget for Falcon\n');
 		assert.deepEqual(errors, []);
 	},
 
@@ -708,8 +710,8 @@ const scenarios = {
 			dt.setData('text/plain', 'https://example.com/docs');
 			document.querySelector('main .ProseMirror').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
 		});
-		await sleep(900);
-		const md = await bodyOf(page, 'Blocks');
+		// Once the last thing done (the pasted link) is saved.
+		const md = await savedBody(page, 'Blocks', /\]\(https:\/\/example\.com\/docs\)/);
 		assert.match(md, /## Title/);
 		assert.match(md, /- \[x\] Call Sam/);
 		assert.match(md, /> Quoted/);
@@ -730,14 +732,12 @@ const scenarios = {
 		await page.type('input[aria-label="Replace with"]', 'Osprey');
 		await clickText(page, '.find-bar button', 'Replace in all notes');
 		await clickText(page, '.find-bar button', 'Replace all');
-		await sleep(900);
-		assert.equal(await bodyOf(page, 'Main'), 'Osprey is the plan. Osprey again.\n');
-		assert.equal(await bodyOf(page, 'Other'), 'Project Osprey kickoff\n');
+		assert.equal(await savedBody(page, 'Main', 'Osprey is the plan. Osprey again.\n'), 'Osprey is the plan. Osprey again.\n');
+		assert.equal(await savedBody(page, 'Other', 'Project Osprey kickoff\n'), 'Project Osprey kickoff\n');
 		await page.keyboard.press('Escape');
 		await page.click('.note-header');
 		await press(page, MOD, 'z');
-		await sleep(600);
-		assert.equal(await bodyOf(page, 'Other'), 'Project Falcon kickoff\n', 'undo did not restore the other note');
+		assert.equal(await savedBody(page, 'Other', 'Project Falcon kickoff\n'), 'Project Falcon kickoff\n', 'undo did not restore the other note');
 		assert.deepEqual(errors, []);
 	},
 
@@ -751,8 +751,7 @@ const scenarios = {
 		await page.keyboard.type('typed and gone');
 		await press(page, MOD, 'n'); // no pause: straight on to a new note
 		await page.waitForFunction(() => document.querySelector('input[aria-label="Note title"]')?.value === '', { timeout: 15000 });
-		await sleep(800);
-		assert.equal(await bodyOf(page, 'Quick'), 'typed and gone\n');
+		assert.equal(await savedBody(page, 'Quick', 'typed and gone\n'), 'typed and gone\n');
 		assert.deepEqual(errors, []);
 	},
 
@@ -785,9 +784,8 @@ const scenarios = {
 		assert.match(await page.$eval('.split-pane .ProseMirror', (e) => e.textContent), /Beta body/, 'split pane opened empty');
 		await typeInEditor(page, ' plus split', '.split-pane .ProseMirror');
 		await typeInEditor(page, ' plus main');
-		await sleep(400);
-		assert.equal(await bodyOf(page, 'Beta'), 'Beta body plus split\n');
-		assert.equal(await bodyOf(page, 'Alpha'), 'Alpha body plus main\n');
+		assert.equal(await savedBody(page, 'Beta', 'Beta body plus split\n'), 'Beta body plus split\n');
+		assert.equal(await savedBody(page, 'Alpha', 'Alpha body plus main\n'), 'Alpha body plus main\n');
 		// A note created in the background (sync, the morning digest) leaves both editors alone
 		await db(page, `db.addMemoryObject('Arrived in the background', 'x');`);
 		await sleep(1500);
@@ -901,8 +899,7 @@ const scenarios = {
 		// Ticking: recurring item rolls over; note task is checked in the note
 		await page.evaluate(() => [...document.querySelectorAll('.todo-row')].find((r) => r.textContent.includes('Standup')).querySelector('.todo-check').click());
 		await page.evaluate(() => [...document.querySelectorAll('.todo-row')].find((r) => r.textContent.includes('Send budget')).querySelector('.todo-check').click());
-		await sleep(400);
-		assert.match(await bodyOf(page, 'Plan'), /- \[x\] Send budget/);
+		assert.match(await savedBody(page, 'Plan', /- \[x\] Send budget/), /- \[x\] Send budget/);
 		assert.ok((await rows()).some((r) => r.startsWith('Standup notes') && r.includes('Tomorrow')), 'next occurrence missing');
 		// The big New note button opens a note
 		await page.click('.capture-primary');
@@ -933,7 +930,8 @@ const scenarios = {
 		}
 		const images = () => page.$$('main .ProseMirror img:not(.ProseMirror-separator)');
 		assert.equal((await images()).length, 2, 'each paste should insert one image');
-		assert.doesNotMatch(await bodyOf(page, 'Photos'), /example\.com/);
+		// Once both images are saved in the note.
+		assert.doesNotMatch(await savedBody(page, 'Photos', (body) => (body.match(/!\[[^\]]*\]\(/g) ?? []).length === 2), /example\.com/);
 
 		const state = () => page.evaluate(() => {
 			const v = document.querySelector('.viewer');
@@ -1580,8 +1578,8 @@ const scenarios = {
 				'<div class="overflow-x-auto"><table><thead><tr><th>Name</th><th>Role</th></tr></thead><tbody><tr><td>Ana</td><td>Lead</td></tr></tbody></table></div>' +
 				'<pre><div class="code-header"><span>python</span><button>Copy code</button></div><code class="language-python">print("hi")</code></pre>'
 		});
-		await sleep(900);
-		const md = await bodyOf(page, 'From chat');
+		// Once the paste is saved, to its last block.
+		const md = await savedBody(page, 'From chat', /print\("hi"\)/);
 		assert.match(md, /## Plan/);
 		assert.match(md, /A \*\*bold\*\* idea/);
 		assert.match(md, /- one\n- two/);
@@ -1592,8 +1590,7 @@ const scenarios = {
 		await newNote(page, 'From markdown');
 		await page.click('main .ProseMirror');
 		await paste({ 'text/plain': '# Title\n\n- [ ] task\n\n> quote', 'text/html': '<div><span># Title</span></div>' });
-		await sleep(900);
-		const md2 = await bodyOf(page, 'From markdown');
+		const md2 = await savedBody(page, 'From markdown', /> quote/);
 		assert.match(md2, /^# Title/);
 		assert.match(md2, /- \[ \] task/);
 		assert.match(md2, /> quote/);

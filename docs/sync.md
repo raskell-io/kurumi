@@ -159,7 +159,9 @@ Vault menu → **Link a folder…**, choose the folder, and set:
 
 In a linked folder you can read, search, follow links and backlinks, browse
 tags, use the graph and ask Kurumi about the notes. Changes made in the folder
-by other programs show up while Kurumi is open. To-dos, projects and the other
+by other programs show up while Kurumi is open (if watching the folder fails,
+Kurumi tries again a few times; after that the vault's settings say so and
+**Rescan** reads it again). To-dos, projects and the other
 records stay in your Kurumi vaults, as do recordings and imports. The
 frontmatter of each note is shown under its title. **Rescan** in the vault's
 settings reads the folder again; **Unlink** makes Kurumi forget the folder
@@ -180,7 +182,15 @@ Then:
   file's version, or combine them. Nothing is written until you choose.
 - New notes (⌘N, or a link to a note that doesn't exist) become files: you set
   the directory, the filename pattern and what they start with, using
-  `{title}`, `{date}` and `{id}`.
+  `{title}`, `{date}` and `{id}`. In the frontmatter a title that YAML would
+  misread (`Plan: phase 2`) is put in quotes. A blank note gets its file when
+  you first type in it; one you leave untouched leaves nothing behind.
+- If a note's file is deleted elsewhere while you have it open, the note stays
+  on screen with a notice: save it as a new file, or discard it.
+- A link written by its key (`[[project.foo]]`) shows the note's title in the
+  editor too; put the cursor in it to see and edit what is written.
+- Images and attachments can't be added to these notes yet, and images stored
+  beside a note are not shown yet.
 - Moving, renaming and deleting files, icons, favourites and attachments stay
   with your file manager and other tools.
 

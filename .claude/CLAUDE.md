@@ -514,6 +514,12 @@ OpenAI to MMS when the API key is missing.
   written; a file that changed meanwhile is merged by lines or held for the
   user (`linkedSaveIssues`, banner + `LinkedConflictDialog`). One frontmatter
   line may be edited (`setScalarField`: title, "updated"), nothing else.
+  Kurumi never deletes a file there: a blank new note is a draft without a
+  file until its first change (`isLinkedDraft`), and a note whose file was
+  deleted outside stays open as `linkedGoneNote` until saved anew or discarded.
+  Keyed links are drawn as titles by a decoration (`editor/wikilink.ts`).
+  Images beside a note: `linkedFileUrl` is the seam, waiting for a byte-read
+  command.
   Browser tests fake the desktop app (`fakeDesktop` in `e2e/smoke.mjs`).
   `linked-isolation.test.ts` guards this: if it fails, fix the path that leaked.
   Links there resolve by key (`[[project.foo]]`, frontmatter `id`), then title,
