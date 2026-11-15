@@ -35,7 +35,9 @@ const fixture = {
 	'foo.md': FOO,
 	'bar.md': '---\nid: project.bar\ntitle: Bar plan\n---\nThe bar plan, after [[project.foo|the launch]].\n',
 	'crlf.md': '---\r\nid: note.crlf\r\ntitle: Windows\r\n---\r\n# CRLF\r\n\r\nLine one\r\nLine two\r\n',
-	'readme.md': '# Readme\n\nPlain text.\n',
+	'readme.md': '# Readme\n\nPlain text.\n\n![A picture](assets/shown.png)\n',
+	// One pixel; the self-test replaces it with another (below) while the note shows it.
+	'assets/shown.png': Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64'),
 	'assets/pic.png': Buffer.from(Array.from({ length: 256 }, (_, i) => i)),
 	'.gitignore': 'private/\n',
 	'private/secret.md': '# Secret\n',
@@ -53,7 +55,9 @@ function linkedFolderChecks() {
 		.filter((entry) => entry.isFile())
 		.map((entry) => join(entry.parentPath ?? entry.path, entry.name).slice(linked.length + 1).replaceAll('\\', '/'))
 		.sort();
-	const expected = { ...fixture, 'foo.md': FOO.replace('Line two.', 'Line two. now').replace('Line three.', 'Line three. Mine.'), 'Untitled.md': 'First words.' };
+	const expected = { ...fixture, 'foo.md': FOO.replace('Line two.', 'Line two. now').replace('Line three.', 'Line three. Mine.'), 'Untitled.md': 'First words.',
+		'assets/shown.png': Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64')
+	};
 	const differing = Object.entries(expected)
 		.filter(([rel, content]) => !files.includes(rel) || !readFileSync(join(linked, rel)).equals(Buffer.from(content)))
 		.map(([rel]) => rel);

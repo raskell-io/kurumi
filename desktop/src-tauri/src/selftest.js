@@ -108,7 +108,7 @@
 		const at = (rel) => root + sep + rel.split('/').join(sep);
 		return {
 			read: async (rel) => new TextDecoder('utf-8', { ignoreBOM: true }).decode(await invoke('fs_read', { path: at(rel) })),
-			write: (rel, content) => invoke('fs_write', new TextEncoder().encode(content), { headers: { 'x-kurumi-path': encodeURIComponent(at(rel)) } }),
+			write: (rel, content) => invoke('fs_write', typeof content === 'string' ? new TextEncoder().encode(content) : content, { headers: { 'x-kurumi-path': encodeURIComponent(at(rel)) } }),
 			remove: (rel) => invoke('fs_remove', { path: at(rel), recursive: false }),
 			exists: (rel) => invoke('fs_stat', { path: at(rel) }).then(() => true, () => false),
 			modified: async (rel) => (await invoke('fs_stat', { path: at(rel) })).modified,
@@ -212,6 +212,32 @@
 			const refused = await failure(invoke('linked_reveal', { vault, rel: '../folder' }));
 			if (!/NotAllowedError/.test(refused)) throw new Error(`reveal ../folder: ${refused}`);
 			return `${view.length} bytes as an ArrayBuffer`;
+		});
+
+		await step('linked: an image a note shows is watched, and its replacement reported', async () => {
+			// Readme shows assets/shown.png; nothing here has read that file, the page has.
+			await openNote('Readme');
+			const shown = await need('the image in the note', () => document.querySelector('main img[src^="blob:"]'));
+			const before = shown.src;
+			// An old cursor is answered with the current one.
+			let { cursor } = await invoke('linked_changes', { vault, cursor: 0, files: true });
+			const other = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='), (c) => c.charCodeAt(0));
+			const started = Date.now();
+			await disk.write('assets/shown.png', other);
+			let told;
+			while (!told) {
+				if (Date.now() - started > 40000) throw new Error('no "file" change for assets/shown.png');
+				const answer = await invoke('linked_changes', { vault, cursor, files: true });
+				if (answer.rescan) throw new Error('asked for a rescan');
+				cursor = answer.cursor;
+				told = answer.changes.find((change) => change.type === 'file' && change.rel === 'assets/shown.png');
+			}
+			if (told.size !== other.length || !(told.mtime > 0) || 'content' in told || 'note' in told) throw new Error(JSON.stringify(told));
+			// Without `files` the same change isn't listed (the page's own poll).
+			const plain = await invoke('linked_changes', { vault, cursor: cursor - 1 });
+			if (plain.rescan || plain.changes.some((change) => change.type === 'file')) throw new Error(`without files: ${JSON.stringify(plain)}`);
+			const swapped = await until(() => document.querySelector('main img[src^="blob:"]')?.src !== before, 3000);
+			return `${JSON.stringify(told)} after ${Date.now() - started} ms; the page ${swapped ? 'shows the new image' : "doesn't act on it yet"}`;
 		});
 
 		await step("linked: editing is turned on in the vault's settings", async () => {
