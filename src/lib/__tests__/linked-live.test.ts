@@ -8,6 +8,11 @@ import {
 	buildLinkedVault,
 	closeLinkedVault,
 	createLinkedNote,
+	discardLinkedNote,
+	isLinkedDraft,
+	linkedGoneNote,
+	recreateLinkedNote,
+	setLinkedRetryDelays,
 	linkedFolders,
 	linkedLinks,
 	linkedNote,
@@ -379,5 +384,249 @@ describe('new notes', () => {
 		expect(linkedNote(note.id)).toBeUndefined();
 		expect(app.files.get('Taken.md')).toBe('Already here, not yet seen.\n');
 		expect(lastNotice()).toMatch(/already exists/);
+	});
+});
+
+describe('watching that fails', () => {
+	const polls = () => app.calls.filter((c) => c.cmd === 'linked_changes').length;
+	const opens = () => app.calls.filter((c) => c.cmd === 'linked_open').length;
+	beforeEach(() => setLinkedRetryDelays([1, 1, 1]));
+	afterEach(() => setLinkedRetryDelays([1000, 4000, 15000]));
+
+	it('asks again after a failed poll and carries on', async () => {
+		app.state.failPolls = 2;
+		await openLinkedVault(readOnly);
+		await settle(20);
+		expect(get(linkedWatch)).toBe('events');
+		expect(opens()).toBe(1);
+		app.external('readme.md', '# Readme\n\nAfter the hiccup.\n');
+		await settle();
+		expect(linkedNote(id('readme.md'))!.bodyMarkdown).toContain('After the hiccup.');
+	});
+
+	it('scans again when asking again does not help, then gives up and says so', async () => {
+		app.state.failPolls = 4; // the first poll and its three retries
+		await openLinkedVault(readOnly);
+		await settle(30);
+		// One new scan, whose poll works.
+		expect(opens()).toBe(2);
+		expect(get(linkedWatch)).toBe('events');
+
+		app.state.failPolls = 1000;
+		app.external('readme.md', 'x\n'); // ends the poll that is waiting; the next ones fail
+		await settle(60);
+		expect(get(linkedWatch)).toBe('stopped');
+		// Bounded: retries, one scan, retries, and no more.
+		const calls = polls();
+		expect(opens()).toBe(3);
+		await settle(30);
+		expect(polls()).toBe(calls);
+		// The notes stay; Rescan is the way back.
+		expect(linkedNotes().length).toBe(3);
+		app.state.failPolls = 0;
+		await openLinkedVault(readOnly);
+		await settle();
+		expect(get(linkedWatch)).toBe('events');
+	});
+
+	it('opens the vault again when the app no longer has it open', async () => {
+		await openLinkedVault(readOnly);
+		await settle();
+		app.state.pollError = 'InvalidStateError: the linked folder is not open';
+		app.state.failPolls = 1;
+		app.external('readme.md', '# Readme\n\nSeen by the new scan.\n'); // answers the waiting poll; the next one fails
+		await settle(20);
+		expect(opens()).toBe(2);
+		expect(get(linkedWatch)).toBe('events');
+		expect(linkedNote(id('readme.md'))!.bodyMarkdown).toContain('Seen by the new scan.');
+	});
+});
+
+describe('directories', () => {
+	it('leave the tree with their last note', async () => {
+		await openLinkedVault(readOnly);
+		await settle();
+		app.external('projects/sub/deep.md', '# Deep\n');
+		await settle();
+		expect(linkedFolders().map((f) => f.name).sort()).toEqual(['projects', 'sub']);
+		app.external('projects/sub/deep.md', null);
+		await settle();
+		expect(linkedFolders().map((f) => f.name)).toEqual(['projects']);
+		app.external('projects/foo.md', null);
+		app.external('projects/bar.md', null);
+		await settle();
+		expect(linkedFolders()).toEqual([]);
+		expect(rels()).toEqual(['readme.md']);
+	});
+});
+
+describe('a file deleted while its note is open', () => {
+	it('stays available with its text, and can be saved as a new file', async () => {
+		await openLinkedVault(writable);
+		await settle();
+		const body = fooBody();
+		app.external('projects/foo.md', null);
+		await settle();
+		expect(linkedNote(id('projects/foo.md'))).toBeUndefined();
+		expect(linkedGoneNote(id('projects/foo.md'))).toMatchObject({ title: 'Foo launch', bodyMarkdown: body });
+		// With no edit held, the note as it was.
+		recreateLinkedNote(id('projects/foo.md'));
+		await settle();
+		expect(app.files.get('projects/foo.md')).toBe(FOO);
+		expect(linkedGoneNote(id('projects/foo.md'))).toBeUndefined();
+		expect(linkedNote(id('projects/foo.md'))!.title).toBe('Foo launch');
+
+		// With an edit typed after it was gone: that text.
+		app.external('projects/foo.md', null);
+		await settle();
+		saveLinkedNote(id('projects/foo.md'), { bodyMarkdown: body.replace('Line one.', 'Typed after.'), basedOn: body });
+		await settle();
+		expect(get(linkedSaveIssues).get(id('projects/foo.md'))).toMatchObject({ kind: 'deleted' });
+		expect(app.writes().filter((c) => c.args.rel === 'projects/foo.md')).toHaveLength(1);
+		recreateLinkedNote(id('projects/foo.md'));
+		await settle();
+		expect(app.files.get('projects/foo.md')).toBe(FOO.replace('Line one.', 'Typed after.'));
+		expect(get(linkedSaveIssues).size).toBe(0);
+	});
+
+	it('can be let go, and is forgotten when the file comes back', async () => {
+		await openLinkedVault(writable);
+		await settle();
+		app.external('readme.md', null);
+		await settle();
+		expect(linkedGoneNote(id('readme.md'))).toBeDefined();
+		discardLinkedNote(id('readme.md'));
+		expect(linkedGoneNote(id('readme.md'))).toBeUndefined();
+		expect(app.files.has('readme.md')).toBe(false);
+
+		app.external('projects/bar.md', null);
+		await settle();
+		app.external('projects/bar.md', BAR);
+		await settle();
+		expect(linkedGoneNote(id('projects/bar.md'))).toBeUndefined();
+		expect(linkedNote(id('projects/bar.md'))).toBeDefined();
+		expect(app.writes()).toEqual([]);
+	});
+
+	it('is noticed at the next save when the watcher has not reported it', async () => {
+		await openLinkedVault(writable);
+		await settle();
+		app.external('readme.md', null, { silent: true });
+		saveLinkedNote(id('readme.md'), { bodyMarkdown: '# Readme\n\nStill typing.\n' });
+		await settle();
+		expect(get(linkedSaveIssues).get(id('readme.md'))).toMatchObject({ kind: 'deleted', mine: { body: '# Readme\n\nStill typing.\n' } });
+		expect(linkedGoneNote(id('readme.md'))).toBeDefined();
+		resolveLinkedIssue(id('readme.md'), 'mine');
+		await settle();
+		expect(app.files.get('readme.md')).toBe('# Readme\n\nStill typing.\n');
+	});
+});
+
+describe('a blank new note', () => {
+	it('has no file until it is changed, and leaves none when left untouched', async () => {
+		await openLinkedVault({ ...writable, newNoteTemplate: '---\nid: note.{id}\ntitle: {title}\n---\n' });
+		const note = createLinkedNote()!;
+		await settle();
+		expect(isLinkedDraft(note.id)).toBe(true);
+		expect(linkedNote(note.id)).toMatchObject({ title: 'Untitled', bodyMarkdown: '' });
+		expect(app.writes()).toEqual([]);
+		// Saving it unchanged makes no file either.
+		saveLinkedNote(note.id, { title: 'Untitled', bodyMarkdown: '' });
+		await settle();
+		expect(app.writes()).toEqual([]);
+		// It survives a rescan, and goes when it is left.
+		await openLinkedVault({ ...writable, newNoteTemplate: '---\nid: note.{id}\ntitle: {title}\n---\n' });
+		expect(linkedNote(note.id)).toBeDefined();
+		discardLinkedNote(note.id);
+		expect(linkedNote(note.id)).toBeUndefined();
+		expect(app.files.has('Untitled.md')).toBe(false);
+		expect(app.writes()).toEqual([]);
+	});
+
+	it('gets its file with the first change, title or text', async () => {
+		await openLinkedVault({ ...writable, newNoteTemplate: '---\nid: note.{id}\ntitle: {title}\n---\n' });
+		const first = createLinkedNote()!;
+		saveLinkedNote(first.id, { bodyMarkdown: 'Now it has text.\n' });
+		await settle();
+		expect(app.writes().map((c) => c.cmd)).toEqual(['linked_create']);
+		expect(app.files.get('Untitled.md')).toBe('---\nid: note.untitled\ntitle: Untitled\n---\nNow it has text.\n');
+		expect(isLinkedDraft(first.id)).toBe(false);
+		// From then on it is an ordinary note: saved by hash, not discarded.
+		saveLinkedNote(first.id, { bodyMarkdown: 'Now it has more text.\n' });
+		await settle();
+		expect(app.writes().map((c) => c.cmd)).toEqual(['linked_create', 'linked_write']);
+		discardLinkedNote(first.id);
+		expect(linkedNote(first.id)).toBeDefined();
+
+		const second = createLinkedNote()!;
+		expect(parseLinkedId(second.id)!.rel).toBe('Untitled 2.md');
+		saveLinkedNote(second.id, { title: 'Named later' });
+		await settle();
+		expect(app.files.get('Untitled 2.md')).toBe('---\nid: note.untitled\ntitle: Named later\n---\n');
+	});
+
+	it('is not discarded once another program wrote a file there', async () => {
+		await openLinkedVault(writable);
+		const note = createLinkedNote()!;
+		app.external('Untitled.md', 'Someone else made this.\n');
+		await settle();
+		discardLinkedNote(note.id);
+		expect(linkedNote(note.id)!.bodyMarkdown).toBe('Someone else made this.\n');
+		expect(app.files.get('Untitled.md')).toBe('Someone else made this.\n');
+	});
+});
+
+describe('template values in frontmatter', () => {
+	const template = '---\nid: note.{id}\ntitle: {title}\nquoted: "{title}"\nsingle: \'{title}\'\naliases:\n  - {title}\ncreated: {date}\n---\n# {title}\n';
+	const render = (title: string) => renderNoteTemplate(template, title, '2031-02-03').split('\n');
+
+	it('leaves a plain title as written', () => {
+		expect(render('Weekly plan')).toEqual(['---', 'id: note.weekly-plan', 'title: Weekly plan', 'quoted: "Weekly plan"', "single: 'Weekly plan'", 'aliases:', '  - Weekly plan', 'created: 2031-02-03', '---', '# Weekly plan', '']);
+	});
+
+	it('quotes and escapes what YAML would misread', () => {
+		const cases: Record<string, string> = {
+			'Plan: phase 2': '"Plan: phase 2"',
+			'Ends with colon:': '"Ends with colon:"',
+			'Cost #1 # not a comment': '"Cost #1 # not a comment"',
+			'#hashtag first': '"#hashtag first"',
+			// Quotes inside a plain value are plain YAML; at the start they are not.
+			'She said "go"': 'She said "go"',
+			'"Go" she said': '"\\"Go\\" she said"',
+			"It's fine": "It's fine",
+			"'quoted' start": '"\'quoted\' start"',
+			' padded ': '" padded "',
+			'[draft] idea': '"[draft] idea"',
+			'- dash first': '"- dash first"',
+			'back\\slash: here': '"back\\\\slash: here"',
+			'two\nlines': '"two\\nlines"',
+			true: '"true"',
+			'2031': '"2031"',
+			'1.5': '"1.5"',
+			'2031 plans': '2031 plans',
+			'*starred*': '"*starred*"'
+		};
+		for (const [title, expected] of Object.entries(cases)) {
+			const lines = render(title);
+			expect(lines[2], title).toBe(`title: ${expected}`);
+			expect(lines[6], title).toBe(`  - ${expected}`);
+		}
+	});
+
+	it('escapes inside the quotes a template already has', () => {
+		const lines = render('She said "go": it\'s \\ on');
+		expect(lines[3]).toBe('quoted: "She said \\"go\\": it\'s \\\\ on"');
+		expect(lines[4]).toBe("single: 'She said \"go\": it''s \\ on'");
+		// Outside the frontmatter nothing is quoted.
+		expect(lines[9]).toBe('# She said "go": it\'s \\ on');
+	});
+
+	it('quotes an id that would read as a number', () => {
+		expect(renderNoteTemplate('---\nid: {id}\nkey: n-{id}\n---\n', '2031')).toBe('---\nid: "2031"\nkey: n-2031\n---\n');
+	});
+
+	it('leaves a template without frontmatter alone', () => {
+		expect(renderNoteTemplate('# {title}\n\ntitle: {title}\n', 'A: b')).toBe('# A: b\n\ntitle: A: b\n');
+		expect(renderNoteTemplate('', 'A: b')).toBe('');
 	});
 });

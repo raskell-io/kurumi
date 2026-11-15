@@ -29,7 +29,7 @@
 	import { myNames, isWaitingFor } from '$lib/work';
 	import { importRecording } from '$lib/incoming';
 	import { bootPwa } from '$lib/pwa-boot';
-	import { restoreStashedEdits, restoreLinkedStashes } from '$lib/unsaved';
+	import { restoreStashedEdits } from '$lib/unsaved';
 	import { initHashRouter, updateHashFromPath, currentRoutePath } from '$lib/hash-router';
 	import { generateDailyDigest } from '$lib/digest';
 	import { maybeAutoWeeklyReview } from '$lib/weekly-review';
@@ -538,7 +538,8 @@
 			// menu says "Folder not found"; nothing is forgotten.
 			const linked = isTauri() ? getLinkedVault(getActiveLinkedVaultId() ?? '') : undefined;
 			if (linked) {
-				await openLinkedVault(linked).then(restoreLinkedStashes, (err) => {
+				// (Edits stashed for its notes are restored as it opens: $lib/unsaved.)
+				await openLinkedVault(linked).catch((err) => {
 					const missing = err instanceof DOMException && err.name === 'NotFoundError';
 					showNotice(missing ? `The folder of "${linked.name}" wasn't found. Showing your Kurumi vault instead.` : `Couldn't open "${linked.name}". Showing your Kurumi vault instead.`);
 				});

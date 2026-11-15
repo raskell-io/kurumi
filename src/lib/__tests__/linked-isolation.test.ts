@@ -299,6 +299,23 @@ describe('with a linked vault current', () => {
 		expect(new Set(calls())).toEqual(new Set(['linked_open', 'linked_write', 'linked_create']));
 	});
 
+	it('an edit stashed for a linked note is restored when its vault is opened later in the session', async () => {
+		const before = app.files.get('projects/foo.md')!;
+		stashEdit(fooId, `Foo ${MARK}`, `${MARK} stashed for later.\n`, linkedNoteInfo(fooId)!.baseHash);
+		db.setCurrentVault(docVaultId);
+		await settle();
+		expect(app.files.get('projects/foo.md')).toBe(before);
+		expect(storage.get('kurumi-unsaved-edits')).toContain('stashed for later');
+		const heads = Automerge.getHeads(savedDoc());
+		db.setCurrentVault(config.id);
+		await vi.waitFor(() => expect(get(linkedVaultId)).toBe(config.id));
+		await settle();
+		expect(app.files.get('projects/foo.md')!.endsWith(`---\n${MARK} stashed for later.\n`)).toBe(true);
+		expect(storage.get('kurumi-unsaved-edits')).toBeUndefined();
+		expect(Automerge.getHeads(savedDoc())).toEqual(heads);
+		expectClean(await everythingPersisted(), 'after restoring a stash on opening the vault');
+	});
+
 	it('switching back closes it and tells the document nothing new', async () => {
 		db.setCurrentVault(docVaultId);
 		expect(get(linkedVaultId)).toBeNull();

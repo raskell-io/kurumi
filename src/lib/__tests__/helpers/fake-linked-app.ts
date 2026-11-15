@@ -19,7 +19,7 @@ export function fakeLinkedApp(root: string, initial: Record<string, string>) {
 	let cursors = 1000;
 	let log: LinkedChange[] = [];
 	let waiting: { vault: string; resolve: (v: unknown) => void; reject: (e: unknown) => void } | null = null;
-	const state = { rootExists: true, watch: 'events' as 'events' | 'polling', failWrites: null as string | null };
+	const state = { rootExists: true, watch: 'events' as 'events' | 'polling', failWrites: null as string | null, failPolls: 0, pollError: 'NotReadableError: the watcher failed' };
 
 	const noteFile = (rel: string): NoteFile => {
 		const content = files.get(rel)!;
@@ -62,6 +62,10 @@ export function fakeLinkedApp(root: string, initial: Record<string, string>) {
 			return { cursor: cursors, notes: [...files.keys()].map(noteFile), dirs: [...dirs], skipped: 0, watch: state.watch };
 		},
 		linked_changes: ({ vault, cursor }) => {
+			if (state.failPolls > 0) {
+				state.failPolls--;
+				throw state.pollError;
+			}
 			const v = vaultOf(vault);
 			if (cursor !== v.cursor) return { cursor: 0, changes: [], rescan: true };
 			return new Promise((resolve, reject) => {

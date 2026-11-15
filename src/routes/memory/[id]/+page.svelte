@@ -20,7 +20,19 @@
 		getMemoryObject,
 		currentVaultCaps
 	} from '$lib/db';
-	import { isLinkedNoteId, linkedNoteInfo, linkedSaveIssues, linkedTitleEditable, resolveLinkedIssue, saveLinkedNote } from '$lib/linked/backend';
+	import {
+		discardLinkedNote,
+		isLinkedDraft,
+		isLinkedNoteId,
+		linkedGoneNote,
+		linkedNoteInfo,
+		linkedRevision,
+		linkedSaveIssues,
+		linkedTitleEditable,
+		recreateLinkedNote,
+		resolveLinkedIssue,
+		saveLinkedNote
+	} from '$lib/linked/backend';
 	import { writeBack, type EditBase } from '$lib/linked/write-back';
 	import LinkedConflictDialog from '$lib/components/LinkedConflictDialog.svelte';
 	import { NO_NEW_NOTES } from '$lib/linked/capabilities';
@@ -421,6 +433,12 @@
 	let freshNoteId: string | null = null;
 
 	function discardIfUntouched(id: string) {
+		// A blank new note of a linked folder has no file until it is changed:
+		// left as it was made, it is simply dropped (no file is ever deleted).
+		if (isLinkedNoteId(id)) {
+			if (isLinkedDraft(id)) discardLinkedNote(id);
+			return;
+		}
 		if (freshNoteId !== id) return;
 		freshNoteId = null;
 		const note = get(memoryObjects).find((m) => m.id === id);
@@ -437,7 +455,32 @@
 
 	// Reactive memory object — stays in sync with the store so async updates
 	// (transcription, sync) propagate to the UI without a manual refresh.
-	let memory = $derived($memoryObjects.find((m) => m.id === $page.params.id));
+	// A linked note whose file was deleted outside Kurumi while it is open
+	// here: it stays on screen, with what was typed, until the user saves it
+	// as a new file or lets it go.
+	let goneNote = $derived.by(() => {
+		void $linkedRevision;
+		const id = $page.params.id;
+		return id && isLinkedNoteId(id) ? linkedGoneNote(id) : undefined;
+	});
+	let memory = $derived($memoryObjects.find((m) => m.id === $page.params.id) ?? goneNote);
+	let fileGone = $derived(!!memory && memory === goneNote);
+
+	function saveGoneAsNewFile() {
+		if (!memory) return;
+		const live = editorRef?.getCurrentMarkdown() ?? content;
+		// What the editor holds, as file text; else what was held for it or what it had.
+		const body = fileBody(memory.id, live) ?? undefined;
+		if (body !== undefined) shownBody = body;
+		recreateLinkedNote(memory.id, body);
+	}
+
+	function discardGone() {
+		if (!memory) return;
+		hasLocalEdits = false;
+		discardLinkedNote(memory.id);
+		goto('/');
+	}
 
 	// A note of a linked folder ($lib/linked) is shown as it is in its file:
 	// nothing here saves it, and what belongs to the document (icon,
@@ -1040,7 +1083,16 @@
 			</div>
 		</div>
 
-		{#if saveIssue}
+		{#if fileGone}
+			<div class="flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-2 text-sm text-[var(--color-text)]" role="alert" data-testid="linked-file-gone">
+				<AlertTriangle class="h-4 w-4 shrink-0 text-[var(--color-danger)]" />
+				<span class="min-w-0 flex-1">This file was deleted outside Kurumi. What you see here is no longer saved anywhere.</span>
+				{#if !readOnly}
+					<button class="k-btn k-btn-primary k-btn-sm" onclick={saveGoneAsNewFile}>Save as new file</button>
+				{/if}
+				<button class="k-btn k-btn-ghost k-btn-sm" onclick={discardGone}>Discard</button>
+			</div>
+		{:else if saveIssue}
 			<!-- Nothing is written to the file until this is settled -->
 			<div class="flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-2 text-sm text-[var(--color-text)]" role="alert" data-testid="linked-save-issue">
 				<AlertTriangle class="h-4 w-4 shrink-0 text-[var(--color-danger)]" />

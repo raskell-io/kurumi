@@ -8,7 +8,7 @@
 
 import { get } from 'svelte/store';
 import { allMemoryObjects, updateMemoryObject } from '$lib/db';
-import { getOpenLinkedVaultId, isLinkedNoteId, linkedNote, linkedNoteInfo, parseLinkedId, raiseLinkedConflict, saveLinkedNote } from '$lib/linked/backend';
+import { getOpenLinkedVaultId, isLinkedNoteId, linkedNote, linkedNoteInfo, linkedVaultId, parseLinkedId, raiseLinkedConflict, saveLinkedNote } from '$lib/linked/backend';
 
 const KEY = 'kurumi-unsaved-edits';
 
@@ -71,7 +71,8 @@ export function restoreStashedEdits(): number {
  * The same for the linked folder that was just opened. A stashed edit is
  * written only if its file is still the one it was made for (same hash);
  * if the file changed since, the edit is held for the user to decide
- * (`linkedSaveIssues`), never written over it. Call after openLinkedVault.
+ * (`linkedSaveIssues`), never written over it. Runs by itself whenever a
+ * linked vault is opened (at start or later in the session).
  */
 export function restoreLinkedStashes(): number {
 	const vaultId = getOpenLinkedVaultId();
@@ -94,3 +95,8 @@ export function restoreLinkedStashes(): number {
 	}
 	return restored;
 }
+
+// Whenever a linked vault opens: at start, and when the user switches to one.
+linkedVaultId.subscribe((id) => {
+	if (id) restoreLinkedStashes();
+});

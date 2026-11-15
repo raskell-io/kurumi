@@ -17,5 +17,7 @@ export const NO_NEW_NOTES = "New notes aren't available in a read-only linked fo
 export const NO_CAPTURE = "Recordings and uploads aren't available in a linked folder. Switch to a Kurumi vault to capture.";
 export const NO_RECORDS = 'This vault is a linked folder. To-dos and other records are kept in Kurumi vaults.';
 export const READ_ONLY_NOTE = 'This linked folder is read-only. Editing can be turned on in its settings.';
+/** Images, photos and attachments: Kurumi keeps those as its own blobs, which a file in a linked folder can't point at. */
+export const NO_FILES = "Files can't be added to a note of a linked folder yet.";
 /** For what Kurumi never does in a linked folder, writable or not: moving, renaming, deleting, icons, favourites. */
 export const NOT_IN_LINKED = "That isn't available in a linked folder: Kurumi reads and edits its notes, and leaves the rest to you.";

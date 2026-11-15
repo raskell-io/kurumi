@@ -168,9 +168,9 @@ export function buildLinkedVault(config: LinkedVaultConfig, opened: OpenedFolder
 
 /**
  * Bring changes from the folder into `data` (in place): changed and new
- * notes, and notes that are gone. Notes stay in path order. A directory
- * that lost its last note stays until the next scan. Returns the ids of
- * the notes that changed and of those removed.
+ * notes, and notes that are gone. Notes stay in path order; a directory
+ * that lost its last note goes with it. Returns the ids of the notes that
+ * changed and of those removed.
  */
 export function applyLinkedChanges(config: LinkedVaultConfig, data: LinkedVaultData, changes: LinkedChange[]): { changed: string[]; removed: string[] } {
 	const changed: string[] = [];
@@ -189,6 +189,15 @@ export function applyLinkedChanges(config: LinkedVaultConfig, data: LinkedVaultD
 		data.notes.set(note.id, note);
 		data.info.set(note.id, info);
 		changed.push(note.id);
+	}
+	if (removed.length) {
+		// A directory is shown for the notes in or below it: one that lost its last note goes.
+		const used = new Set<string>();
+		for (const info of data.info.values()) {
+			const parts = info.relPath.split('/').slice(0, -1);
+			for (let depth = 1; depth <= parts.length; depth++) used.add(linkedFolderId(config.id, parts.slice(0, depth).join('/')));
+		}
+		for (const id of [...data.folders.keys()]) if (!used.has(id)) data.folders.delete(id);
 	}
 	if (added) {
 		// The first of two notes with one key wins, by path: keep that order.
@@ -298,7 +307,12 @@ export async function openLinkedVault(config: LinkedVaultConfig): Promise<void> 
 	setActiveLinkedVaultId(config.id);
 	const gen = ++generation;
 	watch.set(opened.watch ?? 'events');
-	setMounted({ config, data: buildLinkedVault(config, opened), links: null, cursor: opened.cursor });
+	const data = buildLinkedVault(config, opened);
+	// New notes that have no file yet are not in the scan.
+	for (const [id, draft] of drafts) {
+		if (!data.notes.has(id)) applyLinkedChanges(config, data, [{ type: 'upsert', note: { rel: draft.rel, content: draft.content, hash: '', mtime: Date.now(), size: draft.content.length } }]);
+	}
+	setMounted({ config, data, links: null, cursor: opened.cursor });
 	void poll(gen);
 }
 
@@ -315,6 +329,7 @@ export function closeLinkedVault(): void {
 	problem.set(null);
 	if (!mounted) return;
 	generation++;
+	recoveries = 0;
 	void invoke('linked_close', { vault: mounted.config.id }).catch(() => {});
 	forgetSaves();
 	watch.set(null);
@@ -323,40 +338,72 @@ export function closeLinkedVault(): void {
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Scans started because polling failed, since the last poll that worked.
+let recoveries = 0;
+// How long to wait before asking again after a failed poll; after the last
+// (and one new scan), watching is 'stopped'.
+let retryDelays = [1000, 4000, 15000];
+/** For tests: the waits between retries of a failed poll. */
+export function setLinkedRetryDelays(delays: number[]): void {
+	retryDelays = delays;
+}
+
+/** A change from the folder (or one of Kurumi's own) into the open vault. */
+function apply(open: Mounted, changes: LinkedChange[]): void {
+	for (const change of changes) {
+		const id = linkedNoteId(open.config.id, change.type === 'remove' ? change.rel : change.note.rel);
+		if (change.type === 'upsert') {
+			// The file is (back) in the folder: no longer a note without one.
+			if (!issueMap.has(id)) gone.delete(id);
+			continue;
+		}
+		const note = open.data.notes.get(id);
+		const info = open.data.info.get(id);
+		// Kept while it may still be on screen with edits: see `linkedGoneNote`.
+		if (note && info) gone.set(id, { rel: info.relPath, raw: info.rawFrontmatter, note });
+	}
+	applyLinkedChanges(open.config, open.data, changes);
+	changed();
+}
+
 /**
  * Wait for changes in the folder and apply them, for as long as this open
  * of the vault is the current one. The app answers when something changed,
- * or after about 25 s with nothing.
+ * or after about 25 s with nothing. A poll that fails is tried again a few
+ * times, further apart; a vault the app no longer has open is opened again.
+ * If that doesn't help watching is 'stopped' until Rescan.
  */
 async function poll(gen: number): Promise<void> {
+	let failures = 0;
 	while (mounted && gen === generation) {
 		const asked = Date.now();
 		let result: LinkedChanges;
 		try {
 			result = (await invoke('linked_changes', { vault: mounted.config.id, cursor: mounted.cursor })) as LinkedChanges;
-		} catch {
-			// Closed or opened again meanwhile: that poll is over. Anything
-			// else: stop asking; Rescan in the vault's settings reads again.
-			if (mounted && gen === generation) watch.set('stopped');
-			return;
+		} catch (err) {
+			// Closed or opened again meanwhile: that poll is over.
+			if (!mounted || gen !== generation) return;
+			if (errorName(err) === 'InvalidStateError' || failures >= retryDelays.length) {
+				// The app doesn't have it open (any more), or asking again didn't
+				// help: scan again, once, which starts a poll of its own if it works.
+				if (recoveries++ < 1 && (await rescanLinkedVault().then(() => true, () => false))) return;
+				if (mounted && gen === generation) watch.set('stopped');
+				return;
+			}
+			await pause(retryDelays[failures++]);
+			continue;
 		}
 		if (!mounted || gen !== generation) return;
+		failures = 0;
+		recoveries = 0;
 		if (result.rescan) {
 			// Too much changed to list. Open again; that starts its own poll.
 			await rescanLinkedVault().catch(() => watch.set('stopped'));
 			return;
 		}
 		mounted.cursor = result.cursor;
-		if (result.changes.length) {
-			for (const change of result.changes) {
-				// Kept in case an edit of it is still to be saved (see `deleted`).
-				const id = change.type === 'remove' ? linkedNoteId(mounted.config.id, change.rel) : '';
-				const info = id ? mounted.data.info.get(id) : undefined;
-				if (info) gone.set(id, { rel: info.relPath, raw: info.rawFrontmatter });
-			}
-			applyLinkedChanges(mounted.config, mounted.data, result.changes);
-			changed();
-		} else if (Date.now() - asked < 200) {
+		if (result.changes.length) apply(mounted, result.changes);
+		else if (Date.now() - asked < 200) {
 			// An answer at once with nothing in it: don't spin.
 			await pause(250);
 		}
@@ -380,8 +427,12 @@ export interface LinkedSave {
 
 const queued = new Map<string, LinkedSave>();
 const busy = new Set<string>();
-// Notes removed in the folder, for "save as a new file": path and frontmatter.
-const gone = new Map<string, { rel: string; raw: string }>();
+// Notes whose file was removed in the folder: kept so that one that is open
+// stays on screen and can be saved as a new file (path, frontmatter, note).
+const gone = new Map<string, { rel: string; raw: string; note: MemoryObject }>();
+// New notes that have no file yet: it is created with their first change,
+// so one that is left untouched leaves nothing behind (path and first content).
+const drafts = new Map<string, { rel: string; content: string }>();
 
 const issues = writable<Map<string, LinkedSaveIssue>>(new Map());
 /** Saves that wait for the user, by note id. While a note has one, nothing of it is written. */
@@ -401,9 +452,11 @@ function forgetSaves(): void {
 	queued.clear();
 	busy.clear();
 	gone.clear();
+	drafts.clear();
 	issues.set(new Map());
 }
 
+const DELETED = 'This file was deleted outside Kurumi.';
 const errorName = (err: unknown) => (err instanceof DOMException ? err.name : '');
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -461,7 +514,7 @@ async function writeNote(id: string, save: LinkedSave, again = false): Promise<v
 	const info = open.data.info.get(id);
 	const mine = { title: save.title, body: save.bodyMarkdown ?? note?.bodyMarkdown ?? '' };
 	if (!note || !info) {
-		if (save.bodyMarkdown !== undefined) setIssue(id, { kind: 'deleted', message: 'This file was deleted outside Kurumi.', mine });
+		if (save.bodyMarkdown !== undefined) setIssue(id, { kind: 'deleted', message: DELETED, mine });
 		return;
 	}
 	const current = note.bodyMarkdown;
@@ -487,7 +540,13 @@ async function writeNote(id: string, save: LinkedSave, again = false): Promise<v
 	const content = joinNote(raw, body);
 	let written: { hash: string; mtime: number };
 	try {
-		written = (await invoke('linked_write', { vault: open.config.id, rel: info.relPath, expectedHash: info.baseHash, content })) as typeof written;
+		// A new note's first change makes its file.
+		written = (
+			drafts.has(id)
+				? await invoke('linked_create', { vault: open.config.id, rel: info.relPath, content })
+				: await invoke('linked_write', { vault: open.config.id, rel: info.relPath, expectedHash: info.baseHash, content })
+		) as typeof written;
+		drafts.delete(id);
 	} catch (err) {
 		if (mounted !== open) return;
 		const name = errorName(err);
@@ -497,14 +556,19 @@ async function writeNote(id: string, save: LinkedSave, again = false): Promise<v
 			try {
 				const file = (await invoke('linked_read', { vault: open.config.id, rel: info.relPath })) as NoteFile;
 				if (mounted !== open) return;
-				applyLinkedChanges(open.config, open.data, [{ type: 'upsert', note: file }]);
-				changed();
+				apply(open, [{ type: 'upsert', note: file }]);
 				return writeNote(id, { ...save, bodyMarkdown: body, basedOn: save.basedOn ?? current }, true);
 			} catch (readError) {
-				if (errorName(readError) === 'NotFoundError') return setIssue(id, { kind: 'deleted', message: 'This file was deleted outside Kurumi.', mine: { ...mine, body } });
+				if (errorName(readError) === 'NotFoundError') {
+					apply(open, [{ type: 'remove', rel: info.relPath }]);
+					return setIssue(id, { kind: 'deleted', message: DELETED, mine: { ...mine, body } });
+				}
 			}
 		}
-		if (name === 'NotFoundError') return setIssue(id, { kind: 'deleted', message: 'This file was deleted outside Kurumi.', mine: { ...mine, body } });
+		if (name === 'NotFoundError') {
+			apply(open, [{ type: 'remove', rel: info.relPath }]);
+			return setIssue(id, { kind: 'deleted', message: DELETED, mine: { ...mine, body } });
+		}
 		setIssue(id, {
 			kind: name === 'ConflictError' ? 'conflict' : 'error',
 			message: name === 'ConflictError' ? 'This note was changed outside Kurumi while you were editing it.' : `Couldn't save: ${errorText(err)}`,
@@ -514,8 +578,7 @@ async function writeNote(id: string, save: LinkedSave, again = false): Promise<v
 		return;
 	}
 	if (mounted !== open) return;
-	applyLinkedChanges(open.config, open.data, [{ type: 'upsert', note: { rel: info.relPath, content, hash: written.hash, mtime: written.mtime, size: content.length } }]);
-	changed();
+	apply(open, [{ type: 'upsert', note: { rel: info.relPath, content, hash: written.hash, mtime: written.mtime, size: content.length } }]);
 	if (merged) showNotice('Merged with a change made outside Kurumi.');
 }
 
@@ -538,20 +601,88 @@ export function resolveLinkedIssue(id: string, choice: 'mine' | 'theirs' | { bod
 	setIssue(id, null);
 	if (choice === 'theirs') return changed();
 	const body = choice === 'mine' ? issue.mine.body : choice.body;
-	if (issue.kind === 'deleted') {
-		const file = gone.get(id);
-		if (file) void createFile(file.rel, joinNote(file.raw, body), id);
-		return;
-	}
+	if (issue.kind === 'deleted') return void recreateLinkedNote(id, body);
 	saveLinkedNote(id, { title: issue.mine.title, bodyMarkdown: body });
 }
 
+/**
+ * A note of the open vault whose file was deleted outside Kurumi, as it was:
+ * the note page keeps showing it (with what was typed) until the user saves
+ * it as a new file or lets it go.
+ */
+export const linkedGoneNote = (id: string): MemoryObject | undefined => gone.get(id)?.note;
+
+/** Save a note whose file was deleted as a new file at the same place, with `body` (default: what it had, or what was held for it). */
+export function recreateLinkedNote(id: string, body?: string): void {
+	const file = gone.get(id);
+	if (!file || !mounted) return;
+	const text = body ?? issueMap.get(id)?.mine.body ?? file.note.bodyMarkdown;
+	setIssue(id, null);
+	gone.delete(id);
+	void createFile(file.rel, joinNote(file.raw, text), id);
+}
+
+/** Let go of a note whose file was deleted, and of a new note that was never changed (no file was made for it). */
+export function discardLinkedNote(id: string): void {
+	const open = mounted;
+	if (!open) return;
+	if (gone.delete(id)) {
+		setIssue(id, null);
+		queued.delete(id);
+		return changed();
+	}
+	const draft = drafts.get(id);
+	// Only while it is exactly as it was made.
+	const info = open.data.info.get(id);
+	const note = open.data.notes.get(id);
+	if (!draft || !info || !note || busy.has(id) || queued.has(id) || joinNote(info.rawFrontmatter, note.bodyMarkdown) !== draft.content) return;
+	drafts.delete(id);
+	applyLinkedChanges(open.config, open.data, [{ type: 'remove', rel: draft.rel }]);
+	changed();
+}
+
+/** Whether a note is new and has no file yet (it gets one with its first change). */
+export const isLinkedDraft = (id: string): boolean => drafts.has(id);
+
 // ---- New notes ---------------------------------------------------------
 
-/** `{title}`, `{date}` (YYYY-MM-DD) and `{id}` (the title as a slug) filled in. */
+const slug = (title: string) => title.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'note';
+
+/** Whether a YAML value can stand as it is, without quotes. */
+function plainYaml(value: string): boolean {
+	if (!value || value !== value.trim() || /[\r\n\t]/.test(value)) return false;
+	if (/^[[\]{}&*!|>'"%@`#,?-]/.test(value) || /:(\s|$)/.test(value) || /\s#/.test(value)) return false;
+	// What YAML would read as something other than text.
+	return !/^(true|false|yes|no|on|off|null|~)$/i.test(value) && !/^[-+]?(\.\d+|\d[\d_]*(\.\d*)?)([eE][-+]?\d+)?$/.test(value);
+}
+
+const doubleQuoted = (value: string) => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\r?\n/g, '\\n').replace(/\t/g, '\\t');
+
+/**
+ * `{title}`, `{date}` (YYYY-MM-DD) and `{id}` (the title as a slug) filled
+ * in. Inside the template's frontmatter the result stays valid YAML: a
+ * value that needs quotes gets them (a title with `: `, `#`, quotes, spaces
+ * at an end), and inside quotes the template already has, it is escaped. A
+ * plain title stays as written.
+ */
 export function renderNoteTemplate(template: string, title: string, date = today()): string {
-	const id = title.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'note';
-	return template.replace(/\{(title|date|id)\}/g, (_, name: string) => (name === 'title' ? title : name === 'date' ? date : id));
+	const values: Record<string, string> = { title, date, id: slug(title) };
+	const fill = (text: string, escape: (value: string) => string = (v) => v) => text.replace(/\{(title|date|id)\}/g, (_, name: string) => escape(values[name]));
+	const lines = template.split('\n');
+	// The frontmatter block: from a first `---` line to the next.
+	const end = /^---\s*$/.test(lines[0] ?? '') ? lines.findIndex((line, i) => i > 0 && /^---\s*$/.test(line)) : -1;
+	return lines
+		.map((line, i) => {
+			if (i === 0 || i >= end || !/\{(title|date|id)\}/.test(line)) return fill(line).replace(/\r?\n/g, ' ');
+			// `key: value` or `- item`: the value is what follows.
+			const parts = /^(\s*(?:-\s+)?(?:[^\s:#][^:#]*:\s+)?)(.*?)(\s*)$/.exec(line)!;
+			const [, head, value, tail] = parts;
+			if (/^".*"$/.test(value)) return head + fill(value, doubleQuoted) + tail;
+			if (/^'.*'$/.test(value)) return head + fill(value, (v) => v.replace(/'/g, "''").replace(/\s*\r?\n\s*/g, ' ')) + tail;
+			const filled = fill(value);
+			return head + (plainYaml(filled) ? filled : `"${doubleQuoted(filled)}"`) + tail;
+		})
+		.join('\n');
 }
 
 /** A name that every file system takes, without the extension. */
@@ -567,7 +698,7 @@ function fileName(name: string): string {
  */
 export function newLinkedNoteFile(config: LinkedVaultConfig, taken: (rel: string) => boolean, title: string, body = '', dir?: string): { rel: string; content: string } {
 	const folder = (dir ?? config.newNoteDir).replace(/^\/+|\/+$/g, '');
-	const name = fileName(renderNoteTemplate(config.newNoteFilename || '{title}', title));
+	const name = fileName(renderNoteTemplate(config.newNoteFilename || '{title}', title.replace(/\s+/g, ' ')));
 	const at = (n: number) => `${folder ? `${folder}/` : ''}${n > 1 ? `${name} ${n}` : name}.md`;
 	let n = 1;
 	while (taken(at(n))) n++;
@@ -583,8 +714,7 @@ async function createFile(rel: string, content: string, id: string): Promise<voi
 	try {
 		const made = (await invoke('linked_create', { vault: open.config.id, rel, content })) as { hash: string; mtime: number };
 		if (mounted !== open) return;
-		applyLinkedChanges(open.config, open.data, [{ type: 'upsert', note: { rel, content, hash: made.hash, mtime: made.mtime, size: content.length } }]);
-		changed();
+		apply(open, [{ type: 'upsert', note: { rel, content, hash: made.hash, mtime: made.mtime, size: content.length } }]);
 	} catch (err) {
 		if (mounted !== open) return;
 		// Not there after all: take it out of the list again.
@@ -601,7 +731,8 @@ async function createFile(rel: string, content: string, id: string): Promise<voi
 
 /**
  * A new note in the open vault, if it is writable: shown at once, its file
- * created right after (and taken back with a notice if that fails).
+ * created right after (and taken back with a notice if that fails), or for
+ * a blank note with its first change.
  * `folderId` is a directory of the vault; without one the vault's setting
  * decides. Null when notes can't be created here.
  */
@@ -614,8 +745,25 @@ export function createLinkedNote(title?: string, body?: string, folderId?: strin
 	const id = linkedNoteId(open.config.id, rel);
 	applyLinkedChanges(open.config, open.data, [{ type: 'upsert', note: { rel, content, hash: '', mtime: Date.now(), size: content.length } }]);
 	changed();
-	void createFile(rel, content, id);
+	// A blank note (⌘N) gets its file with its first change, so one that is
+	// left untouched leaves none; a note with a name or text gets it now.
+	if (name === 'Untitled' && !(body ?? '').trim()) drafts.set(id, { rel, content });
+	else void createFile(rel, content, id);
 	return open.data.notes.get(id) ?? null;
+}
+
+// ---- Files beside the notes ------------------------------------------------
+
+/**
+ * SEAM, not implemented: a URL for a file of the open folder that a note
+ * links to relatively (`![](images/a.png)`), so the editor and the reader
+ * can show it. It needs a command of the desktop app that reads the bytes
+ * of a file inside the linked root (with a size cap), which doesn't exist
+ * yet; until it does this answers null and such images don't render. The
+ * editor already asks here (Editor.svelte, `resolveBlobImages`).
+ */
+export async function linkedFileUrl(_noteId: string, _src: string): Promise<string | null> {
+	return null;
 }
 
 // ---- Readers (for $lib/db) ------------------------------------------------
