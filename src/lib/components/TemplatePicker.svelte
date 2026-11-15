@@ -4,7 +4,8 @@
 		addMemoryObject,
 		applyTemplateVariables,
 		templateHasVariable,
-		type Template
+		type Template,
+		canCreateNotes
 	} from '$lib/db';
 	import { goto } from '$app/navigation';
 	import { Search, FileText, X } from 'lucide-svelte';
@@ -100,6 +101,7 @@
 	}
 
 	function createNoteFromTemplate(template: Template, title?: string) {
+		if (!canCreateNotes()) return;
 		const overrides: Record<string, string> = {};
 		if (title) {
 			overrides.title = title;

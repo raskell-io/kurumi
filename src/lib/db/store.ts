@@ -17,7 +17,7 @@ import {
 	linkedVaultId,
 	openLinkedVault
 } from '$lib/linked/backend';
-import { capabilitiesFor, READ_ONLY_NOTE } from '$lib/linked/capabilities';
+import { capabilitiesFor, NO_NEW_NOTES, READ_ONLY_NOTE } from '$lib/linked/capabilities';
 import { getLinkedVault, isLinkedVaultId, linkedVaultConfigs } from '$lib/linked/config';
 import type { VaultCapabilities } from '$lib/linked/types';
 import { showNotice } from '$lib/stores/notice';
@@ -1401,6 +1401,17 @@ export function vaultLinkResolver(notes: MemoryObject[], options: { trim?: boole
 /** What links address a note by in the current vault, when not its title (for graph-walk). */
 export function vaultLinkKeyOf(): ((note: { id: string }) => string | null | undefined) | undefined {
 	return getOpenLinkedVaultId() ? (note) => linkedNoteInfo(note.id)?.linkKeyValue : undefined;
+}
+
+/**
+ * Whether a note may be created now. Not while a linked folder is the
+ * current vault: says so and returns false. For the UI's capture entry
+ * points, before they call addMemoryObject.
+ */
+export function canCreateNotes(): boolean {
+	if (!getOpenLinkedVaultId()) return true;
+	showNotice(NO_NEW_NOTES);
+	return false;
 }
 
 /**

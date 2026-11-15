@@ -10,6 +10,7 @@
  * ($lib/note-tasks).
  */
 
+import { getOpenLinkedVaultId } from '$lib/linked/backend';
 import { get } from 'svelte/store';
 import {
 	actionItems,
@@ -225,6 +226,8 @@ export async function generateWeeklyReview(
 	week: Week = previousWeek(todayIso()),
 	options: { skipIfEmpty?: boolean; summary?: boolean } = {}
 ): Promise<string | null> {
+	// Not in a linked folder ($lib/linked): its notes never end up in a Kurumi vault.
+	if (getOpenLinkedVaultId()) return null;
 	const data: ReviewData = {
 		memories: get(memoryObjects),
 		items: get(actionItems),

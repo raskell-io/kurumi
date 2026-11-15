@@ -2,7 +2,10 @@
 	import { stashEdit } from '$lib/unsaved';
 	import { goto } from '$app/navigation';
 	import { untrack } from 'svelte';
-	import { memoryObjects, addMemoryObject, updateMemoryObject, vaultLinkResolver } from '$lib/db';
+	import { memoryObjects, addMemoryObject, updateMemoryObject, vaultLinkResolver, currentVaultCaps } from '$lib/db';
+	import { isLinkedNoteId } from '$lib/linked/backend';
+	import { NO_NEW_NOTES } from '$lib/linked/capabilities';
+	import { showNotice } from '$lib/stores/notice';
 	import { closeSplit, openInSplit } from '$lib/stores/workspace';
 	import Editor from './Editor.svelte';
 	import NoteIcon from './NoteIcon.svelte';
@@ -14,6 +17,8 @@
 	let { noteId }: { noteId: string } = $props();
 
 	let memory = $derived($memoryObjects.find((m) => m.id === noteId));
+	// A linked folder's note is shown, never saved.
+	let readOnly = $derived(!!memory && isLinkedNoteId(memory.id));
 
 	let title = $state('');
 	let content = $state('');
@@ -55,7 +60,7 @@
 	}
 
 	function scheduleSave() {
-		if (!memory) return;
+		if (!memory || readOnly) return;
 		pending = { id: memory.id, title: title.trim() || 'Untitled', content };
 		clearTimeout(saveTimer);
 		saveTimer = setTimeout(flush, 300);
@@ -70,6 +75,10 @@
 
 	function handleWikilink(linkTitle: string) {
 		const target = vaultLinkResolver($memoryObjects).resolve(linkTitle);
+		if (!target && !$currentVaultCaps.createNotes) {
+			showNotice(NO_NEW_NOTES);
+			return;
+		}
 		openInSplit(target ? target.id : addMemoryObject(linkTitle, '').id);
 	}
 
@@ -118,6 +127,7 @@
 				bind:value={title}
 				oninput={scheduleSave}
 				placeholder="Untitled"
+				disabled={readOnly}
 				aria-label="Split note title"
 				class="split-title"
 				style="font-family: var(--font-editor);"
@@ -128,6 +138,7 @@
 					{content}
 					noteId={memory.id}
 					currentFolderId={memory.folderId}
+					readonly={readOnly}
 					onchange={handleContentChange}
 					onWikilinkClick={handleWikilink}
 					secondary

@@ -14,7 +14,7 @@
  * the memory.
  */
 
-import { addMemoryObject } from '$lib/db';
+import { addMemoryObject, canCreateNotes } from '$lib/db';
 import { goto } from '$app/navigation';
 
 /**
@@ -67,7 +67,7 @@ export function parseClipData(encoded: string): ClipData | null {
  */
 export function handleClip(encoded: string): void {
 	const clip = parseClipData(encoded);
-	if (!clip) return;
+	if (!clip || !canCreateNotes()) return;
 
 	const title = clip.title || 'Web clip';
 	const lines: string[] = [];

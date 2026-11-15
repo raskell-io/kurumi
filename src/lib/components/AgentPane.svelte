@@ -13,7 +13,7 @@
 		type ToolCall,
 		type SendOptions
 	} from '$lib/agent';
-	import { addMemoryObject, memoryObjects, getAllPeople, getAllTags } from '$lib/db';
+	import { addMemoryObject, memoryObjects, getAllPeople, getAllTags, canCreateNotes } from '$lib/db';
 	import { ensureMemoryNote } from '$lib/agent-memory';
 	import GraphFragment from './GraphFragment.svelte';
 	import type { GraphNode, GraphEdge } from '$lib/graph-walk';
@@ -821,6 +821,8 @@
 	}
 
 	function saveMessageAsNote(content: string) {
+		// Not from a linked folder: an answer about its notes stays out of Kurumi vaults.
+		if (!canCreateNotes()) return;
 		const firstLine = content.split('\n')[0].replace(/^#+\s*/, '').slice(0, 80);
 		const title = firstLine || 'Chat note';
 		const memory = addMemoryObject(title, content, null);
@@ -861,6 +863,7 @@
 					title = headingMatch[1].trim();
 				}
 				// Keep full content as body (including heading — editor handles it)
+				if (!canCreateNotes()) return;
 				const memory = addMemoryObject(title, content, null);
 				showSavedNotification(memory.id, memory.title ?? title);
 			}

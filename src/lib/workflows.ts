@@ -16,6 +16,7 @@
  * Schedule maths is pure (`nextRunAfter`, `isDue`) and unit-tested.
  */
 
+import { getOpenLinkedVaultId } from '$lib/linked/backend';
 import { get } from 'svelte/store';
 import { putGeneratedNote, recordWorkflowRun, todayIso, workflows, type Workflow, type WorkflowSchedule } from '$lib/db';
 
@@ -111,6 +112,8 @@ export function isRunning(id: string): boolean {
 /** Run a workflow now. Resolves when it has finished and its run is recorded. */
 export async function runWorkflow(w: Workflow): Promise<{ ok: boolean; noteId: string | null; error?: string }> {
 	if (running.has(w.id)) return { ok: false, noteId: null, error: 'Already running' };
+	// Not in a linked folder ($lib/linked): its notes never end up in a Kurumi vault.
+	if (getOpenLinkedVaultId()) return { ok: false, noteId: null, error: "Workflows don't run in a linked folder" };
 	running.add(w.id);
 	const at = Date.now();
 	try {
@@ -165,7 +168,7 @@ async function notify(title: string, body: string, noteId: string | null): Promi
 
 /** Run every due workflow, one after another (the layout calls this every minute). */
 export async function runDueWorkflows(now = Date.now()): Promise<number> {
-	if (!workflowsRunHere() || !hasAgentKey()) return 0;
+	if (!workflowsRunHere() || !hasAgentKey() || getOpenLinkedVaultId()) return 0;
 	let ran = 0;
 	for (const w of get(workflows)) {
 		if (!isDue(w, now) || running.has(w.id)) continue;

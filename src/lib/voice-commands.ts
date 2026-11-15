@@ -6,6 +6,8 @@
  * meaning it should be handled as a regular Ask Kurumi question.
  */
 
+import { getOpenLinkedVaultId } from '$lib/linked/backend';
+import { NO_NEW_NOTES } from '$lib/linked/capabilities';
 import {
 	addMemoryObject,
 	addActionItem,
@@ -28,6 +30,7 @@ const COMMAND_PATTERNS: Array<{
 		pattern: /^(?:create|make|new|start)\s+(?:a\s+)?note\s+(?:about|on|called|titled)\s+(.+)/i,
 		handler: (match) => {
 			const topic = match[1].trim();
+			if (getOpenLinkedVaultId()) return { response: NO_NEW_NOTES };
 			const memory = addMemoryObject(topic, `# ${topic}\n\n`, null);
 			return {
 				response: `Created a new note: "${topic}".`,

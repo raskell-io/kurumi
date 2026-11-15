@@ -14,6 +14,7 @@
  * sources }), set with `setLivingNote` in the store.
  */
 
+import { getOpenLinkedVaultId } from '$lib/linked/backend';
 import { get } from 'svelte/store';
 import { getMemoryObject, memoryObjects, setLivingNote, updateMemoryObject, type LivingConfig, type MemoryObject } from '$lib/db';
 import { inferenceRouter, PROVIDER_CONFIGS } from '$lib/inference';
@@ -160,6 +161,8 @@ let running = false;
  */
 export async function maybeUpdateLivingNotes(now = Date.now()): Promise<number> {
 	if (running || !canRewrite()) return 0;
+	// Not in a linked folder ($lib/linked): its notes never end up in a Kurumi vault.
+	if (getOpenLinkedVaultId()) return 0;
 	running = true;
 	let updated = 0;
 	try {

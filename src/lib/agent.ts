@@ -37,6 +37,7 @@ import {
 	vaultLinkKeyOf
 } from './db';
 import { exploreGraph } from './graph-walk';
+import { getOpenLinkedVaultId } from './linked/backend';
 import { get } from 'svelte/store';
 import { retrieveMemoryContext, buildContextBlocks } from './ask';
 import { generateDailyDigest } from './digest';
@@ -397,10 +398,27 @@ export interface ToolCall {
 	status: 'running' | 'done' | 'error';
 }
 
+// Tools that write notes or records. In a linked folder ($lib/linked) they
+// are refused: it is read-only, and what is said about its notes must not
+// end up in a Kurumi vault unasked.
+const WRITE_TOOLS = new Set([
+	'create_memory',
+	'update_memory',
+	'add_action_item',
+	'add_reminder',
+	'propose_todo',
+	'generate_daily_digest',
+	'generate_weekly_review',
+	'remember'
+]);
+
 async function executeTool(
 	name: string,
 	args: Record<string, unknown>
 ): Promise<unknown> {
+	if (WRITE_TOOLS.has(name) && getOpenLinkedVaultId()) {
+		return { ok: false, error: 'The current vault is a linked folder, which is read-only. Ask the user to switch to a Kurumi vault to create or change notes and to-dos.' };
+	}
 	switch (name) {
 		case 'search_memory': {
 			const query = String(args.query ?? '');

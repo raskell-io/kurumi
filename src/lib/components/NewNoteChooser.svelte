@@ -4,7 +4,8 @@
 		addMemoryObject,
 		applyTemplateVariables,
 		templateHasVariable,
-		type Template
+		type Template,
+		canCreateNotes
 	} from '$lib/db';
 	import { goto } from '$app/navigation';
 	import { showNewNoteSnackbar } from '$lib/stores/snackbar';
@@ -48,6 +49,7 @@
 	}
 
 	function handleBlankNote() {
+		if (!canCreateNotes()) return;
 		const memory = addMemoryObject(undefined, undefined, folderId);
 		goto(`/memory/${memory.id}`);
 		showNewNoteSnackbar.set(true);
@@ -67,6 +69,7 @@
 	}
 
 	function createFromTemplate(template: Template, title?: string) {
+		if (!canCreateNotes()) return;
 		const overrides: Record<string, string> = {};
 		if (title) overrides.title = title;
 

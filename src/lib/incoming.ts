@@ -3,7 +3,8 @@
  * text from the share sheet, and markdown files opened with Kurumi.
  */
 
-import { addMemoryObject, addMeetingMemo, transcribeMemoryAudio, updateMemoryObject } from '$lib/db';
+import { addMemoryObject, addMeetingMemo, canCreateNotes, transcribeMemoryAudio, updateMemoryObject } from '$lib/db';
+import { NO_NEW_NOTES } from '$lib/linked/capabilities';
 import { storeBlob } from '$lib/db/blob-store';
 import { parseMarkdownFile } from '$lib/git/convert';
 import { processAndStoreImage } from '$lib/utils/image';
@@ -15,6 +16,7 @@ const isText = (f: File) => /\.(md|markdown|txt)$/i.test(f.name) || f.type === '
 
 /** An audio or video file becomes a recording memo and is transcribed. Returns the memo id. */
 export async function importRecording(file: File): Promise<string> {
+	if (!canCreateNotes()) throw new Error(NO_NEW_NOTES);
 	const mimeType = file.type || 'audio/webm';
 	const ref = await storeBlob(file, mimeType);
 	const now = Date.now();
@@ -31,6 +33,7 @@ export async function importRecording(file: File): Promise<string> {
 
 /** A markdown or text file becomes a note (front matter title and tags kept). Returns the note id. */
 export async function importMarkdownFile(file: File): Promise<string> {
+	if (!canCreateNotes()) throw new Error(NO_NEW_NOTES);
 	const name = /\.(md|markdown)$/i.test(file.name) ? file.name.replace(/\.markdown$/i, '.md') : `${file.name.replace(/\.[^.]+$/, '')}.md`;
 	const parsed = parseMarkdownFile(name, await file.text());
 	const memory = addMemoryObject(parsed.title, parsed.content, null);
@@ -51,6 +54,8 @@ export interface Shared {
  * note together. Returns the ids created, the one to open first.
  */
 export async function importShared({ title = '', text = '', url = '', files = [] }: Shared): Promise<string[]> {
+	// Not into a linked folder: it says so, and nothing is created.
+	if (!canCreateNotes()) return [];
 	const ids: string[] = [];
 	const images: string[] = [];
 	const attachments: { name: string; markdown: string }[] = [];

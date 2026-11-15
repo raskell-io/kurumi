@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { memoryObjects, pdfHighlights, addMemoryObject, todayIso } from '$lib/db';
+	import { memoryObjects, pdfHighlights, addMemoryObject, todayIso, canCreateNotes } from '$lib/db';
 	import { collectHighlights, highlightsToMarkdown, type Highlight, type HighlightGroup } from '$lib/highlights';
 	import { openPdf } from '$lib/stores/pdfViewer';
 	import ReadNav from '$lib/components/ReadNav.svelte';
@@ -67,6 +67,7 @@
 	}
 
 	function saveAsNote() {
+		if (!canCreateNotes()) return;
 		const title = `Highlights — ${todayIso()}${tag ? ` #${tag}` : ''}`;
 		const note = addMemoryObject(title, highlightsToMarkdown(shown), null);
 		goto(`/memory/${note.id}`);

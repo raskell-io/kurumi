@@ -20,10 +20,15 @@ import { get } from 'svelte/store';
 import * as db from '$lib/db';
 import { mirroredVaultIds } from '$lib/sync/service';
 import { agentMemoryId } from '$lib/agent-memory';
-import { reviewNoteId } from '$lib/weekly-review';
+import { generateWeeklyReview, reviewNoteId } from '$lib/weekly-review';
 import { linkedFolderId, linkedNoteId, linkedVaultId } from '$lib/linked/backend';
 import { newLinkedVaultConfig, saveLinkedVault } from '$lib/linked/config';
 import { notice } from '$lib/stores/notice';
+import { NO_NEW_NOTES } from '$lib/linked/capabilities';
+import { generateDailyDigest } from '$lib/digest';
+import { maybeUpdateLivingNotes } from '$lib/living-notes';
+import { runDueWorkflows } from '$lib/workflows';
+import { importMarkdownFile, importShared } from '$lib/incoming';
 import type { KurumiDocument } from '$lib/db/types';
 import type { NoteFile } from '$lib/linked/types';
 
@@ -220,6 +225,25 @@ describe('with a linked vault current', () => {
 		expectClean(await everythingPersisted(), 'after mutators');
 		// Only scanning ever reached the folder.
 		expect(new Set(calls)).toEqual(new Set(['linked_open']));
+	});
+
+	it('nothing is generated from its notes, and capture is refused', async () => {
+		const heads = Automerge.getHeads(savedDoc());
+		const seen: string[] = [];
+		const stop = notice.subscribe((n) => n && seen.push(n.text));
+		expect(db.canCreateNotes()).toBe(false);
+		stop();
+		expect(seen.at(-1)).toBe(NO_NEW_NOTES);
+
+		expect(await generateDailyDigest('2031-01-02')).toBeNull();
+		expect(await generateWeeklyReview({ start: '2031-01-06', end: '2031-01-12' })).toBeNull();
+		expect(await maybeUpdateLivingNotes()).toBe(0);
+		expect(await runDueWorkflows()).toBe(0);
+		expect(await importShared({ title: 'Shared', text: 'text' })).toEqual([]);
+		await expect(importMarkdownFile(new File(['# Opened'], 'opened.md'))).rejects.toThrow(NO_NEW_NOTES);
+
+		expect(Automerge.getHeads(savedDoc())).toEqual(heads);
+		expect(get(db.docMemoryObjects).map((m) => m.id)).toEqual([docNoteId]);
 	});
 
 	it('a note created anyway lands in the document vault, without linked ids', async () => {

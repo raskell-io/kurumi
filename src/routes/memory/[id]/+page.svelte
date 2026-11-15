@@ -17,8 +17,12 @@
 		permanentlyDeleteMemoryObject,
 		setMemoryIcon,
 		setMemoryFavorite,
-		getMemoryObject
+		getMemoryObject,
+		currentVaultCaps
 	} from '$lib/db';
+	import { isLinkedNoteId, linkedNoteInfo } from '$lib/linked/backend';
+	import { NO_NEW_NOTES } from '$lib/linked/capabilities';
+	import { showNotice } from '$lib/stores/notice';
 	import { pushUndo } from '$lib/stores/undo';
 	import { openInSplit } from '$lib/stores/workspace';
 	import { get } from 'svelte/store';
@@ -432,6 +436,12 @@
 	// (transcription, sync) propagate to the UI without a manual refresh.
 	let memory = $derived($memoryObjects.find((m) => m.id === $page.params.id));
 
+	// A note of a linked folder ($lib/linked) is shown as it is in its file:
+	// nothing here saves it, and what belongs to the document (icon,
+	// favourite, projects, records, history, trash) isn't offered.
+	let readOnly = $derived(!!memory && isLinkedNoteId(memory.id));
+	let linkedInfo = $derived(memory && readOnly ? linkedNoteInfo(memory.id) : undefined);
+
 	// A canvas opens on its board, not in the editor (links, tabs, search all land here).
 	$effect(() => {
 		if (memory?.type === 'canvas') goto(`/canvas/${memory.id}`, { replaceState: true });
@@ -465,6 +475,7 @@
 
 	// Derived: show template chooser when body is empty AND not dismissed.
 	let shouldShowChooser = $derived(
+		!readOnly &&
 		!templateChooserDismissed &&
 		!content.trim() &&
 		memory?.type === 'note'
@@ -595,6 +606,7 @@
 	}
 
 	function handleTitleChange(e: Event) {
+		if (readOnly) return;
 		const target = e.target as HTMLInputElement;
 		// Keep the stored default so links, sync and exports still have a name;
 		// the input shows an empty field with an "Untitled" placeholder instead.
@@ -624,6 +636,7 @@
 		// user switched notes. Drop updates tagged for a different note,
 		// otherwise the previous note's text would overwrite the current one.
 		if (changedId && memory && changedId !== memory.id) return;
+		if (readOnly) return;
 		if (markdown === content) return;
 		content = markdown;
 		hasLocalEdits = true;
@@ -637,7 +650,7 @@
 	}
 
 	function debouncedSave() {
-		if (!memory) return;
+		if (!memory || readOnly) return;
 		// Capture the target id + values now; the timer must not read the
 		// reactive `memory`/`content` later, since navigation may have swapped
 		// them to a different note by the time it fires.
@@ -665,7 +678,7 @@
 	function saveLiveContent() {
 		clearTimeout(saveTimeout);
 		pendingSave = null;
-		if (!memory || !hasLocalEdits) return;
+		if (!memory || !hasLocalEdits || readOnly) return;
 		const live = editorRef?.getCurrentMarkdown();
 		const body = live ?? content;
 		content = body;
@@ -686,7 +699,7 @@
 	$effect(() => {
 		const save = () => {
 			saveLiveContent();
-			if (memory && hasLocalEdits) stashEdit(memory.id, title, content);
+			if (memory && hasLocalEdits && !readOnly) stashEdit(memory.id, title, content);
 		};
 		const typed = (e: Event) => {
 			if ((e.target as HTMLElement | null)?.closest?.('main .ProseMirror')) hasLocalEdits = true;
@@ -730,6 +743,12 @@
 		// Find memory by title (case-insensitive)
 		const target = links.resolve(linkTitle);
 		if (target && anchor) setPendingAnchor(target.id, anchor);
+
+		// A link to a note that doesn't exist creates it, where notes can be created.
+		if (!target && !$currentVaultCaps.createNotes) {
+			showNotice(NO_NEW_NOTES);
+			return;
+		}
 
 		if (event?.altKey) {
 			const id = target ? target.id : addMemoryObject(linkTitle, '').id;
@@ -822,11 +841,17 @@
 					<a href="/read/folder/{folder.id}" class="max-w-40 truncate rounded px-1 py-0.5 hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]">{folder.name}</a>
 					<span class="text-[var(--color-text-faint)]">/</span>
 				{/each}
-				<span class="flex min-w-0 items-center gap-1.5 px-1 text-[var(--color-text)]">
+				<span class="flex min-w-0 items-center gap-1.5 px-1 text-[var(--color-text)]" title={linkedInfo?.relPath}>
 					{#if memory.icon}<NoteIcon icon={memory.icon} class="h-3.5 w-3.5" />{/if}
-					<span class="truncate">{title && title !== 'Untitled' ? title : 'Untitled'}</span>
+					<span class="truncate">{linkedInfo ? linkedInfo.relPath.slice(linkedInfo.relPath.lastIndexOf('/') + 1) : title && title !== 'Untitled' ? title : 'Untitled'}</span>
 				</span>
 			</nav>
+
+			{#if readOnly}
+				<span class="k-chip shrink-0" title="This note is a file in a linked folder. Kurumi shows it and doesn't change it.">
+					<Link2 class="h-3 w-3" /> Linked folder · Read-only
+				</span>
+			{/if}
 
 			{#if isRecording}
 				<button
@@ -851,6 +876,7 @@
 			<button onclick={() => triggerSearch.set(true)} class="k-icon-btn md:hidden" aria-label="Search">
 				<Search class="h-4 w-4" />
 			</button>
+			{#if !readOnly}
 			<button
 				onclick={() => setMemoryFavorite(memory!.id, !memory!.favoritedAt)}
 				class="k-icon-btn"
@@ -864,6 +890,7 @@
 			<button onclick={() => (showHistory = true)} class="k-icon-btn" title="Version history" aria-label="Version history">
 				<History class="h-4 w-4" />
 			</button>
+			{/if}
 
 			<div class="relative">
 				<button
@@ -882,6 +909,7 @@
 					<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 					<div class="fixed inset-0 z-40" onclick={() => (showMoreMenu = false)}></div>
 					<div class="k-menu absolute right-0 top-full z-50 mt-1 w-60" role="menu">
+						{#if !readOnly}
 						<div class="k-menu-label">Insert</div>
 						<button class="k-menu-item" role="menuitem" onclick={() => { showMoreMenu = false; handleImageUpload(); }}>
 							<ImagePlus class="h-4 w-4 text-[var(--color-text-muted)]" /> Image
@@ -915,6 +943,7 @@
 							<Star class="h-4 w-4 text-[var(--color-text-muted)]" /> {memory.favoritedAt ? 'Remove from favorites' : 'Add to favorites'}
 						</button>
 						<div class="k-menu-sep"></div>
+						{/if}
 						<div class="k-menu-label">Export</div>
 						<button class="k-menu-item" role="menuitem" onclick={() => handleExport('vanilla')}>
 							<Download class="h-4 w-4 text-[var(--color-text-muted)]" /> Markdown
@@ -934,10 +963,12 @@
 						<button class="k-menu-item" role="menuitem" onclick={() => { if (memory) shareMemory(memory); showMoreMenu = false; }}>
 							<Share2 class="h-4 w-4 text-[var(--color-text-muted)]" /> Share…
 						</button>
+						{#if !readOnly}
 						<div class="k-menu-sep"></div>
 						<button class="k-menu-item danger" role="menuitem" onclick={handleDelete}>
 							<Trash2 class="h-4 w-4" /> Move to trash
 						</button>
+						{/if}
 					</div>
 				{/if}
 			</div>
@@ -979,7 +1010,7 @@
 							<NoteIcon icon={memory.icon} class="h-16 w-16 text-[3.5rem]" />
 						</button>
 					{/if}
-					<div class="insert-bar -ml-1.5 mb-1 flex items-center gap-0.5">
+					<div class="insert-bar -ml-1.5 mb-1 flex items-center gap-0.5" class:hidden={readOnly}>
 						{#if !memory.icon}
 							<button onclick={openIconPicker} class="insert-btn" title="Add icon">
 								<Smile class="h-3.5 w-3.5" /> Icon
@@ -1013,12 +1044,25 @@
 						oninput={handleTitleChange}
 						onkeydown={handleTitleKeydown}
 						placeholder="Untitled"
+						disabled={readOnly}
 						aria-label="Note title"
 						class="title-input mb-3 w-full bg-transparent font-bold text-[var(--color-text)] md:mb-5"
 						style="font-family: var(--font-editor);"
 					/>
-					<NoteProjects {memory} bind:picker={projectPicker} />
-					<NoteProperties {memory} />
+					{#if linkedInfo}
+						<!-- Properties from the file: its frontmatter, shown and never changed -->
+						{#if Object.keys(linkedInfo.frontmatter).length > 0}
+							<dl class="linked-props" aria-label="Properties from the file">
+								{#each Object.entries(linkedInfo.frontmatter) as [field, value] (field)}
+									<dt>{field}</dt>
+									<dd>{Array.isArray(value) ? value.join(', ') : value}</dd>
+								{/each}
+							</dl>
+						{/if}
+					{:else}
+						<NoteProjects {memory} bind:picker={projectPicker} />
+						<NoteProperties {memory} />
+					{/if}
 				</div>
 
 				<!-- Audio playback for voice memos and meetings -->
@@ -1263,9 +1307,12 @@
 						bind:this={editorRef}
 						content={initializedForId === memory.id ? content : memory.bodyMarkdown}
 						noteId={memory.id}
+						readonly={readOnly}
 						onchange={handleContentChange}
 						onWikilinkClick={handleWikilinkClick}
-						placeholder={shouldShowChooser
+						placeholder={readOnly
+							? ''
+							: shouldShowChooser
 							? 'Start typing, or pick a template…'
 							: 'Start writing… Type [[ to link a note, / for commands'}
 						currentFolderId={memory.folderId}
@@ -1312,6 +1359,7 @@
 												<span class="min-w-0 truncate text-[var(--color-text-faint)]">{mention.bodyMarkdown.slice(0, 120)}</span>
 											</a>
 											<button
+												hidden={readOnly}
 												onclick={() => handleLinkMention(mention.id)}
 												class="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs text-[var(--color-text-muted)] opacity-0 hover:bg-[var(--color-active)] hover:text-[var(--color-text)] focus:opacity-100 group-hover/mention:opacity-100"
 												title="Insert a [[wikilink]] to this note"
@@ -1422,6 +1470,21 @@
 		background: var(--color-hover);
 	}
 
+	.linked-props {
+		display: grid;
+		grid-template-columns: max-content minmax(0, 1fr);
+		gap: 0.125rem 1rem;
+		margin-bottom: 1rem;
+		font-size: 0.8125rem;
+	}
+	.linked-props dt {
+		color: var(--color-text-faint);
+	}
+	.linked-props dd {
+		overflow-wrap: anywhere;
+		color: var(--color-text-muted);
+	}
+
 	.favorite-on {
 		color: #d99a16;
 	}
@@ -1435,6 +1498,12 @@
 		font-size: 2rem !important;
 		line-height: 1.2;
 		letter-spacing: -0.015em;
+	}
+
+	/* Read-only (a linked folder's note): the title reads as text, not as a greyed-out field */
+	.title-input:disabled {
+		opacity: 1;
+		-webkit-text-fill-color: currentColor;
 	}
 
 	.title-input::placeholder {

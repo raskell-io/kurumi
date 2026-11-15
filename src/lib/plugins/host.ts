@@ -20,6 +20,7 @@ import { get as idbGet, set as idbSet } from 'idb-keyval';
 import { addMemoryObject, getMemoryObject, memoryObjects, updateMemoryObject } from '$lib/db';
 import { search } from '$lib/search';
 import { showNotice } from '$lib/stores/notice';
+import { getOpenLinkedVaultId } from '$lib/linked/backend';
 import { mayCall, parsePlugin, type InstalledPlugin, type PluginManifest } from './manifest';
 
 const STORE_KEY = 'kurumi-plugins';
@@ -131,12 +132,14 @@ async function dispatch(manifest: PluginManifest, method: string, params: Record
 			return note ? { ...noteSummary(note), body: note.bodyMarkdown } : null;
 		}
 		case 'notes.create': {
+			if (getOpenLinkedVaultId()) throw new Error('The current vault is a linked folder, which is read-only');
 			const note = addMemoryObject(str(params.title, 300) ?? 'Untitled', str(params.body) ?? '', null);
 			return { id: note.id };
 		}
 		case 'notes.update': {
 			const note = inVault(params.id);
 			if (!note) throw new Error('No such note');
+			if (getOpenLinkedVaultId()) throw new Error('The current vault is a linked folder, which is read-only');
 			const title = str(params.title, 300);
 			const body = str(params.body);
 			updateMemoryObject(note.id, { ...(title !== undefined ? { title } : {}), ...(body !== undefined ? { bodyMarkdown: body } : {}) });

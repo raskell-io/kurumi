@@ -10,6 +10,7 @@
  * caller can navigate to it.
  */
 
+import { getOpenLinkedVaultId } from '$lib/linked/backend';
 import { get } from 'svelte/store';
 import {
 	memoryObjects,
@@ -80,6 +81,8 @@ export async function generateDailyDigest(
 	forDate?: string,
 	options: { skipIfEmpty?: boolean } = {}
 ): Promise<string | null> {
+	// Not in a linked folder ($lib/linked): its notes never end up in a Kurumi vault.
+	if (getOpenLinkedVaultId()) return null;
 	const targetDate = forDate ?? yesterday();
 	const today = todayIso();
 	const { start, end } = dateRangeMs(targetDate);
@@ -196,6 +199,7 @@ export async function generateDailyDigest(
 export async function generateTemplateFromExamples(
 	exampleIds: string[]
 ): Promise<string | null> {
+	if (getOpenLinkedVaultId()) return null; // templates are records of Kurumi vaults
 	const all = get(memoryObjects);
 	const examples = exampleIds
 		.map((id) => all.find((m) => m.id === id))
@@ -342,6 +346,7 @@ export function detectPatterns(): DetectedPattern[] {
  * of cards created.
  */
 export async function generateQuizFromMemory(memoryId: string): Promise<number> {
+	if (getOpenLinkedVaultId()) return 0; // flashcards are records of Kurumi vaults
 	const all = get(memoryObjects);
 	const memory = all.find((m) => m.id === memoryId);
 	if (!memory) return 0;

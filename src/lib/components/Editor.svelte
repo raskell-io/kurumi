@@ -52,7 +52,8 @@
 	import SlashCommandMenu from './SlashCommandMenu.svelte';
 	import AIActionMenu from './AIActionMenu.svelte';
 	import { isAIConfigured } from '$lib/ai';
-	import { editorViewCtx, parserCtx, remarkStringifyOptionsCtx } from '@milkdown/kit/core';
+	import { editorViewCtx, editorViewOptionsCtx, parserCtx, remarkStringifyOptionsCtx } from '@milkdown/kit/core';
+	import { readonlyPlugin, setEditorReadonly } from '$lib/editor/readonly';
 	import { registerMarkdownParser } from '$lib/editor/blocks';
 	import { block, configureBlockHandle } from '$lib/editor/blockHandle';
 	import BlockMenu from './BlockMenu.svelte';
@@ -86,6 +87,9 @@
 		// meant for the main note (insert image/camera) and only answers
 		// Cmd+F while it has focus.
 		secondary?: boolean;
+		// Show the note without letting it be changed (a linked folder's note).
+		// Read when the editor mounts.
+		readonly?: boolean;
 	}
 
 	let {
@@ -95,7 +99,8 @@
 		placeholder = 'Start writing...',
 		currentFolderId = null,
 		noteId,
-		secondary = false
+		secondary = false,
+		readonly = false
 	}: Props = $props();
 
 	/**
@@ -433,6 +438,7 @@
 	// after destroy.
 	const mountedNoteId = untrack(() => noteId);
 	const mountedContent = untrack(() => content);
+	const mountedReadonly = untrack(() => readonly);
 	let destroyed = false;
 
 	let blobResolver: MutationObserver | undefined;
@@ -449,6 +455,7 @@
 			setWikilinkClickHandler(root, onWikilinkClick);
 		}
 		onVimMode(root, (mode) => (vimMode = mode));
+		setEditorReadonly(root, mountedReadonly);
 
 		// Set up tag/person/date click handlers to navigate to references page
 		setReferenceClickHandlers(root, {
@@ -528,10 +535,11 @@
 			.config((ctx) => {
 				ctx.set(rootCtx, editorContainer);
 				ctx.set(defaultValueCtx, displayContent);
+				if (mountedReadonly) ctx.update(editorViewOptionsCtx, (options) => ({ ...options, editable: () => false }));
 
 				// Listen for changes - transform code block back to frontmatter for storage
 				ctx.get(listenerCtx).markdownUpdated((_, markdown) => {
-					if (onchange && !destroyed) {
+					if (onchange && !destroyed && !mountedReadonly) {
 						const storageContent = toStorageMarkdown(markdown);
 						// Tag with the note id this editor was mounted for. Milkdown
 						// debounces this callback 200ms, so it can fire after the user
@@ -563,6 +571,7 @@
 					blockMenu = { view: ctx.get(editorViewCtx), blockPos, anchor };
 				});
 			})
+			.use(readonlyPlugin)
 			.use(commonmark)
 			.use(gfm)
 			.use(mathPlugins)
@@ -712,6 +721,7 @@
 		editor?.destroy();
 		if (editorContainer) {
 			setWikilinkClickHandler(editorContainer, null);
+			setEditorReadonly(editorContainer, false);
 			setReferenceClickHandlers(editorContainer, null);
 			setAutocompleteCallbacks(editorContainer, null);
 			setDatePeopleCallbacks(editorContainer, null);
@@ -724,7 +734,7 @@
 <svelte:window onkeydown={handleFindShortcut} />
 
 <div class="milkdown-wrapper">
-	<div bind:this={editorContainer} class="milkdown-editor" data-placeholder={placeholder} data-note-id={noteId}></div>
+	<div bind:this={editorContainer} class="milkdown-editor" class:is-readonly={mountedReadonly} data-placeholder={placeholder} data-note-id={noteId}></div>
 	{#if $vimEnabled && vimMode && editorFocused}
 		<div class="vim-badge vim-badge-{vimMode}" aria-live="polite">{vimMode.toUpperCase()}</div>
 	{/if}
@@ -869,6 +879,11 @@
 		align-items: center;
 		gap: 1px;
 		transition: opacity 120ms ease;
+	}
+
+	/* A read-only note has nothing to add, move or turn into */
+	.milkdown-editor.is-readonly :global(.kurumi-block-handle) {
+		display: none;
 	}
 
 	.milkdown-editor :global(.kurumi-block-handle[data-show='false']) {
