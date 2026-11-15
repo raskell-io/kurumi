@@ -258,14 +258,25 @@ fn write(folders: &Folders, path: &str, bytes: &[u8]) -> Result<(), String> {
     if path.is_dir() {
         return Err(type_mismatch(&path));
     }
-    let parent = path.parent().ok_or_else(|| not_found(&path))?;
-    let name = path.file_name().ok_or_else(|| not_found(&path))?.to_string_lossy();
+    atomic_write(&path, bytes)
+}
+
+/// Writes `bytes` beside `path`, then renames that over it, so a reader
+/// never sees half a file. A file that is replaced keeps its permissions;
+/// the temporary file is removed if anything fails.
+pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let parent = path.parent().ok_or_else(|| not_found(path))?;
+    let name = path.file_name().ok_or_else(|| not_found(path))?.to_string_lossy();
     let tmp = parent.join(format!(".{name}.kurumi-tmp"));
     let result = (|| {
         let mut file = fs::File::create(&tmp)?;
         file.write_all(bytes)?;
+        if let Ok(meta) = fs::metadata(path) {
+            file.set_permissions(meta.permissions())?;
+        }
         file.sync_all()?;
-        fs::rename(&tmp, &path)
+        drop(file);
+        fs::rename(&tmp, path)
     })();
     if result.is_err() {
         let _ = fs::remove_file(&tmp);
@@ -380,6 +391,30 @@ mod tests {
         remove(&folders, &sub, false).unwrap();
         assert!(read(&folders, &file).unwrap_err().starts_with("NotFoundError"));
         assert!(remove(&folders, &root.to_string_lossy(), true).unwrap_err().starts_with("NotAllowedError"));
+    }
+
+    #[test]
+    fn a_failed_write_leaves_no_temporary_file() {
+        let (_tmp, folders, root) = setup();
+        // A directory with something in it can't be replaced by a file.
+        open(&folders, &at(&root, "taken"), true, true).unwrap();
+        open(&folders, &at(&root, "taken/a.md"), false, true).unwrap();
+        assert!(atomic_write(&root.join("taken"), b"no").is_err());
+        let names: Vec<String> = list(&folders, &root.to_string_lossy()).unwrap().into_iter().map(|e| e.name).collect();
+        assert_eq!(names, ["taken"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_replaced_file_keeps_its_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_tmp, folders, root) = setup();
+        let file = at(&root, "run.sh");
+        write(&folders, &file, b"one").unwrap();
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o750)).unwrap();
+        write(&folders, &file, b"two").unwrap();
+        assert_eq!(fs::metadata(&file).unwrap().permissions().mode() & 0o777, 0o750);
+        assert_eq!(read(&folders, &file).unwrap(), b"two");
     }
 
     #[test]

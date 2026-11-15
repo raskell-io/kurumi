@@ -168,6 +168,8 @@ pub fn run() {
             linked::linked_open,
             linked::linked_changes,
             linked::linked_read,
+            linked::linked_write,
+            linked::linked_create,
             linked::linked_close,
             selftest::selftest_report,
         ])

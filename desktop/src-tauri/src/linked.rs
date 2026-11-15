@@ -1,20 +1,23 @@
 //! Linked folder vaults for the desktop app: a folder of Markdown notes that
-//! Kurumi reads where it lies, instead of keeping its own copy.
+//! Kurumi reads and edits where it lies, instead of keeping its own copy.
 //!
 //! The web side (src/lib/linked/) opens a vault with `linked_open`, which
 //! scans a folder the user picked in the system dialog (folders.rs), returns
 //! its notes and starts watching it. What changes in the folder afterwards is
 //! kept in a log per vault, which `linked_changes` hands out as a long poll.
-//! `linked_read` re-reads one note. Nothing here writes to the folder.
+//! `linked_read` re-reads one note, `linked_write` replaces one if it still
+//! is what the web side last saw (by hash), `linked_create` adds one.
 //!
-//! What a scan leaves out, `linked_read` refuses and the watcher doesn't
+//! What a scan leaves out, the other commands refuse and the watcher doesn't
 //! report: hidden entries, the vault's ignore patterns, `.gitignore` if
 //! asked, files that aren't Markdown and anything that resolves outside the
-//! folder.
+//! folder. The only other thing ever written to the folder is the hidden
+//! temporary file of a write, renamed over the note at once.
 //!
-//! Errors are strings starting with a DOMException name, as in folders.rs.
+//! Errors are strings starting with a DOMException name, as in folders.rs,
+//! plus `ConflictError: <hash of the file now>` from `linked_write`.
 
-use crate::folders::{io_error, modified_ms, not_found, type_mismatch, Folders};
+use crate::folders::{atomic_write, io_error, modified_ms, not_found, type_mismatch, Folders};
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use ignore::{Match, WalkBuilder};
 use notify::event::ModifyKind;
@@ -25,7 +28,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::fmt::Write as _;
 use std::fs;
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Write as _};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
@@ -34,7 +37,7 @@ use std::time::Duration;
 use tauri::State;
 use tokio::sync::watch;
 
-/// Larger Markdown files are counted as skipped, not loaded.
+/// Larger Markdown files are counted as skipped, not loaded or written.
 const MAX_NOTE_BYTES: u64 = 2 * 1024 * 1024;
 /// How long the watcher waits for a path to settle before reporting it.
 const DEBOUNCE: Duration = Duration::from_millis(300);
@@ -85,12 +88,10 @@ struct Vault {
     /// A picked folder, canonical.
     root: PathBuf,
     rules: Rules,
-    /// Kept for the write commands, which will refuse such a vault.
-    #[allow(dead_code)]
     read_only: bool,
     /// What the web side knows of the folder. Held while the folder is
-    /// scanned or a watcher batch is worked through, so those happen one
-    /// at a time per vault.
+    /// scanned, a watcher batch is worked through or a note is written, so
+    /// those happen one at a time per vault.
     index: Mutex<Index>,
     log: Mutex<Log>,
     /// Wakes the long polls.
@@ -228,6 +229,13 @@ pub struct Changes {
     rescan: bool,
 }
 
+#[derive(Serialize, Debug)]
+pub struct Written {
+    /// Of the bytes now on disk: the `expectedHash` of the next write.
+    hash: String,
+    mtime: f64,
+}
+
 /// The newest changes of a vault. A cursor is the number of a change: the
 /// log's first plus its place in `entries`.
 struct Log {
@@ -278,7 +286,7 @@ struct Stamp {
 
 /// The Markdown files of a vault by `rel`. Changes are told by comparing
 /// with it, by content: a file that hashes to what is here is not news,
-/// so a save that changes nothing isn't reported.
+/// which is also what keeps a write by `linked_write` from coming back.
 #[derive(Default)]
 struct Index(HashMap<String, Stamp>);
 
@@ -451,6 +459,13 @@ fn scan(root: &Path, rules: &Rules, index: &mut Index) -> Scan {
 }
 
 impl Vault {
+    fn writable(&self) -> Result<(), String> {
+        if self.read_only {
+            return Err("NotAllowedError: this linked folder is read-only".into());
+        }
+        Ok(())
+    }
+
     /// Puts changes in the log and wakes the long polls; more than a burst
     /// are not listed.
     fn publish(&self, changes: Vec<Change>) {
@@ -709,6 +724,81 @@ fn read(folders: &Folders, linked: &Linked, vault: &str, rel: &str) -> Result<No
     load(&path, rel.to_owned())
 }
 
+fn fits(content: &str) -> Result<(), String> {
+    if content.len() as u64 > MAX_NOTE_BYTES {
+        return Err("QuotaExceededError: a note in a linked folder can't be larger than 2 MB".into());
+    }
+    Ok(())
+}
+
+/// Records what was just written, so the watcher doesn't report it back.
+fn written(index: &mut Index, rel: &str, path: &Path, bytes: &[u8]) -> Written {
+    let hash = hex_sha256(bytes);
+    let (mtime, size) = stat(path).unwrap_or((0.0, bytes.len() as u64));
+    index.0.insert(rel.to_owned(), Stamp { hash: Some(hash.clone()), mtime, size });
+    Written { hash, mtime }
+}
+
+/// Replaces a note's bytes with exactly `content`, if the file still hashes
+/// to `expected_hash`; otherwise `ConflictError: <its hash now>`.
+fn write(
+    folders: &Folders,
+    linked: &Linked,
+    vault: &str,
+    rel: &str,
+    expected_hash: &str,
+    content: &str,
+) -> Result<Written, String> {
+    let vault = linked.get(vault)?;
+    vault.writable()?;
+    fits(content)?;
+    let path = note_path(folders, &vault, rel)?;
+    // Until the index knows the new content, neither another write nor the
+    // watcher gets a look at the file.
+    let mut index = vault.index.lock().unwrap();
+    let meta = fs::metadata(&path).map_err(|e| if e.kind() == ErrorKind::NotFound { not_found(&path) } else { io_error(e) })?;
+    if meta.is_dir() {
+        return Err(type_mismatch(&path));
+    }
+    let current = hex_sha256(&fs::read(&path).map_err(io_error)?);
+    if !current.eq_ignore_ascii_case(expected_hash) {
+        return Err(format!("ConflictError: {current}"));
+    }
+    if meta.permissions().readonly() {
+        return Err(format!("NotAllowedError: {rel:?} is write-protected"));
+    }
+    // Through a symlink (inside the folder, see note_path), so it stays one.
+    let target = path.canonicalize().map_err(io_error)?;
+    atomic_write(&target, content.as_bytes())?;
+    Ok(written(&mut index, rel, &path, content.as_bytes()))
+}
+
+/// Adds a note; never over an existing file. Missing directories on the
+/// way are made: note_path has checked that none of them is left out by the
+/// rules and that the deepest existing one is inside the folder.
+fn create(folders: &Folders, linked: &Linked, vault: &str, rel: &str, content: &str) -> Result<Written, String> {
+    let vault = linked.get(vault)?;
+    vault.writable()?;
+    fits(content)?;
+    let path = note_path(folders, &vault, rel)?;
+    let mut index = vault.index.lock().unwrap();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(io_error)?;
+    }
+    // Fails on anything that is there, a dangling symlink included.
+    let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&path).map_err(|e| match e.kind() {
+        ErrorKind::AlreadyExists => format!("InvalidModificationError: {rel:?} already exists"),
+        _ => io_error(e),
+    })?;
+    if let Err(e) = file.write_all(content.as_bytes()).and_then(|()| file.sync_all()) {
+        drop(file);
+        let _ = fs::remove_file(&path);
+        return Err(io_error(e));
+    }
+    drop(file);
+    Ok(written(&mut index, rel, &path, content.as_bytes()))
+}
+
 /// Scans a picked folder, remembers it under `vault` and starts watching
 /// it; opening the same vault again rescans and replaces all of that.
 #[tauri::command(async)]
@@ -743,6 +833,29 @@ pub fn linked_read(
 ) -> Result<NoteFile, String> {
     available()?;
     read(&folders, &linked, &vault, &rel)
+}
+
+#[tauri::command(async)]
+pub fn linked_write(
+    vault: String,
+    rel: String,
+    expected_hash: String,
+    content: String,
+    folders: State<'_, Folders>,
+    linked: State<'_, Linked>,
+) -> Result<Written, String> {
+    write(&folders, &linked, &vault, &rel, &expected_hash, &content)
+}
+
+#[tauri::command(async)]
+pub fn linked_create(
+    vault: String,
+    rel: String,
+    content: String,
+    folders: State<'_, Folders>,
+    linked: State<'_, Linked>,
+) -> Result<Written, String> {
+    create(&folders, &linked, &vault, &rel, &content)
 }
 
 /// Stops watching and forgets the vault; fine if it wasn't open.
@@ -1148,6 +1261,31 @@ mod tests {
     }
 
     #[test]
+    fn the_watcher_does_not_report_the_apps_own_writes() {
+        let (_tmp, folders, linked, root) = setup_with(FAST);
+        put(&root, "a.md", "one");
+        let opened = open_as(&folders, &linked, &root, &[], false);
+        assert_eq!(opened.watch, WatchMode::Events);
+        let mut cursor = opened.cursor;
+
+        write(&folders, &linked, VAULT, "a.md", &hex_sha256(b"one"), "two").unwrap();
+        create(&folders, &linked, VAULT, "made/b.md", "b").unwrap();
+        // Two changes from outside, one after the other: by the time the
+        // second is reported, the writes above would have been.
+        put(&root, "first.md", "1");
+        let mut all = wait_for(&linked, &mut cursor, |c| upserted(c, "first.md", "1"));
+        put(&root, "second.md", "2");
+        all.extend(wait_for(&linked, &mut cursor, |c| upserted(c, "second.md", "2")));
+        assert!(!told(&all).iter().any(|c| c.ends_with("a.md") || c.ends_with("made/b.md")), "{:?}", told(&all));
+
+        // A change from outside to a file the app wrote is reported.
+        put(&root, "a.md", "three");
+        wait_for(&linked, &mut cursor, |c| upserted(c, "a.md", "three"));
+        put(&root, "made/b.md", "bb");
+        wait_for(&linked, &mut cursor, |c| upserted(c, "made/b.md", "bb"));
+    }
+
+    #[test]
     fn without_a_watcher_the_folder_is_polled() {
         let (_tmp, folders, linked, root) = setup_with(POLLING);
         put(&root, "a.md", "a");
@@ -1163,6 +1301,11 @@ mod tests {
             upserted(c, "a.md", "changed") && upserted(c, "sub/new.md", "new") && removed(c, "gone.md")
         });
 
+        // The app's own write isn't news here either.
+        write(&folders, &linked, VAULT, "a.md", &hex_sha256(b"changed"), "written").unwrap();
+        put(&root, "after.md", "after");
+        let all = wait_for(&linked, &mut cursor, |c| upserted(c, "after.md", "after"));
+        assert_eq!(told(&all), ["+after.md"]);
     }
 
     #[test]
@@ -1324,5 +1467,214 @@ mod tests {
         assert_eq!(log.entries.len(), LOG_BYTES / MAX_NOTE_BYTES as usize);
         assert_eq!(log.head(), 20);
         assert!(log.bytes <= LOG_BYTES);
+    }
+
+    // --- Writing ---
+
+    fn names(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> =
+            fs::read_dir(dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        names.sort();
+        names
+    }
+
+    fn failed(result: Result<Written, String>, name: &str) {
+        let error = result.unwrap_err();
+        assert!(error.starts_with(name), "expected {name}, got {error}");
+    }
+
+    #[test]
+    fn write_replaces_a_note_only_if_it_is_what_was_expected() {
+        let (_tmp, folders, linked, root) = setup();
+        put(&root, "notes/a.md", "one\n");
+        open_as(&folders, &linked, &root, &[], false);
+        let file = root.join("notes").join("a.md");
+        let one = hex_sha256(b"one\n");
+
+        // The bytes as given: a BOM, CRLF, no final newline.
+        let text = "\u{feff}---\r\ntitle: Ünïcode\r\n---\r\n\r\nno final newline";
+        let done = write(&folders, &linked, VAULT, "notes/a.md", &one, text).unwrap();
+        assert_eq!(fs::read(&file).unwrap(), text.as_bytes());
+        assert_eq!(done.hash, hex_sha256(text.as_bytes()));
+        assert!(done.mtime > 0.0);
+        let now = read(&folders, &linked, VAULT, "notes/a.md").unwrap();
+        assert_eq!((now.hash.as_str(), now.mtime, now.content.as_str()), (done.hash.as_str(), done.mtime, text));
+
+        // A stale hash: refused with the hash the file has, nothing written.
+        let error = write(&folders, &linked, VAULT, "notes/a.md", &one, "three").unwrap_err();
+        assert_eq!(error, format!("ConflictError: {}", done.hash));
+        assert_eq!(fs::read(&file).unwrap(), text.as_bytes());
+        // Changed from outside since: the same.
+        put(&root, "notes/a.md", "outside");
+        let error = write(&folders, &linked, VAULT, "notes/a.md", &done.hash, "three").unwrap_err();
+        assert_eq!(error, format!("ConflictError: {}", hex_sha256(b"outside")));
+        assert_eq!(fs::read(&file).unwrap(), b"outside");
+
+        // With the hash from the conflict the write goes through; to nothing, too.
+        let outside = hex_sha256(b"outside").to_uppercase();
+        let done = write(&folders, &linked, VAULT, "notes/a.md", &outside, "").unwrap();
+        assert_eq!(fs::read(&file).unwrap(), b"");
+        write(&folders, &linked, VAULT, "notes/a.md", &done.hash, "four").unwrap();
+        assert_eq!(fs::read(&file).unwrap(), b"four");
+        assert_eq!(names(&root.join("notes")), ["a.md"], "no temp file left behind");
+
+        failed(write(&folders, &linked, VAULT, "notes/a.md", &one, &"a".repeat(MAX_NOTE_BYTES as usize + 1)), "QuotaExceededError");
+        assert_eq!(fs::read(&file).unwrap(), b"four");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_keeps_permissions_and_symlinks_and_leaves_protected_files() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let (_tmp, folders, linked, root) = setup();
+        put(&root, "notes/a.md", "one");
+        put(&root, "notes/locked.md", "locked");
+        symlink(root.join("notes").join("a.md"), root.join("alias.md")).unwrap();
+        let file = root.join("notes").join("a.md");
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o640)).unwrap();
+        fs::set_permissions(root.join("notes").join("locked.md"), fs::Permissions::from_mode(0o444)).unwrap();
+        open_as(&folders, &linked, &root, &[], false);
+
+        let done = write(&folders, &linked, VAULT, "notes/a.md", &hex_sha256(b"one"), "two").unwrap();
+        assert_eq!(fs::metadata(&file).unwrap().permissions().mode() & 0o777, 0o640);
+
+        // Through a symlink inside the folder: the file it points at changes.
+        write(&folders, &linked, VAULT, "alias.md", &done.hash, "three").unwrap();
+        assert!(fs::symlink_metadata(root.join("alias.md")).unwrap().file_type().is_symlink());
+        assert_eq!(fs::read(&file).unwrap(), b"three");
+        assert_eq!(fs::metadata(&file).unwrap().permissions().mode() & 0o777, 0o640);
+
+        failed(write(&folders, &linked, VAULT, "notes/locked.md", &hex_sha256(b"locked"), "open"), "NotAllowedError");
+        assert_eq!(fs::read(root.join("notes").join("locked.md")).unwrap(), b"locked");
+        assert_eq!(names(&root.join("notes")), ["a.md", "locked.md"]);
+        assert_eq!(names(&root), ["alias.md", "notes"]);
+    }
+
+    #[test]
+    fn a_read_only_vault_refuses_write_and_create() {
+        let (_tmp, folders, linked, root) = setup();
+        put(&root, "a.md", "one");
+        open_as(&folders, &linked, &root, &[], true);
+        failed(write(&folders, &linked, VAULT, "a.md", &hex_sha256(b"one"), "two"), "NotAllowedError");
+        failed(create(&folders, &linked, VAULT, "b.md", "b"), "NotAllowedError");
+        failed(create(&folders, &linked, VAULT, "sub/b.md", "b"), "NotAllowedError");
+        assert_eq!(fs::read(root.join("a.md")).unwrap(), b"one");
+        assert_eq!(names(&root), ["a.md"]);
+
+        // Opened again for writing, it takes them.
+        open_as(&folders, &linked, &root, &[], false);
+        write(&folders, &linked, VAULT, "a.md", &hex_sha256(b"one"), "two").unwrap();
+        assert_eq!(fs::read(root.join("a.md")).unwrap(), b"two");
+    }
+
+    #[test]
+    fn create_adds_a_note_but_never_replaces_one() {
+        let (_tmp, folders, linked, root) = setup();
+        put(&root, "a.md", "one");
+        open_as(&folders, &linked, &root, &[], false);
+
+        let text = "\u{feff}# New\r\n\r\nno final newline";
+        let made = create(&folders, &linked, VAULT, "new/deep/n.md", text).unwrap();
+        assert_eq!(fs::read(root.join("new").join("deep").join("n.md")).unwrap(), text.as_bytes());
+        assert_eq!(made.hash, hex_sha256(text.as_bytes()));
+        assert!(made.mtime > 0.0);
+        assert_eq!(names(&root.join("new").join("deep")), ["n.md"]);
+        // It can be written with the hash it came with, and isn't news to the watcher.
+        write(&folders, &linked, VAULT, "new/deep/n.md", &made.hash, "edited").unwrap();
+        assert!(resync(&linked).is_empty());
+
+        let error = create(&folders, &linked, VAULT, "a.md", "other").unwrap_err();
+        assert!(error.starts_with("InvalidModificationError"), "{error}");
+        failed(create(&folders, &linked, VAULT, "new/deep/n.md", "other"), "InvalidModificationError");
+        failed(create(&folders, &linked, VAULT, "new/deep", "other"), "NotAllowedError");
+        assert_eq!(fs::read(root.join("a.md")).unwrap(), b"one");
+        assert_eq!(fs::read(root.join("new").join("deep").join("n.md")).unwrap(), b"edited");
+
+        failed(create(&folders, &linked, VAULT, "big.md", &"a".repeat(MAX_NOTE_BYTES as usize + 1)), "QuotaExceededError");
+        failed(create(&folders, &linked, "lf.other", "b.md", "b"), "InvalidStateError");
+        assert_eq!(names(&root), ["a.md", "new"]);
+    }
+
+    #[test]
+    fn write_and_create_refuse_what_is_not_a_note_of_the_vault() {
+        let (tmp, folders, linked, root) = setup();
+        put(tmp.path(), "secret.md", "outside");
+        put(&root, ".gitignore", "build/\n");
+        put(&root, "a.md", "a");
+        put(&root, "a.txt", "text");
+        put(&root, "private/c.md", "c");
+        put(&root, ".git/d.md", "d");
+        fs::create_dir(root.join("folder.md")).unwrap();
+        open_as(&folders, &linked, &root, &["private/"], false);
+        let before = names(&root);
+        let absolute = root.join("a.md").to_string_lossy().into_owned();
+
+        // Each with the hash that would let it through.
+        let outside = hex_sha256(b"outside");
+        for (rel, hash) in [
+            ("../secret.md", outside.as_str()),
+            ("private/../../secret.md", outside.as_str()),
+            ("./a.md", &hex_sha256(b"a")),
+            (absolute.as_str(), &hex_sha256(b"a")),
+            ("private/c.md", &hex_sha256(b"c")),
+            (".git/d.md", &hex_sha256(b"d")),
+            ("a.txt", &hex_sha256(b"text")),
+            ("", ""),
+        ] {
+            failed(write(&folders, &linked, VAULT, rel, hash, "written"), "NotAllowedError");
+        }
+        failed(write(&folders, &linked, VAULT, "missing.md", "", "written"), "NotFoundError");
+        failed(write(&folders, &linked, VAULT, "folder.md", "", "written"), "TypeMismatchError");
+        failed(write(&folders, &linked, "lf.other", "a.md", &hex_sha256(b"a"), "written"), "InvalidStateError");
+
+        let created = [
+            "../new.md",
+            "private/new.md",
+            "private/sub/new.md",
+            "build/new.md",
+            ".obsidian/new.md",
+            "sub/.new.md",
+            "new.txt",
+            "sub/new",
+            "/new.md",
+            "sub//new.md",
+            "sub/../../new.md",
+            "",
+        ];
+        for rel in created {
+            failed(create(&folders, &linked, VAULT, rel, "created"), "NotAllowedError");
+        }
+
+        assert_eq!(names(&root), before, "nothing made, not even a directory");
+        assert_eq!(names(&root.join("private")), ["c.md"]);
+        assert_eq!(names(tmp.path()), ["secret.md", "vault"]);
+        assert_eq!(fs::read(tmp.path().join("secret.md")).unwrap(), b"outside");
+        for (file, content) in [("a.md", "a"), ("a.txt", "text"), ("private/c.md", "c"), (".git/d.md", "d")] {
+            let path = file.split('/').fold(root.clone(), |p, part| p.join(part));
+            assert_eq!(fs::read(path).unwrap(), content.as_bytes(), "{file}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_and_create_do_not_follow_symlinks_out_of_the_folder() {
+        use std::os::unix::fs::symlink;
+        let (tmp, folders, linked, root) = setup();
+        put(tmp.path(), "outside/secret.md", "outside");
+        symlink(tmp.path().join("outside"), root.join("out")).unwrap();
+        symlink(tmp.path().join("outside").join("secret.md"), root.join("leak.md")).unwrap();
+        symlink(tmp.path().join("outside").join("made.md"), root.join("dangling.md")).unwrap();
+        open_as(&folders, &linked, &root, &[], false);
+
+        let outside = hex_sha256(b"outside");
+        failed(write(&folders, &linked, VAULT, "leak.md", &outside, "written"), "NotAllowedError");
+        failed(write(&folders, &linked, VAULT, "out/secret.md", &outside, "written"), "NotAllowedError");
+        failed(create(&folders, &linked, VAULT, "out/new.md", "created"), "NotAllowedError");
+        failed(create(&folders, &linked, VAULT, "out/sub/new.md", "created"), "NotAllowedError");
+        // A link to a file that isn't there is something that exists.
+        failed(create(&folders, &linked, VAULT, "dangling.md", "created"), "InvalidModificationError");
+
+        assert_eq!(names(&tmp.path().join("outside")), ["secret.md"]);
+        assert_eq!(fs::read(tmp.path().join("outside").join("secret.md")).unwrap(), b"outside");
     }
 }
