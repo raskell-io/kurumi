@@ -4,16 +4,14 @@
 	 * projects and the other records live in the Automerge document, so in
 	 * Kurumi vaults. Offers the way back to one.
 	 */
-	import { goto } from '$app/navigation';
 	import { docVaults, setCurrentVault } from '$lib/db';
 	import { NO_RECORDS } from '$lib/linked/capabilities';
 	import VaultIcon from './VaultIcon.svelte';
 	import { Link2 } from 'lucide-svelte';
 
+	// Stays on the page: the layout shows it again once the vault has records.
 	function switchTo(id: string) {
 		setCurrentVault(id);
-		// Stay on the page: it now shows that vault's records.
-		void goto(location.hash || location.pathname, { replaceState: true, invalidateAll: true });
 	}
 </script>
 
