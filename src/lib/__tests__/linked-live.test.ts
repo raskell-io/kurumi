@@ -756,6 +756,92 @@ describe('files beside the notes', () => {
 		expect(reads().length).toBe(before + 1);
 	});
 
+	it('redraws a file the app reports as changed, gone or back, without looking by itself', async () => {
+		await openLinkedVault(readOnly);
+		await settle();
+		// The poll asks for file changes too.
+		expect(app.calls.find((c) => c.cmd === 'linked_changes')!.args).toMatchObject({ files: true });
+		const url = (await linkedFileUrl(id('projects/foo.md'), 'images/shot.png'))!;
+		const revision = get(linkedFilesRevision);
+
+		const replaced = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 7, 7, 7]);
+		app.externalFile('projects/images/shot.png', replaced);
+		await settle(12);
+		const fresh = (await linkedFileUrl(id('projects/foo.md'), 'images/shot.png'))!;
+		expect(fresh).not.toBe(url);
+		expect(await bytesAt(fresh)).toEqual(replaced);
+		expect(get(linkedFilesRevision)).toBe(revision + 1);
+
+		// Gone: broken, without another read. Back: shown again.
+		const before = reads().length;
+		app.externalFile('projects/images/shot.png', null);
+		await settle(12);
+		expect(await linkedFileUrl(id('projects/foo.md'), 'images/shot.png')).toBeNull();
+		expect(reads().length).toBe(before);
+		app.externalFile('projects/images/shot.png', PNG);
+		await settle(12);
+		expect(await bytesAt((await linkedFileUrl(id('projects/foo.md'), 'images/shot.png'))!)).toEqual(PNG);
+		expect(get(linkedFilesRevision)).toBe(revision + 3);
+		// A removed picture is not a removed note.
+		expect(rels()).toEqual(['projects/bar.md', 'projects/foo.md', 'readme.md']);
+
+		// The app reports files, so a note changing (or the window's focus) reads nothing again.
+		const settled = reads().length;
+		app.external('readme.md', '# Readme\n\nTouched.\n');
+		await settle(12);
+		await recheckLinkedFiles();
+		expect(reads().length).toBe(settled);
+	});
+
+	it('shows a picture that was missing once the app reports it', async () => {
+		await openLinkedVault(readOnly);
+		await settle();
+		expect(await linkedFileUrl(id('projects/foo.md'), 'images/later.png')).toBeNull();
+		app.externalFile('projects/images/later.png', PNG);
+		await settle(12);
+		expect(await bytesAt((await linkedFileUrl(id('projects/foo.md'), 'images/later.png'))!)).toEqual(PNG);
+		// One that no note shows any more is not read again.
+		releaseLinkedFiles(id('projects/foo.md'));
+		const before = reads().length;
+		app.externalFile('projects/images/later.png', new Uint8Array([1]));
+		await settle(12);
+		expect(reads().length).toBe(before);
+	});
+
+	it('keeps looking by itself where the folder is not watched by events', async () => {
+		app.state.watch = 'polling';
+		await openLinkedVault(readOnly);
+		await settle();
+		await linkedFileUrl(id('projects/foo.md'), 'images/shot.png');
+		const before = reads().length;
+		// There, a note changing in the folder is a reason to look at the pictures on screen.
+		app.binary.set('projects/images/shot.png', new Uint8Array([6, 6, 6]));
+		app.external('readme.md', '# Readme\n\nTouched.\n');
+		await settle(12);
+		expect(reads().length).toBe(before + 1);
+		expect(await bytesAt((await linkedFileUrl(id('projects/foo.md'), 'images/shot.png'))!)).toEqual(new Uint8Array([6, 6, 6]));
+	});
+
+	it('ignores kinds of change it does not know, and goes on', async () => {
+		await openLinkedVault(readOnly);
+		await settle();
+		const data = buildLinkedVault(readOnly, { cursor: 1, notes: [], dirs: [], skipped: 0 });
+		const strange = [{ type: 'moved', from: 'a.md', to: 'b.md' }, { type: 'file', rel: 'x.png', size: 1, mtime: 1 }, { type: 'upsert' }, { nothing: true }] as never[];
+		expect(applyLinkedChanges(readOnly, data, strange)).toEqual({ changed: [], removed: [] });
+		expect(data.notes.size).toBe(0);
+
+		const revision = get(linkedRevision);
+		app.inject({ type: 'moved', from: 'readme.md', to: 'elsewhere.md' });
+		await settle(12);
+		expect(get(linkedRevision)).toBe(revision);
+		expect(rels()).toEqual(['projects/bar.md', 'projects/foo.md', 'readme.md']);
+		// The poll is still alive.
+		app.external('readme.md', '# Readme\n\nAfter the strange one.\n');
+		await settle(12);
+		expect(linkedNote(id('readme.md'))!.bodyMarkdown).toContain('After the strange one.');
+		expect(get(linkedWatch)).toBe('events');
+	});
+
 	it('does not show a file over the size limit, and says so once', async () => {
 		await openLinkedVault(readOnly);
 		app.state.maxBytes = 4;

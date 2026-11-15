@@ -186,8 +186,9 @@ the folder without touching it.
   folder opens it; a link to another note by its path goes there. (In a note
   you can edit, hold ⌘/Ctrl while clicking such a link.)
 - Changes made in the folder by other programs show up while Kurumi is open:
-  notes within about a second, a replaced picture when a note changes or you
-  come back to Kurumi's window. If watching the folder fails, Kurumi tries
+  notes and the pictures they show within about a second (on a disk that
+  can't be watched, a replaced picture when a note changes or you come back
+  to Kurumi's window). If watching the folder fails, Kurumi tries
   again a few times; after that the vault's dialog says so and **Rescan**
   reads the folder again.
 - **Reveal in file manager** in a note's menu shows its file.

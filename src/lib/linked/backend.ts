@@ -183,6 +183,8 @@ export function applyLinkedChanges(config: LinkedVaultConfig, data: LinkedVaultD
 			data.info.delete(id);
 			continue;
 		}
+		// Not about a note (a file a note shows), or a kind of change a newer app knows: not for here.
+		if (change.type !== 'upsert' || !change.note) continue;
 		const { note, info } = buildLinkedNote(config, change.note);
 		added ||= !data.notes.has(note.id);
 		if (change.note.rel.includes('/')) addFolders(config, data, change.note.rel.slice(0, change.note.rel.lastIndexOf('/')), change.note.mtime);
@@ -340,6 +342,7 @@ export function closeLinkedVault(): void {
 	for (const rel of [...fileUrls.keys()]) revokeFile(rel);
 	tooLarge.clear();
 	rechecked = 0;
+	fileChangesSeen = false;
 	watch.set(null);
 	setMounted(null);
 }
@@ -356,10 +359,20 @@ export function setLinkedRetryDelays(delays: number[]): void {
 	retryDelays = delays;
 }
 
-/** A change from the folder (or one of Kurumi's own) into the open vault. */
-function apply(open: Mounted, changes: LinkedChange[]): void {
+const isNotePath = (rel: string) => /\.(md|markdown)$/i.test(rel);
+
+/** Changes from the folder (or Kurumi's own) into the open vault: notes, and the files notes show. */
+function apply(open: Mounted, all: LinkedChange[]): void {
+	const changes: LinkedChange[] = [];
+	for (const change of all) {
+		if (change.type === 'file') fileChanged(open, change.rel);
+		else if (change.type === 'remove' && !isNotePath(change.rel)) fileGone(change.rel);
+		else if (change.type === 'upsert' || change.type === 'remove') changes.push(change);
+		// Anything else is from a newer app: ignored.
+	}
+	if (!changes.length) return;
 	for (const change of changes) {
-		const id = linkedNoteId(open.config.id, change.type === 'remove' ? change.rel : change.note.rel);
+		const id = linkedNoteId(open.config.id, change.type === 'remove' ? change.rel : (change as { note: NoteFile }).note.rel);
 		if (change.type === 'upsert') {
 			// The file is (back) in the folder: no longer a note without one.
 			if (!issueMap.has(id)) gone.delete(id);
@@ -387,7 +400,8 @@ async function poll(gen: number): Promise<void> {
 		const asked = Date.now();
 		let result: LinkedChanges;
 		try {
-			result = (await invoke('linked_changes', { vault: mounted.config.id, cursor: mounted.cursor })) as LinkedChanges;
+			// `files`: also the files notes show (pictures), once they were read.
+			result = (await invoke('linked_changes', { vault: mounted.config.id, cursor: mounted.cursor, files: true })) as LinkedChanges;
 		} catch (err) {
 			// Closed or opened again meanwhile: that poll is over.
 			if (!mounted || gen !== generation) return;
@@ -412,7 +426,8 @@ async function poll(gen: number): Promise<void> {
 		mounted.cursor = result.cursor;
 		if (result.changes.length) {
 			apply(mounted, result.changes);
-			// Something wrote in the folder: the pictures on screen may be among it.
+			// Where the app doesn't report files (see recheckLinkedFiles):
+			// something wrote in the folder, the pictures on screen may be among it.
 			void recheckLinkedFiles();
 		}
 		else if (Date.now() - asked < 200) {
@@ -880,39 +895,70 @@ export function releaseLinkedFiles(user: string): void {
 	}
 }
 
-// The folder's watcher reports notes only, so a picture that was replaced
-// is found by looking again: when a note changes in the folder, and when
-// the window gets the focus back (after working in another program). Not
-// more often than this, and only the files that are on screen.
+/** Read a shown file again; give it a new URL if its bytes are other ones (or it appeared or went). */
+async function reread(open: Mounted, rel: string, entry: ShownFile): Promise<boolean> {
+	const before = await entry.url;
+	const bytes = await readFile(open, rel);
+	// Let go of, or replaced, meanwhile.
+	if (mounted !== open || fileUrls.get(rel) !== entry) return false;
+	const print = bytes ? fingerprint(bytes) : null;
+	if (print === entry.print) return false;
+	const url = bytes ? URL.createObjectURL(new Blob([bytes], { type: typeOf(rel) })) : null;
+	fileUrls.set(rel, { url: Promise.resolve(url), users: entry.users, print });
+	// After those showing it have had time to take the new one.
+	if (before) setTimeout(() => URL.revokeObjectURL(before), 2000);
+	return true;
+}
+
+// The app told of a changed file since this vault was opened: it reports them.
+let fileChangesSeen = false;
+
+/** The app says a file a note shows is new or has other bytes: read it again and redraw it. */
+function fileChanged(open: Mounted, rel: string): void {
+	fileChangesSeen = true;
+	const entry = fileUrls.get(rel);
+	if (!entry) return; // not on screen any more
+	void reread(open, rel, entry).then((swapped) => swapped && filesRevision.update((n) => n + 1));
+}
+
+/** The app says a file a note shows is gone: it shows as broken until it is back. */
+function fileGone(rel: string): void {
+	fileChangesSeen = true;
+	const entry = fileUrls.get(rel);
+	if (!entry || entry.print === null) return;
+	fileUrls.set(rel, { url: Promise.resolve(null), users: entry.users, print: null });
+	void entry.url.then((url) => url && setTimeout(() => URL.revokeObjectURL(url), 2000));
+	filesRevision.update((n) => n + 1);
+}
+
+// The desktop app reports changes to the files notes show ('file' changes
+// of `linked_changes`). Looking again by hand is the fallback for where it
+// doesn't: an app from before that existed (the page can't ask; it knows
+// once the first such change arrives), and a folder that isn't watched by
+// events ('polling', 'stopped'). Then: when a note changes in the folder
+// and when the window gets the focus back, not more often than this, and
+// only the files that are on screen.
 const RECHECK_EVERY = 1500;
 let rechecked = 0;
 let rechecking = false;
+let watchNow: LinkedWatch | null = null;
+watch.subscribe((value) => (watchNow = value));
 
 /**
  * Read the files that notes are showing again, and give those whose bytes
  * changed (or that appeared or went) a new URL. `linkedFilesRevision`
- * changes if any did. Does nothing if it ran a moment ago, unless `now`.
+ * changes if any did. Only where the app doesn't report such changes
+ * itself, and not if it ran a moment ago; `now` does it regardless.
  */
 export async function recheckLinkedFiles(now = false): Promise<void> {
 	const open = mounted;
-	if (!open || rechecking || !fileUrls.size || (!now && Date.now() - rechecked < RECHECK_EVERY)) return;
+	if (!open || rechecking || !fileUrls.size) return;
+	if (!now && ((fileChangesSeen && watchNow === 'events') || Date.now() - rechecked < RECHECK_EVERY)) return;
 	rechecking = true;
 	rechecked = Date.now();
 	let swapped = false;
 	try {
-		for (const [rel, entry] of [...fileUrls]) {
-			const before = await entry.url;
-			const bytes = await readFile(open, rel);
-			// Let go of, or replaced, meanwhile.
-			if (mounted !== open || fileUrls.get(rel) !== entry) continue;
-			const print = bytes ? fingerprint(bytes) : null;
-			if (print === entry.print) continue;
-			const url = bytes ? URL.createObjectURL(new Blob([bytes], { type: typeOf(rel) })) : null;
-			fileUrls.set(rel, { url: Promise.resolve(url), users: entry.users, print });
-			// After those showing it have had time to take the new one.
-			if (before) setTimeout(() => URL.revokeObjectURL(before), 2000);
-			swapped = true;
-		}
+		for (const [rel, entry] of [...fileUrls]) swapped = (await reread(open, rel, entry)) || swapped;
 	} finally {
 		rechecking = false;
 	}

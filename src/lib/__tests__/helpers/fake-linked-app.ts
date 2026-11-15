@@ -20,7 +20,13 @@ export function fakeLinkedApp(root: string, initial: Record<string, string>, oth
 	let clock = 1_700_000_000_000;
 	let cursors = 1000;
 	let log: LinkedChange[] = [];
-	let waiting: { vault: string; resolve: (v: unknown) => void; reject: (e: unknown) => void } | null = null;
+	let waiting: { vault: string; files: boolean; resolve: (v: unknown) => void; reject: (e: unknown) => void } | null = null;
+	// Files that aren't notes and that the page has asked for since the vault
+	// was opened (also ones that weren't there), with the size and time it was
+	// last told of or read: changes to these are reported, to a poll that asks.
+	const tracked = new Map<string, string>();
+	const stamp = (rel: string) => (binary.has(rel) ? `${binary.get(rel)!.length}:${++clock}` : 'none');
+	const isNote = (rel: string) => /\.(md|markdown)$/i.test(rel);
 	const state = { rootExists: true, watch: 'events' as 'events' | 'polling', failWrites: null as string | null, failPolls: 0, pollError: 'NotReadableError: the watcher failed', maxBytes: 25 * 1024 * 1024 };
 
 	const noteFile = (rel: string): NoteFile => {
@@ -29,9 +35,10 @@ export function fakeLinkedApp(root: string, initial: Record<string, string>, oth
 	};
 	const flush = () => {
 		if (!waiting || !log.length) return;
-		const { vault, resolve } = waiting;
+		const { vault, files: wanted, resolve } = waiting;
 		waiting = null;
-		const changes = log;
+		// Without `files: true` only what is about notes.
+		const changes = wanted ? log : log.filter((c) => c.type === 'upsert' || (c.type === 'remove' && isNote(c.rel)));
 		log = [];
 		resolve({ cursor: (open.get(vault)!.cursor = ++cursors), changes, rescan: false });
 	};
@@ -58,12 +65,13 @@ export function fakeLinkedApp(root: string, initial: Record<string, string>, oth
 				waiting = null;
 			}
 			log = [];
+			tracked.clear();
 			open.set(vault, { cursor: ++cursors, readOnly });
 			const dirs = new Set<string>();
 			for (const rel of files.keys()) if (rel.includes('/')) dirs.add(rel.slice(0, rel.lastIndexOf('/')));
 			return { cursor: cursors, notes: [...files.keys()].map(noteFile), dirs: [...dirs], skipped: 0, watch: state.watch };
 		},
-		linked_changes: ({ vault, cursor }) => {
+		linked_changes: ({ vault, cursor, files: wanted }) => {
 			if (state.failPolls > 0) {
 				state.failPolls--;
 				throw state.pollError;
@@ -71,7 +79,7 @@ export function fakeLinkedApp(root: string, initial: Record<string, string>, oth
 			const v = vaultOf(vault);
 			if (cursor !== v.cursor) return { cursor: 0, changes: [], rescan: true };
 			return new Promise((resolve, reject) => {
-				waiting = { vault, resolve, reject };
+				waiting = { vault, files: wanted === true, resolve, reject };
 				flush();
 			});
 		},
@@ -103,6 +111,8 @@ export function fakeLinkedApp(root: string, initial: Record<string, string>, oth
 			vaultOf(vault);
 			if (!rel || rel.startsWith('/') || rel.split('/').some((p: string) => !p || p === '..' || p === '.' || p.startsWith('.'))) throw `NotAllowedError: "${rel}" is not a path inside the linked folder`;
 			const bytes = binary.get(rel) ?? (files.has(rel) ? new TextEncoder().encode(files.get(rel)!) : null);
+			// Asked for: from now on its changes are reported, as of what is there now.
+			if (!isNote(rel)) tracked.set(rel, stamp(rel));
 			if (!bytes) throw `NotFoundError: ${rel} doesn't exist`;
 			if (bytes.length > state.maxBytes) throw `QuotaExceededError: ${rel} is larger than 25 MB`;
 			return bytes.slice().buffer;
@@ -145,6 +155,20 @@ export function fakeLinkedApp(root: string, initial: Record<string, string>, oth
 			else files.set(rel, content);
 			if (silent) return; // the watcher hasn't noticed yet
 			log.push(content === null ? { type: 'remove', rel } : { type: 'upsert', note: noteFile(rel) });
+			flush();
+		},
+		/** Something else changes a file that isn't a note (a picture): `null` removes it. Reported if the page has read it. */
+		externalFile(rel: string, bytes: Uint8Array | null) {
+			if (bytes === null) binary.delete(rel);
+			else binary.set(rel, bytes);
+			if (!tracked.has(rel)) return;
+			tracked.set(rel, stamp(rel));
+			log.push(bytes === null ? { type: 'remove', rel } : { type: 'file', rel, size: bytes.length, mtime: clock });
+			flush();
+		},
+		/** A change as a newer or other app might send it. */
+		inject(change: unknown) {
+			log.push(change as LinkedChange);
 			flush();
 		},
 		/** The watcher lost track: the next poll answer says to scan again. */

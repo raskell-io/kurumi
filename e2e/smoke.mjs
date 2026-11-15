@@ -153,6 +153,11 @@ async function fakeDesktop(page, files, config) {
 			const calls = [];
 			const revealed = [];
 			const isNote = (rel) => /\.(md|markdown)$/i.test(rel);
+			// Files that aren't notes and that the page asked for since the vault
+			// was opened (also ones that weren't there), with their size and time
+			// as last read or reported: their changes go to a poll that asks for files.
+			const tracked = new Map();
+			const stamp = (rel) => (store.has(rel) ? `${store.get(rel).length}:${++clock}` : 'none');
 			let clock = Date.now();
 			let cursors = 1000;
 			let log = [];
@@ -160,9 +165,9 @@ async function fakeDesktop(page, files, config) {
 			const noteFile = (rel) => ({ rel, content: store.get(rel), hash: hash(store.get(rel)), mtime: ++clock, size: store.get(rel).length });
 			const flush = () => {
 				if (!waiting || !log.length) return;
-				const { vault, resolve } = waiting;
+				const { vault, files: wanted, resolve } = waiting;
 				waiting = null;
-				const changes = log;
+				const changes = wanted ? log : log.filter((c) => c.type === 'upsert' || (c.type === 'remove' && isNote(c.rel)));
 				log = [];
 				open.get(vault).cursor = ++cursors;
 				resolve({ cursor: cursors, changes, rescan: false });
@@ -187,15 +192,16 @@ async function fakeDesktop(page, files, config) {
 						waiting = null;
 					}
 					log = [];
+					tracked.clear();
 					open.set(vault, { cursor: ++cursors, readOnly });
 					const dirs = new Set();
 					for (const rel of store.keys()) if (isNote(rel) && rel.includes('/')) dirs.add(rel.slice(0, rel.lastIndexOf('/')));
 					return { cursor: cursors, notes: [...store.keys()].filter(isNote).map(noteFile), dirs: [...dirs], skipped: 0, watch: 'events' };
 				},
-				linked_changes: ({ vault, cursor }) => {
+				linked_changes: ({ vault, cursor, files: wanted }) => {
 					if (cursor !== vaultOf(vault).cursor) return { cursor: 0, changes: [], rescan: true };
 					return new Promise((resolve, reject) => {
-						waiting = { vault, resolve, reject };
+						waiting = { vault, files: wanted === true, resolve, reject };
 						flush();
 					});
 				},
@@ -224,6 +230,8 @@ async function fakeDesktop(page, files, config) {
 				linked_read_bytes: ({ vault, rel }) => {
 					vaultOf(vault);
 					if (!rel || rel.split('/').some((part) => !part || part === '..' || part === '.' || part.startsWith('.'))) throw `NotAllowedError: "${rel}" is not a path inside the linked folder`;
+					// Asked for: its changes are reported from now on, as of what is there now.
+					if (!isNote(rel)) tracked.set(rel, stamp(rel));
 					if (!store.has(rel)) throw `NotFoundError: ${rel} doesn't exist`;
 					const text = store.get(rel);
 					return (isNote(rel) ? new TextEncoder().encode(text) : Uint8Array.from(atob(text), (c) => c.charCodeAt(0))).buffer;
@@ -260,9 +268,13 @@ async function fakeDesktop(page, files, config) {
 				change(rel, content, silent = false) {
 					if (content === null) store.delete(rel);
 					else store.set(rel, content);
-					// The watcher reports notes only.
-					if (silent || !isNote(rel)) return;
-					log.push(content === null ? { type: 'remove', rel } : { type: 'upsert', note: noteFile(rel) });
+					if (silent) return;
+					if (!isNote(rel)) {
+						// A file that isn't a note: reported only if the page has read it.
+						if (!tracked.has(rel)) return;
+						tracked.set(rel, stamp(rel));
+						log.push(content === null ? { type: 'remove', rel } : { type: 'file', rel, size: atob(content).length, mtime: clock });
+					} else log.push(content === null ? { type: 'remove', rel } : { type: 'upsert', note: noteFile(rel) });
 					flush();
 				}
 			};
@@ -3316,24 +3328,28 @@ const scenarios = {
 		await tab.close();
 		await page.bringToFront();
 
-		// The picture is replaced by another program. The watcher only reports
-		// notes, so it is found when the window gets the focus back.
+		// The picture is replaced by another program: the app reports it, and it is redrawn.
 		await changeOutside(page, 'images/shot.png', PIXEL2);
-		await sleep(1600); // it doesn't look more often than every second and a half
-		await page.evaluate(() => window.dispatchEvent(new Event('focus')));
 		await page.waitForFunction((old) => { const img = document.querySelector('main .ProseMirror img[alt="beside"]'); return img.src.startsWith('blob:') && img.src !== old && img.naturalWidth === 1; }, { timeout: 10000 }, inEditor.beside.src);
 		assert.equal(await page.evaluate(() => fetch(document.querySelector('main .ProseMirror img[alt="beside"]').src).then((r) => r.arrayBuffer()).then((b) => btoa(String.fromCharCode(...new Uint8Array(b))))), PIXEL2);
 		assert.equal(await folderFile(page, 'pictures.md'), NOTE);
+		// Deleted, it shows as broken; put back, it is drawn again. One that was missing appears when it is made.
+		await changeOutside(page, 'images/shot.png', null);
+		await page.waitForFunction(() => !document.querySelector('main .ProseMirror img[alt="beside"]').src.startsWith('blob:'), { timeout: 10000 });
+		await changeOutside(page, 'images/shot.png', PIXEL);
+		await changeOutside(page, 'images/nope.png', PIXEL2);
+		await page.waitForFunction(() => ['beside', 'top', 'missing'].every((alt) => { const img = document.querySelector(`main .ProseMirror img[alt="${alt}"]`); return img.src.startsWith('blob:') && img.naturalWidth === 1; }), { timeout: 10000 });
+		assert.equal((await folderCalls(page)).includes('linked_write'), false);
 
 		// The note's menu shows its file in the file manager.
 		await page.click('button[aria-label="More actions"]');
 		await clickText(page, '.k-menu-item', 'Reveal in file manager');
 		assert.deepEqual(await page.evaluate(() => window.__folder.revealed()), ['pictures.md']);
 
-		// Read mode draws them too.
 		const id = await page.evaluate(() => location.hash.split('/').pop());
 		await page.evaluate((id) => (location.hash = `/read/${id}`), id);
-		await page.waitForFunction(() => [...document.querySelectorAll('.markdown-content img')].filter((i) => i.src.startsWith('blob:') && i.naturalWidth === 1).length === 2, { timeout: 10000 });
+		// Read mode draws them too (three by now: the missing one was made above).
+		await page.waitForFunction(() => [...document.querySelectorAll('.markdown-content img')].filter((i) => i.src.startsWith('blob:') && i.naturalWidth === 1).length === 3, { timeout: 10000 });
 		const url = (await images('.markdown-content')).beside.src;
 		await page.waitForFunction(() => document.querySelector('.markdown-content audio')?.src.startsWith('blob:'), { timeout: 10000 });
 

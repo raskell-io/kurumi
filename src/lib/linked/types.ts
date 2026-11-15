@@ -80,8 +80,14 @@ export interface OpenedFolder {
 	watch?: 'events' | 'polling';
 }
 
-/** One change in the folder, as `linked_changes` reports it. A rename is a remove and an upsert. */
-export type LinkedChange = { type: 'upsert'; note: NoteFile } | { type: 'remove'; rel: string };
+/**
+ * One change in the folder, as `linked_changes` reports it. A rename is a
+ * remove and an upsert. 'file' is a file that isn't a note and that the
+ * page has read (a picture a note shows): it is new or has other bytes; a
+ * 'remove' may be for such a file too. A newer app may send other types:
+ * what isn't known is ignored.
+ */
+export type LinkedChange = { type: 'upsert'; note: NoteFile } | { type: 'remove'; rel: string } | { type: 'file'; rel: string; size: number; mtime: number };
 
 /** What `linked_changes` returns. `rescan` means: open the vault again, this cursor is spent. */
 export interface LinkedChanges {
