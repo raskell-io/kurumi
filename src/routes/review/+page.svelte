@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDay, formatDayWithWeekday } from '$lib/dates/format';
 	import {
 		memoryObjects,
 		actionItems,
@@ -38,11 +39,7 @@
 	});
 
 	let rangeLabel = $derived.by(() => {
-		const fmt = (ts: number) =>
-			new Date(ts).toLocaleDateString('en-US', {
-				month: 'short',
-				day: 'numeric'
-			});
+		const fmt = (ts: number) => formatDay(ts);
 		return `${fmt(range.start)} – ${fmt(range.end - 1)}`;
 	});
 
@@ -106,8 +103,7 @@
 			writingReview = false;
 		}
 	}
-	const shortDate = (iso: string) =>
-		new Date(`${iso}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+	const shortDate = (iso: string) => formatDay(iso);
 
 	// Optional LLM summary of the week's activity.
 	let aiAvailable = $state(false);
@@ -331,11 +327,7 @@
 									{/if}
 								</div>
 								<span class="row-date">
-									{new Date(memory.createdAt).toLocaleDateString('en-US', {
-										weekday: 'short',
-										month: 'short',
-										day: 'numeric'
-									})}
+									{formatDayWithWeekday(memory.createdAt)}
 								</span>
 							</a>
 						</li>

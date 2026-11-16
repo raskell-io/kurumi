@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { notePreview } from '$lib/utils/excerpt';
+	import { formatDayLong, formatTime as formatTimeOfDay } from '$lib/dates/format';
 	import { memoryObjects, getAllPeople, getAllTags, todayIso } from '$lib/db';
 	import type { MemoryObject } from '$lib/db/types';
 	import { Clock, FileText, Mic, Users, ListFilter, X } from 'lucide-svelte';
@@ -27,12 +28,7 @@
 		y.setDate(y.getDate() - 1);
 		if (iso === today) return 'Today';
 		if (iso === localIso(y)) return 'Yesterday';
-		return d.toLocaleDateString('en-US', {
-			weekday: 'long',
-			month: 'long',
-			day: 'numeric',
-			year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric'
-		});
+		return formatDayLong(d);
 	}
 
 	// Filter and group memories by day
@@ -81,7 +77,7 @@
 	}
 
 	function formatTime(ts: number): string {
-		return new Date(ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+		return formatTimeOfDay(ts);
 	}
 </script>
 
@@ -95,7 +91,7 @@
 			<div class="min-w-0">
 				<h1 class="k-page-title">Timeline</h1>
 				<p class="k-page-subtitle">
-					{totalShown} {totalShown === 1 ? 'memory' : 'memories'}{activeFilters > 0 ? ' matching filters' : ''}
+					{totalShown} {totalShown === 1 ? 'note' : 'notes'}{activeFilters > 0 ? ' matching filters' : ''}
 				</p>
 			</div>
 			<div class="tl-controls">
@@ -157,7 +153,7 @@
 				<Clock />
 				{#if activeFilters > 0}
 					<div class="k-empty-title">No matches</div>
-					<p>No memories match these filters.</p>
+					<p>No notes match these filters.</p>
 					<button class="k-btn" onclick={clearFilters}>Clear filters</button>
 				{:else}
 					<div class="k-empty-title">Nothing here yet</div>

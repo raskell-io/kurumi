@@ -79,15 +79,17 @@
 				>
 					{recording === shortcut.id ? 'Cancel' : 'Change'}
 				</button>
-				<button
-					class="k-icon-btn"
-					class:invisible={!custom}
-					onclick={() => resetBinding(shortcut.id)}
-					title="Reset to default"
-					aria-label="Reset {shortcut.label} to default"
-				>
-					<RotateCcw class="h-3.5 w-3.5" />
-				</button>
+				<!-- Only for a changed shortcut, so Change sits at the row's edge like every other setting -->
+				{#if custom}
+					<button
+						class="k-icon-btn"
+						onclick={() => resetBinding(shortcut.id)}
+						title="Reset to default"
+						aria-label="Reset {shortcut.label} to default"
+					>
+						<RotateCcw class="h-3.5 w-3.5" />
+					</button>
+				{/if}
 			</div>
 		</div>
 	{/each}

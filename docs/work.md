@@ -25,7 +25,7 @@ suggested at the top of `/projects`.
 ## To-dos
 
 `/actions` (`Cmd/Ctrl+Shift+A`). To-dos come from meeting summaries,
-approved reminder proposals, or you. Each has a status (open, in
+approved suggested reminders, or you. Each has a status (open, in
 progress, done, cancelled), an optional due date, recurrence and
 assignee. Add one with `@Name` in the text to assign it.
 
@@ -65,9 +65,9 @@ difference. The *Waiting for* tab groups them by person, and each
 [person page](organize-and-recall.md#people) shows what's waiting on
 them.
 
-## Recurring meetings
+## Meetings
 
-`/meetings`: a 1:1 or weekly sync with its people, rhythm, project and a
+`/meetings` (recurring meetings): a 1:1 or weekly sync with its people, rhythm, project and a
 running **agenda**. Add agenda items between meetings, from the meeting
 page or from any note (⋯ → *Add to a meeting agenda*). *Start meeting* creates the
 meeting note with:
@@ -88,13 +88,13 @@ Past meetings are listed below.
 Meeting summaries add their decisions here by themselves; from any note,
 ⋯ → *Log a decision*.
 
-## Open questions
+## Questions
 
 `/questions`: questions stay open until answered or dropped. Meetings
 add their unresolved questions by themselves; from any note, ⋯ → *Add an
 open question*.
 
-## Reminder proposals
+## Suggested reminders
 
 `/proposals`: when Kurumi processes a recording (or you choose ⋯ → *Find
 reminders & drafts* on a note), it suggests follow-ups with a time ("send the deck to Ana on
@@ -103,7 +103,7 @@ Friday"). Nothing happens until you review them:
 - **Approve** (`a`) creates a to-do with that due date.
 - **Reject** (`r`), **Snooze** (`s`), reopen or delete.
 
-## Draft proposals
+## Drafts
 
 `/drafts`: email and calendar-event drafts Kurumi found in a recording
 ("I'll email the summary to the team"). Copy one (`c`) into your mail or
@@ -111,9 +111,12 @@ calendar app; Kurumi never sends anything itself.
 
 ## Inbox
 
-`/inbox` (`Cmd/Ctrl+Shift+I`): one list of what needs attention:
-overdue and due to-dos, proposals waiting for review, recordings without
-a summary, notes without tags.
+`/inbox` (`Cmd/Ctrl+Shift+I`): one list of what needs you: overdue
+and due to-dos, suggested reminders and drafts to review. Housekeeping
+(recordings without a summary, new notes without tags) is folded away
+under *Tidy up* and isn't counted. Tags does the same with its clean-up
+suggestions (possible duplicates, tags used once). On list pages the
+keyboard keys are behind the keyboard button beside the title (or `?`).
 
 ## Notifications
 

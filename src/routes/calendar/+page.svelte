@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDayLong } from '$lib/dates/format';
 	import { memoryObjects, actionItems, todayIso } from '$lib/db';
 	import { goto } from '$app/navigation';
 	import { ChevronLeft, ChevronRight } from 'lucide-svelte';
@@ -117,11 +118,7 @@
 	}
 
 	function cellLabel(cell: DayCell): string {
-		const date = new Date(cell.iso + 'T00:00:00').toLocaleDateString('en-US', {
-			weekday: 'long',
-			month: 'long',
-			day: 'numeric'
-		});
+		const date = formatDayLong(cell.iso);
 		const parts = [date];
 		if (cell.notes) parts.push(plural(cell.notes, 'note'));
 		if (cell.voiceMemos) parts.push(plural(cell.voiceMemos, 'voice memo'));
@@ -137,7 +134,7 @@
 
 <div class="h-full overflow-y-auto">
 	<div class="k-page k-page-wide">
-		<header class="k-page-header cal-header">
+		<header class="k-page-header k-page-narrow cal-header">
 			<h1 class="k-page-title">
 				{monthName} <span class="cal-year">{year}</span>
 			</h1>

@@ -27,12 +27,16 @@
 		type ProjectStatus
 	} from '$lib/db';
 	import { pushUndo } from '$lib/stores/undo';
-	import { dueInfo } from '$lib/utils/due';
+	import { formatDay } from '$lib/dates/format';
+	import { autogrow } from '$lib/actions/autogrow';
+	import DoneToggle from '$lib/components/ui/DoneToggle.svelte';
+	import DueChip from '$lib/components/ui/DueChip.svelte';
+	import MetaLine from '$lib/components/ui/MetaLine.svelte';
 	import { sortOpenActionItems } from '$lib/todos';
 	import { myNames, isWaitingFor } from '$lib/work';
 	import QuickAdd from '$lib/components/QuickAdd.svelte';
 	import NoteIcon from '$lib/components/NoteIcon.svelte';
-	import { ChevronLeft, Square, Check, Trash2, Users, Plus, HelpCircle, Gavel, ListTodo, NotebookText, CalendarClock } from 'lucide-svelte';
+	import { ChevronLeft, Check, Trash2, Users, Plus, HelpCircle, Gavel, ListTodo, NotebookText, CalendarClock } from 'lucide-svelte';
 
 	const STATUSES: { value: ProjectStatus; label: string }[] = [
 		{ value: 'active', label: 'Active' },
@@ -132,8 +136,9 @@
 		</div>
 
 		<textarea
-			class="project-description"
+			class="project-description k-autogrow"
 			rows="2"
+			use:autogrow={project.description}
 			placeholder="What is this project about? Goal, scope, links…"
 			value={project.description}
 			onchange={(e) => updateProject(project!.id, { description: (e.currentTarget as HTMLTextAreaElement).value })}
@@ -143,12 +148,11 @@
 		<h2 class="k-section-title"><ListTodo class="h-3.5 w-3.5" /> To-dos <span class="font-normal tabular-nums">{todos.length}</span></h2>
 		<div class="k-card p-1">
 			{#each todos as item (item.id)}
-				{@const due = item.dueDate ? dueInfo(item.dueDate, true, today) : null}
 				<div class="k-row">
-					<button class="check" onclick={() => complete(item)} aria-label="Mark “{item.text}” done"><Square class="h-4 w-4" /></button>
+					<DoneToggle onclick={() => complete(item)} label="Mark “{item.text}” done" />
 					<span class="min-w-0 flex-1 truncate">{item.text}</span>
 					{#if isWaitingFor(item, $myNames)}<span class="k-badge" title="Waiting for {item.assignee}">Waiting · {item.assignee}</span>{:else if item.assignee}<span class="k-badge">{item.assignee}</span>{/if}
-					{#if due}<span class="shrink-0 text-xs" class:text-[var(--color-danger)]={due.tone === 'danger'} class:text-[var(--color-text-faint)]={due.tone !== 'danger'}>{due.label}</span>{/if}
+					{#if item.dueDate}<DueChip date={item.dueDate} {today} />{/if}
 				</div>
 			{/each}
 			<QuickAdd placeholder="Add a to-do (assign with “@Name”)…" onAdd={(text) => {
@@ -168,7 +172,7 @@
 						{#if answering === q.id}
 							<form class="mt-1.5 flex gap-1.5" onsubmit={(e) => { e.preventDefault(); saveAnswer(q.id); }}>
 								<input class="k-input !h-8" bind:value={answerText} placeholder="The answer…" aria-label="Answer" />
-								<button class="k-btn k-btn-sm k-btn-primary">Save</button>
+								<button class="k-btn k-btn-primary">Save</button>
 							</form>
 						{/if}
 						{#if q.memoryId}<a href="/memory/{q.memoryId}" class="text-xs text-[var(--color-text-faint)]">from {noteTitle(q.memoryId)}</a>{/if}
@@ -192,9 +196,11 @@
 					<Check class="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-accent)]" />
 					<div class="min-w-0 flex-1">
 						<p>{d.text}</p>
-						<p class="text-xs text-[var(--color-text-faint)]">
-							{d.decidedOn}{#if d.decidedBy.length} · {d.decidedBy.join(', ')}{/if}{#if d.memoryId} · <a href="/memory/{d.memoryId}">{noteTitle(d.memoryId)}</a>{/if}
-						</p>
+						<MetaLine class="text-xs text-[var(--color-text-faint)]">
+							<span>{formatDay(d.decidedOn)}</span>
+							{#if d.decidedBy.length}<span>{d.decidedBy.join(', ')}</span>{/if}
+							{#if d.memoryId}<a href="/memory/{d.memoryId}">{noteTitle(d.memoryId)}</a>{/if}
+						</MetaLine>
 					</div>
 				</div>
 			{/each}
@@ -202,7 +208,7 @@
 		</div>
 
 		<!-- Meetings -->
-		<h2 class="k-section-title"><Users class="h-3.5 w-3.5" /> Recurring meetings</h2>
+		<h2 class="k-section-title"><Users class="h-3.5 w-3.5" /> Meetings</h2>
 		<div class="k-card p-1">
 			{#each series as m (m.id)}
 				<a href="/meetings/{m.id}" class="k-row">
@@ -221,7 +227,7 @@
 				<a href="/memory/{note.id}" class="k-row">
 					<NoteIcon icon={note.icon} class="h-4 w-4 text-[var(--color-text-faint)]" />
 					<span class="min-w-0 flex-1 truncate">{note.title || 'Untitled'}</span>
-					<span class="text-xs text-[var(--color-text-faint)]">{new Date(note.updatedAt).toLocaleDateString()}</span>
+					<span class="text-xs text-[var(--color-text-faint)]">{formatDay(note.updatedAt)}</span>
 				</a>
 			{/each}
 			<button class="k-row w-full text-left text-[var(--color-text-muted)]" onclick={newNote}><Plus class="h-4 w-4" /> New note in this project</button>
@@ -274,7 +280,7 @@
 
 	.project-description {
 		width: 100%;
-		resize: vertical;
+		min-height: 2.75rem;
 		border: 1px solid transparent;
 		border-radius: var(--radius-md);
 		background: transparent;
@@ -291,17 +297,4 @@
 		outline: none;
 	}
 
-	.check {
-		display: flex;
-		width: 1.5rem;
-		height: 1.5rem;
-		flex-shrink: 0;
-		align-items: center;
-		justify-content: center;
-		color: var(--color-text-muted);
-	}
-
-	.check:hover {
-		color: var(--color-accent);
-	}
 </style>

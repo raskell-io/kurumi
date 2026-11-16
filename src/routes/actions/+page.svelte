@@ -18,16 +18,16 @@
 	import { pushUndo } from '$lib/stores/undo';
 	import { dueInfo as dueLabel } from '$lib/utils/due';
 	import ActionBoard from '$lib/components/ActionBoard.svelte';
+	import DoneToggle from '$lib/components/ui/DoneToggle.svelte';
+	import DueChip from '$lib/components/ui/DueChip.svelte';
+	import KeyHints from '$lib/components/ui/KeyHints.svelte';
 	import { myNames, isWaitingFor, waitingByPerson } from '$lib/work';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import {
 		ArrowUpRight,
-		CalendarClock,
 		Check,
-		Circle,
 		CircleCheck,
-		CircleDot,
 		CircleSlash,
 		Pencil,
 		Play,
@@ -541,7 +541,7 @@
 </svelte:head>
 
 <div class="k-page" class:board-page={view === 'board'}>
-	<header class="k-page-header">
+	<header class="k-page-header k-page-narrow">
 		<div class="min-w-0">
 			<h1 class="k-page-title">To-dos</h1>
 			<p class="k-page-subtitle">
@@ -549,23 +549,30 @@
 				{#if totalInProgress > 0}· {totalInProgress} in progress{/if}
 				{#if totalClosed > 0}· {totalClosed} completed{/if}
 			</p>
-			<div class="k-hints" class:hidden={view === 'board'}>
-				<span><kbd class="k-kbd">j</kbd> <kbd class="k-kbd">k</kbd> navigate</span>
-				<span><kbd class="k-kbd">Space</kbd> select</span>
-				<span><kbd class="k-kbd">x</kbd> done</span>
-				<span><kbd class="k-kbd">e</kbd> edit</span>
-				<span><kbd class="k-kbd">d</kbd> delete</span>
-				<span><kbd class="k-kbd">↵</kbd> open source</span>
-			</div>
 		</div>
-		<button class="k-btn k-btn-primary shrink-0" onclick={openCreate} disabled={showCreate}>
-			<Plus class="h-4 w-4" />
-			New
-		</button>
+		<div class="flex shrink-0 items-center gap-1">
+			{#if view === 'list' && $actionItems.length > 0}
+				<KeyHints>
+					<span><kbd class="k-kbd">j</kbd> <kbd class="k-kbd">k</kbd> next, previous</span>
+					<span><kbd class="k-kbd">Space</kbd> select</span>
+					<span><kbd class="k-kbd">x</kbd> mark done</span>
+					<span><kbd class="k-kbd">e</kbd> edit</span>
+					<span><kbd class="k-kbd">d</kbd> delete</span>
+					<span><kbd class="k-kbd">↵</kbd> open the note it came from</span>
+				</KeyHints>
+			{/if}
+			<!-- While the form is open its own Cancel and Create stand in for this. -->
+			{#if !showCreate}
+				<button class="k-btn k-btn-primary" onclick={openCreate}>
+					<Plus class="h-4 w-4" />
+					New to-do
+				</button>
+			{/if}
+		</div>
 	</header>
 
 	{#if $actionItems.length > 0}
-		<div class="mb-4 flex flex-wrap items-center gap-2">
+		<div class="k-page-narrow mb-4 flex flex-wrap items-center gap-2">
 			<div class="k-segmented" role="group" aria-label="Layout">
 				<button class="inline-flex items-center gap-1.5" onclick={() => setView('list')} aria-pressed={view === 'list'}>
 					<List class="h-3.5 w-3.5" /> List
@@ -647,30 +654,30 @@
 				aria-label="To-do"
 				use:autofocus
 			/>
-			<div class="form-row">
+			<div class="form-row create-row">
 				<input
 					type="text"
 					bind:value={newAssignee}
 					placeholder="Assignee"
 					onkeydown={handleCreateKeydown}
-					class="k-input h-8 text-xs"
+					class="k-input h-8"
 					aria-label="Assignee"
 				/>
 				<input
 					type="date"
 					bind:value={newDueDate}
 					onkeydown={handleCreateKeydown}
-					class="k-input h-8 text-xs"
+					class="k-input h-8"
 					aria-label="Due date"
 				/>
-				<select bind:value={newRecurrence} onkeydown={handleCreateKeydown} class="k-input h-8 text-xs" aria-label="Repeat">
+				<select bind:value={newRecurrence} onkeydown={handleCreateKeydown} class="k-input h-8" aria-label="Repeat">
 					{#each RECURRENCE_OPTIONS as opt (opt.value)}
 						<option value={opt.value}>{opt.label}</option>
 					{/each}
 				</select>
 				<span class="form-buttons">
-					<button class="k-btn k-btn-ghost k-btn-sm" onclick={cancelCreate}>Cancel</button>
-					<button class="k-btn k-btn-primary k-btn-sm" onclick={submitCreate} disabled={!newText.trim()}>
+					<button class="k-btn k-btn-ghost" onclick={cancelCreate}>Cancel</button>
+					<button class="k-btn k-btn-primary" onclick={submitCreate} disabled={!newText.trim()}>
 						Create
 					</button>
 				</span>
@@ -717,7 +724,6 @@
 					</h2>
 					<ul class="items" class:has-selection={selectionSize > 0}>
 						{#each group.items as item (item.id)}
-							{@const due = item.dueDate ? dueInfo(item.dueDate, isActive(item)) : null}
 							<li
 								class="k-row item"
 								class:closed={!isActive(item)}
@@ -739,24 +745,14 @@
 										<Square class="h-4 w-4" />
 									{/if}
 								</button>
-								<button
-									class="status"
-									class:status-done={item.status === 'done'}
-									class:status-progress={item.status === 'in_progress'}
-									onclick={() => toggleDone(item)}
-									title={item.status === 'done' ? 'Mark as open' : 'Mark as done (x)'}
-									aria-label={item.status === 'done' ? 'Mark as open' : 'Mark as done'}
-								>
-									{#if item.status === 'done'}
-										<CircleCheck class="h-4 w-4" />
-									{:else if item.status === 'in_progress'}
-										<CircleDot class="h-4 w-4" />
-									{:else if item.status === 'cancelled'}
-										<CircleSlash class="h-4 w-4" />
-									{:else}
-										<Circle class="h-4 w-4" />
-									{/if}
-								</button>
+								<span class="status">
+									<DoneToggle
+										status={item.status}
+										onclick={() => toggleDone(item)}
+										title={item.status === 'done' ? 'Mark as open' : 'Mark as done (x)'}
+										label={item.status === 'done' ? 'Mark as open' : 'Mark as done'}
+									/>
+								</span>
 
 								{#if editingId === item.id}
 									<div class="edit-form">
@@ -774,24 +770,24 @@
 												bind:value={editAssignee}
 												placeholder="Assignee"
 												onkeydown={handleEditKeydown}
-												class="k-input h-8 text-xs"
+												class="k-input h-8"
 												aria-label="Assignee"
 											/>
 											<input
 												type="date"
 												bind:value={editDueDate}
 												onkeydown={handleEditKeydown}
-												class="k-input h-8 text-xs"
+												class="k-input h-8"
 												aria-label="Due date"
 											/>
-											<select bind:value={editRecurrence} onkeydown={handleEditKeydown} class="k-input h-8 text-xs" aria-label="Repeat">
+											<select bind:value={editRecurrence} onkeydown={handleEditKeydown} class="k-input h-8" aria-label="Repeat">
 												{#each RECURRENCE_OPTIONS as opt (opt.value)}
 													<option value={opt.value}>{opt.label}</option>
 												{/each}
 											</select>
 											<span class="form-buttons">
-												<button class="k-btn k-btn-ghost k-btn-sm" onclick={cancelEdit}>Cancel</button>
-												<button class="k-btn k-btn-primary k-btn-sm" onclick={saveEdit}>Save</button>
+												<button class="k-btn k-btn-ghost" onclick={cancelEdit}>Cancel</button>
+												<button class="k-btn k-btn-primary" onclick={saveEdit}>Save</button>
 											</span>
 										</div>
 									</div>
@@ -820,16 +816,8 @@
 												{item.recurrence}
 											</span>
 										{/if}
-										{#if due}
-											<span
-												class="k-badge"
-												class:k-badge-danger={due.tone === 'danger'}
-												class:k-badge-warn={due.tone === 'warn'}
-												title="Due {item.dueDate}"
-											>
-												<CalendarClock class="h-3 w-3" />
-												{due.label}
-											</span>
+										{#if item.dueDate}
+											<DueChip date={item.dueDate} active={isActive(item)} {today} />
 										{/if}
 									</div>
 
@@ -944,8 +932,7 @@
 		opacity: 0;
 	}
 
-	.select-box:hover,
-	.status:hover {
+	.select-box:hover {
 		color: var(--color-accent);
 	}
 
@@ -957,9 +944,7 @@
 		opacity: 1;
 	}
 
-	.item.selected .select-box,
-	.status-done,
-	.status-progress {
+	.item.selected .select-box {
 		color: var(--color-accent);
 	}
 
@@ -1019,20 +1004,36 @@
 		padding-top: 0.0625rem;
 	}
 
-	/* Row actions appear on hover / keyboard focus, always on touch. */
+	/* Row actions appear on hover / keyboard focus, over the row's end, so
+	   the row and its due date use the page's full width; always on touch. */
+	.item {
+		position: relative;
+	}
+
 	.row-actions {
+		position: absolute;
+		top: 0.25rem;
+		right: 0.375rem;
 		display: flex;
 		align-items: center;
 		gap: 0.125rem;
-		flex-shrink: 0;
-		margin: -0.1875rem -0.25rem -0.1875rem 0;
+		padding-left: 1.5rem;
+		border-radius: var(--radius-md);
+		background: linear-gradient(to right, transparent, var(--row-surface) 1.25rem);
+		--row-surface: color-mix(in srgb, var(--color-text) 6%, var(--color-bg));
 		opacity: 0;
+		pointer-events: none;
+	}
+
+	.item.selected .row-actions {
+		--row-surface: color-mix(in srgb, var(--color-accent) 14%, var(--color-bg));
 	}
 
 	.item:hover .row-actions,
 	.item.focused .row-actions,
 	.row-actions:focus-within {
 		opacity: 1;
+		pointer-events: auto;
 	}
 
 	.row-actions .danger:hover {
@@ -1052,7 +1053,14 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.375rem;
+		gap: 0.5rem;
+	}
+
+	/* The create form: a clear gap under the to-do field, so its focus ring
+	   never runs into the row of fields below. */
+	.create-row {
+		margin-top: 0.5rem;
+		padding: 0 0.25rem 0.25rem;
 	}
 
 	.form-row > .k-input {
@@ -1071,6 +1079,13 @@
 		.select-box,
 		.row-actions {
 			opacity: 1;
+		}
+
+		.row-actions {
+			position: static;
+			padding-left: 0;
+			background: none;
+			pointer-events: auto;
 		}
 	}
 

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { dialog } from '$lib/actions/overlay';
+	import KeyHints from '$lib/components/ui/KeyHints.svelte';
 	import { fadeOut } from '$lib/motion';
 	import {
 		people,
@@ -194,14 +195,14 @@
 					{$people.length} saved · {unsaved.length} more mentioned
 				{/if}
 			</p>
-			{#if $people.length > 0}
-				<div class="k-hints">
-					<span><kbd class="k-kbd">j</kbd> <kbd class="k-kbd">k</kbd> navigate</span>
-					<span><kbd class="k-kbd">↵</kbd> open</span>
-					<span><kbd class="k-kbd">d</kbd> delete</span>
-				</div>
-			{/if}
 		</div>
+		{#if $people.length > 0}
+			<KeyHints>
+				<span><kbd class="k-kbd">j</kbd> <kbd class="k-kbd">k</kbd> next, previous</span>
+				<span><kbd class="k-kbd">↵</kbd> open</span>
+				<span><kbd class="k-kbd">d</kbd> delete</span>
+			</KeyHints>
+		{/if}
 	</header>
 
 	{#if proposals.length > 0}
@@ -344,7 +345,16 @@
 	}
 
 	/* Row actions appear on hover/focus (always visible on touch) */
+	/* The delete action shows over the row's end on hover, so counts sit at
+	   the page's edge like the heading (always shown on touch). */
+	li.k-row {
+		position: relative;
+	}
+
 	.row-action {
+		position: absolute;
+		right: 0.375rem;
+		background: color-mix(in srgb, var(--color-text) 6%, var(--color-bg));
 		opacity: 0;
 	}
 
@@ -356,6 +366,7 @@
 
 	@media (hover: none) {
 		.row-action {
+			position: static;
 			opacity: 1;
 		}
 	}

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { dialog } from '$lib/actions/overlay';
 	import { switchInstantly } from '$lib/motion';
+	import { formatDay } from '$lib/dates/format';
 	import { applyEditorFont, DEFAULT_EDITOR_FONT, EDITOR_FONTS, savedEditorFont } from '$lib/editor-fonts';
 	import { fadeOut } from '$lib/motion';
 	import { autofocus } from '$lib/actions/autofocus';
@@ -152,6 +153,16 @@
 	let syncToken = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-token') || '' : '');
 	let syncUrl = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('kurumi-sync-url') || '' : '');
 
+	// One name per sync method, everywhere on this page (the choice and the
+	// "also copy to" list).
+	const SYNC_METHOD_LABELS: Record<Exclude<SyncMethod, null>, string> = {
+		r2: 'Kurumi server',
+		git: 'Git repository',
+		s3: 'S3 storage',
+		webdav: 'WebDAV',
+		'local-fs': 'A folder on this computer',
+		'azure-blob': 'Azure storage'
+	};
 	// Mirror sync methods
 	let mirrorMethods = $state<SyncMethod[]>([]);
 
@@ -318,17 +329,20 @@
 	let editorFont = $state(DEFAULT_EDITOR_FONT);
 	let editorFontSize = $state<'small' | 'medium' | 'large'>('medium');
 	type NoteWidth = 'narrow' | 'wide' | 'full';
+	// The default follows the colour theme (each has its own accent); the
+	// others are the same everywhere. Shades as in app.css (accent-*).
 	const ACCENTS = [
-		{ id: 'lavender', label: 'Lavender', light: '#7287fd', dark: '#b4befe' },
-		{ id: 'blue', label: 'Blue', light: '#1e66f5', dark: '#89b4fa' },
-		{ id: 'sapphire', label: 'Sapphire', light: '#209fb5', dark: '#74c7ec' },
-		{ id: 'teal', label: 'Teal', light: '#179299', dark: '#94e2d5' },
-		{ id: 'green', label: 'Green', light: '#40a02b', dark: '#a6e3a1' },
-		{ id: 'peach', label: 'Peach', light: '#fe640b', dark: '#fab387' },
-		{ id: 'mauve', label: 'Mauve', light: '#8839ef', dark: '#cba6f7' }
+		{ id: 'theme', label: 'Theme colour', light: 'var(--theme-accent)', dark: 'var(--theme-accent)' },
+		{ id: 'lavender', label: 'Lavender', light: '#2f4efc', dark: '#b4befe' },
+		{ id: 'blue', label: 'Blue', light: '#0b57ee', dark: '#89b4fa' },
+		{ id: 'sapphire', label: 'Sapphire', light: '#166f7f', dark: '#74c7ec' },
+		{ id: 'teal', label: 'Teal', light: '#127076', dark: '#94e2d5' },
+		{ id: 'green', label: 'Green', light: '#2e731f', dark: '#a6e3a1' },
+		{ id: 'peach', label: 'Peach', light: '#b14101', dark: '#fab387' },
+		{ id: 'mauve', label: 'Mauve', light: '#822fee', dark: '#cba6f7' }
 	] as const;
 	let accent = $state<string>(
-		typeof localStorage === 'undefined' ? 'lavender' : (localStorage.getItem('kurumi-accent') ?? 'lavender')
+		typeof localStorage === 'undefined' ? 'theme' : (localStorage.getItem('kurumi-accent') ?? 'theme')
 	);
 	function setAccent(id: string) {
 		accent = id;
@@ -576,6 +590,11 @@
 
 	// Sync method state
 	let syncMethod = $state<SyncMethod>(getSyncMethod());
+	// "Other ways to sync" starts open when one of them (or a mirror) is in use.
+	let showOtherSync = $state(false);
+	onMount(() => {
+		showOtherSync = (syncMethod !== null && syncMethod !== 'r2') || getMirrorMethods().length > 0;
+	});
 
 	// Git sync state
 	let gitProvider = $state<GitProviderId>('github');
@@ -906,7 +925,7 @@
 		if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
 		if (diffDays < 7) return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
 
-		return date.toLocaleDateString();
+		return formatDay(date);
 	}
 
 	function handleExport() {
@@ -1273,7 +1292,7 @@
 						<div class="set-row">
 							<div class="set-row-text">
 								<div class="set-row-label" id="accent-label">Accent colour</div>
-								<p class="set-row-help">Links, highlights and the touches of colour in notes. On this device.</p>
+								<p class="set-row-help">Buttons, links and the touches of colour in notes. The first follows the colour theme. On this device.</p>
 							</div>
 							<div class="accent-swatches" role="radiogroup" aria-labelledby="accent-label">
 								{#each ACCENTS as option (option.id)}
@@ -1349,32 +1368,38 @@
 							</div>
 						</div>
 
-						<div class="set-block">
-							<div>
-								<div class="set-row-label" id="css-label">CSS snippet</div>
-								<p class="set-row-help">
-									Your own CSS, applied as you type, on this device. Override the theme's variables
-									(<code>:root {'{'} --color-bg: #fafafa; {'}'}</code>, <code>--font-editor</code>,
-									<code>--note-width</code>) or style anything. Clear it if something looks wrong.
-								</p>
-							</div>
-							<textarea
-								class="k-input css-snippet"
-								rows="7"
-								spellcheck="false"
-								placeholder={':root {\n  --color-bg: #fcfcf9;\n}\n.milkdown h1 { letter-spacing: -0.02em; }'}
-								aria-labelledby="css-label"
-								value={customCss}
-								oninput={(e) => setCustomCss(e.currentTarget.value)}
-							></textarea>
-							<div class="flex flex-wrap gap-1.5">
-								<input bind:this={cssFileInput} type="file" accept=".css,text/css" class="hidden" onchange={loadCssFile} aria-label="CSS file" />
-								<button type="button" class="k-btn" onclick={() => cssFileInput?.click()}><Upload class="h-3.5 w-3.5" />Add a .css file</button>
-								{#if customCss.trim()}
-									<button type="button" class="k-btn" onclick={() => setCustomCss('')}><X class="h-3.5 w-3.5" />Clear</button>
-								{/if}
-							</div>
-						</div>
+						<details class="set-disclosure">
+							<summary>
+								<span class="flex-1">Advanced</span>
+								<ChevronDown class="disclosure-chevron h-4 w-4 text-[var(--color-text-faint)]" />
+							</summary>
+								<div class="set-block">
+									<div>
+										<div class="set-row-label" id="css-label">Your own CSS</div>
+										<p class="set-row-help">
+											Your own CSS, applied as you type, on this device. Override the theme's variables
+											(<code>:root {'{'} --color-bg: #fafafa; {'}'}</code>, <code>--font-editor</code>,
+											<code>--note-width</code>) or style anything. Clear it if something looks wrong.
+										</p>
+									</div>
+									<textarea
+										class="k-input css-snippet"
+										rows="7"
+										spellcheck="false"
+										placeholder={':root {\n  --color-bg: #fcfcf9;\n}\n.milkdown h1 { letter-spacing: -0.02em; }'}
+										aria-labelledby="css-label"
+										value={customCss}
+										oninput={(e) => setCustomCss(e.currentTarget.value)}
+									></textarea>
+									<div class="flex flex-wrap gap-1.5">
+										<input bind:this={cssFileInput} type="file" accept=".css,text/css" class="hidden" onchange={loadCssFile} aria-label="CSS file" />
+										<button type="button" class="k-btn" onclick={() => cssFileInput?.click()}><Upload class="h-3.5 w-3.5" />Add a .css file</button>
+										{#if customCss.trim()}
+											<button type="button" class="k-btn" onclick={() => setCustomCss('')}><X class="h-3.5 w-3.5" />Clear</button>
+										{/if}
+									</div>
+								</div>
+						</details>
 					</div>
 				</section>
 				{/if}
@@ -1396,7 +1421,7 @@
 							<input
 								id="my-names"
 								class="k-input sm:!w-64"
-								placeholder="e.g. Zara, Zara Z."
+								placeholder="e.g. Alex, Alex Kim"
 								value={$myNames.join(', ')}
 								onchange={(e) =>
 									myNames.set(
@@ -1418,7 +1443,7 @@
 							</div>
 							<input
 								type="checkbox"
-								class="switch"
+								class="k-switch"
 								checked={noteTasksOn}
 								onchange={(e) => {
 									noteTasksOn = (e.target as HTMLInputElement).checked;
@@ -1440,7 +1465,8 @@
 						{/if}
 					</h2>
 					<p class="set-section-desc">
-						Keep your memories in sync across devices with storage you own.
+						Use Kurumi on your phone and your other computers. Your notes go to storage you own,
+						and every device you connect keeps the same notes.
 					</p>
 					{#if $currentVault?.kind === 'linked'}
 						<p class="set-section-desc">
@@ -1448,49 +1474,175 @@
 						</p>
 					{/if}
 					<div class="set-rows">
-						<div class="set-row">
-							<div class="set-row-text">
-								<div class="set-row-label" id="sync-method-label">Primary method</div>
-								<p class="set-row-help">The source of truth Kurumi pulls from and pushes to.</p>
-							</div>
-							<div class="k-segmented flex-wrap" role="group" aria-labelledby="sync-method-label">
-								{#each [
-									{ id: 'r2', label: 'Kurumi server' },
-									{ id: 'git', label: 'Git' },
-									{ id: 's3', label: 'S3' },
-									{ id: 'webdav', label: 'WebDAV' },
-									{ id: 'local-fs', label: 'Local' },
-									{ id: 'azure-blob', label: 'Azure' }
-								] as item (item.id)}
-									<button aria-pressed={syncMethod === item.id} onclick={() => handleSyncMethodChange(item.id as SyncMethod)}>
-										{item.label}
-									</button>
-								{/each}
-							</div>
-						</div>
-
-						<div class="set-row">
-							<div class="set-row-text">
-								<div class="set-row-label" id="mirror-label">Mirrors</div>
-								<p class="set-row-help">
-									After syncing with the primary, push the same state here too. Mirrors are
-									one-way; the primary is always the source of truth.
-								</p>
-							</div>
-							<div class="flex flex-wrap gap-1" role="group" aria-labelledby="mirror-label">
-								{#each ['r2', 's3', 'webdav', 'local-fs', 'azure-blob'] as method (method)}
-									{#if method !== syncMethod}
-										<button
-											onclick={() => toggleMirror(method as SyncMethod)}
-											aria-pressed={mirrorMethods.includes(method as SyncMethod)}
-											class="k-btn k-btn-sm chip"
-										>
-											{method === 'r2' ? 'Kurumi server' : method === 's3' ? 'S3' : method === 'webdav' ? 'WebDAV' : method === 'local-fs' ? 'Local FS' : 'Azure'}
-										</button>
+						{#if syncMethod === null || syncMethod === 'r2'}
+								<div class="set-block">
+									<div>
+										<div class="set-row-label">Use Kurumi on another device</div>
+										<p class="set-row-help">
+											The recommended way: your own sync server, on a free Cloudflare account. No
+											command line, and only you can reach it.
+										</p>
+										{#if !r2Configured}
+											<ol class="sync-steps">
+												<li>Set up the server with the button below. Sign in to Cloudflare, or make a free account, and keep the names it suggests.</li>
+												<li>At the end, open the server's address and click <em>Connect Kurumi</em>. This device is then connected.</li>
+												<li>On your other devices, open the link from <em>Add a device</em>, which appears here once this device is connected.</li>
+											</ol>
+										{/if}
+										{#if pairedWith}
+											<p class="mt-2 flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]" role="status">
+												<span class="k-badge k-badge-success"><Check class="h-3 w-3" />Paired</span>
+												Syncing with {pairedWith}
+											</p>
+										{:else if pairError}
+											<p class="mt-2 text-xs text-[var(--color-danger)]" role="alert">{pairError}</p>
+										{/if}
+									</div>
+									{#if !r2Configured}
+										<div class="set-actions">
+											<a
+												class="k-btn k-btn-primary"
+												href="https://deploy.workers.cloudflare.com/?url=https://github.com/raskell-io/kurumi/tree/main/worker"
+												target="_blank"
+												rel="noopener noreferrer"
+											>
+												<Cloud class="h-4 w-4" />
+												Set up on Cloudflare
+											</a>
+										</div>
 									{/if}
-								{/each}
+									<details class="set-disclosure set-disclosure-inline">
+										<summary>
+											<span class="flex-1">Enter a server address and token by hand</span>
+											<ChevronDown class="disclosure-chevron h-4 w-4 text-[var(--color-text-faint)]" />
+										</summary>
+										<div class="grid gap-3 pb-3">
+											<div>
+												<label for="syncUrl" class="k-label">Worker URL</label>
+												<input id="syncUrl" type="url" bind:value={syncUrl} placeholder="https://kurumi-sync.your-domain.workers.dev/sync" class="k-input" />
+											</div>
+											<div>
+												<label for="syncToken" class="k-label">Sync token</label>
+												<input id="syncToken" type="password" bind:value={syncToken} placeholder="Your sync authentication token" class="k-input" />
+											</div>
+											<div class="set-actions">
+												<button onclick={saveSyncSettings} class="k-btn k-btn-primary">
+													{#if showSaved}<Check class="h-4 w-4" />Saved{:else}Save{/if}
+												</button>
+												<button onclick={handleTestConnection} disabled={isTesting || !syncUrl || !syncToken} class="k-btn">
+													{#if isTesting}{@render spinner()}{:else}<Wifi class="h-4 w-4" />{/if}
+													Test connection
+												</button>
+												{@render testResultLine(testResult, 'Connected')}
+											</div>
+										</div>
+									</details>
+								</div>
+
+								{#if r2Configured}
+									<div class="set-row">
+										<div class="set-row-text">
+											<div class="set-row-label">Add a device</div>
+											<p class="set-row-help">
+												A link that sets up sync on another device in one step. It works like a key:
+												send it only to yourself. Your encryption passphrase isn't in it.
+											</p>
+											{#if deviceLink}
+												<div class="mt-2 flex gap-1.5">
+													<input class="k-input !h-8 font-mono !text-xs" readonly value={deviceLink} aria-label="Pairing link" onfocus={(e) => e.currentTarget.select()} />
+													<button
+														class="k-btn k-btn-sm"
+														onclick={async () => {
+															await navigator.clipboard.writeText(deviceLink!);
+															deviceLinkCopied = true;
+															setTimeout(() => (deviceLinkCopied = false), 1500);
+														}}
+													>
+														{#if deviceLinkCopied}<Check class="h-3.5 w-3.5" />Copied{:else}Copy{/if}
+													</button>
+												</div>
+											{/if}
+										</div>
+										{#if !deviceLink}
+											<button class="k-btn" onclick={() => (deviceLink = pairingLinkForThisDevice())}>Show link</button>
+										{/if}
+									</div>
+								{/if}
+
+								{#if r2Configured}
+									<div class="set-row">
+										<div class="set-row-text">
+											<div class="set-row-label flex flex-wrap items-center gap-2">
+												Status
+												{#if $syncState.status === 'syncing'}
+													<span class="k-badge k-badge-accent">{@render spinner()}Syncing…</span>
+												{:else if $syncState.status === 'success'}
+													<span class="k-badge k-badge-success">Synced</span>
+												{:else if $syncState.status === 'error'}
+													<span class="k-badge k-badge-danger">Error</span>
+												{:else}
+													<span class="k-badge">Ready</span>
+												{/if}
+											</div>
+											{#if $syncState.status === 'error'}
+												<p class="set-row-help !text-[var(--color-danger)]">{$syncState.error || 'Sync failed'}</p>
+											{:else if $syncState.lastSyncedAt}
+												<p class="set-row-help">Last synced {formatTimestamp($syncState.lastSyncedAt).toLowerCase()}</p>
+											{/if}
+										</div>
+										<button onclick={handleSync} disabled={$syncState.status === 'syncing'} class="k-btn">
+											<RefreshCw class="h-4 w-4 {$syncState.status === 'syncing' ? 'animate-spin' : ''}" />
+											Sync now
+										</button>
+									</div>
+								{/if}
+
+						{/if}
+
+						<!-- Everything else (and mirrors) folded away: open by itself when one of them is in use. -->
+						<details class="set-disclosure" bind:open={showOtherSync}>
+							<summary>
+								<span class="flex-1">
+									Other ways to sync
+									<span class="block text-xs font-normal text-[var(--color-text-muted)]">Git, S3, WebDAV, Azure, a folder on this computer, and extra copies</span>
+								</span>
+								<ChevronDown class="disclosure-chevron h-4 w-4 text-[var(--color-text-faint)]" />
+							</summary>
+							<div class="set-rows pb-2">
+								<div class="set-row">
+									<div class="set-row-text">
+										<div class="set-row-label" id="sync-method-label">Sync with</div>
+										<p class="set-row-help">Where your notes are kept between devices. Each sync sends this device's changes there and brings the others' back.</p>
+									</div>
+									<div class="k-segmented flex-wrap" role="group" aria-labelledby="sync-method-label">
+										{#each Object.entries(SYNC_METHOD_LABELS) as [id, label] (id)}
+											<button aria-pressed={(syncMethod ?? 'r2') === id} onclick={() => handleSyncMethodChange(id as SyncMethod)}>
+												{label}
+											</button>
+										{/each}
+									</div>
+								</div>
+
+								<div class="set-row">
+									<div class="set-row-text">
+										<div class="set-row-label" id="mirror-label">Also copy to</div>
+										<p class="set-row-help">
+											After each sync, the same notes are copied here as well, as a backup. Kurumi only
+											writes these copies; it never reads them back.
+										</p>
+									</div>
+									<div class="k-segmented flex-wrap" role="group" aria-labelledby="mirror-label">
+										{#each ['r2', 's3', 'webdav', 'local-fs', 'azure-blob'] as method (method)}
+											{#if method !== (syncMethod ?? 'r2')}
+												<button onclick={() => toggleMirror(method as SyncMethod)} aria-pressed={mirrorMethods.includes(method as SyncMethod)}>
+													{SYNC_METHOD_LABELS[method as Exclude<SyncMethod, null>]}
+												</button>
+											{/if}
+										{/each}
+									</div>
+								</div>
 							</div>
-						</div>
+						</details>
 
 						{#if syncMethod === 'webdav'}
 							<!-- WebDAV Configuration -->
@@ -1604,7 +1756,7 @@
 										</span>
 										<input
 											type="checkbox"
-											class="switch"
+											class="k-switch"
 											checked={localFSAllVaults}
 											onchange={(e) => {
 												localFSAllVaults = (e.target as HTMLInputElement).checked;
@@ -1723,7 +1875,7 @@
 								<div>
 									<div class="set-row-label">Git repository</div>
 									<p class="set-row-help">
-										Memories are stored as markdown files. Works with GitHub, GitLab, and Codeberg.
+										Notes are stored as Markdown files. Works with GitHub, GitLab, and Codeberg.
 									</p>
 								</div>
 								<div>
@@ -1805,120 +1957,6 @@
 									{/if}
 								</div>
 							{/if}
-						{:else}
-							<!-- Kurumi sync server (Cloudflare Worker + R2, worker/) -->
-							<div class="set-block">
-								<div>
-									<div class="set-row-label">Kurumi sync server</div>
-									<p class="set-row-help">
-										Your own sync server on your free Cloudflare account, no command line needed:
-										deploy it, open its page, click <em>Connect Kurumi</em>. Other devices join with a
-										link from <em>Add a device</em> below.
-									</p>
-									{#if pairedWith}
-										<p class="mt-2 flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]" role="status">
-											<span class="k-badge k-badge-success"><Check class="h-3 w-3" />Paired</span>
-											Syncing with {pairedWith}
-										</p>
-									{:else if pairError}
-										<p class="mt-2 text-xs text-[var(--color-danger)]" role="alert">{pairError}</p>
-									{/if}
-								</div>
-								{#if !r2Configured}
-									<div class="set-actions">
-										<a
-											class="k-btn k-btn-primary"
-											href="https://deploy.workers.cloudflare.com/?url=https://github.com/raskell-io/kurumi/tree/main/worker"
-											target="_blank"
-											rel="noopener noreferrer"
-										>
-											<Cloud class="h-4 w-4" />
-											Deploy to Cloudflare
-										</a>
-									</div>
-								{/if}
-								<details class="text-sm">
-									<summary class="cursor-pointer text-[var(--color-text-muted)]">Enter a server address and token by hand</summary>
-									<div class="mt-3 grid gap-3">
-										<div>
-											<label for="syncUrl" class="k-label">Worker URL</label>
-											<input id="syncUrl" type="url" bind:value={syncUrl} placeholder="https://kurumi-sync.your-domain.workers.dev/sync" class="k-input" />
-										</div>
-										<div>
-											<label for="syncToken" class="k-label">Sync token</label>
-											<input id="syncToken" type="password" bind:value={syncToken} placeholder="Your sync authentication token" class="k-input" />
-										</div>
-										<div class="set-actions">
-											<button onclick={saveSyncSettings} class="k-btn k-btn-primary">
-												{#if showSaved}<Check class="h-4 w-4" />Saved{:else}Save{/if}
-											</button>
-											<button onclick={handleTestConnection} disabled={isTesting || !syncUrl || !syncToken} class="k-btn">
-												{#if isTesting}{@render spinner()}{:else}<Wifi class="h-4 w-4" />{/if}
-												Test connection
-											</button>
-											{@render testResultLine(testResult, 'Connected')}
-										</div>
-									</div>
-								</details>
-							</div>
-
-							{#if r2Configured}
-								<div class="set-row">
-									<div class="set-row-text">
-										<div class="set-row-label">Add a device</div>
-										<p class="set-row-help">
-											A link that sets up sync on another device in one step. It works like a key:
-											send it only to yourself. Your encryption passphrase isn't in it.
-										</p>
-										{#if deviceLink}
-											<div class="mt-2 flex gap-1.5">
-												<input class="k-input !h-8 font-mono !text-xs" readonly value={deviceLink} aria-label="Pairing link" onfocus={(e) => e.currentTarget.select()} />
-												<button
-													class="k-btn k-btn-sm"
-													onclick={async () => {
-														await navigator.clipboard.writeText(deviceLink!);
-														deviceLinkCopied = true;
-														setTimeout(() => (deviceLinkCopied = false), 1500);
-													}}
-												>
-													{#if deviceLinkCopied}<Check class="h-3.5 w-3.5" />Copied{:else}Copy{/if}
-												</button>
-											</div>
-										{/if}
-									</div>
-									{#if !deviceLink}
-										<button class="k-btn" onclick={() => (deviceLink = pairingLinkForThisDevice())}>Show link</button>
-									{/if}
-								</div>
-							{/if}
-
-							{#if r2Configured}
-								<div class="set-row">
-									<div class="set-row-text">
-										<div class="set-row-label flex flex-wrap items-center gap-2">
-											Status
-											{#if $syncState.status === 'syncing'}
-												<span class="k-badge k-badge-accent">{@render spinner()}Syncing…</span>
-											{:else if $syncState.status === 'success'}
-												<span class="k-badge k-badge-success">Synced</span>
-											{:else if $syncState.status === 'error'}
-												<span class="k-badge k-badge-danger">Error</span>
-											{:else}
-												<span class="k-badge">Ready</span>
-											{/if}
-										</div>
-										{#if $syncState.status === 'error'}
-											<p class="set-row-help !text-[var(--color-danger)]">{$syncState.error || 'Sync failed'}</p>
-										{:else if $syncState.lastSyncedAt}
-											<p class="set-row-help">Last synced {formatTimestamp($syncState.lastSyncedAt).toLowerCase()}</p>
-										{/if}
-									</div>
-									<button onclick={handleSync} disabled={$syncState.status === 'syncing'} class="k-btn">
-										<RefreshCw class="h-4 w-4 {$syncState.status === 'syncing' ? 'animate-spin' : ''}" />
-										Sync now
-									</button>
-								</div>
-							{/if}
 						{/if}
 
 						{#if SEALABLE.includes(syncMethod)}
@@ -1986,48 +2024,37 @@
 						{/if}
 					</h2>
 					<p class="set-section-desc">
-						Models run entirely in your browser (WebGPU/WASM) and are cached after the first
-						download. Nothing is sent to a server.
+						AI that runs on this device: it turns recordings into text, finds notes by meaning and,
+						if you turn it on, answers your questions. Each model is downloaded once, then works
+						offline. Nothing is sent to a server.
 					</p>
 					<div class="set-rows">
 						<label class="set-row">
 							<div class="set-row-text">
-								<div class="set-row-label">Enable local inference</div>
-								<p class="set-row-help">When off, transcription falls back to a remote provider if one is configured.</p>
+								<div class="set-row-label">Use AI on this device</div>
+								<p class="set-row-help">When off, recordings are turned into text by an AI service instead, if you have connected one.</p>
 							</div>
 							<input
 								type="checkbox"
-								class="switch"
+								class="k-switch"
 								checked={$localInferenceSettings.enabled}
 								onchange={(e) => updateLocalInferenceSettings({ enabled: (e.target as HTMLInputElement).checked })}
 							/>
 						</label>
 
-						<label class="set-row">
-							<div class="set-row-text">
-								<div class="set-row-label">Preload on startup</div>
-								<p class="set-row-help">Download models in the background when the app loads, so capture is instant.</p>
-							</div>
-							<input
-								type="checkbox"
-								class="switch"
-								checked={$localInferenceSettings.preloadOnStartup}
-								onchange={(e) => updateLocalInferenceSettings({ preloadOnStartup: (e.target as HTMLInputElement).checked })}
-							/>
-						</label>
 
 						<label class="set-row">
 							<div class="set-row-text">
 								<div class="set-row-label">Suggestions while writing</div>
 								<p class="set-row-help">
 									Underlines other notes' titles you mention without a link (click to link), and points
-									out a note that looks like a duplicate of the one you're writing (once the semantic
-									search model is loaded).
+									out a note that looks like a duplicate of the one you're writing (with Find notes by
+									meaning on).
 								</p>
 							</div>
 							<input
 								type="checkbox"
-								class="switch"
+								class="k-switch"
 								checked={writingSuggestionsOn}
 								onchange={(e) => {
 									writingSuggestionsOn = (e.target as HTMLInputElement).checked;
@@ -2038,8 +2065,8 @@
 
 						<div class="set-row">
 							<div class="set-row-text">
-								<label for="whisper-model" class="set-row-label">Transcription model</label>
-								<p class="set-row-help">Whisper, for voice memos and meetings.</p>
+								<label for="whisper-model" class="set-row-label">Speech to text</label>
+								<p class="set-row-help">Turns voice memos and meetings into text.</p>
 								{@render modelStatusLine(whisperStatus, () => preloadPipeline('transcribe', currentWhisperModelId, { dtype: 'fp32' }))}
 							</div>
 							<select
@@ -2056,12 +2083,12 @@
 
 						<label class="set-row">
 							<div class="set-row-text">
-								<div class="set-row-label">Local text generation</div>
-								<p class="set-row-help">Run summaries and title generation on-device. Larger download (~360 MB+).</p>
+								<div class="set-row-label">Summaries and answers on this device</div>
+								<p class="set-row-help">Titles, summaries, and answers in Ask Kurumi, without an AI service. A larger download (360 MB or more).</p>
 							</div>
 							<input
 								type="checkbox"
-								class="switch"
+								class="k-switch"
 								checked={$localInferenceSettings.textModelEnabled}
 								onchange={(e) => updateLocalInferenceSettings({ textModelEnabled: (e.target as HTMLInputElement).checked })}
 							/>
@@ -2070,7 +2097,7 @@
 						{#if $localInferenceSettings.textModelEnabled}
 							<div class="set-row set-row-nested">
 								<div class="set-row-text">
-									<label for="text-model" class="set-row-label">Text model</label>
+									<label for="text-model" class="set-row-label">Model</label>
 									{@render modelStatusLine(textStatus, () => preloadPipeline('text-generation', currentTextModelId))}
 								</div>
 								<select
@@ -2090,15 +2117,15 @@
 
 						<label class="set-row">
 							<div class="set-row-text">
-								<div class="set-row-label">Semantic search embeddings</div>
+								<div class="set-row-label">Find notes by meaning</div>
 								<p class="set-row-help">
-									Lets Ask Kurumi find memories by meaning, not just keywords. Small download
-									(~25 MB), runs on-device.
+									Search and Ask Kurumi also find notes about the same thing in other words. A small
+									download (about 25 MB).
 								</p>
 							</div>
 							<input
 								type="checkbox"
-								class="switch"
+								class="k-switch"
 								checked={$localInferenceSettings.embedModelEnabled}
 								onchange={(e) =>
 									updateLocalInferenceSettings({
@@ -2110,7 +2137,7 @@
 						{#if $localInferenceSettings.embedModelEnabled}
 							<div class="set-row set-row-nested">
 								<div class="set-row-text">
-									<label for="embed-model" class="set-row-label">Embedding model</label>
+									<label for="embed-model" class="set-row-label">Model</label>
 									{@render modelStatusLine(embedStatus, () => preloadPipeline('embed', currentEmbedModelId))}
 								</div>
 								<select
@@ -2148,23 +2175,44 @@
 							{/if}
 						</div>
 
-						<div class="set-row">
-							<div class="set-row-text">
-								<div class="set-row-label">Model cache</div>
-								<p class="set-row-help">Stuck on a broken download? Clear the cache and re-download the transcription model.</p>
+						<details class="set-disclosure">
+							<summary>
+								<span class="flex-1">Advanced</span>
+								<ChevronDown class="disclosure-chevron h-4 w-4 text-[var(--color-text-faint)]" />
+							</summary>
+							<div class="set-rows pb-2">
+								<label class="set-row">
+									<div class="set-row-text">
+										<div class="set-row-label">Load the models when Kurumi starts</div>
+										<p class="set-row-help">So recording and search are ready at once, at the cost of a slower start.</p>
+									</div>
+									<input
+										type="checkbox"
+										class="k-switch"
+										checked={$localInferenceSettings.preloadOnStartup}
+										onchange={(e) => updateLocalInferenceSettings({ preloadOnStartup: (e.target as HTMLInputElement).checked })}
+									/>
+								</label>
+								<div class="set-row">
+									<div class="set-row-text">
+										<div class="set-row-label">Downloaded models</div>
+										<p class="set-row-help">Stuck on a broken download? Clear them and download speech to text again.</p>
+									</div>
+									<button
+										type="button"
+										onclick={async () => {
+											await clearLocalModelCache();
+											// Re-trigger preload with the current settings
+											preloadPipeline('transcribe', currentWhisperModelId, { dtype: 'fp32' });
+										}}
+										class="k-btn"
+									>
+										Clear cache
+									</button>
+								</div>
+								<p class="set-row-help">Models run with WebGPU where the browser has it, otherwise WebAssembly.</p>
 							</div>
-							<button
-								type="button"
-								onclick={async () => {
-									await clearLocalModelCache();
-									// Re-trigger preload with the current settings
-									preloadPipeline('transcribe', currentWhisperModelId, { dtype: 'fp32' });
-								}}
-								class="k-btn"
-							>
-								Clear cache
-							</button>
-						</div>
+						</details>
 					</div>
 				</section>
 				{/if}
@@ -2179,13 +2227,15 @@
 						{/if}
 					</h2>
 					<p class="set-section-desc">
-						Remote models for Ask Kurumi and editor actions (improve, expand, summarize, translate).
+						Connect an AI service with a key from your own account, for Ask Kurumi and the writing
+						tools (improve, expand, summarize, translate). Prefer to keep everything on this device?
+						Local AI can answer too.
 					</p>
 					<div class="set-rows">
 						<div class="set-row">
 							<div class="set-row-text">
-								<div class="set-row-label" id="ai-provider-label">Provider</div>
-								<p class="set-row-help">Primary provider for remote inference.</p>
+								<div class="set-row-label" id="ai-provider-label">Service</div>
+								<p class="set-row-help">The AI service Kurumi asks first.</p>
 							</div>
 							<div class="k-segmented" role="group" aria-labelledby="ai-provider-label">
 								<button aria-pressed={aiProvider === 'openai'} onclick={() => handleProviderChange('openai')} class="inline-flex items-center gap-1.5">
@@ -2243,38 +2293,43 @@
 							</div>
 						</div>
 
-						<div class="set-block">
-							<div>
-								<div class="set-row-label">Additional providers</div>
-								<p class="set-row-help">
-									Fallbacks when the primary provider fails or isn't configured. All use
-									OpenAI-compatible APIs and are tried in order. Keys save when you leave the field.
-								</p>
-							</div>
-							<div class="space-y-2">
-								{#each PROVIDER_CONFIGS as config (config.id)}
-									<div class="flex items-center gap-3">
-										<label for="provider-key-{config.id}" class="w-28 shrink-0 truncate text-sm text-[var(--color-text)]">{config.name}</label>
-										<input
-											id="provider-key-{config.id}"
-											type="password"
-											value={extraProviderKeys[config.apiKeyStorageKey] || ''}
-											oninput={(e) => {
-												extraProviderKeys[config.apiKeyStorageKey] = (e.target as HTMLInputElement).value;
-											}}
-											onblur={() => saveExtraProviderKey(config.apiKeyStorageKey, extraProviderKeys[config.apiKeyStorageKey] || '')}
-											placeholder={config.id === 'azure-openai' ? 'API key (set endpoint below)' : 'API key'}
-											class="k-input !h-8 min-w-0 flex-1 font-mono !text-xs"
-										/>
-										<span class="w-10 shrink-0">
-											{#if extraProviderKeys[config.apiKeyStorageKey]}
-												<span class="k-badge k-badge-success" title="Key set">Set</span>
-											{/if}
-										</span>
+						<details class="set-disclosure">
+							<summary>
+								<span class="flex-1">More services</span>
+								<ChevronDown class="disclosure-chevron h-4 w-4 text-[var(--color-text-faint)]" />
+							</summary>
+								<div class="set-block">
+									<div>
+																				<p class="set-row-help">
+											Tried in order when the first one fails or isn't set up. Each needs a key from its
+											own account (an OpenAI-compatible API). Keys save when you leave the field.
+										</p>
 									</div>
-								{/each}
-							</div>
-						</div>
+									<div class="space-y-2">
+										{#each PROVIDER_CONFIGS as config (config.id)}
+											<div class="flex items-center gap-3">
+												<label for="provider-key-{config.id}" class="w-40 shrink-0 text-sm leading-tight text-[var(--color-text)]">{config.name}</label>
+												<input
+													id="provider-key-{config.id}"
+													type="password"
+													value={extraProviderKeys[config.apiKeyStorageKey] || ''}
+													oninput={(e) => {
+														extraProviderKeys[config.apiKeyStorageKey] = (e.target as HTMLInputElement).value;
+													}}
+													onblur={() => saveExtraProviderKey(config.apiKeyStorageKey, extraProviderKeys[config.apiKeyStorageKey] || '')}
+													placeholder={config.id === 'azure-openai' ? 'API key (set endpoint below)' : 'API key'}
+													class="k-input !h-8 min-w-0 flex-1 font-mono !text-xs"
+												/>
+												<span class="w-10 shrink-0">
+													{#if extraProviderKeys[config.apiKeyStorageKey]}
+														<span class="k-badge k-badge-success" title="Key set">Set</span>
+													{/if}
+												</span>
+											</div>
+										{/each}
+									</div>
+								</div>
+						</details>
 					</div>
 				</section>
 				{/if}
@@ -2311,7 +2366,7 @@
 									aria-checked={notifEnabled}
 									aria-labelledby="notif-label"
 									onclick={handleNotifToggle}
-									class="switch"
+									class="k-switch"
 								></button>
 							</div>
 
@@ -2340,7 +2395,7 @@
 									aria-labelledby="bg-notif-label"
 									onclick={handleBackgroundNotifToggle}
 									disabled={!bgNotifSupported}
-									class="switch"
+									class="k-switch"
 								></button>
 							</div>
 						{/if}
@@ -2356,11 +2411,12 @@
 						Click Change and press the new keys. Backspace removes a shortcut. Saved on this device.
 					</p>
 					<div class="set-rows">
+						<ShortcutSettings />
 						<div class="set-row desktop-only">
 							<div class="set-row-text">
-								<div class="set-row-label" id="vim-label">Vim mode</div>
+								<div class="set-row-label" id="vim-label">Vim keys in the editor</div>
 								<p class="set-row-help">
-									Vim keys in the editor: Normal, Insert and Visual modes, motions, operators, counts,
+									For people who know the Vim editor: Normal, Insert and Visual modes, motions, operators, counts,
 									<code>dd</code>, <code>yy</code>, <code>p</code>, <code>u</code>. On this device.
 								</p>
 							</div>
@@ -2369,10 +2425,9 @@
 								aria-checked={$vimEnabled}
 								aria-labelledby="vim-label"
 								onclick={() => setVimEnabled(!$vimEnabled)}
-								class="switch"
+								class="k-switch"
 							></button>
 						</div>
-						<ShortcutSettings />
 					</div>
 				</section>
 				{/if}
@@ -2476,7 +2531,7 @@
 							<div class="set-row-text">
 								<div class="set-row-label">Import from Roam Research</div>
 								<p class="set-row-help">
-									A Roam JSON export. Each page becomes a memory with its outline as nested bullets;
+									A Roam JSON export. Each page becomes a note with its outline as nested bullets;
 									<code>{'{{TODO}}'}</code>/<code>{'{{DONE}}'}</code> become checklist items.
 								</p>
 								{#if roamImportResult}
@@ -2537,7 +2592,7 @@
 								<div class="set-row-label">Web clipper</div>
 								<p class="set-row-help">
 									Drag the button to your bookmarks bar. Click it on any page to save its title, URL
-									and selected text as a new memory.
+									and selected text as a new note.
 								</p>
 							</div>
 							{#if bookmarkletUrl}
@@ -2576,7 +2631,7 @@
 									{LAB_PAGES.map((p) => p.label).join(', ')}.
 								</p>
 							</div>
-							<input type="checkbox" class="switch" bind:checked={$labsEnabled} />
+							<input type="checkbox" class="k-switch" bind:checked={$labsEnabled} />
 						</label>
 					</div>
 				</section>
@@ -3591,61 +3646,32 @@
 		font-size: 0.9em;
 	}
 
-	/* Toggle chip (mirrors) */
-	.chip[aria-pressed='true'] {
-		border-color: transparent;
-		background: var(--color-accent-soft);
-		color: var(--color-accent);
+	/* Switches: .k-switch in app.css */
+
+	/* The recommended sync path, as numbered steps */
+	.sync-steps {
+		margin: 0.5rem 0 0;
+		padding-left: 1.25rem;
+		list-style: decimal;
+		font-size: 0.8125rem;
+		line-height: 1.5;
+		color: var(--color-text-muted);
 	}
 
-	/* Switch: <input type="checkbox" class="switch"> or <button role="switch" aria-checked> */
-	.switch {
-		position: relative;
-		flex-shrink: 0;
-		width: 2rem;
-		height: 1.125rem;
-		/* A <button> switch: undo the 44px touch minimum (app.css), which made it a circle */
-		min-width: 2rem;
-		min-height: 1.125rem;
-		padding: 0;
-		border-radius: 999px;
-		background: var(--color-active);
-		appearance: none;
-		cursor: pointer;
-		transition: background var(--motion-fast) var(--ease-enter);
+	.sync-steps li + li {
+		margin-top: 0.25rem;
 	}
 
-	.switch::before {
-		content: '';
-		position: absolute;
-		top: 0.125rem;
-		left: 0.125rem;
-		width: 0.875rem;
-		height: 0.875rem;
-		border-radius: 999px;
-		background: var(--color-bg);
-		box-shadow: var(--shadow-sm);
-		transition: transform var(--motion-fast) var(--ease-enter);
+	/* A disclosure inside a block (not a row of its own) */
+	.set-disclosure.set-disclosure-inline {
+		border-bottom: 0;
 	}
 
-	.switch:checked,
-	.switch[aria-checked='true'] {
-		background: var(--color-accent);
-	}
-
-	.switch:checked::before,
-	.switch[aria-checked='true']::before {
-		transform: translateX(0.875rem);
-	}
-
-	.switch:focus-visible {
-		outline: 2px solid var(--color-accent);
-		outline-offset: 2px;
-	}
-
-	.switch:disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
+	.set-disclosure.set-disclosure-inline > summary {
+		padding: 0.25rem 0;
+		font-size: 0.8125rem;
+		font-weight: 400;
+		color: var(--color-text-muted);
 	}
 
 	/* ---- Docs disclosures ---- */

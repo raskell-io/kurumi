@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { dialog } from '$lib/actions/overlay';
+	import { formatDay } from '$lib/dates/format';
 	import { fadeOut } from '$lib/motion';
 	import { autofocus } from '$lib/actions/autofocus';
 	import {
@@ -55,7 +56,7 @@
 			const weeks = Math.floor(diffDays / 7);
 			return `${weeks} week${weeks > 1 ? 's' : ''} ago`;
 		} else {
-			return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+			return formatDay(date);
 		}
 	}
 

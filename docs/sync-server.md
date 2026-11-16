@@ -14,7 +14,7 @@ Tablet ┘                       GET/PUT /sync              kurumi-doc.automerge
 ## Set it up
 
 1. **Deploy.** Click the button (also in Kurumi: Settings → Sync →
-   Kurumi server → *Deploy to Cloudflare*):
+   Use Kurumi on another device → *Set up on Cloudflare*):
 
    [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/raskell-io/kurumi/tree/main/worker)
 

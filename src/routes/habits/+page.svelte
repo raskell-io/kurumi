@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDayWithWeekday } from '$lib/dates/format';
 	import { get } from 'svelte/store';
 	import {
 		habits,
@@ -37,9 +38,9 @@
 			d.setDate(d.getDate() - i);
 			days.push({
 				iso: localIsoDate(d),
-				label: d.toLocaleDateString('en-US', { weekday: 'short' }),
+				label: d.toLocaleDateString(undefined, { weekday: 'short' }),
 				day: d.getDate(),
-				long: d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
+				long: formatDayWithWeekday(d)
 			});
 		}
 		return days;

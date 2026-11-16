@@ -87,7 +87,7 @@
 				<div class="flex items-center gap-2">
 					<input
 						type="checkbox"
-						class="switch-input"
+						class="k-switch"
 						checked={plugin.enabled}
 						onchange={(e) => setPluginEnabled(plugin.manifest.id, (e.target as HTMLInputElement).checked)}
 						aria-label="Turn {plugin.manifest.name} on or off"
@@ -170,10 +170,6 @@
 	.install {
 		display: flex;
 		gap: 0.375rem;
-	}
-
-	.switch-input {
-		accent-color: var(--color-accent);
 	}
 
 	.error {

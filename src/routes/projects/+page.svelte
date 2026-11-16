@@ -13,9 +13,10 @@
 		type ProjectStatus
 	} from '$lib/db';
 	import { dueInfo } from '$lib/utils/due';
-	import QuickAdd from '$lib/components/QuickAdd.svelte';
+	import { autofocus } from '$lib/actions/autofocus';
+	import MetaLine from '$lib/components/ui/MetaLine.svelte';
 	import { goto } from '$app/navigation';
-	import { FolderKanban, Sparkles, X } from 'lucide-svelte';
+	import { FolderKanban, Plus, Sparkles, X } from 'lucide-svelte';
 
 	type Tab = 'active' | 'done' | 'archived';
 	const TABS: { value: Tab; label: string; statuses: ProjectStatus[] }[] = [
@@ -75,6 +76,11 @@
 		}
 	}
 
+	// "New project" opens a one-line form in place (there already while there are none).
+	let creating = $state(false);
+	let newName = $state('');
+	let showForm = $derived(creating || $projects.length === 0);
+
 	function create(name: string) {
 		const existing = $projects.find((p) => sameName(p.name, name));
 		goto(`/projects/${(existing ?? addProject(name)).id}`);
@@ -91,11 +97,29 @@
 			<h1 class="k-page-title">Projects</h1>
 			<p class="k-page-subtitle">Notes, to-dos, decisions, questions and meetings, per project.</p>
 		</div>
+		{#if !showForm}
+			<button class="k-btn k-btn-primary shrink-0" onclick={() => (creating = true)}>
+				<Plus class="h-4 w-4" />
+				New project
+			</button>
+		{/if}
 	</header>
 
-	<div class="k-card mb-4">
-		<QuickAdd placeholder="New project…" label="New project name" onAdd={create} />
-	</div>
+	{#if showForm}
+		<form
+			class="k-card mb-4 flex flex-wrap items-center gap-2 p-3"
+			onsubmit={(e) => {
+				e.preventDefault();
+				if (newName.trim()) create(newName.trim());
+			}}
+		>
+			<input class="k-input min-w-48 flex-1" bind:value={newName} placeholder="Project name" aria-label="New project name" use:autofocus onkeydown={(e) => e.key === 'Escape' && $projects.length > 0 && (creating = false)} />
+			{#if $projects.length > 0}
+				<button type="button" class="k-btn k-btn-ghost" onclick={() => (creating = false)}>Cancel</button>
+			{/if}
+			<button class="k-btn k-btn-primary" disabled={!newName.trim()}>Create</button>
+		</form>
+	{/if}
 
 	{#if $projects.length > 0}
 		<div class="k-segmented mb-3" role="group" aria-label="Project status">
@@ -123,9 +147,13 @@
 								<span class="k-badge" class:k-badge-danger={due.tone === 'danger'} class:k-badge-warn={due.tone === 'warn'}>Due {due.label}</span>
 							{/if}
 						</div>
-						<p class="mt-1 text-xs text-[var(--color-text-muted)]">
-							{#if project.owner}{project.owner} · {/if}{s.todos} open to-do{s.todos === 1 ? '' : 's'} · {s.notes} note{s.notes === 1 ? '' : 's'}{#if s.questions} · {s.questions} open question{s.questions === 1 ? '' : 's'}{/if}{#if s.decisions} · {s.decisions} decision{s.decisions === 1 ? '' : 's'}{/if}
-						</p>
+						<MetaLine class="mt-1 text-xs text-[var(--color-text-muted)]">
+							{#if project.owner}<span>{project.owner}</span>{/if}
+							<span>{s.todos} open to-do{s.todos === 1 ? '' : 's'}</span>
+							<span>{s.notes} note{s.notes === 1 ? '' : 's'}</span>
+							{#if s.questions}<span>{s.questions} open question{s.questions === 1 ? '' : 's'}</span>{/if}
+							{#if s.decisions}<span>{s.decisions} decision{s.decisions === 1 ? '' : 's'}</span>{/if}
+						</MetaLine>
 					</a>
 				</li>
 			{/each}
@@ -136,7 +164,7 @@
 		<div class="k-empty">
 			<FolderKanban />
 			<p class="k-empty-title">No projects yet</p>
-			<p>Create one above, or start from a name your notes already use.</p>
+			<p>Name one above, or start from a name your notes already use.</p>
 		</div>
 	{/if}
 

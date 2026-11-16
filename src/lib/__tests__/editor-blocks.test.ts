@@ -5,7 +5,7 @@ import { Schema } from '@milkdown/kit/prose/model';
 import { CALLOUT_BLOCK, parseCalloutMarker } from '$lib/callouts';
 import { groupToggles, ungroupToggles, toggleParts, toggleOpening, startsOpen, type MdNode } from '$lib/editor/toggle-markdown';
 import { findHighlights } from '$lib/editor/highlightText';
-import { formatDay, formatMoment } from '$lib/format-date';
+import { formatDay, formatMoment } from '$lib/dates/format';
 
 // What Milkdown's commonmark preset does before the editor sees a tree
 // (remarkHtmlTransformer): block HTML in the note, a quote or a list item
@@ -134,17 +134,17 @@ describe('highlights', () => {
 describe('dates for people', () => {
 	const now = new Date(2026, 10, 16);
 	it('a day, with the year only when it is another', () => {
-		expect(formatDay('2026-11-20', now, 'en-US')).toBe('Nov 20');
-		expect(formatDay('2027-01-02', now, 'en-US')).toBe('Jan 2, 2027');
-		expect(formatDay('2026-11-20', now, 'de-CH')).toBe('20. Nov.');
-		expect(formatDay('2026-02-30', now, 'en-US')).toBe('2026-02-30');
+		expect(formatDay('2026-11-20', { now, locale: 'en-US' })).toBe('Nov 20');
+		expect(formatDay('2027-01-02', { now, locale: 'en-US' })).toBe('Jan 2, 2027');
+		expect(formatDay('2026-11-20', { now, locale: 'de-CH' })).toBe('20. Nov.');
+		expect(formatDay('2026-02-30', { now, locale: 'en-US' })).toBe('');
 	});
 
 	it('a moment, by today and yesterday', () => {
-		expect(formatMoment(new Date(2026, 10, 16, 10, 47), new Date(2026, 10, 16, 12), 'en-US')).toBe('Today 10:47 AM');
-		expect(formatMoment(new Date(2026, 10, 15, 18, 2), new Date(2026, 10, 16, 12), 'en-GB')).toBe('Yesterday 18:02');
-		expect(formatMoment(new Date(2026, 10, 12, 9, 5), new Date(2026, 10, 16, 12), 'en-GB')).toBe('12 Nov, 9:05');
-		expect(formatMoment(new Date(2026, 10, 16, 10, 47, 3), new Date(2026, 10, 16, 12), 'en-GB', { seconds: true })).toBe('Today 10:47:03');
-		expect(formatMoment(new Date(2025, 0, 2, 8, 0), new Date(2026, 10, 16, 12), 'en-US')).toBe('Jan 2, 2025, 8:00 AM');
+		expect(formatMoment(new Date(2026, 10, 16, 10, 47), { now: new Date(2026, 10, 16, 12), locale: 'en-US' })).toBe('Today 10:47 AM');
+		expect(formatMoment(new Date(2026, 10, 15, 18, 2), { now: new Date(2026, 10, 16, 12), locale: 'en-GB' })).toBe('Yesterday 18:02');
+		expect(formatMoment(new Date(2026, 10, 12, 9, 5), { now: new Date(2026, 10, 16, 12), locale: 'en-GB' })).toBe('12 Nov, 9:05');
+		expect(formatMoment(new Date(2026, 10, 16, 10, 47, 3), { now: new Date(2026, 10, 16, 12), locale: 'en-GB', seconds: true })).toBe('Today 10:47:03');
+		expect(formatMoment(new Date(2025, 0, 2, 8, 0), { now: new Date(2026, 10, 16, 12), locale: 'en-US' })).toBe('Jan 2, 2025, 8:00 AM');
 	});
 });

@@ -39,8 +39,8 @@
 	{:else}
 		<div class="k-empty">
 			<Hash />
-			<p class="k-empty-title">No memories on this topic</p>
-			<p>Topics are extracted from your memories as they're processed.</p>
+			<p class="k-empty-title">No notes on this topic</p>
+			<p>Topics are found in your notes as they're processed.</p>
 			<a href="/read" class="k-btn mt-2">All notes</a>
 		</div>
 	{/if}

@@ -10,8 +10,9 @@ editor.
 </picture>
 
 Settings → Appearance sets the colour theme (Catppuccin, Nord, Gruvbox,
-Solarized, Rosé Pine or Plain, each light and dark), the accent colour, the
-editor font, its size, and the content width: Narrow (the default), Wide or
+Solarized, Rosé Pine or Plain, each light and dark), the accent colour (by
+default the colour theme's own, or one of seven that stay the same in every
+theme), the editor font, its size, and the content width: Narrow (the default), Wide or
 Full. Each device keeps its own. There are four **editor fonts**, each for
 something: iA Writer Quattro (the default, a writer's duospace), Geist (the
 interface's plain sans), Newsreader (a book serif with true italics) and
@@ -19,14 +20,14 @@ Atkinson Hyperlegible (drawn so no two characters look alike). They set the
 text of notes everywhere; the interface keeps its own. The last two are
 downloaded when you choose them and then work offline. All are open fonts
 (SIL Open Font License); text in a script a face lacks falls back to your
-device's font. A **CSS snippet** there styles anything
+device's font. **Your own CSS** (under *Advanced* there) styles anything
 else: `:root { --color-bg: #fcfcf9; }` changes a theme colour, any selector
 works, and you can load a `.css` file. The interface's transitions are short
 and follow three variables: `:root { --motion-scale: 0; }` turns them off
 (as does your system's "reduce motion" setting), `0.5` halves them; `--motion-fast`
 and `--motion-base` set the two durations directly.
 
-**Vim mode** (Settings → Keyboard shortcuts) gives the editor Normal, Insert
+**Vim keys in the editor** (Settings → Keyboard shortcuts) gives the editor Normal, Insert
 and Visual modes: motions (`h j k l`, `w b e`, `0 ^ $`, `gg G`, with counts),
 `i a I A o O`, `x r ~ J`, operators `d c y` with a motion or `iw`/`aw`, `dd yy
 cc D C`, `p P`, `u` and `Ctrl+R`. A badge in the corner shows the mode.

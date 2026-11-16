@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDayTime } from '$lib/dates/format';
 	import { workflows, addWorkflow, updateWorkflow, deleteWorkflow, restoreWorkflow, getMemoryObject, type Workflow, type WorkflowSchedule } from '$lib/db';
 	import {
 		runWorkflow,
@@ -63,8 +64,7 @@
 		if (typeof Notification !== 'undefined' && Notification.permission === 'default') await Notification.requestPermission();
 	}
 
-	const when = (ts: number) =>
-		new Date(ts).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+	const when = (ts: number) => formatDayTime(ts);
 </script>
 
 <svelte:head>
@@ -79,7 +79,7 @@
 				<p class="k-page-subtitle">Instructions the assistant carries out on a schedule, and writes up as a note.</p>
 			</div>
 			{#if editingId === null}
-				<button type="button" class="k-btn k-btn-primary k-btn-sm" onclick={() => startNew()}><Plus class="h-3.5 w-3.5" /> New workflow</button>
+				<button type="button" class="k-btn k-btn-primary shrink-0" onclick={() => startNew()}><Plus class="h-4 w-4" /> New workflow</button>
 			{/if}
 		</header>
 
@@ -87,7 +87,7 @@
 			<p class="notice">Workflows use the agent, which needs an OpenAI API key (Settings → AI assistant).</p>
 		{/if}
 		<label class="run-here">
-			<input type="checkbox" bind:checked={runHere} onchange={() => setWorkflowsRunHere(runHere)} />
+			<input type="checkbox" class="k-check" bind:checked={runHere} onchange={() => setWorkflowsRunHere(runHere)} />
 			Run scheduled workflows on this device <span class="hint">(they run while Kurumi is open; a run missed while it was closed happens at the next start)</span>
 		</label>
 
@@ -113,12 +113,12 @@
 						<input class="k-input time" type="time" bind:value={draft.schedule.time} aria-label="Time" />
 					{/if}
 				</div>
-				<label class="check"><input type="checkbox" checked={draft.output === 'note'} onchange={(e) => (draft.output = (e.target as HTMLInputElement).checked ? 'note' : 'none')} /> Save the result as a note</label>
-				<label class="check"><input type="checkbox" bind:checked={draft.notify} onchange={askNotifications} /> Notify me when it ran</label>
+				<label class="check"><input type="checkbox" class="k-check" checked={draft.output === 'note'} onchange={(e) => (draft.output = (e.target as HTMLInputElement).checked ? 'note' : 'none')} /> Save the result as a note</label>
+				<label class="check"><input type="checkbox" class="k-check" bind:checked={draft.notify} onchange={askNotifications} /> Notify me when it ran</label>
 				<p class="hint">It can read your notes, to-dos, people and projects, and propose to-dos for you to approve. It can't change anything.</p>
 				<div class="row end">
-					<button type="button" class="k-btn k-btn-ghost k-btn-sm" onclick={() => (editingId = null)}>Cancel</button>
-					<button class="k-btn k-btn-primary k-btn-sm" disabled={!draft.instructions.trim()}>{editingId === 'new' ? 'Create' : 'Save'}</button>
+					<button type="button" class="k-btn k-btn-ghost" onclick={() => (editingId = null)}>Cancel</button>
+					<button class="k-btn k-btn-primary" disabled={!draft.instructions.trim()}>{editingId === 'new' ? 'Create' : 'Save'}</button>
 				</div>
 			</form>
 		{/if}
@@ -153,7 +153,7 @@
 						<button type="button" class="k-btn k-btn-sm" onclick={() => run(w)} disabled={busy || !keyed} data-testid="run-workflow">
 							{#if busy}<Loader2 class="h-3.5 w-3.5 animate-spin" /> Running…{:else}<Play class="h-3.5 w-3.5" /> Run now{/if}
 						</button>
-						<input type="checkbox" class="switch-lite" checked={w.enabled} onchange={(e) => updateWorkflow(w.id, { enabled: (e.target as HTMLInputElement).checked })} aria-label="Scheduled" title="Run on its schedule" />
+						<input type="checkbox" class="k-switch" checked={w.enabled} onchange={(e) => updateWorkflow(w.id, { enabled: (e.target as HTMLInputElement).checked })} aria-label="Scheduled" title="Run on its schedule" />
 						<button type="button" class="k-icon-btn" onclick={() => startEdit(w)} aria-label="Edit workflow" title="Edit"><Pencil class="h-3.5 w-3.5" /></button>
 						<button type="button" class="k-icon-btn danger" onclick={() => remove(w)} aria-label="Delete workflow" title="Delete"><Trash2 class="h-3.5 w-3.5" /></button>
 					</div>
@@ -341,9 +341,5 @@
 
 	.log a {
 		color: var(--color-accent);
-	}
-
-	.switch-lite {
-		accent-color: var(--color-accent);
 	}
 </style>

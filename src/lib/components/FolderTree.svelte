@@ -1428,14 +1428,14 @@
 			class="k-menu-item" role="menuitem"
 		>
 			<FilePlus class="h-4 w-4" />
-			New Note
+			New note
 		</button>
 		<button
 			onclick={() => handleCreateFolder(contextMenuFolder)}
 			class="k-menu-item" role="menuitem"
 		>
 			<FolderPlus class="h-4 w-4" />
-			New Subfolder
+			New subfolder
 		</button>
 		<button onclick={() => newCanvasIn(contextMenuFolder!)} class="k-menu-item" role="menuitem">
 			<LayoutDashboard class="h-4 w-4" />
@@ -1469,7 +1469,7 @@
 				>
 					<div class="flex items-center gap-2">
 						<FolderInput class="h-4 w-4" />
-						Move to Vault
+						Move to vault
 					</div>
 					<ChevronRight class="h-4 w-4" />
 				</button>
@@ -1551,7 +1551,7 @@
 				>
 					<div class="flex items-center gap-2">
 						<FolderInput class="h-4 w-4" />
-						Move to Vault
+						Move to vault
 					</div>
 					<ChevronRight class="h-4 w-4" />
 				</button>

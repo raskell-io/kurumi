@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { formatDayWithWeekday, formatDue } from '$lib/dates/format';
+	import KeyHints from '$lib/components/ui/KeyHints.svelte';
 	import { autofocus } from '$lib/actions/autofocus';
 	import {
 		reminderProposals,
@@ -161,25 +163,14 @@
 		if (days === 0) label = 'Today';
 		else if (days === 1) label = 'Tomorrow';
 		else if (days === -1) label = 'Yesterday';
-		else if (days > 1 && days < 7) label = date.toLocaleDateString(undefined, { weekday: 'short' });
-		else
-			label = date.toLocaleDateString(undefined, {
-				month: 'short',
-				day: 'numeric',
-				year: date.getFullYear() === new Date().getFullYear() ? undefined : 'numeric'
-			});
+		else label = formatDue(date);
 		const tone = !active ? '' : days < 0 ? 'danger' : days === 0 ? 'warn' : '';
 		return { label, tone };
 	}
 
 	function formatDate(iso: string): string {
 		try {
-			return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', {
-				weekday: 'short',
-				month: 'short',
-				day: 'numeric',
-				year: 'numeric'
-			});
+			return formatDayWithWeekday(iso);
 		} catch {
 			return iso;
 		}
@@ -421,28 +412,28 @@
 </script>
 
 <svelte:head>
-	<title>Reminder proposals - Kurumi</title>
+	<title>Suggested reminders - Kurumi</title>
 </svelte:head>
 
 <div class="k-page">
 	<header class="k-page-header">
 		<div class="min-w-0">
-			<h1 class="k-page-title">Reminder proposals</h1>
+			<h1 class="k-page-title">Suggested reminders</h1>
 			<p class="k-page-subtitle">
 				{pendingCount} pending
 				{#if $reminderProposals.length > pendingCount}
 					· {$reminderProposals.length - pendingCount} snoozed or decided
 				{/if}
 			</p>
-			<div class="k-hints">
-				<span><kbd class="k-kbd">j</kbd> <kbd class="k-kbd">k</kbd> navigate</span>
+		</div>
+		<KeyHints>
+				<span><kbd class="k-kbd">j</kbd> <kbd class="k-kbd">k</kbd> next, previous</span>
 				<span><kbd class="k-kbd">Space</kbd> select</span>
 				<span><kbd class="k-kbd">a</kbd> approve</span>
 				<span><kbd class="k-kbd">s</kbd> snooze</span>
 				<span><kbd class="k-kbd">r</kbd> reject</span>
 				<span><kbd class="k-kbd">d</kbd> delete</span>
-			</div>
-		</div>
+		</KeyHints>
 		{#if visiblePendingCount > 0}
 			<button class="k-btn shrink-0" onclick={selectAllPending}>
 				<SquareCheck class="h-4 w-4" />

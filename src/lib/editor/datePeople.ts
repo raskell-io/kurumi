@@ -11,7 +11,7 @@ import { Plugin, PluginKey } from '@milkdown/kit/prose/state';
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view';
 import { $prose } from '@milkdown/kit/utils';
 import { createRegistry } from './registry';
-import { formatDay, formatDayLong } from '$lib/format-date';
+import { formatDay, formatDayLong } from '$lib/dates/format';
 
 const datePeopleKey = new PluginKey('date-people');
 
@@ -59,12 +59,12 @@ const urlRegex = /https?:\/\/[^\s<>"\])+]+(?:\([^\s<>"]*\))?[^\s<>"\]).,;:!?'"]*
  * `//2026-11-20` it is written as shows instead, to edit.
  */
 function dateWidget(date: string) {
-	const label = formatDay(date);
+	const label = formatDay(date) || date;
 	return () => {
 		const span = document.createElement('span');
 		span.className = 'date-reference date-shown';
 		span.dataset.date = date;
-		span.title = formatDayLong(date);
+		span.title = formatDayLong(date) || date;
 		span.textContent = label;
 		return span;
 	};
@@ -94,7 +94,7 @@ function findDecorations(doc: any, selection?: { from: number; to: number }): De
 				} else {
 					decorations.push(
 						Decoration.inline(start, end, { class: 'date-raw-hidden' }),
-						Decoration.widget(start, dateWidget(date), { side: -1, key: `date:${date}:${formatDay(date)}` })
+						Decoration.widget(start, dateWidget(date), { side: -1, key: `date:${date}:${formatDay(date) || date}` })
 					);
 				}
 			}

@@ -12,7 +12,10 @@
 		type Decision
 	} from '$lib/db';
 	import { pushUndo } from '$lib/stores/undo';
-	import { Gavel, Pencil, Trash2, Search } from 'lucide-svelte';
+	import { formatDay, formatMonth } from '$lib/dates/format';
+	import { autofocus } from '$lib/actions/autofocus';
+	import MetaLine from '$lib/components/ui/MetaLine.svelte';
+	import { Gavel, Pencil, Plus, Trash2, Search } from 'lucide-svelte';
 
 	// The decision log: what was decided, when, by whom, and where.
 	let projectFilter = $state('');
@@ -33,7 +36,7 @@
 			groups.set(key, [...(groups.get(key) ?? []), d]);
 		}
 		return [...groups.entries()].map(([key, items]) => ({
-			label: new Date(`${key}-01T00:00:00`).toLocaleDateString(undefined, { month: 'long', year: 'numeric' }),
+			label: formatMonth(`${key}-01`),
 			items
 		}));
 	});
@@ -53,12 +56,16 @@
 	let rationale = $state('');
 	let decidedOn = $state(todayIso());
 	let newProject = $state('');
+	// The form opens from "New decision" (and is there while the log is empty).
+	let creating = $state(false);
+	let showForm = $derived(creating || $decisions.length === 0);
 
 	function log(e: SubmitEvent) {
 		e.preventDefault();
 		if (!text.trim()) return;
 		addDecision({ text, rationale: rationale.trim(), decidedOn, projectId: newProject || null });
 		text = rationale = '';
+		creating = false;
 	}
 
 	// Inline edit
@@ -93,20 +100,33 @@
 			<h1 class="k-page-title">Decisions</h1>
 			<p class="k-page-subtitle">What was decided, when and why. Meetings add theirs here automatically.</p>
 		</div>
+		{#if !showForm}
+			<button class="k-btn k-btn-primary shrink-0" onclick={() => (creating = true)}>
+				<Plus class="h-4 w-4" />
+				New decision
+			</button>
+		{/if}
 	</header>
 
+	{#if showForm}
 	<form class="k-card mb-5 grid gap-2 p-3" onsubmit={log}>
-		<input class="k-input" bind:value={text} placeholder="What was decided?" aria-label="Decision" />
+		<input class="k-input" bind:value={text} placeholder="What was decided?" aria-label="Decision" use:autofocus onkeydown={(e) => e.key === 'Escape' && $decisions.length > 0 && (creating = false)} />
 		<input class="k-input" bind:value={rationale} placeholder="Why? (optional)" aria-label="Rationale" />
 		<div class="flex flex-wrap items-center gap-2">
-			<input type="date" class="k-input !h-8 !w-auto" bind:value={decidedOn} aria-label="Decided on" />
-			<select class="k-input !h-8 !w-auto !py-0" bind:value={newProject} aria-label="Project">
+			<input type="date" class="k-input !w-auto" bind:value={decidedOn} aria-label="Decided on" />
+			<select class="k-input !w-auto" bind:value={newProject} aria-label="Project">
 				<option value="">No project</option>
 				{#each $projects as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
 			</select>
-			<button class="k-btn k-btn-primary k-btn-sm ml-auto" disabled={!text.trim()}>Log decision</button>
+			<span class="ml-auto flex gap-1.5">
+				{#if $decisions.length > 0}
+					<button type="button" class="k-btn k-btn-ghost" onclick={() => (creating = false)}>Cancel</button>
+				{/if}
+				<button class="k-btn k-btn-primary" disabled={!text.trim()}>Log decision</button>
+			</span>
 		</div>
 	</form>
+	{/if}
 
 	{#if $decisions.length > 0}
 		<div class="mb-2 flex flex-wrap items-center gap-2">
@@ -135,19 +155,19 @@
 								<input class="k-input !h-8" bind:value={editText} aria-label="Decision" />
 								<input class="k-input !h-8" bind:value={editRationale} placeholder="Why?" aria-label="Rationale" />
 								<div class="flex gap-1.5">
-									<button class="k-btn k-btn-primary k-btn-sm">Save</button>
-									<button type="button" class="k-btn k-btn-ghost k-btn-sm" onclick={() => (editing = null)}>Cancel</button>
+									<button class="k-btn k-btn-primary">Save</button>
+									<button type="button" class="k-btn k-btn-ghost" onclick={() => (editing = null)}>Cancel</button>
 								</div>
 							</form>
 						{:else}
 							<p>{d.text}</p>
 							{#if d.rationale}<p class="text-[0.8125rem] text-[var(--color-text-muted)]">{d.rationale}</p>{/if}
-							<p class="mt-0.5 flex flex-wrap gap-x-2 text-xs text-[var(--color-text-faint)]">
-								<span>{d.decidedOn}</span>
+							<MetaLine class="mt-0.5 text-xs text-[var(--color-text-faint)]">
+								<span>{formatDay(d.decidedOn)}</span>
 								{#if d.decidedBy.length}<span>{d.decidedBy.join(', ')}</span>{/if}
 								{#if projectOf(d)}<a href="/projects/{projectOf(d)!.id}">{projectOf(d)!.name}</a>{/if}
 								{#if noteTitle(d.memoryId)}<a href="/memory/{d.memoryId}">from {noteTitle(d.memoryId)}</a>{/if}
-							</p>
+							</MetaLine>
 						{/if}
 					</div>
 					{#if editing !== d.id}

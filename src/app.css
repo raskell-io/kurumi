@@ -127,23 +127,25 @@
 	--color-bg: #ffffff;
 	--color-bg-secondary: #f7f7f8;
 	--color-text: #4c4f69;
-	--color-text-muted: #6c6f85;
-	--color-text-faint: #9ca0b0;
-	--color-accent: var(--accent-light, #7287fd);
-	--color-accent-hover: var(--accent-light-hover, #1e66f5);
+	--color-text-muted: #5a5e75;
+	--color-text-faint: #666b7f;
+	--color-accent: var(--accent-light, var(--theme-accent));
 	--color-border: #e3e5ea;
-	--color-danger: #d20f39;
+	--color-danger: #cd0f38;
 
 	/* Inline references in the editor */
-	--color-ref-person: #40a02b;
-	--color-ref-date: #1e66f5;
-	--color-ref-tag: #fe640b;
-	--color-ref-url: #8839ef;
+	--color-ref-person: #2c6e1d;
+	--color-ref-date: #0a51de;
+	--color-ref-tag: #a53d01;
+	--color-ref-url: #771ced;
 
 	/* Elevation */
 	--shadow-sm: 0 1px 2px rgba(15, 15, 30, 0.06);
 	--shadow-md: 0 4px 12px rgba(15, 15, 30, 0.08), 0 1px 3px rgba(15, 15, 30, 0.06);
 	--shadow-lg: 0 16px 40px rgba(15, 15, 30, 0.14), 0 2px 8px rgba(15, 15, 30, 0.06);
+	--color-warn: #8f4907;
+	--color-success: #2f7620;
+	--theme-accent: #415dfc;
 }
 
 /* Dark theme via system preference - Catppuccin Mocha */
@@ -153,9 +155,8 @@
 		--color-bg-secondary: #181825;
 		--color-text: #cdd6f4;
 		--color-text-muted: #a6adc8;
-		--color-text-faint: #7f849c;
-		--color-accent: var(--accent-dark, #b4befe);
-		--color-accent-hover: var(--accent-dark-hover, #89b4fa);
+		--color-text-faint: #82879e;
+		--color-accent: var(--accent-dark, var(--theme-accent));
 		--color-border: #313244;
 		--color-danger: #f38ba8;
 		--color-ref-person: #a6e3a1;
@@ -165,6 +166,9 @@
 		--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
 		--shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.3);
 		--shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+		--color-warn: #f9e2af;
+		--color-success: #a6e3a1;
+		--theme-accent: #b4befe;
 	}
 }
 
@@ -174,9 +178,8 @@
 	--color-bg-secondary: #181825;
 	--color-text: #cdd6f4;
 	--color-text-muted: #a6adc8;
-	--color-text-faint: #7f849c;
-	--color-accent: var(--accent-dark, #b4befe);
-	--color-accent-hover: var(--accent-dark-hover, #89b4fa);
+	--color-text-faint: #82879e;
+	--color-accent: var(--accent-dark, var(--theme-accent));
 	--color-border: #313244;
 	--color-danger: #f38ba8;
 	--color-ref-person: #a6e3a1;
@@ -186,6 +189,9 @@
 	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
 	--shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.3);
 	--shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+	--color-warn: #f9e2af;
+	--color-success: #a6e3a1;
+	--theme-accent: #b4befe;
 }
 
 /* Manual light theme override - Catppuccin Latte (with white bg) */
@@ -193,25 +199,29 @@
 	--color-bg: #ffffff;
 	--color-bg-secondary: #f7f7f8;
 	--color-text: #4c4f69;
-	--color-text-muted: #6c6f85;
-	--color-text-faint: #9ca0b0;
-	--color-accent: var(--accent-light, #7287fd);
-	--color-accent-hover: var(--accent-light-hover, #1e66f5);
+	--color-text-muted: #5a5e75;
+	--color-text-faint: #666b7f;
+	--color-accent: var(--accent-light, var(--theme-accent));
 	--color-border: #e3e5ea;
-	--color-danger: #d20f39;
-	--color-ref-person: #40a02b;
-	--color-ref-date: #1e66f5;
-	--color-ref-tag: #fe640b;
-	--color-ref-url: #8839ef;
+	--color-danger: #cd0f38;
+	--color-ref-person: #2c6e1d;
+	--color-ref-date: #0a51de;
+	--color-ref-tag: #a53d01;
+	--color-ref-url: #771ced;
 	--shadow-sm: 0 1px 2px rgba(15, 15, 30, 0.06);
 	--shadow-md: 0 4px 12px rgba(15, 15, 30, 0.08), 0 1px 3px rgba(15, 15, 30, 0.06);
 	--shadow-lg: 0 16px 40px rgba(15, 15, 30, 0.14), 0 2px 8px rgba(15, 15, 30, 0.06);
+	--color-warn: #8f4907;
+	--color-success: #2f7620;
+	--theme-accent: #415dfc;
 }
 
 
 /* Colour themes (Settings → Appearance; `palette-*` on <html>, set before first
-   paint in app.html). Catppuccin is the default above; the accent stays
-   the user's own. Listed in $lib/themes.ts. Like the default theme's,
+   paint in app.html). Catppuccin is the default above. Each theme brings
+   its own accent (--theme-accent), used unless the user picked one
+   (accent-* below). Every text colour here reads at 4.5:1 or more on the
+   theme's panel, sidebar and secondary surface. Listed in $lib/themes.ts. Like the default theme's,
    these selectors weigh no more than `:root` (`:where`), so the order
    decides and a CSS snippet's `:root { --color-bg: … }` wins. */
 /* Nord */
@@ -219,27 +229,33 @@
 	--color-bg: #eceff4;
 	--color-bg-secondary: #e5e9f0;
 	--color-text: #2e3440;
-	--color-text-muted: #4c566a;
-	--color-text-faint: #7b88a1;
+	--color-text-muted: #454e60;
+	--color-text-faint: #57647b;
 	--color-border: #d8dee9;
-	--color-danger: #bf616a;
-	--color-ref-person: #5e8a4a;
-	--color-ref-date: #5e81ac;
-	--color-ref-tag: #c0704f;
-	--color-ref-url: #9a6f96;
+	--color-danger: #a0414a;
+	--color-ref-person: #415f33;
+	--color-ref-date: #3f597a;
+	--color-ref-tag: #83472f;
+	--color-ref-url: #6e4d6b;
+	--color-warn: #824207;
+	--color-success: #2b6b1d;
+	--theme-accent: #4a6990;
 }
 :root:where(.palette-nord.dark) {
 	--color-bg: #2e3440;
 	--color-bg-secondary: #272c36;
 	--color-text: #eceff4;
 	--color-text-muted: #d8dee9;
-	--color-text-faint: #8892a6;
+	--color-text-faint: #949daf;
 	--color-border: #3b4252;
-	--color-danger: #bf616a;
-	--color-ref-person: #a3be8c;
-	--color-ref-date: #81a1c1;
-	--color-ref-tag: #d08770;
-	--color-ref-url: #b48ead;
+	--color-danger: #d9a2a7;
+	--color-ref-person: #bacfa9;
+	--color-ref-date: #b8cadc;
+	--color-ref-tag: #e6bfb3;
+	--color-ref-url: #d6c2d3;
+	--color-warn: #f9e2af;
+	--color-success: #a6e3a1;
+	--theme-accent: #88c0d0;
 }
 @media (prefers-color-scheme: dark) {
 	:root:where(.palette-nord:not(.light)) {
@@ -247,13 +263,16 @@
 		--color-bg-secondary: #272c36;
 		--color-text: #eceff4;
 		--color-text-muted: #d8dee9;
-		--color-text-faint: #8892a6;
+		--color-text-faint: #949daf;
 		--color-border: #3b4252;
-		--color-danger: #bf616a;
-		--color-ref-person: #a3be8c;
-		--color-ref-date: #81a1c1;
-		--color-ref-tag: #d08770;
-		--color-ref-url: #b48ead;
+		--color-danger: #d9a2a7;
+		--color-ref-person: #bacfa9;
+		--color-ref-date: #b8cadc;
+		--color-ref-tag: #e6bfb3;
+		--color-ref-url: #d6c2d3;
+		--color-warn: #f9e2af;
+		--color-success: #a6e3a1;
+		--theme-accent: #88c0d0;
 	}
 }
 /* Gruvbox */
@@ -261,27 +280,33 @@
 	--color-bg: #fbf1c7;
 	--color-bg-secondary: #f2e5bc;
 	--color-text: #3c3836;
-	--color-text-muted: #665c54;
-	--color-text-faint: #928374;
+	--color-text-muted: #554d46;
+	--color-text-faint: #6a5f53;
 	--color-border: #e5d5ad;
-	--color-danger: #cc241d;
-	--color-ref-person: #79740e;
-	--color-ref-date: #076678;
-	--color-ref-tag: #af3a03;
-	--color-ref-url: #8f3f71;
+	--color-danger: #ba211a;
+	--color-ref-person: #5f5b0b;
+	--color-ref-date: #076071;
+	--color-ref-tag: #9c3403;
+	--color-ref-url: #893c6c;
+	--color-warn: #804107;
+	--color-success: #2c6d1d;
+	--theme-accent: #af3a03;
 }
 :root:where(.palette-gruvbox.dark) {
 	--color-bg: #282828;
 	--color-bg-secondary: #1d2021;
 	--color-text: #ebdbb2;
 	--color-text-muted: #bdae93;
-	--color-text-faint: #928374;
+	--color-text-faint: #9c8e81;
 	--color-border: #3c3836;
-	--color-danger: #fb4934;
+	--color-danger: #fc7666;
 	--color-ref-person: #b8bb26;
-	--color-ref-date: #83a598;
-	--color-ref-tag: #fe8019;
-	--color-ref-url: #d3869b;
+	--color-ref-date: #a0bab0;
+	--color-ref-tag: #fe9a48;
+	--color-ref-url: #dea4b4;
+	--color-warn: #f9e2af;
+	--color-success: #a6e3a1;
+	--theme-accent: #fe8019;
 }
 @media (prefers-color-scheme: dark) {
 	:root:where(.palette-gruvbox:not(.light)) {
@@ -289,13 +314,16 @@
 		--color-bg-secondary: #1d2021;
 		--color-text: #ebdbb2;
 		--color-text-muted: #bdae93;
-		--color-text-faint: #928374;
+		--color-text-faint: #9c8e81;
 		--color-border: #3c3836;
-		--color-danger: #fb4934;
+		--color-danger: #fc7666;
 		--color-ref-person: #b8bb26;
-		--color-ref-date: #83a598;
-		--color-ref-tag: #fe8019;
-		--color-ref-url: #d3869b;
+		--color-ref-date: #a0bab0;
+		--color-ref-tag: #fe9a48;
+		--color-ref-url: #dea4b4;
+		--color-warn: #f9e2af;
+		--color-success: #a6e3a1;
+		--theme-accent: #fe8019;
 	}
 }
 /* Solarized */
@@ -303,27 +331,33 @@
 	--color-bg: #fdf6e3;
 	--color-bg-secondary: #eee8d5;
 	--color-text: #475b62;
-	--color-text-muted: #657b83;
-	--color-text-faint: #93a1a1;
+	--color-text-muted: #506064;
+	--color-text-faint: #586565;
 	--color-border: #e4ddc8;
-	--color-danger: #dc322f;
-	--color-ref-person: #859900;
-	--color-ref-date: #268bd2;
-	--color-ref-tag: #cb4b16;
-	--color-ref-url: #6c71c4;
+	--color-danger: #bf2320;
+	--color-ref-person: #556200;
+	--color-ref-date: #1a5f90;
+	--color-ref-tag: #9d3a11;
+	--color-ref-url: #494fb6;
+	--color-warn: #824207;
+	--color-success: #2d701e;
+	--theme-accent: #b34213;
 }
 :root:where(.palette-solarized.dark) {
 	--color-bg: #002b36;
 	--color-bg-secondary: #00222b;
 	--color-text: #c4d0d0;
 	--color-text-muted: #93a1a1;
-	--color-text-faint: #6c8189;
+	--color-text-faint: #7e9299;
 	--color-border: #0d3a45;
-	--color-danger: #dc322f;
-	--color-ref-person: #859900;
-	--color-ref-date: #268bd2;
-	--color-ref-tag: #cb4b16;
-	--color-ref-url: #6c71c4;
+	--color-danger: #e87a78;
+	--color-ref-person: #a1b900;
+	--color-ref-date: #78b9e7;
+	--color-ref-tag: #ef936c;
+	--color-ref-url: #aaaddd;
+	--color-warn: #f9e2af;
+	--color-success: #a6e3a1;
+	--theme-accent: #e96731;
 }
 @media (prefers-color-scheme: dark) {
 	:root:where(.palette-solarized:not(.light)) {
@@ -331,13 +365,16 @@
 		--color-bg-secondary: #00222b;
 		--color-text: #c4d0d0;
 		--color-text-muted: #93a1a1;
-		--color-text-faint: #6c8189;
+		--color-text-faint: #7e9299;
 		--color-border: #0d3a45;
-		--color-danger: #dc322f;
-		--color-ref-person: #859900;
-		--color-ref-date: #268bd2;
-		--color-ref-tag: #cb4b16;
-		--color-ref-url: #6c71c4;
+		--color-danger: #e87a78;
+		--color-ref-person: #a1b900;
+		--color-ref-date: #78b9e7;
+		--color-ref-tag: #ef936c;
+		--color-ref-url: #aaaddd;
+		--color-warn: #f9e2af;
+		--color-success: #a6e3a1;
+		--theme-accent: #e96731;
 	}
 }
 /* Rosé Pine */
@@ -345,27 +382,33 @@
 	--color-bg: #faf4ed;
 	--color-bg-secondary: #fffaf3;
 	--color-text: #575279;
-	--color-text-muted: #797593;
-	--color-text-faint: #9893a5;
+	--color-text-muted: #655f7d;
+	--color-text-faint: #706a80;
 	--color-border: #f2e9e1;
-	--color-danger: #b4637a;
-	--color-ref-person: #286983;
-	--color-ref-date: #56949f;
-	--color-ref-tag: #d7827e;
-	--color-ref-url: #907aa9;
+	--color-danger: #9b4a61;
+	--color-ref-person: #256179;
+	--color-ref-date: #386168;
+	--color-ref-tag: #9d3631;
+	--color-ref-url: #67527f;
+	--color-warn: #924a08;
+	--color-success: #2c6f1e;
+	--theme-accent: #c2423c;
 }
 :root:where(.palette-rose-pine.dark) {
 	--color-bg: #191724;
 	--color-bg-secondary: #1f1d2e;
 	--color-text: #e0def4;
 	--color-text-muted: #908caa;
-	--color-text-faint: #6e6a86;
+	--color-text-faint: #89859e;
 	--color-border: #26233a;
 	--color-danger: #eb6f92;
 	--color-ref-person: #9ccfd8;
 	--color-ref-date: #c4a7e7;
 	--color-ref-tag: #ebbcba;
 	--color-ref-url: #f6c177;
+	--color-warn: #f9e2af;
+	--color-success: #a6e3a1;
+	--theme-accent: #ebbcba;
 }
 @media (prefers-color-scheme: dark) {
 	:root:where(.palette-rose-pine:not(.light)) {
@@ -373,13 +416,16 @@
 		--color-bg-secondary: #1f1d2e;
 		--color-text: #e0def4;
 		--color-text-muted: #908caa;
-		--color-text-faint: #6e6a86;
+		--color-text-faint: #89859e;
 		--color-border: #26233a;
 		--color-danger: #eb6f92;
 		--color-ref-person: #9ccfd8;
 		--color-ref-date: #c4a7e7;
 		--color-ref-tag: #ebbcba;
 		--color-ref-url: #f6c177;
+		--color-warn: #f9e2af;
+		--color-success: #a6e3a1;
+		--theme-accent: #ebbcba;
 	}
 }
 /* Plain */
@@ -387,27 +433,33 @@
 	--color-bg: #ffffff;
 	--color-bg-secondary: #f6f6f6;
 	--color-text: #1f1f1f;
-	--color-text-muted: #5c5c5c;
-	--color-text-faint: #9a9a9a;
+	--color-text-muted: #494949;
+	--color-text-faint: #6b6b6b;
 	--color-border: #e6e6e6;
 	--color-danger: #c62828;
-	--color-ref-person: #2e7d32;
-	--color-ref-date: #1565c0;
-	--color-ref-tag: #d35400;
+	--color-ref-person: #286e2c;
+	--color-ref-date: #145fb4;
+	--color-ref-tag: #a24100;
 	--color-ref-url: #6a1b9a;
+	--color-warn: #8f4907;
+	--color-success: #2f7620;
+	--theme-accent: #be4c00;
 }
 :root:where(.palette-plain.dark) {
 	--color-bg: #161616;
 	--color-bg-secondary: #101010;
 	--color-text: #e6e6e6;
 	--color-text-muted: #a8a8a8;
-	--color-text-faint: #6f6f6f;
+	--color-text-faint: #818181;
 	--color-border: #2a2a2a;
-	--color-danger: #ef5350;
+	--color-danger: #ef5653;
 	--color-ref-person: #81c784;
 	--color-ref-date: #64b5f6;
 	--color-ref-tag: #ffb74d;
-	--color-ref-url: #ba68c8;
+	--color-ref-url: #c581d1;
+	--color-warn: #f9e2af;
+	--color-success: #a6e3a1;
+	--theme-accent: #ffb74d;
 }
 @media (prefers-color-scheme: dark) {
 	:root:where(.palette-plain:not(.light)) {
@@ -415,22 +467,57 @@
 		--color-bg-secondary: #101010;
 		--color-text: #e6e6e6;
 		--color-text-muted: #a8a8a8;
-		--color-text-faint: #6f6f6f;
+		--color-text-faint: #818181;
 		--color-border: #2a2a2a;
-		--color-danger: #ef5350;
+		--color-danger: #ef5653;
 		--color-ref-person: #81c784;
 		--color-ref-date: #64b5f6;
 		--color-ref-tag: #ffb74d;
-		--color-ref-url: #ba68c8;
+		--color-ref-url: #c581d1;
+		--color-warn: #f9e2af;
+		--color-success: #a6e3a1;
+		--theme-accent: #ffb74d;
 	}
 }
 
 /* Interaction surfaces derive from the text color so they work in both
-   themes and on both the main and sidebar backgrounds. */
+   themes and on both the main and sidebar backgrounds. Three steps that
+   never meet: hover, pressed, and selected (the strongest, which hover
+   does not lighten). */
 :root {
 	--color-hover: color-mix(in srgb, var(--color-text) 6%, transparent);
-	--color-active: color-mix(in srgb, var(--color-text) 10%, transparent);
+	--color-press: color-mix(in srgb, var(--color-text) 11%, transparent);
+	--color-active: color-mix(in srgb, var(--color-text) 13%, transparent);
 	--color-accent-soft: color-mix(in srgb, var(--color-accent) 14%, transparent);
+}
+
+/* ---- Accent states ----
+   The accent's hover and pressed shades are the accent itself, a step and
+   two steps further from the page (darker in light themes, lighter in
+   dark ones), so a button keeps its hue under the pointer. The label on
+   an accent fill is white in light themes and the page colour in dark ones.
+   --color-accent-ink is the accent for small text on a tint of itself
+   (badges, counts): a step deeper, so it reads on every theme's sidebar. --color-warn / --color-success are set per theme
+   above, like --color-danger. */
+:root {
+	--color-accent-hover: color-mix(in srgb, var(--color-accent) 86%, black);
+	--color-accent-press: color-mix(in srgb, var(--color-accent) 74%, black);
+	--color-on-accent: #fff;
+	--color-accent-ink: color-mix(in srgb, var(--color-accent) 80%, black);
+}
+:root:where(.dark) {
+	--color-accent-hover: color-mix(in srgb, var(--color-accent) 84%, white);
+	--color-accent-press: color-mix(in srgb, var(--color-accent) 70%, white);
+	--color-on-accent: var(--color-bg);
+	--color-accent-ink: color-mix(in srgb, var(--color-accent) 80%, white);
+}
+@media (prefers-color-scheme: dark) {
+	:root:where(:not(.light)) {
+		--color-accent-hover: color-mix(in srgb, var(--color-accent) 84%, white);
+		--color-accent-press: color-mix(in srgb, var(--color-accent) 70%, white);
+		--color-on-accent: var(--color-bg);
+		--color-accent-ink: color-mix(in srgb, var(--color-accent) 80%, white);
+	}
 }
 
 /* Editor font options ($lib/editor-fonts.ts). A class this file doesn't
@@ -475,48 +562,44 @@
 	--font-size-editor-base: 1.1875rem; /* 19px */
 }
 
-/* Accent colour (Settings → Appearance), from the same palette as the theme:
-   a light-mode and a dark-mode shade each. Lavender, the default, needs no class. */
+/* Accent colour (Settings → Appearance): a light-mode and a dark-mode shade
+   each, from the same palette as the default theme. Without a choice
+   (`accent-theme`) the colour theme's own accent is used (--theme-accent in
+   each theme above). The light shades carry a white label and read as text
+   on every light theme (WCAG AA, 4.5:1); the dark ones carry a dark label. */
+:root.accent-lavender {
+	--accent-light: #2f4efc;
+	--accent-dark: #b4befe;
+}
+
 :root.accent-blue {
-	--accent-light: #1e66f5;
-	--accent-light-hover: color-mix(in srgb, #1e66f5 80%, black);
+	--accent-light: #0b57ee;
 	--accent-dark: #89b4fa;
-	--accent-dark-hover: color-mix(in srgb, #89b4fa 80%, white);
 }
 
 :root.accent-sapphire {
-	--accent-light: #209fb5;
-	--accent-light-hover: color-mix(in srgb, #209fb5 80%, black);
+	--accent-light: #166f7f;
 	--accent-dark: #74c7ec;
-	--accent-dark-hover: color-mix(in srgb, #74c7ec 80%, white);
 }
 
 :root.accent-teal {
-	--accent-light: #179299;
-	--accent-light-hover: color-mix(in srgb, #179299 80%, black);
+	--accent-light: #127076;
 	--accent-dark: #94e2d5;
-	--accent-dark-hover: color-mix(in srgb, #94e2d5 80%, white);
 }
 
 :root.accent-green {
-	--accent-light: #40a02b;
-	--accent-light-hover: color-mix(in srgb, #40a02b 80%, black);
+	--accent-light: #2e731f;
 	--accent-dark: #a6e3a1;
-	--accent-dark-hover: color-mix(in srgb, #a6e3a1 80%, white);
 }
 
 :root.accent-peach {
-	--accent-light: #fe640b;
-	--accent-light-hover: color-mix(in srgb, #fe640b 80%, black);
+	--accent-light: #b14101;
 	--accent-dark: #fab387;
-	--accent-dark-hover: color-mix(in srgb, #fab387 80%, white);
 }
 
 :root.accent-mauve {
-	--accent-light: #8839ef;
-	--accent-light-hover: color-mix(in srgb, #8839ef 80%, black);
+	--accent-light: #822fee;
 	--accent-dark: #cba6f7;
-	--accent-dark-hover: color-mix(in srgb, #cba6f7 80%, white);
 }
 
 /* Content width (Settings → Appearance): notes, Read mode and every page
@@ -1086,9 +1169,22 @@ textarea {
 		max-width: max(var(--note-width), 76rem);
 	}
 
+	/* On a wide page, the heading (and anything else that should not move
+	   when a view goes wide) keeps the reading width's place: switching
+	   List → Board, or opening Calendar, leaves the title where it was. */
+	.k-page-narrow {
+		width: 100%;
+		max-width: calc(var(--note-width) - 2.5rem);
+		margin-inline: auto;
+	}
+
 	@media (min-width: 768px) {
 		.k-page {
 			padding: 3rem 2.5rem 6rem;
+		}
+
+		.k-page-narrow {
+			max-width: calc(var(--note-width) - 5rem);
 		}
 	}
 
@@ -1171,22 +1267,12 @@ textarea {
 	.k-btn-primary {
 		border-color: transparent;
 		background: var(--color-accent);
-		color: #fff;
+		color: var(--color-on-accent);
 		box-shadow: var(--shadow-sm);
 	}
 
 	.k-btn-primary:hover {
 		background: var(--color-accent-hover);
-	}
-
-	:root.dark .k-btn-primary {
-		color: #1e1e2e;
-	}
-
-	@media (prefers-color-scheme: dark) {
-		:root:not(.light) .k-btn-primary {
-			color: #1e1e2e;
-		}
 	}
 
 	.k-btn-ghost {
@@ -1352,7 +1438,7 @@ textarea {
 
 	.k-badge-accent {
 		background: var(--color-accent-soft);
-		color: var(--color-accent);
+		color: var(--color-accent-ink);
 	}
 
 	.k-badge-danger {
@@ -1361,13 +1447,13 @@ textarea {
 	}
 
 	.k-badge-warn {
-		background: color-mix(in srgb, #df8e1d 16%, transparent);
-		color: #df8e1d;
+		background: color-mix(in srgb, var(--color-warn) 16%, transparent);
+		color: var(--color-warn);
 	}
 
 	.k-badge-success {
-		background: color-mix(in srgb, #40a02b 14%, transparent);
-		color: #40a02b;
+		background: color-mix(in srgb, var(--color-success) 14%, transparent);
+		color: var(--color-success);
 	}
 
 	/* Empty state */
@@ -1446,6 +1532,289 @@ textarea {
 		transform-origin: var(--pop-origin, center);
 		animation: popIn var(--motion-base) var(--ease-enter);
 	}
+}
+
+/* ---- Pressed and selected states (colour) ----
+   Every control has a pressed step beyond its hover one, so a click shows
+   before the result does; selected rows keep their fill under the pointer. */
+@layer components {
+	.k-btn:active {
+		background: var(--color-press);
+	}
+
+	.k-btn-primary:active {
+		background: var(--color-accent-press);
+	}
+
+	.k-btn-danger:active {
+		background: color-mix(in srgb, var(--color-danger) 18%, transparent);
+	}
+
+	.k-icon-btn:active,
+	.k-menu-item:active,
+	.k-row:active,
+	.k-segmented > button:active {
+		background: var(--color-press);
+	}
+
+	.k-segmented > button[aria-pressed='true']:active,
+	.k-segmented > button.active:active {
+		background: var(--color-bg);
+	}
+
+	.k-row.selected,
+	.k-row.selected:hover {
+		background: var(--color-accent-soft);
+	}
+}
+
+/* ---- Form controls: one look per kind (colour and shape) ----
+   Real <select>, <input type=date|checkbox|radio> and <textarea> elements
+   under the styling, so keyboard, screen readers and the system pickers
+   work as before. color-scheme makes the browser's own parts (the date
+   picker's icon, a select's list) follow the light or dark theme. */
+:root {
+	color-scheme: light;
+}
+:root:where(.dark) {
+	color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+	:root:where(:not(.light)) {
+		color-scheme: dark;
+	}
+}
+
+@layer base {
+	input[type='checkbox'],
+	input[type='radio'] {
+		accent-color: var(--color-accent);
+	}
+}
+
+@layer components {
+	/* A select reads like the app's other fields: the theme's colours, the
+	   app's chevron, 13px text like buttons and segmented controls. */
+	select.k-input,
+	.k-select {
+		appearance: none;
+		-webkit-appearance: none;
+		padding-right: 2rem;
+		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+		background-position: right 0.625rem center;
+		background-repeat: no-repeat;
+		background-size: 0.875rem;
+		font-size: 0.8125rem;
+		text-overflow: ellipsis;
+		cursor: pointer;
+	}
+
+	.k-select {
+		height: 2rem;
+		padding-left: 0.625rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		background-color: var(--color-bg);
+		color: var(--color-text);
+	}
+
+	select.k-input:hover,
+	.k-select:hover {
+		border-color: color-mix(in srgb, var(--color-text) 22%, var(--color-border));
+	}
+
+	/* Date fields: the picker icon in the muted text colour, in both themes. */
+	input[type='date'].k-input,
+	input[type='datetime-local'].k-input,
+	input[type='time'].k-input {
+		font-size: 0.8125rem;
+		font-variant-numeric: tabular-nums;
+	}
+
+	input.k-input::-webkit-calendar-picker-indicator {
+		opacity: 0.6;
+		cursor: pointer;
+	}
+
+	input.k-input::-webkit-calendar-picker-indicator:hover {
+		opacity: 1;
+	}
+
+	/* A text box that grows with its text instead of showing a grip
+	   (use:autogrow for browsers without field-sizing). */
+	textarea.k-autogrow {
+		resize: none;
+		overflow: hidden;
+		field-sizing: content;
+	}
+
+	/* The app's checkbox for lists and forms: <input type=checkbox class="k-check"> */
+	.k-check {
+		appearance: none;
+		-webkit-appearance: none;
+		display: inline-grid;
+		place-content: center;
+		width: 1rem;
+		height: 1rem;
+		flex-shrink: 0;
+		margin: 0;
+		border: 1.5px solid color-mix(in srgb, var(--color-text) 45%, transparent);
+		border-radius: 0.25rem;
+		background: var(--color-bg);
+		cursor: pointer;
+	}
+
+	.k-check::after {
+		content: '';
+		width: 0.5rem;
+		height: 0.3rem;
+		margin-top: -0.1rem;
+		border: solid var(--color-on-accent);
+		border-width: 0 0 2px 2px;
+		rotate: -45deg;
+		scale: 0;
+		transition: scale var(--motion-fast) var(--ease-enter);
+	}
+
+	.k-check:checked {
+		border-color: var(--color-accent);
+		background: var(--color-accent);
+	}
+
+	.k-check:checked::after {
+		scale: 1;
+	}
+
+	.k-check:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+
+	/* The switch: <input type=checkbox class="k-switch"> or <button role=switch aria-checked>.
+	   Off, it has a visible edge in both themes. */
+	.k-switch {
+		position: relative;
+		flex-shrink: 0;
+		width: 2rem;
+		height: 1.125rem;
+		min-width: 2rem;
+		min-height: 1.125rem;
+		padding: 0;
+		border-radius: 999px;
+		background: var(--color-active);
+		box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-text) 28%, transparent);
+		appearance: none;
+		-webkit-appearance: none;
+		cursor: pointer;
+		transition: background var(--motion-fast) var(--ease-enter);
+	}
+
+	.k-switch::before {
+		content: '';
+		position: absolute;
+		top: 0.125rem;
+		left: 0.125rem;
+		width: 0.875rem;
+		height: 0.875rem;
+		border-radius: 999px;
+		background: var(--color-bg);
+		box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-text) 22%, transparent), var(--shadow-sm);
+		transition: transform var(--motion-fast) var(--ease-enter);
+	}
+
+	.k-switch:checked,
+	.k-switch[aria-checked='true'] {
+		background: var(--color-accent);
+		box-shadow: none;
+	}
+
+	.k-switch:checked::before,
+	.k-switch[aria-checked='true']::before {
+		box-shadow: var(--shadow-sm);
+		transform: translateX(0.875rem);
+	}
+
+	.k-switch:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+
+	/* The "done" control of a to-do, everywhere it is listed ($lib/components/DoneToggle.svelte). */
+	.k-done {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.25rem;
+		height: 1.375rem;
+		flex-shrink: 0;
+		color: var(--color-text-faint);
+	}
+
+	.k-done:hover,
+	.k-done[aria-pressed='true'] {
+		color: var(--color-accent);
+	}
+}
+
+@layer components {
+	/* A line of facts with " · " between the parts ($lib/components/ui/MetaLine.svelte) */
+	.k-meta {
+		display: inline-flex;
+		flex-wrap: wrap;
+		align-items: center;
+		column-gap: 0;
+		row-gap: 0.125rem;
+		min-width: 0;
+	}
+
+	.k-meta > * {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		white-space: nowrap;
+	}
+
+	.k-meta > * + *::before {
+		content: '·';
+		/* The part's own gap (0.25rem) follows the dot: the same space each side */
+		margin: 0 0.1em 0 0.4em;
+		color: var(--color-text-faint);
+	}
+
+	/* Keyboard keys in a popover ($lib/components/ui/KeyHints.svelte) */
+	.k-key-hints {
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+		padding: 0.25rem 0.5rem 0.5rem;
+		font-size: 0.8125rem;
+		color: var(--color-text-muted);
+	}
+
+	.k-key-hints > * {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+	}
+
+	.k-page-header > .k-key-hints-btn {
+		margin-left: auto;
+	}
+
+	@media (hover: none) {
+		.k-key-hints-btn {
+			display: none;
+		}
+	}
+}
+
+/* Fields carry their own focus ring (border + soft halo): the global
+   outline sits on the field's edge, not 2px outside it where it ran into
+   the next row of fields. */
+.k-input:focus-visible,
+.k-select:focus-visible {
+	outline: 2px solid var(--color-accent);
+	outline-offset: -1px;
 }
 
 /* Respect users who ask for less motion */

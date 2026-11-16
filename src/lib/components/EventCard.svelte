@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDayWithWeekday } from '$lib/dates/format';
 	import { markdownExcerpt } from '$lib/utils/excerpt';
 	import { goto } from '$app/navigation';
 	import {
@@ -33,12 +34,7 @@
 	let editLocation = $state('');
 
 	function formatDate(dateStr: string): string {
-		const date = new Date(dateStr + 'T00:00:00');
-		return date.toLocaleDateString('en-US', {
-			weekday: 'short',
-			month: 'short',
-			day: 'numeric'
-		});
+		return formatDayWithWeekday(dateStr);
 	}
 
 	function getRelativeDate(dateStr: string): string {

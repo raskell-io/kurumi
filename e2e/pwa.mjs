@@ -134,8 +134,8 @@ const checks = {
 		await page.evaluate(() => localStorage.setItem('kurumi-notifications-enabled', 'true'));
 		await page.goto(`${BASE}/#/actions`, { waitUntil: 'load' });
 		await page.waitForSelector('main', { timeout: 20_000 });
-		await page.waitForFunction(() => [...document.querySelectorAll('main button')].some((b) => b.textContent.trim() === 'New'), { timeout: 20_000 });
-		await page.evaluate(() => [...document.querySelectorAll('main button')].find((b) => b.textContent.trim() === 'New').click());
+		await page.waitForFunction(() => [...document.querySelectorAll('main button')].some((b) => b.textContent.trim() === 'New to-do'), { timeout: 20_000 });
+		await page.evaluate(() => [...document.querySelectorAll('main button')].find((b) => b.textContent.trim() === 'New to-do').click());
 		await page.waitForSelector('input[aria-label="To-do"]');
 		await page.type('input[aria-label="To-do"]', 'Pay the invoice');
 		await page.$eval('input[aria-label="Due date"]', (input) => {

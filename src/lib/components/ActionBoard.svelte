@@ -244,7 +244,7 @@
 	}
 
 	.meta-chip.warn {
-		color: #df8e1d;
+		color: var(--color-warn);
 	}
 
 	/* A card's move arrows: the one that can't move is not shown (it was a

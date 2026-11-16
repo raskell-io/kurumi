@@ -6,7 +6,7 @@ device survive: there's no Kurumi account or Kurumi cloud.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/settings-sync-dark.webp">
-  <img src="images/settings-sync.webp" alt="Settings → Sync: the primary method choice (Kurumi server, Git, S3, WebDAV, Local, Azure), mirrors, and the Deploy to Cloudflare button">
+  <img src="images/settings-sync.webp" alt="Settings → Sync: Use Kurumi on another device, with three steps and the Set up on Cloudflare button, and Other ways to sync folded below">
 </picture>
 
 ## Pick a method
@@ -14,16 +14,20 @@ device survive: there's no Kurumi account or Kurumi cloud.
 | Method | Good for | Setup |
 |--------|----------|-------|
 | **Kurumi server** | Most people: phone + laptop, no command line | [One click on a free Cloudflare account](sync-server.md) |
-| **Local** + [sync agent](../agent/README.md) | A git repo of plain Markdown at work, using your own git and SSH keys | A folder and one command |
-| **Git** | A git repo, from the browser alone | A repo and a personal access token |
-| **S3** | Storage you already have (AWS, R2, MinIO, Backblaze, …) | Endpoint, bucket, keys |
+| **A folder on this computer** + [sync agent](../agent/README.md) | A git repo of plain Markdown at work, using your own git and SSH keys | A folder and one command |
+| **Git repository** | A git repo, from the browser alone | A repo and a personal access token |
+| **S3 storage** | Storage you already have (AWS, R2, MinIO, Backblaze, …) | Endpoint, bucket, keys |
 | **WebDAV** | Nextcloud, Synology, ownCloud | Address, user, password |
-| **Azure** | Azure Blob Storage | Account URL, container, SAS token |
-| **Local** alone | One computer, a backup folder, or a folder another tool syncs | Choose a folder (Chrome/Edge) |
+| **Azure storage** | Azure Blob Storage | Account URL, container, SAS token |
+| **A folder on this computer** alone | One computer, a backup folder, or a folder another tool syncs | Choose a folder (Chrome/Edge) |
 
-Choose the **primary method** in Settings → Sync. **Mirrors** (optional)
-receive a copy after every successful sync, one way, e.g. a nightly
-backup to S3 while the Kurumi server is primary. Git can't be a mirror.
+Settings → Sync opens with the recommended way, *Use Kurumi on another
+device* (the Kurumi server, in three steps). Everything else is under
+**Other ways to sync**: **Sync with** picks the method (Kurumi server, Git
+repository, S3 storage, WebDAV, A folder on this computer, Azure storage),
+and **Also copy to** (optional) sends a copy after every successful sync,
+one way, e.g. a nightly backup to S3 while the Kurumi server is the one
+you sync with. Git can't be a copy target.
 
 ## When sync runs
 

@@ -15,7 +15,7 @@
 	import { onMount, mount, unmount, tick } from 'svelte';
 	import { loadHighlighter, highlightToHtml } from '$lib/highlight';
 	import { CALLOUT_BLOCK, CALLOUT_LABELS, calloutType } from '$lib/callouts';
-	import { formatDay, formatDayLong } from '$lib/format-date';
+	import { formatDay, formatDayLong } from '$lib/dates/format';
 	import DatabaseBlock from './database/DatabaseBlock.svelte';
 	import { databaseBlockViewId } from '$lib/database';
 
@@ -252,7 +252,7 @@
 		// Negative lookbehind `(?<!:)` excludes URL schemes so
 		// https://... doesn't get its `//` turned into a date button.
 		html = html.replace(/(?<!:)\/\/(\d{4}-\d{2}-\d{2})/g, (_, date) => {
-			return `<button type="button" class="date-reference" data-ref-type="date" data-ref-value="${date}" title="${escapeAttr(formatDayLong(date))}">${escapeHtml(formatDay(date))}</button>`;
+			return `<button type="button" class="date-reference" data-ref-type="date" data-ref-value="${date}" title="${escapeAttr(formatDayLong(date) || date)}">${escapeHtml(formatDay(date) || date)}</button>`;
 		});
 
 		// Process people @Full Name - use data attributes for popup

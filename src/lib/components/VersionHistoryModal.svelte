@@ -8,7 +8,7 @@
 	 */
 	import { getMemoryHistory, restoreMemoryVersion, type MemoryVersion } from '$lib/db';
 	import { X, RotateCcw, Code } from 'lucide-svelte';
-	import { formatMoment } from '$lib/format-date';
+	import { formatMoment } from '$lib/dates/format';
 	import MarkdownRenderer from './MarkdownRenderer.svelte';
 	import { onMount } from 'svelte';
 
@@ -61,7 +61,7 @@
 		versions.map((v, i) => {
 			const label = when(v.time);
 			const same = (j: number) => versions[j] && v.time && when(versions[j].time) === label;
-			return same(i - 1) || same(i + 1) ? formatMoment(v.time, new Date(), undefined, { seconds: true }) : label;
+			return same(i - 1) || same(i + 1) ? formatMoment(v.time, { seconds: true }) : label;
 		})
 	);
 

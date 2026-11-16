@@ -704,9 +704,8 @@ export async function initDB(): Promise<void> {
 						id: dailyJournalId,
 						name: 'Daily Journal',
 						description: 'Daily reflection and planning template',
-						content: `# {weekday}, {date}
-
-## How I'm feeling
+						// No heading of its own: the note's title already says the day.
+						content: `## How I'm feeling
 
 ## Today's priorities
 - [ ]
@@ -3020,7 +3019,7 @@ export function getOrCreateDailyNote(isoDate: string): MemoryObject {
 	const template = getTemplateByName('Daily Journal');
 	const body = template
 		? applyTemplateVariables(template.content, { date: isoDate })
-		: `# ${isoDate}\n\n`;
+		: '';
 
 	const memory = addMemoryObject(expectedTitle, body, null);
 
@@ -3030,7 +3029,7 @@ export function getOrCreateDailyNote(isoDate: string): MemoryObject {
 		generateJournalPrompts(isoDate).then((prompts) => {
 			if (prompts) {
 				updateMemoryObject(memory.id, {
-					bodyMarkdown: (memory.bodyMarkdown || '') + '\n\n' + prompts
+					bodyMarkdown: (memory.bodyMarkdown ? memory.bodyMarkdown + '\n\n' : '') + prompts
 				});
 			}
 		}).catch(() => {});
@@ -4731,9 +4730,8 @@ export function addStarterTemplates(): void {
 			id: dailyJournalId,
 			name: 'Daily Journal',
 			description: 'Daily reflection and planning template',
-			content: `# {weekday}, {date}
-
-## How I'm feeling
+			// No heading of its own: the note's title already says the day.
+			content: `## How I'm feeling
 
 ## Today's priorities
 - [ ]
