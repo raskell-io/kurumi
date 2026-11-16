@@ -160,10 +160,13 @@ export function growX(node: HTMLElement): TransitionConfig {
 	const width = node.offsetWidth;
 	const left = parseFloat(style.marginLeft) || 0;
 	const right = parseFloat(style.marginRight) || 0;
+	// The row's gap after it appears or goes with it too, not in one step.
+	const gap = node.parentElement ? parseFloat(getComputedStyle(node.parentElement).columnGap) || 0 : 0;
 	return {
 		duration,
 		easing: easing('enter'),
-		css: (t) => `width:${t * width}px;min-width:0;margin-left:${t * left}px;margin-right:${t * right}px;opacity:${t};overflow:hidden`
+		css: (t) =>
+			`width:${t * width}px;min-width:0;margin-left:${t * left}px;margin-right:${t * right - (1 - t) * gap}px;opacity:${t};overflow:hidden`
 	};
 }
 

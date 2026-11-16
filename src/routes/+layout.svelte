@@ -1957,8 +1957,10 @@
 		.sidebar.sidebar-away {
 			margin-left: calc(-1 * var(--sidebar-width));
 			visibility: hidden;
+			/* The same curve as the expand button growing into the top bar, so
+			   the tabs move one way only. */
 			transition:
-				margin-left var(--motion-base) var(--ease-exit),
+				margin-left var(--motion-base) var(--ease-enter),
 				visibility 0s linear var(--motion-base);
 		}
 	}
