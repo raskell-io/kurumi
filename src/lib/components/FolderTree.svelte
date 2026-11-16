@@ -1666,17 +1666,17 @@
 		font-size: 0.8125rem;
 		color: var(--color-text-muted);
 		text-decoration: none;
-		background: var(--color-bg-secondary);
+		background: var(--shell-chrome, var(--color-bg-secondary));
 	}
 
 	.tree-row:hover {
-		background: color-mix(in srgb, var(--color-text) 6%, var(--color-bg-secondary));
+		background: color-mix(in srgb, var(--color-text) 6%, var(--shell-chrome, var(--color-bg-secondary)));
 		color: var(--color-text);
 	}
 
 	.tree-row-active,
 	.tree-row-active:hover {
-		background: color-mix(in srgb, var(--color-text) 10%, var(--color-bg-secondary));
+		background: color-mix(in srgb, var(--color-text) 10%, var(--shell-chrome, var(--color-bg-secondary)));
 		color: var(--color-text);
 		font-weight: 500;
 	}

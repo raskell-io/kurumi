@@ -93,6 +93,7 @@
 		X,
 		Search,
 		ChevronRight,
+		MoreHorizontal,
 		GitFork,
 		BookOpen,
 		Settings,
@@ -307,6 +308,27 @@
 		{ href: '/drafts', label: 'Drafts', icon: Pencil, hint: 'Email & calendar drafts' }
 	];
 
+	// Shown under "More" until opened (remembered per device): reachable, not in the way.
+	const MORE_NAV = new Set(['/calendar', '/proposals', '/drafts']);
+	let showMoreNav = $state(false);
+	let mainNav = $derived(primaryNav.filter((item) => !MORE_NAV.has(item.href)));
+	let moreNav = $derived(primaryNav.filter((item) => MORE_NAV.has(item.href)));
+	// What "More" hides that wants attention.
+	let moreCount = $derived(moreNav.reduce((sum, item) => sum + (item.count?.() ?? 0), 0));
+	function toggleMoreNav() {
+		showMoreNav = !showMoreNav;
+		try {
+			localStorage.setItem('kurumi-nav-more', showMoreNav ? '1' : '0');
+		} catch {
+			// Not remembered, that's all.
+		}
+	}
+	// The footer's menu: the places that were icons without names.
+	let showFooterMenu = $state(false);
+	// "Graph (⌘G)": the name, and the shortcut.
+	const placeName = (label: string) => label.replace(/\s*\(.*\)$/, '');
+	const placeKey = (label: string) => /\((.*)\)$/.exec(label)?.[1] ?? '';
+
 	const workNav: NavItem[] = [
 		{ href: '/projects', label: 'Projects', icon: FolderKanban },
 		{ href: '/meetings', label: 'Meetings', icon: CalendarClock, hint: 'Recurring meetings and their agendas' },
@@ -519,6 +541,7 @@
 
 		sidebarCollapsed = localStorage.getItem('kurumi-sidebar-collapsed') === '1';
 
+		showMoreNav = localStorage.getItem('kurumi-nav-more') === '1';
 		// Load sidebar width from localStorage
 		const savedWidth = localStorage.getItem('kurumi-sidebar-width');
 		if (savedWidth) {
@@ -794,7 +817,7 @@
 		</div>
 	</div>
 {:else}
-	<div class="flex h-[100dvh] bg-[var(--color-bg)]">
+	<div class="app-shell flex h-[100dvh]" class:shell-no-sidebar={($focusMode || sidebarCollapsed) && !isMobile}>
 		<!-- Mobile overlay -->
 		{#if isMobile && sidebarOpen}
 			<button
@@ -806,9 +829,9 @@
 
 		<!-- Sidebar -->
 		<aside
-			class="sidebar fixed inset-y-0 left-0 z-50 flex w-[85vw] max-w-[340px] flex-col bg-[var(--color-bg-secondary)] md:relative md:z-auto md:max-w-none md:border-r md:border-[var(--color-border)] {sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}"
+			class="sidebar fixed inset-y-0 left-0 z-50 flex w-[85vw] max-w-[340px] flex-col md:relative md:z-auto md:max-w-none {sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}"
 			class:hidden={($focusMode || sidebarCollapsed) && !isMobile}
-			class:shadow-2xl={isMobile}
+			class:shadow-2xl={isMobile && sidebarOpen}
 			style="transition: transform 250ms cubic-bezier(0.4, 0, 0.2, 1); width: {isMobile ? undefined : `${sidebarWidth}px`};"
 			role="navigation"
 			aria-label="Main navigation"
@@ -854,7 +877,7 @@
 						<span class="flex-1 truncate text-left">Search</span>
 						<span class="k-kbd hidden md:inline-flex">{modKey}K</span>
 					</button>
-					{#each primaryNav.filter((item) => $currentVaultCaps.records || item.href === '/') as item (item.href)}
+					{#each mainNav.filter((item) => $currentVaultCaps.records || item.href === '/') as item (item.href)}
 						{@const count = item.count?.() ?? 0}
 						<a
 							href={item.href}
@@ -871,6 +894,37 @@
 							{/if}
 						</a>
 					{/each}
+					{#if $currentVaultCaps.records}
+						{@const moreOpen = showMoreNav || moreNav.some((item) => isActive(item.href))}
+						<button onclick={toggleMoreNav} class="nav-row w-full" aria-expanded={moreOpen} aria-controls="more-nav">
+							<ChevronRight class="nav-icon transition-transform {moreOpen ? 'rotate-90' : ''}" aria-hidden="true" />
+							<span class="flex-1 truncate text-left">More</span>
+							{#if !moreOpen && moreCount > 0}
+								<span class="nav-count nav-count-warn" title="Waiting in Proposals">{moreCount > 99 ? '99+' : moreCount}</span>
+							{/if}
+						</button>
+						{#if moreOpen}
+							<div id="more-nav" class="space-y-px">
+							{#each moreNav as item (item.href)}
+								{@const count = item.count?.() ?? 0}
+								<a
+									href={item.href}
+									onclick={handleNoteClick}
+									class="nav-row"
+									class:nav-row-active={isActive(item.href)}
+									aria-current={isActive(item.href) ? 'page' : undefined}
+									title={item.hint}
+								>
+									<item.icon class="nav-icon" />
+									<span class="flex-1 truncate">{item.label}</span>
+									{#if count > 0}
+										<span class="nav-count" class:nav-count-warn={item.warn}>{count > 99 ? '99+' : count}</span>
+									{/if}
+								</a>
+							{/each}
+							</div>
+						{/if}
+					{/if}
 				</div>
 
 				<!-- Work: projects, meetings, decisions, questions -->
@@ -1031,29 +1085,22 @@
 				</nav>
 			</div>
 
-			<!-- Footer -->
-			<!-- Bottom padding: a real gap on desktop (the plain safe-bottom
-			     utility resolves to 0 there and overrode py-*), more on phones
-			     with a home indicator. -->
-			<div
-				class="flex items-center justify-between gap-0.5 border-t border-[var(--color-border)] px-2 pt-2"
-				style="padding-bottom: max(0.625rem, env(safe-area-inset-bottom, 0px));"
-			>
-				{#each footerNav.filter((item) => $currentVaultCaps.records || item.href !== '/trash') as item (item.label)}
-					<a
-						href={item.href}
-						onclick={handleNoteClick}
-						class="k-icon-btn relative"
-						class:footer-active={isActive(item.href)}
-						title={item.label}
-						aria-label={item.label}
-					>
-						<item.icon class="h-4 w-4" />
-						{#if item.label === 'Trash' && $trashCount > 0}
-							<span class="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]"></span>
-						{/if}
-					</a>
-				{/each}
+			<!-- Footer: Settings by name, the theme, the assistant, and a menu
+			     with names for the rest. Bottom padding: a real gap on desktop
+			     (the plain safe-bottom utility resolves to 0 there and overrode
+			     py-*), more on phones with a home indicator. -->
+			<div class="sidebar-footer relative flex items-center gap-0.5 px-2 pt-1.5" style="padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));">
+				<a
+					href="/settings"
+					onclick={handleNoteClick}
+					class="nav-row min-w-0 flex-1"
+					class:nav-row-active={isActive('/settings')}
+					aria-current={isActive('/settings') ? 'page' : undefined}
+					title={`Settings (${modKey},)`}
+				>
+					<Settings class="nav-icon" />
+					<span class="truncate">Settings</span>
+				</a>
 				<button
 					onclick={() => (showAgentPane = !showAgentPane)}
 					class="k-icon-btn"
@@ -1078,6 +1125,44 @@
 						<Monitor class="h-4 w-4" />
 					{/if}
 				</button>
+				<button
+					onclick={() => (showFooterMenu = !showFooterMenu)}
+					class="k-icon-btn relative"
+					class:footer-active={showFooterMenu}
+					title="Graph, Read mode, References, Trash"
+					aria-label="More places"
+					aria-haspopup="menu"
+					aria-expanded={showFooterMenu}
+				>
+					<MoreHorizontal class="h-4 w-4" />
+					{#if $trashCount > 0 && $currentVaultCaps.records}
+						<span class="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]"></span>
+					{/if}
+				</button>
+				{#if showFooterMenu}
+					<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+					<div class="fixed inset-0 z-40" onclick={() => (showFooterMenu = false)}></div>
+					<div class="k-menu absolute bottom-full right-2 z-50 mb-1 w-56" role="menu">
+						{#each footerNav.filter((item) => item.href !== '/settings' && ($currentVaultCaps.records || item.href !== '/trash')) as item (item.label)}
+							<a
+								href={item.href}
+								onclick={() => { showFooterMenu = false; handleNoteClick(); }}
+								class="k-menu-item no-underline"
+								class:footer-active={isActive(item.href)}
+								role="menuitem"
+								aria-label={item.label}
+							>
+								<item.icon class="h-4 w-4 text-[var(--color-text-muted)]" />
+								<span class="flex-1 truncate">{placeName(item.label)}</span>
+								{#if item.label === 'Trash' && $trashCount > 0}
+									<span class="nav-count">{$trashCount > 99 ? '99+' : $trashCount}</span>
+								{:else if placeKey(item.label)}
+									<span class="k-kbd !text-[0.625rem]">{placeKey(item.label)}</span>
+								{/if}
+							</a>
+						{/each}
+					</div>
+				{/if}
 			</div>
 		</aside>
 
@@ -1097,8 +1182,9 @@
 			</div>
 		{/if}
 
-		<!-- Main Content -->
-		<main class="relative flex min-w-0 flex-1 flex-col" class:overflow-hidden={!isReadMode} aria-label="Main content">
+		<!-- The stage: the tab strip on the chrome, and under it the content as
+		     raised panels (the page; beside it the split note and the assistant). -->
+		<div class="shell-stage flex min-w-0 flex-1 flex-col">
 			<!-- Tab bar (recently-opened memories) -->
 			{#if !$focusMode && !isMobile && ($openTabs.length > 0 || sidebarCollapsed)}
 				<div class="tab-bar">
@@ -1162,6 +1248,9 @@
 				</div>
 			{/if}
 
+		<div class="shell-panels flex min-h-0 flex-1">
+		<!-- Main Content -->
+		<main class="shell-panel relative flex min-w-0 flex-1 flex-col" class:overflow-hidden={!isReadMode} aria-label="Main content">
 			<!-- Mobile header (hidden in read mode, on notes — which have their
 			     own top bar — and on desktop) -->
 			{#if !isReadMode && !editNoteId}
@@ -1226,15 +1315,21 @@
 		{#if showSplit && $splitNoteId}
 			<!-- Loaded when first opened: it carries the editor, which most pages don't need -->
 			{#await import('$lib/components/SplitPane.svelte') then { default: SplitPane }}
-				<SplitPane noteId={$splitNoteId} />
+				<div class="shell-panel shell-panel-side flex min-w-0 flex-1">
+					<SplitPane noteId={$splitNoteId} />
+				</div>
 			{/await}
 		{/if}
 
 		{#if showAgentPane}
 			{#await loadAgentPane() then { default: AgentPane }}
-				<AgentPane onClose={() => (showAgentPane = false)} />
+				<div class="shell-panel shell-panel-side shell-panel-agent flex">
+					<AgentPane onClose={() => (showAgentPane = false)} />
+				</div>
 			{/await}
 		{/if}
+		</div>
+		</div>
 	</div>
 
 	<!-- Command Palette -->
@@ -1389,17 +1484,75 @@
 	}
 
 	/* Tab bar */
+	/* The shell: one background (the "chrome") behind the sidebar and the tab
+	   strip, and the content on it as raised panels. Colours, radius and
+	   gutter are tokens in app.css (--shell-*), so themes and CSS snippets
+	   can set them. Below the md breakpoint the panel is the whole screen. */
+	.app-shell {
+		background: var(--shell-chrome);
+	}
+
+	.sidebar {
+		background: var(--shell-chrome);
+	}
+
+	.shell-panel {
+		background: var(--shell-panel);
+	}
+
+	@media (min-width: 768px) {
+		.shell-panels {
+			gap: var(--shell-gutter);
+			padding: 0 var(--shell-gutter) var(--shell-gutter) 0;
+		}
+
+		/* No tab strip above (no tabs open): the panel keeps its distance from the top too. */
+		.shell-panels:first-child {
+			padding-top: var(--shell-gutter);
+		}
+
+		/* Sidebar collapsed or focus mode: the panel has the window to its left. */
+		.shell-no-sidebar .shell-panels {
+			padding-left: var(--shell-gutter);
+		}
+
+		.shell-panel {
+			overflow: hidden;
+			border: 1px solid var(--shell-panel-border);
+			border-radius: var(--shell-radius);
+			box-shadow: var(--shell-panel-shadow);
+		}
+
+		/* The split note and the assistant are panels of their own, not strips of the page. */
+		.shell-panel-side :global(.split-pane),
+		.shell-panel-side :global(.agent-pane) {
+			border-left: 0;
+		}
+
+		.shell-panel-agent {
+			flex: none;
+		}
+	}
+
+	@media (prefers-reduced-motion: no-preference) {
+		.shell-panels {
+			transition: padding 160ms ease;
+		}
+	}
+
 	.tab-bar {
 		display: flex;
-		align-items: stretch;
+		align-items: center;
 		gap: 0.125rem;
-		height: 2.375rem;
+		height: 2.5rem;
 		flex-shrink: 0;
 		overflow-x: auto;
-		border-bottom: 1px solid var(--color-border);
-		background: var(--color-bg-secondary);
-		padding: 0.3125rem 0.5rem 0;
+		padding: 0 var(--shell-gutter) 0 0.125rem;
 		scrollbar-width: none;
+	}
+
+	.shell-no-sidebar .tab-bar {
+		padding-left: var(--shell-gutter);
 	}
 
 	.tab-bar::-webkit-scrollbar {
@@ -1418,9 +1571,9 @@
 		color: var(--color-text-muted);
 		text-decoration: none;
 		white-space: nowrap;
+		height: 1.75rem;
 		border: 1px solid transparent;
-		border-bottom: none;
-		border-radius: var(--radius-md) var(--radius-md) 0 0;
+		border-radius: var(--radius-md);
 		user-select: none;
 	}
 
@@ -1444,11 +1597,12 @@
 		color: var(--color-accent);
 	}
 
+	/* The open note's tab: a piece of the panel's surface on the chrome. */
 	.tab-item.tab-active {
 		color: var(--color-text);
-		background: var(--color-bg);
-		border-color: var(--color-border);
-		margin-bottom: -1px;
+		background: var(--shell-panel);
+		border-color: var(--shell-panel-border);
+		box-shadow: var(--shell-panel-shadow);
 	}
 
 	.tab-close {

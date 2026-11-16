@@ -63,6 +63,17 @@
 	--font-sans: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 	--font-mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 	--font-editor: 'iA Writer Quattro S', Georgia, 'Times New Roman', serif;
+
+	/* The app shell (+layout.svelte): the "chrome" behind the sidebar and the
+	   tab strip, and the content panel raised on it. Derived from the theme's
+	   own colours, so every theme has them; a theme or CSS snippet may set
+	   any of these directly. */
+	--shell-chrome: color-mix(in srgb, var(--color-bg-secondary) 97%, black);
+	--shell-panel: var(--color-bg);
+	--shell-panel-border: var(--color-border);
+	--shell-panel-shadow: 0 1px 2px color-mix(in srgb, var(--color-text) 6%, transparent);
+	--shell-radius: 12px;
+	--shell-gutter: 8px;
 	--font-size-editor: 1.0625rem;
 
 	/* Shape */
