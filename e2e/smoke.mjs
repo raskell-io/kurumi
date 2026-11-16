@@ -2444,7 +2444,7 @@ const scenarios = {
 		// (in the dev server styles arrive after `load`)
 		await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() !== '');
 		const accent = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim());
-		assert.ok(['#179299', '#94e2d5'].includes(accent), accent);
+		assert.ok(['#127076', '#94e2d5'].includes(accent), accent);
 		assert.deepEqual(errors, []);
 	},
 

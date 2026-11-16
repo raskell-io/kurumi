@@ -182,6 +182,6 @@
 	}
 
 	.sync-fab.is-conflict {
-		color: #df8e1d;
+		color: var(--color-warn);
 	}
 </style>

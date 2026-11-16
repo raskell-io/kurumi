@@ -7,7 +7,8 @@
 	 * one adds it (onAddOption). Everything else edits inline.
 	 */
 	import type { PropertyDefinition } from '$lib/db/types';
-	import { asList, formatDate, isEmptyValue, optionHue, parseInput } from '$lib/database';
+	import { asList, isEmptyValue, optionHue, parseInput } from '$lib/database';
+	import { formatDay } from '$lib/dates/format';
 	import Popover from './Popover.svelte';
 	import { Check, ExternalLink, X } from 'lucide-svelte';
 
@@ -105,6 +106,7 @@
 	<label class="pv-check">
 		<input
 			type="checkbox"
+			class="k-check"
 			checked={!!value}
 			disabled={readonly}
 			onchange={(e) => onChange((e.currentTarget as HTMLInputElement).checked)}
@@ -151,7 +153,7 @@
 					{/each}
 				</span>
 			{:else if prop.type === 'date'}
-				{formatDate(String(value))}
+				{formatDay(String(value))}
 			{:else if prop.type === 'number'}
 				<span class="tabular-nums">{Number(value).toLocaleString()}</span>
 			{:else if prop.type === 'person'}
@@ -271,8 +273,14 @@
 		color: transparent;
 	}
 
-	.pv-date.is-empty:not(:focus):not(:hover)::-webkit-calendar-picker-indicator {
+	/* One calendar icon for the field being pointed at, not one per cell */
+	.pv-date:not(:focus):not(:hover)::-webkit-calendar-picker-indicator {
 		opacity: 0;
+	}
+
+	.pv-date::-webkit-calendar-picker-indicator {
+		opacity: 0.6;
+		cursor: pointer;
 	}
 
 	.pv-check {
@@ -282,12 +290,6 @@
 		padding: 0 0.375rem;
 	}
 
-	.pv-check input {
-		width: 1rem;
-		height: 1rem;
-		accent-color: var(--color-accent);
-		cursor: pointer;
-	}
 
 	.pv-open {
 		display: inline-flex;

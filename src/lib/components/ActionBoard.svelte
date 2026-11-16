@@ -244,7 +244,7 @@
 	}
 
 	.meta-chip.warn {
-		color: #df8e1d;
+		color: var(--color-warn);
 	}
 
 	.board-empty {
