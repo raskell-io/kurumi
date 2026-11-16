@@ -237,6 +237,13 @@ OpenAI to MMS when the API key is missing.
   markdown side `columns-markdown.ts`). Only the container construct of
   micromark-extension-directive is on: inline `:name` would change ordinary text.
   Other containers stay raw (html node). Read mode: `renderColumns` in MarkdownRenderer
+- Callouts (`> [!type] Title`, `$lib/callouts`, `editor/callout.ts`), `==highlights==`
+  (`editor/highlightText.ts`), link brackets and `//dates` (wikilink.ts, datePeople.ts)
+  are drawn by decorations only: the document and the Markdown don't change. Toggles
+  (`<details>`) are a real node (`editor/toggle.ts`) whose remark side
+  (`toggle-markdown.ts`, tested without a DOM) keeps the tags as written and writes
+  back the same paragraphs Milkdown read, so linked folders see no change. Dates for
+  people: `$lib/format-date` (Intl, the user's locale)
 - Toggle headings: `editor/headingFold.ts`, folds per device in localStorage
   (`kurumi-folds:<noteId>`), never in the markdown
 - Vim mode: `editor/vim.ts` (opt-in, `kurumi-vim`). The layout's Escape handler

@@ -857,6 +857,116 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
+	async 'editor: callouts, toggles and highlights look finished, and their Markdown stays as written'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const body =
+			'Plain line with ==marked words==, a [[Somewhere]] link and a date //2026-11-20.\n\n' +
+			'> [!info] Good to know\n> The body.\n\n' +
+			'<details>\n<summary>Toggle title</summary>\n\nHidden body\n\n</details>\n\nLast line\n';
+		await db(page, `db.addMemoryObject('Finished', arg);`, body);
+		await openTreeNote(page, 'Finished');
+		const look = () =>
+			page.evaluate(() => {
+				const pm = document.querySelector('main .ProseMirror');
+				const callout = pm.querySelector('blockquote.kurumi-callout');
+				const toggle = pm.querySelector('.kurumi-toggle');
+				return {
+					text: pm.innerText,
+					callout: callout?.dataset.callout ?? null,
+					title: callout?.querySelector('.callout-title')?.textContent ?? null,
+					icon: callout?.querySelector('button.callout-icon')?.getAttribute('aria-label') ?? null,
+					toggleOpen: toggle?.classList.contains('is-open') ?? null,
+					summary: toggle?.querySelector('.kurumi-toggle-summary')?.textContent ?? null,
+					caret: toggle?.querySelector('.kurumi-toggle-caret')?.getAttribute('aria-expanded') ?? null,
+					highlight: pm.querySelector('.kurumi-highlight')?.textContent ?? null
+				};
+			});
+		let seen = await look();
+		assert.equal(seen.callout, 'info');
+		assert.equal(seen.title, 'Good to know');
+		assert.match(seen.icon, /Info callout/);
+		assert.equal(seen.summary, 'Toggle title');
+		assert.equal(seen.toggleOpen, false, 'a toggle starts closed');
+		assert.equal(seen.caret, 'false');
+		assert.equal(seen.highlight, 'marked words');
+		// None of the syntax shows while the cursor is elsewhere.
+		for (const raw of ['[!info]', '<details>', '<summary>', '==', '[[', ']]', '//2026', 'Hidden body']) assert.ok(!seen.text.includes(raw), `"${raw}" shows: ${seen.text}`);
+
+		// Editing one line changes only that line of the Markdown.
+		await caretAfter(page, 'Last line');
+		await page.keyboard.type(' edited');
+		await savedBody(page, 'Finished', body.replace('Last line', 'Last line edited'));
+
+		// The caret opens the toggle; Enter in its title goes inside.
+		await page.click('main .kurumi-toggle-caret');
+		await sleep(200);
+		assert.equal((await look()).toggleOpen, true);
+		await caretAfter(page, 'Toggle title');
+		await page.keyboard.press('Enter');
+		await page.keyboard.type('Inside');
+		await savedBody(page, 'Finished', (md) => md.includes('<summary>Toggle title</summary>\n\nInside\n\nHidden body\n\n</details>'));
+
+		// Backspace at the start of a callout's title makes it a plain quote; undo brings it back.
+		await caretAfter(page, 'Good to know');
+		await press(page, 'Home');
+		await page.keyboard.press('Backspace');
+		await savedBody(page, 'Finished', (md) => md.includes('> Good to know\n> The body.') && !md.includes('[!info]'));
+		await press(page, MOD, 'z');
+		await savedBody(page, 'Finished', (md) => md.includes('> [!info] Good to know\n> The body.'));
+
+		// The slash menu inserts a drawn callout and toggle, ready to type in.
+		await caretAfter(page, 'Last line edited');
+		await page.keyboard.press('Enter');
+		await page.keyboard.type('/warning');
+		await sleep(300);
+		await page.keyboard.press('Enter');
+		await page.keyboard.type('Mind the gap');
+		await page.keyboard.press('Enter');
+		await page.keyboard.press('Enter');
+		await page.keyboard.type('/toggle');
+		await sleep(300);
+		await page.keyboard.press('Enter');
+		await page.keyboard.type('My toggle');
+		await page.keyboard.press('Enter');
+		await page.keyboard.type('Toggle body');
+		const md = await savedBody(page, 'Finished', (md) => md.includes('Toggle body'));
+		assert.match(md, /Last line edited\n\n> \[!warning\]\n> Mind the gap\n\n<details>\n<summary>My toggle<\/summary>\n\nToggle body\n\n<\/details>\n/, md);
+		assert.equal(await page.$$eval('main blockquote.callout-warning', (q) => q.length), 1);
+		assert.equal(await page.$$eval('main .kurumi-toggle.is-open', (t) => t.length), 2);
+		assert.deepEqual(errors, []);
+	},
+
+	async 'outline: a long note lists its headings beside it, jumps to one, and can be hidden'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const body = Array.from({ length: 12 }, (_, i) => `## Part ${i + 1}\n\n${'Some words to fill the part. '.repeat(30)}\n`).join('\n');
+		await db(page, `db.addMemoryObject('Long read', arg); db.addMemoryObject('Short', '## One\\n\\nText\\n\\n## Two\\n');`, body);
+		await openTreeNote(page, 'Long read');
+		await page.waitForSelector('main nav[aria-label="Outline"] button', { timeout: 5000 });
+		const labels = await page.$$eval('nav[aria-label="Outline"] button', (b) => b.map((x) => x.textContent.trim()));
+		assert.equal(labels.length, 12);
+		assert.equal(labels[8], 'Part 9');
+		await page.evaluate(() => [...document.querySelectorAll('nav[aria-label="Outline"] button')][8].click());
+		await page.waitForFunction(() => {
+			const h = [...document.querySelectorAll('main .ProseMirror h2')].find((x) => x.textContent === 'Part 9');
+			const area = h.closest('.overflow-y-auto').getBoundingClientRect();
+			const r = h.getBoundingClientRect();
+			return r.top >= area.top - 2 && r.top < area.top + 120;
+		}, { timeout: 5000 });
+		await page.waitForFunction(() => document.querySelector('nav[aria-label="Outline"] [aria-current="location"]')?.textContent.trim() === 'Part 9', { timeout: 3000 });
+		// Two headings are not an outline.
+		await openTreeNote(page, 'Short');
+		await sleep(500);
+		assert.equal(await page.$('nav[aria-label="Outline"]'), null);
+		// The note's menu hides it, on this device.
+		await openTreeNote(page, 'Long read');
+		await page.click('button[aria-label="More actions"]');
+		await clickText(page, '.k-menu-item', 'Hide outline');
+		await sleep(300);
+		assert.equal(await page.$('nav[aria-label="Outline"]'), null);
+		assert.equal(await page.evaluate(() => localStorage.getItem('kurumi-outline')), 'off');
+		assert.deepEqual(errors, []);
+	},
+
 	async 'split view edits the right note and never loses text'(browser) {
 		const { page, errors } = await freshPage(browser);
 		await newNote(page, 'Beta');
@@ -2266,7 +2376,7 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
-	async 'content width: wide by default, narrow and full in Appearance, on every page'(browser) {
+	async 'content width: narrow by default, wide and full in Appearance, on every page'(browser) {
 		const { page, errors } = await freshPage(browser);
 		await page.setViewport({ width: 1800, height: 900 });
 		const id = await page.evaluate(async () => {
@@ -2285,9 +2395,9 @@ const scenarios = {
 			const buttons = await page.$$('[aria-labelledby="width-label"] button');
 			for (const b of buttons) if ((await b.evaluate((e) => e.textContent.trim())) === label) await b.click();
 		};
-		const wide = await column();
-		await pick('Narrow');
 		const narrow = await column();
+		await pick('Wide');
+		const wide = await column();
 		await pick('Full');
 		const full = await column();
 		await page.reload({ waitUntil: 'load' }); // the choice survives a reload, before first paint
@@ -2462,10 +2572,12 @@ const scenarios = {
 		assert.equal(ids.roadmap, 1, 'an aliased link is a backlink');
 
 		// Math typed in the editor: a node, stored as LaTeX (not escaped);
-		// the alias reads [[the plan]] and dollar amounts stay text.
+		// the alias reads "the plan" (no brackets, as in Read mode) and dollar
+		// amounts stay text.
 		await page.goto(`${BASE}/#/memory/${ids.note}`, { waitUntil: 'load' });
 		await page.waitForSelector('main .ProseMirror .wikilink');
-		assert.deepEqual(await page.$$eval('main .wikilink-target-hidden', (e) => e.map((x) => x.textContent)), ['Roadmap|']);
+		assert.deepEqual(await page.$$eval('main .wikilink-target-hidden', (e) => e.map((x) => x.textContent)), ['[[', 'Roadmap|', ']]']);
+		assert.equal(await page.$eval('main .ProseMirror', (e) => e.innerText.trim()), 'See the plan for $5 and $10.');
 		await page.click('main .ProseMirror');
 		await page.keyboard.press('End');
 		await page.keyboard.type(' Area $a_1^2$ done.');
@@ -3182,9 +3294,10 @@ const scenarios = {
 		const editorText = await page.$eval('main .ProseMirror', (el) => el.textContent);
 		assert.ok(editorText.includes('Line one.') && !editorText.includes('project.foo') && !editorText.includes('scope'), editorText);
 		assert.match(await page.$eval('.linked-props', (el) => el.textContent), /id\s*project\.foo/);
-		// A link by key shows the note's title, as in Read mode; a link to nothing stays as written.
+		// A link by key shows the note's title, as in Read mode (brackets only
+		// while the cursor is in a link); a link to nothing stays as written.
 		const shown = await page.$eval('main .ProseMirror', (el) => el.innerText);
-		assert.ok(shown.includes('Needs [[Bar plan]] and [[Nowhere note]].') && !shown.includes('project.bar'), shown);
+		assert.ok(shown.includes('Needs Bar plan and Nowhere note.') && !shown.includes('project.bar'), shown);
 		assert.equal(await page.$eval('input[aria-label="Note title"]', (el) => el.disabled), true);
 		assert.equal(await page.$eval('main .ProseMirror', (el) => el.getAttribute('contenteditable')), 'false');
 
@@ -3297,12 +3410,12 @@ const scenarios = {
 
 		// The keyed link reads as its note's title; with the cursor in it, as written.
 		const drawn = () => page.$eval('main .ProseMirror', (el) => el.innerText);
-		assert.ok((await drawn()).includes('Needs [[Bar plan]] and'), await drawn());
+		assert.ok((await drawn()).includes('Needs Bar plan and'), await drawn());
 		await caretAfter(page, '[['); // the first link's opening brackets
 		assert.ok((await drawn()).includes('Needs [[project.bar]] and'), await drawn());
 		await caretAfter(page, 'Line one.');
 		await sleep(300);
-		assert.ok((await drawn()).includes('Needs [[Bar plan]] and'), await drawn());
+		assert.ok((await drawn()).includes('Needs Bar plan and'), await drawn());
 		// Looking at it wrote nothing.
 		assert.equal(await folderFile(page, 'foo.md'), LINKED_FOO);
 		assert.equal((await folderCalls(page)).includes('linked_write'), false);

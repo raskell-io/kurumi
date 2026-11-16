@@ -11,7 +11,7 @@ editor.
 
 Settings → Appearance sets the colour theme (Catppuccin, Nord, Gruvbox,
 Solarized, Rosé Pine or Plain, each light and dark), the accent colour, the
-editor font, its size, and the content width: Narrow, Wide (the default) or
+editor font, its size, and the content width: Narrow (the default), Wide or
 Full. Each device keeps its own. There are four **editor fonts**, each for
 something: iA Writer Quattro (the default, a writer's duospace), Geist (the
 interface's plain sans), Newsreader (a book serif with true italics) and
@@ -51,18 +51,23 @@ graph LR
 
 | Type | You get |
 |------|---------|
-| `[[` | A link to another note. Suggestions appear as you type; `Enter` or `Tab` picks one, `Esc` closes the list. Hover a link for a preview; Alt+click opens it beside the current note |
-| `[[Title\|text]]` | The same link, showing *text* instead of the title. While the cursor isn't in it, the link reads `[[text]]` |
+| `[[` | A link to another note. Suggestions appear as you type; `Enter` or `Tab` picks one, `Esc` closes the list. Hover a link for a preview; Alt+click opens it beside the current note. The brackets show only while the cursor is in the link. Dragging a note from the sidebar onto the text links it too |
+| `[[Title\|text]]` | The same link, showing *text* instead of the title. While the cursor isn't in it, the link reads *text* |
 | `[[Title#Heading]]` | A link to a heading: the note opens there. Type `#` after a title for its headings |
 | `[[Title#^a1b2c3]]` | A link to one block. A block's id is ` ^a1b2c3` at its end; the block menu's *Copy link to block* adds one |
-| `![[Title]]` | The other note shown live inside this one. `![[Title#Heading]]` shows just that section, `![[Title#^id]]` just that block |
+| `![[Title]]` | The other note shown live inside this one. `![[Title#Heading]]` shows just that section, `![[Title#^id]]` just that block. The `![[…]]` line shows only while the cursor is in it: click the card's title row, or arrow into it |
 | `@` | A person. Click the name for their [person page](organize-and-recall.md#people) |
 | `#` | A tag |
-| `//` | A date, like `//2026-11-04`. Dates show up in the calendar and under References → Dates |
+| `//` | A date, like `//2026-11-04`; it reads "Nov 4" unless the cursor is at it. Dates show up in the calendar and under References → Dates |
 
-Every note lists its **backlinks** (notes linking here) and **unlinked
+Every note lists the notes it is **linked from** and its **unlinked
 mentions** (notes using its title without linking) at the bottom, plus
-semantically similar notes when local AI is on.
+**related** notes when local AI is on: only ones close enough in meaning,
+and only under a note long enough to compare.
+
+A note with three headings or more shows its **outline** at the right edge on
+a wide window: a mark per heading that opens into the list on hover; click one
+to go there. The note's ⋯ menu hides it (on this device).
 
 ## Formatting
 
@@ -73,9 +78,9 @@ Selected text takes `Cmd/Ctrl+B` / `I`.
 | Syntax | Result |
 |--------|--------|
 | `[] ` or `/checkbox` | A to-do checkbox you can click |
-| `==text==` | Highlight |
-| `> [!info]`, `> [!warning]`, `> [!tip]` | Callouts |
-| `<details><summary>Title</summary> … </details>` | A collapsible section |
+| `==text==` | Highlight. `Cmd/Ctrl+Shift+H` highlights the selection |
+| `> [!info] Title` (also `note`, `tip`, `success`, `warning`, `danger`, `quote`) | A callout: a tinted box with an icon and the title, in the editor as in Read mode. Click the icon to change its type; Backspace at the start of the title makes it a plain quote |
+| `<details><summary>Title</summary> … </details>` | A toggle: a title with a caret, the content inside. The caret opens and closes it (it starts closed unless written `<details open>`); Enter in the title goes inside, Backspace at its start unwraps it |
 | ```` ```mermaid ```` | A diagram, rendered |
 | `::::columns` | Side-by-side columns; `/columns` adds them. Type in each, any blocks |
 | `$x^2$`, `$$ … $$` | Math (LaTeX), typeset by KaTeX. Typing the closing `$` turns `$…$` into a formula; click it to edit. `$$` then Enter starts a block, which shows its source while the cursor is in it. A `$` with a space after it, or a digit after the closing one, stays text: `$5 and $10` is safe |

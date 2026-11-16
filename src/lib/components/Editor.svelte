@@ -42,6 +42,9 @@
 	import { mathPlugins } from '$lib/editor/math';
 	import { columnsPlugins } from '$lib/editor/columns';
 	import { audioEmbedPlugin } from '$lib/editor/audioEmbed';
+	import { calloutPlugin } from '$lib/editor/callout';
+	import { togglePlugins } from '$lib/editor/toggle';
+	import { highlightTextPlugin } from '$lib/editor/highlightText';
 	import { startCheckboxRenderer } from '$lib/editor/checkboxRenderer';
 	import { processAndStoreImage } from '$lib/utils/image';
 	import CameraCapture from './CameraCapture.svelte';
@@ -72,6 +75,7 @@
 	import { pasteLinkPlugin } from '$lib/editor/pasteLink';
 	import { pasteMarkdownPlugin } from '$lib/editor/pasteMarkdown';
 	import { fileDropPlugin } from '$lib/editor/fileDrop';
+	import { noteDropPlugin } from '$lib/editor/noteDrop';
 	import { TextSelection } from '@milkdown/kit/prose/state';
 	import { storeAttachment } from '$lib/attachments';
 	import { storeBlob } from '$lib/db/blob-store';
@@ -613,6 +617,7 @@
 			.use(gfm)
 			.use(mathPlugins)
 			.use(columnsPlugins)
+			.use(togglePlugins)
 			.use(listener)
 			.use(history)
 			// Before clipboard: ProseMirror asks plugins in order and the
@@ -647,6 +652,7 @@
 					}
 				})
 			)
+			.use(noteDropPlugin)
 			.use(pasteLinkPlugin)
 			.use(pasteMarkdownPlugin)
 			.use(clipboard)
@@ -667,6 +673,8 @@
 			.use(block)
 			.use(findReplacePlugin)
 			.use(noteEmbedPlugin)
+			.use(calloutPlugin)
+			.use(highlightTextPlugin)
 			.use(blockRefPlugin)
 			.use(headingFoldPlugin)
 			.use(vimPlugin)
@@ -926,11 +934,24 @@
 		color: #1e1e2e;
 	}
 
-	/* ![[embed]] source line: keep it, but quiet (see $lib/editor/noteEmbed.ts) */
+	/* ![[embed]] source line: only while the cursor is in it, quiet (see $lib/editor/noteEmbed.ts) */
 	.milkdown-editor :global(.note-embed-source) {
 		margin-bottom: 0 !important;
 		font-size: 0.8125em;
 		color: var(--color-text-faint);
+	}
+
+	.milkdown-editor :global(.note-embed-source:not(.is-editing)) {
+		display: none;
+	}
+
+	/* The card's title row edits the line it comes from */
+	.milkdown-editor :global(.note-embed-widget .note-embed-bar) {
+		cursor: text;
+	}
+
+	.milkdown-editor :global(.note-embed-widget .note-embed-bar :is(button, a)) {
+		cursor: pointer;
 	}
 
 	/* Images open in the viewer on click */
@@ -1028,7 +1049,26 @@
 		transition: background-color var(--motion-fast) var(--ease-enter), text-decoration-color var(--motion-fast) var(--ease-enter);
 	}
 
-	/* [[Note|text]] reads [[text]] unless the cursor is in it (editor/wikilink.ts) */
+	/* A date written //2026-11-20 reads "Nov 20" unless the cursor is at it (editor/datePeople.ts) */
+	:global(.milkdown .date-raw-hidden) {
+		display: none;
+	}
+
+	/* ==highlight== (editor/highlightText.ts): the marks show, faintly, only while editing it */
+	:global(.milkdown .kurumi-highlight) {
+		border-radius: 3px;
+		background: color-mix(in srgb, #df8e1d 22%, transparent);
+	}
+
+	:global(.milkdown .md-marker) {
+		color: var(--color-text-faint);
+	}
+
+	:global(.milkdown .md-marker-hidden) {
+		display: none;
+	}
+
+	/* [[Note|text]] reads text unless the cursor is in it (editor/wikilink.ts) */
 	:global(.milkdown .wikilink-target-hidden) {
 		display: none;
 	}
@@ -1046,9 +1086,10 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25em;
-		background: color-mix(in srgb, var(--ref) 12%, transparent);
+		/* Quiet: the colour of the kind only, a tint on hover */
+		background: transparent;
 		color: var(--ref);
-		padding: 0.05em 0.4em;
+		padding: 0.05em 0.15em;
 		border-radius: 4px;
 		font-weight: 500;
 		font-size: 0.92em;
@@ -1061,7 +1102,7 @@
 	:global(.milkdown .person-reference:hover),
 	:global(.milkdown .tag-reference:hover),
 	:global(.milkdown .url-reference:hover) {
-		background: color-mix(in srgb, var(--ref) 22%, transparent);
+		background: color-mix(in srgb, var(--ref) 12%, transparent);
 	}
 
 	:global(.milkdown .date-reference::before),
@@ -1103,8 +1144,9 @@
 		--ref: var(--color-ref-tag);
 	}
 
+	/* A web address is a link, in the colour of links */
 	:global(.milkdown .url-reference) {
-		--ref: var(--color-ref-url);
+		--ref: var(--color-accent);
 		word-break: break-all;
 	}
 
@@ -1217,6 +1259,12 @@
 		padding: 0;
 	}
 
+	/* Long lines scroll sideways, as in Read mode, instead of wrapping */
+	:global(.milkdown .ProseMirror pre) {
+		white-space: pre;
+		overflow-x: auto;
+	}
+
 	/* The language of a code block, as a small label in its corner */
 	:global(.milkdown pre[data-language]) {
 		position: relative;
@@ -1228,12 +1276,9 @@
 		top: 0.5em;
 		right: 0.75em;
 		font-family: var(--font-sans);
-		font-size: 0.65em;
-		font-weight: 600;
-		letter-spacing: 0.05em;
-		text-transform: uppercase;
-		color: var(--color-accent);
-		opacity: 0.8;
+		font-size: 0.6875rem;
+		text-transform: lowercase;
+		color: var(--color-text-faint);
 		pointer-events: none;
 	}
 
@@ -1243,8 +1288,11 @@
 		margin: 1em 0;
 	}
 
+	/* Room above the code for its language and Copy, as Read mode's header
+	   row: long lines scroll under nothing */
 	:global(.milkdown .kurumi-code > pre) {
 		margin: 0;
+		padding-top: 2.25em;
 	}
 
 	:global(.milkdown .kurumi-code > pre[data-language]::after) {
@@ -1269,13 +1317,11 @@
 		border: 1px solid transparent;
 		border-radius: var(--radius-sm, 4px);
 		background: transparent;
-		color: var(--color-accent);
+		color: var(--color-text-faint);
 		font: inherit;
-		font-weight: 600;
-		letter-spacing: 0.04em;
-		text-transform: uppercase;
+		font-size: 0.6875rem;
+		text-transform: lowercase;
 		text-align: right;
-		opacity: 0.8;
 	}
 
 	:global(.milkdown .kurumi-code-lang::placeholder) {
@@ -1287,9 +1333,9 @@
 	:global(.milkdown .kurumi-code-lang:is(:hover, :focus)) {
 		border-color: var(--color-border);
 		background: var(--color-bg);
+		color: var(--color-text);
 		text-align: left;
 		text-transform: none;
-		opacity: 1;
 		outline: none;
 	}
 
@@ -1643,6 +1689,176 @@
 		margin-bottom: 0;
 	}
 
+	/* The theme sets quotes in a serif; they keep the note's face, as in Read mode */
+	:global(.milkdown .ProseMirror blockquote) {
+		font-family: inherit;
+	}
+
+	/* Toggles (editor/toggle.ts): a <details> block, drawn as in Read mode */
+	:global(.milkdown .kurumi-toggle) {
+		position: relative;
+		margin: 0.75em 0;
+		padding: 0.375em 0.875em 0.375em 2.25em;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+	}
+
+	:global(.milkdown .kurumi-toggle-caret) {
+		font-size: inherit;
+		position: absolute;
+		/* centred on the title's first line, whatever its height (touch targets are taller) */
+		top: calc(0.375em + (var(--line-height-editor, 1.75) - 0.05) * 0.5em);
+		transform: translateY(-50%);
+		left: 0.5em;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.5em;
+		height: 1.5em;
+		padding: 0;
+		border: none;
+		border-radius: var(--radius-sm);
+		background: none;
+		color: var(--color-text-faint);
+		cursor: pointer;
+		transition: background-color var(--motion-fast) var(--ease-enter), color var(--motion-fast) var(--ease-enter);
+	}
+
+	:global(.milkdown .kurumi-toggle-caret svg) {
+		transition: transform var(--motion-fast) var(--ease-enter);
+	}
+
+	:global(.milkdown .kurumi-toggle.is-open > .kurumi-toggle-caret svg) {
+		transform: rotate(90deg);
+	}
+
+	:global(.milkdown .kurumi-toggle-caret:hover) {
+		background: var(--color-hover);
+		color: var(--color-text);
+	}
+
+	:global(.milkdown .kurumi-toggle-caret:focus-visible) {
+		outline: 2px solid var(--color-accent);
+		outline-offset: 1px;
+	}
+
+	:global(.milkdown .kurumi-toggle-summary) {
+		font-weight: 500;
+		line-height: calc(var(--line-height-editor, 1.75) - 0.05);
+	}
+
+	/* An empty title: the word Toggle, faint, until one is typed */
+	:global(.milkdown .kurumi-toggle-summary:has(> br:only-child)::before) {
+		content: 'Toggle';
+		float: left;
+		height: 0;
+		color: var(--color-text-faint);
+		pointer-events: none;
+	}
+
+	:global(.milkdown .kurumi-toggle:not(.is-open) > .kurumi-toggle-content > :not(.kurumi-toggle-summary)) {
+		display: none;
+	}
+
+	:global(.milkdown .kurumi-toggle-content > :nth-child(2)) {
+		margin-top: 0.35em;
+	}
+
+	:global(.milkdown .kurumi-toggle-content > :last-child:not(.kurumi-toggle-summary)) {
+		margin-bottom: 0.25em;
+	}
+
+	:global(.milkdown .kurumi-toggle.is-open.is-empty > .kurumi-toggle-content::after) {
+		content: 'Empty. Press Enter in the title to write inside.';
+		display: block;
+		margin-top: 0.25em;
+		color: var(--color-text-faint);
+		font-size: 0.875em;
+	}
+
+	/* Callouts (editor/callout.ts): a quote starting [!type], drawn as in Read mode */
+	:global(.milkdown blockquote.kurumi-callout) {
+		--callout: var(--color-ref-date);
+		border-left-color: var(--callout);
+		border-radius: var(--radius-md);
+		background: color-mix(in srgb, var(--callout) 8%, transparent);
+		padding: 0.75em 1em;
+		margin: 1em 0;
+		color: var(--color-text);
+	}
+
+	:global(.milkdown blockquote:is(.callout-tip, .callout-success)) {
+		--callout: var(--color-ref-person);
+	}
+
+	:global(.milkdown blockquote.callout-warning) {
+		--callout: #df8e1d;
+	}
+
+	:global(.milkdown blockquote.callout-danger) {
+		--callout: var(--color-danger);
+	}
+
+	:global(.milkdown blockquote.callout-quote) {
+		--callout: var(--color-text-faint);
+		color: var(--color-text-muted);
+	}
+
+	:global(.milkdown blockquote.kurumi-callout > p:first-child) {
+		margin-bottom: 0.35em;
+	}
+
+	:global(.milkdown .callout-marker) {
+		display: none;
+	}
+
+	:global(.milkdown .callout-title) {
+		font-weight: 600;
+		color: var(--callout);
+	}
+
+	:global(.milkdown .callout-title-placeholder) {
+		opacity: 0.75;
+		pointer-events: none;
+		user-select: none;
+	}
+
+	/* The line break after the title starts the body on its own line */
+	:global(.milkdown .callout-title-break) {
+		display: block;
+		height: 0.35em;
+		font-size: 0;
+		line-height: 0;
+	}
+
+	:global(.milkdown .callout-icon) {
+		font-size: inherit;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.5em;
+		height: 1.5em;
+		margin: 0 0.25em 0 -0.25em;
+		padding: 0;
+		border: none;
+		border-radius: var(--radius-sm);
+		background: none;
+		color: var(--callout);
+		vertical-align: -0.3em;
+		cursor: pointer;
+		transition: background-color var(--motion-fast) var(--ease-enter);
+	}
+
+	:global(.milkdown .callout-icon:hover),
+	:global(.milkdown .callout-icon[aria-expanded='true']) {
+		background: color-mix(in srgb, var(--callout) 16%, transparent);
+	}
+
+	:global(.milkdown .callout-icon:focus-visible) {
+		outline: 2px solid var(--callout);
+		outline-offset: 1px;
+	}
+
 	:global(.milkdown ::selection) {
 		background: color-mix(in srgb, var(--color-accent) 25%, transparent);
 	}
@@ -1743,36 +1959,36 @@
 		font-style: italic;
 	}
 
-	/* Tables (GFM) */
-	:global(.milkdown table) {
-		border-collapse: collapse;
-		width: 100%;
+	/* Tables (GFM), as in Read mode: sized to their content with plain
+	   borders, scrolling sideways when wider than the column. The theme
+	   made them full-width, fixed-layout and shadowed. */
+	:global(.milkdown-editor .milkdown .ProseMirror table) {
+		display: block;
+		width: max-content;
+		max-width: 100%;
 		margin: 1em 0;
+		overflow-x: auto;
+		-webkit-overflow-scrolling: touch;
+		border-collapse: collapse;
+		border: none;
+		border-radius: 0;
+		box-shadow: none;
+		table-layout: auto;
+		font-size: 0.95em;
+		line-height: inherit;
 	}
 
-	/* Phones: wide tables scroll sideways instead of squeezing their columns
-	   to a letter each. The theme makes tables fixed-layout; here the table
-	   becomes its own scroller (as in Read mode) with natural column widths. */
-	@media (max-width: 768px) {
-		:global(.milkdown .ProseMirror table) {
-			display: block;
-			max-width: 100%;
-			width: max-content;
-			overflow-x: auto;
-			table-layout: auto;
-			-webkit-overflow-scrolling: touch;
-		}
-
-		:global(.milkdown .ProseMirror :is(td, th)) {
-			min-width: 6em;
-		}
-	}
-
-	:global(.milkdown th),
-	:global(.milkdown td) {
+	:global(.milkdown-editor .milkdown .ProseMirror :is(th, td)) {
+		min-width: 5em;
+		padding: 0.4em 0.9em !important;
 		border: 1px solid var(--color-border);
-		padding: 0.5em 1em;
 		text-align: left;
+		vertical-align: top;
+	}
+
+	:global(.milkdown-editor .milkdown .ProseMirror :is(th, td) > p) {
+		margin: 0;
+		font-size: inherit;
 	}
 
 	:global(.milkdown th) {

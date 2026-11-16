@@ -24,10 +24,11 @@ import { addFolder, getMemoryObject, openFolderAsDatabase } from '$lib/db';
 import { isLinkedNoteId } from '$lib/linked/backend';
 import { NO_FILES, NOT_IN_LINKED } from '$lib/linked/capabilities';
 import { showNotice } from '$lib/stores/notice';
-import { Plugin, PluginKey } from '@milkdown/kit/prose/state';
+import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state';
 import { $prose } from '@milkdown/kit/utils';
 import type { EditorView } from '@milkdown/kit/prose/view';
 import { turnInto, insertMarkdownBlocks, type BlockKind } from './blocks';
+import { selectCalloutBody } from './callout';
 import { createRegistry } from './registry';
 
 const slashKey = new PluginKey('slash-commands');
@@ -214,6 +215,13 @@ function insertBlocks(
 	return insertMarkdownBlocks(view, from, to, markdown, select) || replaceWithText(view, from, to, markdown);
 }
 
+/** A callout with its body selected, ready to type over (editor/callout.ts). */
+function insertCallout(view: EditorView, from: number, to: number, type: string): boolean {
+	if (!insertMarkdownBlocks(view, from, to, `> [!${type}]\n> Write here`, 'first')) return replaceWithText(view, from, to, `[!${type}] `);
+	selectCalloutBody(view);
+	return true;
+}
+
 function replaceWithText(
 	view: EditorView,
 	from: number,
@@ -356,7 +364,7 @@ export const builtInSlashCommands: SlashCommand[] = [
 		description: 'Blue information box',
 		icon: 'info',
 		category: 'Insert',
-		execute: (view, from, to) => insertBlocks(view, from, to, '> [!info]\n>\n> Write here')
+		execute: (view, from, to) => insertCallout(view, from, to, 'info')
 	},
 	{
 		id: 'callout-warning',
@@ -364,7 +372,7 @@ export const builtInSlashCommands: SlashCommand[] = [
 		description: 'Yellow warning box',
 		icon: 'alert-triangle',
 		category: 'Insert',
-		execute: (view, from, to) => insertBlocks(view, from, to, '> [!warning]\n>\n> Write here')
+		execute: (view, from, to) => insertCallout(view, from, to, 'warning')
 	},
 	{
 		id: 'callout-tip',
@@ -372,7 +380,7 @@ export const builtInSlashCommands: SlashCommand[] = [
 		description: 'Green tip box',
 		icon: 'lightbulb',
 		category: 'Insert',
-		execute: (view, from, to) => insertBlocks(view, from, to, '> [!tip]\n>\n> Write here')
+		execute: (view, from, to) => insertCallout(view, from, to, 'tip')
 	},
 	{
 		id: 'dataview',
@@ -387,10 +395,16 @@ export const builtInSlashCommands: SlashCommand[] = [
 	{
 		id: 'highlight',
 		label: 'Highlight',
-		description: 'Highlight text with ==markers==',
+		description: 'Highlighted text; on a selection, ⌘/Ctrl+Shift+H',
 		icon: 'minus',
 		category: 'Basic',
-		execute: (view, from, to) => replaceWithText(view, from, to, '==highlighted text==')
+		execute: (view, from, to) => {
+			// Drawn highlighted; the placeholder is selected, to type over.
+			replaceWithText(view, from, to, '==highlighted text==');
+			view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from + 2, from + 18)));
+			view.focus();
+			return true;
+		}
 	},
 
 	{
@@ -459,7 +473,8 @@ export const builtInSlashCommands: SlashCommand[] = [
 				view,
 				from,
 				to,
-				'<details>\n<summary>Toggle title</summary>\n\nContent here...\n\n</details>\n'
+				'<details>\n<summary>Toggle title</summary>\n\n</details>\n',
+				'first'
 			)
 	},
 	{

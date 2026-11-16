@@ -119,6 +119,10 @@
 		max-height: 24rem;
 		overflow-y: auto;
 		user-select: text;
+		/* The editor keeps line breaks as typed (pre-wrap); the rendered note
+		   must not, or every line break between its tags became a blank line. */
+		white-space: normal;
+		cursor: default;
 	}
 
 	.note-embed-title {

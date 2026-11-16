@@ -21,9 +21,9 @@ export function setWikilinkClickHandler(root: Element, handler: WikilinkClickHan
 }
 
 /**
- * Decorate every [[link]]. In `[[Note|text]]` the `Note|` part is hidden
- * unless the cursor is in the link, so it reads `[[text]]`; clicks go to
- * Note either way (see $lib/wikilinks).
+ * Decorate every [[link]]. Unless the cursor is in the link, its brackets
+ * are hidden and in `[[Note|text]]` the `Note|` part too, so it reads
+ * `text`, as in Read mode; clicks go to Note either way (see $lib/wikilinks).
  *
  * In a linked folder ($lib/linked) a link names its note by a key
  * (`[[project.foo]]`): unless the cursor is in it, the note's title is
@@ -43,22 +43,26 @@ function findWikilinks(doc: any, selection?: { from: number; to: number }): Deco
 				const inner = match[1];
 				const { target, heading, block, alias } = parseWikilink(inner);
 
-				decorations.push(
-					Decoration.inline(start, end, {
-						class: 'wikilink',
-						'data-wikilink-title': target,
-						...(heading ? { 'data-wikilink-heading': heading } : {}),
-						...(block ? { 'data-wikilink-block': block } : {})
-					})
-				);
-
-				const bar = inner.search(/\\?\|/);
+				const attrs = {
+					'data-wikilink-title': target,
+					...(heading ? { 'data-wikilink-heading': heading } : {}),
+					...(block ? { 'data-wikilink-block': block } : {})
+				};
 				const editing = selection && selection.from <= end && selection.to >= start;
-				const title = keyed && !alias && target && !editing ? keyed.resolve(target)?.title.trim() : undefined;
+				// The brackets (and an alias's `Note|`) show only while the cursor
+				// is in the link; what is hidden isn't part of the link's span, so
+				// the link is what is drawn.
+				const hide = (from: number, to: number) => decorations.push(Decoration.inline(from, to, { class: 'wikilink-target-hidden' }));
+				if (editing) {
+					decorations.push(Decoration.inline(start, end, { class: 'wikilink', ...attrs }));
+					continue;
+				}
+				hide(start, start + 2);
+				hide(end - 2, end);
+				const title = keyed && !alias && target ? keyed.resolve(target)?.title.trim() : undefined;
 				if (title && title.toLowerCase() !== target.toLowerCase()) {
 					// Hide what is written between the brackets and draw the title there.
-					const attrs = { 'data-wikilink-title': target, ...(heading ? { 'data-wikilink-heading': heading } : {}), ...(block ? { 'data-wikilink-block': block } : {}) };
-					decorations.push(Decoration.inline(start + 2, end - 2, { class: 'wikilink-target-hidden' }));
+					hide(start + 2, end - 2);
 					decorations.push(
 						Decoration.widget(
 							end - 2,
@@ -72,13 +76,15 @@ function findWikilinks(doc: any, selection?: { from: number; to: number }): Deco
 							{ side: -1, key: `shown:${target}:${heading ?? ''}:${title}` }
 						)
 					);
+					continue;
 				}
-				if (bar > 0 && !editing) {
-					const barLength = inner[bar] === '\\' ? 2 : 1;
-					decorations.push(
-						Decoration.inline(start + 2, start + 2 + bar + barLength, { class: 'wikilink-target-hidden' })
-					);
+				const bar = inner.search(/\\?\|/);
+				let shownFrom = start + 2;
+				if (bar > 0) {
+					shownFrom = start + 2 + bar + (inner[bar] === '\\' ? 2 : 1);
+					hide(start + 2, shownFrom);
 				}
+				if (shownFrom < end - 2) decorations.push(Decoration.inline(shownFrom, end - 2, { class: 'wikilink', ...attrs }));
 			}
 		}
 	});

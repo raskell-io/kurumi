@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { notePreview } from '$lib/utils/excerpt';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import {
@@ -71,10 +72,6 @@
 			day: 'numeric',
 			year: 'numeric'
 		});
-	}
-
-	function excerpt(text: string): string {
-		return text.replace(/^---[\s\S]*?---\n?/, '').replace(/\s+/g, ' ').trim().slice(0, 140);
 	}
 
 	// Ref popup state
@@ -238,7 +235,7 @@
 								<li>
 									<a href="/read/{backlink.id}" class="k-row link-row">
 										<span class="link-title">{backlink.title || 'Untitled'}</span>
-										<span class="link-preview">{excerpt(backlink.bodyMarkdown)}</span>
+										<span class="link-preview">{notePreview(backlink, 140)}</span>
 									</a>
 								</li>
 							{/each}
@@ -258,7 +255,7 @@
 								<li>
 									<a href="/read/{related.id}" class="k-row link-row">
 										<span class="link-title">{related.title || 'Untitled'}</span>
-										<span class="link-preview">{excerpt(related.summaryShort || related.bodyMarkdown || '')}</span>
+										<span class="link-preview">{notePreview(related, 140)}</span>
 									</a>
 								</li>
 							{/each}

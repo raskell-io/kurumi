@@ -14,6 +14,8 @@
 	import DataviewBlock from './DataviewBlock.svelte';
 	import { onMount, mount, unmount, tick } from 'svelte';
 	import { loadHighlighter, highlightToHtml } from '$lib/highlight';
+	import { CALLOUT_BLOCK, CALLOUT_LABELS, calloutType } from '$lib/callouts';
+	import { formatDay, formatDayLong } from '$lib/format-date';
 	import DatabaseBlock from './database/DatabaseBlock.svelte';
 	import { databaseBlockViewId } from '$lib/database';
 
@@ -144,16 +146,15 @@
 		// Obsidian-style callouts. Convert to HTML divs with classes so
 		// CSS can style them. Must run before marked wraps the > as a
 		// blockquote.
-		md = md.replace(
-			/^> \[!(info|warning|tip|note|success|danger|quote)\](.*?)$\n((?:^> .*$\n?)*)/gm,
-			(_, type, title, body) => {
-				const cleanBody = body.replace(/^> ?/gm, '').trim();
-				const titleHtml = title.trim()
-					? `<div class="callout-title">${title.trim()}</div>`
-					: '';
-				return `<div class="callout callout-${type}">${titleHtml}<div class="callout-body">${cleanBody}</div></div>\n`;
-			}
-		);
+		// Lines of only `>` (what the editor writes between paragraphs)
+		// belong to the callout, and its body stays Markdown: blank lines
+		// around it let marked read it. Untitled: the type's name.
+		md = md.replace(CALLOUT_BLOCK, (_, name: string, title: string, body: string) => {
+			const type = calloutType(name) ?? 'info';
+			const cleanBody = body.replace(/^> ?/gm, '').trim();
+			const heading = title.trim() || CALLOUT_LABELS[type];
+			return `<div class="callout callout-${type}"><div class="callout-title">${heading}</div><div class="callout-body">\n\n${cleanBody}\n\n</div></div>\n\n`;
+		});
 
 		// --- Toggles: <details> already supported by GFM ---
 		// No preprocessing needed; marked handles <details>/<summary>
@@ -251,7 +252,7 @@
 		// Negative lookbehind `(?<!:)` excludes URL schemes so
 		// https://... doesn't get its `//` turned into a date button.
 		html = html.replace(/(?<!:)\/\/(\d{4}-\d{2}-\d{2})/g, (_, date) => {
-			return `<button type="button" class="date-reference" data-ref-type="date" data-ref-value="${date}">${date}</button>`;
+			return `<button type="button" class="date-reference" data-ref-type="date" data-ref-value="${date}" title="${escapeAttr(formatDayLong(date))}">${escapeHtml(formatDay(date))}</button>`;
 		});
 
 		// Process people @Full Name - use data attributes for popup
@@ -625,10 +626,11 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25em;
-		padding: 0.05em 0.4em;
+		padding: 0.05em 0.15em;
 		border: none;
 		border-radius: 4px;
-		background: color-mix(in srgb, var(--ref) 12%, transparent);
+		/* Quiet: the colour of the kind only, a tint on hover */
+		background: transparent;
 		color: var(--ref);
 		font-family: inherit;
 		font-size: 0.92em;
@@ -641,7 +643,7 @@
 	}
 
 	.markdown-content :global(:is(.date-reference, .person-reference, .tag-reference, .url-reference):hover) {
-		background: color-mix(in srgb, var(--ref) 22%, transparent);
+		background: color-mix(in srgb, var(--ref) 12%, transparent);
 	}
 
 	.markdown-content :global(:is(.date-reference, .person-reference, .url-reference)::before) {
@@ -681,8 +683,9 @@
 		--ref: var(--color-ref-tag);
 	}
 
+	/* A web address is a link, in the colour of links */
 	.markdown-content :global(.url-reference) {
-		--ref: var(--color-ref-url);
+		--ref: var(--color-accent);
 		word-break: break-all;
 	}
 
@@ -919,6 +922,15 @@
 		vertical-align: top;
 	}
 
+	/* A column's alignment (|---:|), as the editor shows it */
+	.markdown-content :global(:is(th, td)[align='right']) {
+		text-align: right;
+	}
+
+	.markdown-content :global(:is(th, td)[align='center']) {
+		text-align: center;
+	}
+
 	.markdown-content :global(th) {
 		background: var(--color-bg-secondary);
 		font-weight: 600;
@@ -1000,6 +1012,14 @@
 		margin-bottom: 0.25em;
 		font-weight: 600;
 		color: var(--callout);
+	}
+
+	.markdown-content :global(.callout-body > :first-child) {
+		margin-top: 0;
+	}
+
+	.markdown-content :global(.callout-body > :last-child) {
+		margin-bottom: 0;
 	}
 
 	.markdown-content :global(:is(.callout-tip, .callout-success)) {
