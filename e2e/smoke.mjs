@@ -31,6 +31,39 @@ const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 // ------------------------------------------------------------ harness
 
 const serverLines = [];
+
+// page.evaluate keeps what it awaits alive in the page. DevTools holds the
+// promise an evaluate returns only weakly: if the page collects garbage while
+// it is still pending (an import() of an app module, on a busy CI runner), the
+// evaluate fails with "Promise was collected" although nothing went wrong.
+// A promise referenced from the page can't be collected.
+function holdEvaluatedPromises(page) {
+	const evaluate = page.evaluate.bind(page);
+	page.evaluate = (fn, ...args) => {
+		if (typeof fn === 'function') {
+			return evaluate(
+				(source, ...values) => {
+					const result = (0, eval)(`(${source})`)(...values);
+					if (!(result instanceof Promise)) return result;
+					const held = (globalThis.__smokeHeld ??= new Set());
+					held.add(result);
+					const release = () => held.delete(result);
+					result.then(release, release);
+					return result;
+				},
+				fn.toString(),
+				...args
+			);
+		}
+		if (typeof fn === 'string' && /^\s*\(async\b/.test(fn)) {
+			return evaluate(
+				`(() => { const result = ${fn}; const held = (globalThis.__smokeHeld ??= new Set()); held.add(result); const release = () => held.delete(result); result.then(release, release); return result; })()`
+			);
+		}
+		return evaluate(fn, ...args);
+	};
+}
+
 // What happened to the scenario's pages besides the test's own steps: reloads,
 // a renderer crash, the dev server's messages. Printed when a scenario fails.
 let pageEvents = [];
@@ -113,6 +146,7 @@ async function freshPage(browser, setup) {
 	// CPU_THROTTLE=4 runs the page four times slower, like a busy CI runner:
 	// for chasing failures that only show there.
 	if (process.env.CPU_THROTTLE) await page.emulateCPUThrottling(Number(process.env.CPU_THROTTLE));
+	holdEvaluatedPromises(page);
 	const errors = [];
 	page.on('pageerror', (err) => errors.push(err.message));
 	const stamp = () => new Date().toISOString().slice(11, 23);
@@ -631,12 +665,15 @@ const scenarios = {
 		await page.focus('.k-dialog input');
 		const atEscape = await page.evaluate(() => `${document.activeElement.tagName}[${document.activeElement.getAttribute('aria-label') ?? document.activeElement.getAttribute('type') ?? ''}]`);
 		await page.keyboard.press('Escape');
-		await sleep(300);
+		// Escape starts the closing at once (the dialog turns inert); its 100 ms fade
+		// may take longer on a busy machine, so the end is waited for.
+		await sleep(150);
 		const left = await page.evaluate(() => {
 			const d = document.querySelector('.k-dialog');
-			return d ? `still there; closing: ${!!d.closest('[inert]')}; focus ${document.activeElement.tagName}` : null;
+			return d && !d.closest('[inert]') ? `still open; focus ${document.activeElement.tagName}` : null;
 		});
 		assert.equal(left, null, `Escape in the name field (focus on ${atEscape}) left the dialog open: ${left}`);
+		await page.waitForFunction(() => !document.querySelector('.k-dialog'), { timeout: 3000 });
 		assert.match(await page.$eval(VAULT_MENU, (b) => (document.activeElement === b ? 'vault button' : document.activeElement.tagName)), /vault button/);
 		// Another page closes it.
 		await page.click(VAULT_MENU);
