@@ -75,6 +75,7 @@
 	import { pasteLinkPlugin } from '$lib/editor/pasteLink';
 	import { pasteMarkdownPlugin } from '$lib/editor/pasteMarkdown';
 	import { fileDropPlugin } from '$lib/editor/fileDrop';
+	import { noteDropPlugin } from '$lib/editor/noteDrop';
 	import { TextSelection } from '@milkdown/kit/prose/state';
 	import { storeAttachment } from '$lib/attachments';
 	import { storeBlob } from '$lib/db/blob-store';
@@ -651,6 +652,7 @@
 					}
 				})
 			)
+			.use(noteDropPlugin)
 			.use(pasteLinkPlugin)
 			.use(pasteMarkdownPlugin)
 			.use(clipboard)
