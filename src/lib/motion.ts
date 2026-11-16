@@ -180,9 +180,11 @@ export function flipParams(): { duration: number; easing: Easing } {
 }
 
 /**
- * A panel beside the page (split note, assistant) coming in from the right
- * edge while the page makes room. The panel keeps its final width, so
- * nothing inside it reflows; only its right margin moves.
+ * A panel beside the page (split note, assistant) sliding in from the right
+ * edge, or out. While it moves it lies over the page, at its final size and
+ * place; the page changes width once, when the panel settles (opening) or as
+ * it starts to leave (closing). Squeezing the page frame by frame re-wrapped
+ * its text line by line and made the top bar's controls pop in and out.
  */
 export function panelSlide(node: HTMLElement): TransitionConfig {
 	const duration = motionMs('base');
@@ -191,23 +193,36 @@ export function panelSlide(node: HTMLElement): TransitionConfig {
 	if (!duration || !parent || !matchMedia('(min-width: 768px)').matches) return NONE;
 	const width = node.offsetWidth;
 	if (!width) return NONE;
-	const gap = parseFloat(getComputedStyle(parent).columnGap) || 0;
-	const travel = width + gap;
-	const held = { flex: node.style.flex, width: node.style.width };
-	node.style.flex = 'none';
-	node.style.width = `${width}px`;
-	let moved = false;
+	const right = parseFloat(getComputedStyle(parent).paddingRight) || 0;
+	const top = node.offsetTop;
+	const height = node.offsetHeight;
+	const travel = width + right;
+	const held = node.getAttribute('style');
+	let over = false;
+	const lift = () => {
+		if (over) return;
+		over = true;
+		Object.assign(node.style, {
+			position: 'absolute',
+			top: `${top}px`,
+			right: `${right}px`,
+			width: `${width}px`,
+			height: `${height}px`,
+			margin: '0',
+			zIndex: '3'
+		});
+	};
+	const settle = () => {
+		if (!over) return;
+		over = false;
+		if (held === null) node.removeAttribute('style');
+		else node.setAttribute('style', held);
+	};
 	return {
 		duration,
 		easing: easing('enter'),
-		css: (t) => `margin-right:${-(1 - t) * travel}px;opacity:${Math.min(1, t * 2)}`,
-		tick: (t) => {
-			if (t < 1) moved = true;
-			else if (moved) {
-				node.style.flex = held.flex;
-				node.style.width = held.width;
-			}
-		}
+		css: (t) => `translate:${(1 - t) * travel}px 0;opacity:${Math.min(1, t * 2)}`,
+		tick: (t) => (t < 1 ? lift() : settle())
 	};
 }
 

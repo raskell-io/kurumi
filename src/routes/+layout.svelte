@@ -1922,8 +1922,10 @@
 		}
 	}
 
-	/* A side panel sliding in or out passes the right edge; that must not scroll. */
+	/* A side panel sliding in or out passes the right edge; that must not
+	   scroll. It slides over the page, placed against this box (panelSlide). */
 	.shell-panels {
+		position: relative;
 		overflow: hidden;
 		transition: padding var(--motion-base) var(--ease-enter);
 	}
