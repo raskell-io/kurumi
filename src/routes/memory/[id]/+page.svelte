@@ -984,11 +984,11 @@
 				</button>
 			{/if}
 
-			{#if wordCount > 0}
-				<span class="note-words hidden shrink-0 px-1 text-xs tabular-nums text-[var(--color-text-faint)] lg:inline">
-					{wordCount.toLocaleString()} {wordCount === 1 ? 'word' : 'words'}
-				</span>
-			{/if}
+			<!-- Always in place, empty for an empty note: the first word typed must not
+			     change the width beside the tabs (it narrowed them all). -->
+			<span class="note-words hidden shrink-0 px-1 text-xs tabular-nums text-[var(--color-text-faint)] lg:inline" aria-hidden={wordCount === 0 ? 'true' : undefined}>
+				{wordCount > 0 ? `${wordCount.toLocaleString()} ${wordCount === 1 ? 'word' : 'words'}` : ''}
+			</span>
 			<span class="note-edited hidden shrink-0 px-1 text-xs tabular-nums text-[var(--color-text-faint)] sm:inline" title="Last modified {formatDate(memory.updatedAt)}">
 				{formatEdited(memory.updatedAt, now)}
 			</span>

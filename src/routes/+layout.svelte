@@ -303,6 +303,24 @@
 	let stackButton: HTMLButtonElement | undefined = $state();
 	let stackMenu: HTMLElement | undefined = $state();
 	const stackItems = () => [...(stackMenu?.querySelectorAll<HTMLElement>('.tab-stack-item') ?? [])];
+	// Closing a tab from the bar. The open note's tab hands over to its
+	// neighbour (the next one, else the one before), or Home if it was the
+	// last: the note no longer stays on screen with no tab selected.
+	let frozenTabWidth = $state<number | null>(null);
+	function closeTabFromBar(id: string, byPointer: boolean) {
+		if (byPointer) {
+			// The closed tab's width for all: the next tab slides into its place,
+			// with its close button where the pointer is.
+			const closed = [...(tabArea?.querySelectorAll<HTMLAnchorElement>('.tab-item:not(.tab-pinned)') ?? [])].find((t) => t.getAttribute('href') === `/memory/${id}`);
+			if (closed) frozenTabWidth = closed.getBoundingClientRect().width;
+		}
+		const order = $openTabs.map((t) => t.id);
+		const at = order.indexOf(id);
+		const wasOpen = currentPath === `/memory/${id}`;
+		closeTab(id);
+		if (wasOpen) goto(order[at + 1] ? `/memory/${order[at + 1]}` : order[at - 1] ? `/memory/${order[at - 1]}` : '/');
+	}
+
 	// Opening, closing, arrows, Escape and focus: the shared menu behaviour ($lib/actions/overlay).
 	function openTabStack() {
 		showTabStack = true;
@@ -1404,7 +1422,16 @@
 				<!-- The strip has a fixed height, which a grid row can't shrink below: hence the plain div between. -->
 				<div class="k-collapse shrink-0" transition:collapse>
 				<div>
-				<div class="tab-bar" class:bar-no-path={barWidth > 0 && barWidth < 980} class:bar-no-words={barWidth > 0 && barWidth < 860} class:bar-no-edited={barWidth > 0 && barWidth < 720} bind:clientWidth={barWidth}>
+				<!-- A landmark: the open notes and the note's controls. -->
+				<header
+					class="tab-bar"
+					aria-label="Top bar"
+					class:bar-no-path={barWidth > 0 && barWidth < 980}
+					class:bar-no-words={barWidth > 0 && barWidth < 860}
+					class:bar-no-edited={barWidth > 0 && barWidth < 720}
+					bind:clientWidth={barWidth}
+					onpointerleave={() => (frozenTabWidth = null)}
+				>
 					{#if sidebarCollapsed}
 						<button
 							onclick={toggleSidebar}
@@ -1418,23 +1445,33 @@
 					{/if}
 					<!-- The tabs get the width the controls leave. They shrink evenly to a minimum; what
 					     still doesn't fit is stacked behind one control ($lib/tab-strip.ts). -->
-					<div class="tab-area" bind:this={tabArea}>
-					<div class="tab-strip" class:tab-strip-tight={fitted.tight}>
+					<nav class="tab-area" aria-label="Open notes" bind:this={tabArea}>
+					<!-- After a tab is closed with the pointer the others keep their width
+					     until the pointer leaves the bar, so the next close button is where
+					     the last one was (as in browsers). -->
+					<div
+						class="tab-strip"
+						class:tab-strip-tight={fitted.tight}
+						class:tab-strip-frozen={frozenTabWidth !== null}
+						style={frozenTabWidth !== null ? `--frozen-tab-width: ${frozenTabWidth}px` : undefined}
+					>
 					{#each fitted.visible as tab, i (tab.id)}
 						<a
 							href="/memory/{tab.id}"
 							class="tab-item"
 							class:tab-active={currentPath === `/memory/${tab.id}`}
+							aria-current={currentPath === `/memory/${tab.id}` ? 'page' : undefined}
 							class:tab-pinned={tab.pinned}
 							class:tab-group-end={tab.pinned && !fitted.visible[i + 1]?.pinned && i < fitted.visible.length - 1}
 							draggable="true"
 							animate:flip={flipParams()}
 							in:tabIn
+							out:growX
 							title={tabPath(tab) + (tab.pinned ? ' (pinned; right-click to unpin)' : '')}
 							ondragstart={(e) => { e.dataTransfer?.setData('text/plain', tab.id); e.dataTransfer!.effectAllowed = 'move'; }}
 							ondragover={(e) => e.preventDefault()}
 							ondrop={(e) => { e.preventDefault(); const from = e.dataTransfer?.getData('text/plain'); if (from) moveTabTo(from, tab.id); }}
-							onauxclick={(e) => { if (e.button === 1) { e.preventDefault(); closeTab(tab.id); } }}
+							onauxclick={(e) => { if (e.button === 1) { e.preventDefault(); closeTabFromBar(tab.id, true); } }}
 							oncontextmenu={(e) => { e.preventDefault(); togglePinTab(tab.id); }}
 						>
 							{#if tab.icon}
@@ -1461,7 +1498,7 @@
 								</button>
 								<button
 									class="tab-close"
-									onclick={(e) => { e.preventDefault(); e.stopPropagation(); closeTab(tab.id); }}
+									onclick={(e) => { e.preventDefault(); e.stopPropagation(); closeTabFromBar(tab.id, e.detail > 0); }}
 									aria-label="Close tab"
 								>
 									<X class="h-3 w-3" />
@@ -1531,10 +1568,10 @@
 							{/if}
 						</div>
 					{/if}
-					</div>
+					</nav>
 					<!-- The open note's controls: the note page moves them in here ($lib/actions/dock). -->
 					<div class="note-bar-slot" bind:this={noteBarEl}></div>
-				</div>
+				</header>
 				</div>
 				</div>
 			{/if}
@@ -2058,19 +2095,38 @@
 	/* The open note's tab: a piece of the panel's surface on the chrome. It
 	   keeps more of its title than the others when they are squeezed. */
 	.tab-item.tab-active {
-		min-width: 8rem;
 		color: var(--color-text);
 		background: var(--shell-panel);
 		border-color: var(--shell-panel-border);
 		box-shadow: var(--shell-panel-shadow);
 	}
 
+	/* Resting tabs: a faint divider between two, so they read as tabs and
+	   not as loose words on pages where none is open. */
+	.tab-item:not(.tab-active, :hover) + .tab-item:not(.tab-active, :hover)::before {
+		content: '';
+		position: absolute;
+		top: 0.4375rem;
+		bottom: 0.4375rem;
+		left: -2px;
+		width: 1px;
+		background: var(--color-border);
+	}
+
+	.tab-strip-frozen .tab-item:not(.tab-pinned) {
+		flex: none;
+		width: var(--frozen-tab-width);
+		max-width: none;
+	}
+
+	/* 24 px targets (WCAG 2.5.8); the tab is 28 px tall. */
 	.tab-close {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 1.125rem;
-		height: 1.125rem;
+		width: 1.5rem;
+		height: 1.5rem;
+		margin: 0 -0.1875rem;
 		border-radius: 0.25rem;
 		color: var(--color-text-muted);
 		cursor: pointer;

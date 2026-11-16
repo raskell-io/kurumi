@@ -3086,6 +3086,66 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
+	async 'closing tabs: the next tab takes over, Home after the last, and the tabs hold still under the pointer'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const ids = await db(page, `return ['One', 'Two', 'Three', 'Four'].map((t) => db.addMemoryObject(t, 'x').id);`);
+		for (const id of ids) {
+			await page.goto(`${BASE}/#/memory/${id}`, { waitUntil: 'load' });
+			await page.waitForSelector('main .ProseMirror');
+		}
+		// (A closed tab shrinks away for a moment, inert: not counted.)
+		const tabs = () => page.$$eval('.tab-strip .tab-item:not([inert])', (t) => t.map((x) => x.querySelector('.truncate').textContent));
+		const active = () => page.evaluate(() => document.querySelector('.tab-item.tab-active .truncate')?.textContent ?? null);
+		const widths = () => page.$$eval('.tab-strip .tab-item:not([inert])', (t) => t.map((x) => Math.round(x.getBoundingClientRect().width)));
+		// Switching tabs moves nothing: the open note's tab is no wider than it was.
+		await page.mouse.move(700, 500);
+		await sleep(300);
+		const before = await widths();
+		await clickOnTop(page, '.tab-strip .tab-item .truncate', 'Two');
+		await noteShown(page, 'Two', { errors });
+		await page.mouse.move(700, 500);
+		await sleep(400);
+		assert.deepEqual(await widths(), before, 'the tabs changed width when another one became active');
+		// Close Two's tab with the pointer: Three takes over.
+		const close = async (title) => {
+			const pt = await page.evaluate((title) => {
+				const tab = [...document.querySelectorAll('.tab-strip .tab-item')].find((t) => t.textContent.includes(title));
+				const r = tab.querySelector('button[aria-label="Close tab"]').getBoundingClientRect();
+				return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+			}, title);
+			await page.mouse.move(pt.x, pt.y);
+			await sleep(150);
+			await page.mouse.click(pt.x, pt.y);
+			return pt;
+		};
+		const pt = await close('Two');
+		await noteShown(page, 'Three', { errors });
+		await sleep(400);
+		assert.deepEqual(await tabs(), ['One', 'Three', 'Four']);
+		assert.equal(await active(), 'Three');
+		assert.equal(await page.$('main .ProseMirror') !== null, true);
+		// The pointer hasn't moved: the tabs kept their width, so a close button is still under it.
+		assert.deepEqual(await widths(), [before[1], before[1], before[1]], 'the tabs did not keep the closed tab\'s width under the pointer');
+		assert.equal(
+			await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('button')?.getAttribute('aria-label'), pt),
+			'Close tab',
+			'no close button under the pointer after closing'
+		);
+		// The last tab of the row hands over to the one before it.
+		await close('Four');
+		await noteShown(page, 'Three', { errors });
+		assert.deepEqual(await tabs(), ['One', 'Three']);
+		// The pointer leaves: the tabs settle.
+		await page.mouse.move(700, 500);
+		await sleep(400);
+		// Closing the only remaining tabs ends on Home.
+		await close('Three');
+		await noteShown(page, 'One', { errors });
+		await close('One');
+		await page.waitForFunction(() => !location.hash.includes('/memory/') && document.querySelectorAll('.tab-strip .tab-item').length === 0, { timeout: 5000 });
+		assert.deepEqual(errors, []);
+	},
+
 	async 'living notes: follow a topic, rewrite from its notes'(browser) {
 		const { page, errors } = await freshPage(browser);
 		const mod = (path) => `performance.getEntriesByType('resource').map((e) => e.name).find((n) => n.includes('/src/lib/db/store.ts')).replace('/db/store.ts', '${path}')`;
