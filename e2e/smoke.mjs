@@ -3011,16 +3011,18 @@ const scenarios = {
 		const bar = () =>
 			page.evaluate(() => {
 				const box = (el) => el?.getBoundingClientRect();
-				const tabs = [...document.querySelectorAll('.tab-strip .tab-item')];
+				// (A tab on its way into the stack shrinks away for a moment, inert: not counted.)
+				const tabs = [...document.querySelectorAll('.tab-strip .tab-item:not([inert])')];
 				const controls = box(document.querySelector('.note-bar-slot'));
 				return {
 					shown: tabs.map((t) => t.querySelector('.truncate').textContent),
-					active: document.querySelector('.tab-item.tab-active .truncate')?.textContent ?? null,
-					stacked: [...document.querySelectorAll('.tab-stack-item')].map((t) => t.textContent.trim()),
+					active: document.querySelector('.tab-strip .tab-item.tab-active:not([inert]) .truncate')?.textContent ?? null,
+					stacked: [...document.querySelectorAll('.tab-stack-menu:not([inert]) .tab-stack-item')].map((t) => t.textContent.trim()),
 					more: document.querySelector('.tab-stack')?.getAttribute('aria-label') ?? null,
 					// No tab reaches under the stack control or the note's controls.
 					overlap: tabs.some((t) => box(t).right > (box(document.querySelector('.tab-stack'))?.left ?? controls.left) + 0.5) || (box(document.querySelector('.tab-stack'))?.right ?? 0) > controls.left + 0.5,
-					narrowest: Math.min(...tabs.map((t) => Math.round(box(t).width))),
+					// Layout width: a tab arriving is scaled for a moment, which a bounding box would include.
+					narrowest: Math.min(...tabs.map((t) => t.offsetWidth)),
 					controlsInBar: !!document.querySelector('.tab-bar .note-bar-slot button[aria-label="More actions"]'),
 					noteRow: document.querySelector('.note-top')?.getClientRects().length ?? 0,
 					barHeight: document.querySelector('.tab-bar').offsetHeight,
