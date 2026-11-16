@@ -30,6 +30,11 @@ const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
 // ------------------------------------------------------------ harness
 
+const serverLines = [];
+// What happened to the scenario's pages besides the test's own steps: reloads,
+// a renderer crash, the dev server's messages. Printed when a scenario fails.
+let pageEvents = [];
+
 function startServer() {
 	const server = spawn('npx', ['vite', 'dev', '--port', String(PORT), '--strictPort'], {
 		stdio: ['ignore', 'pipe', 'pipe'],
@@ -38,6 +43,16 @@ function startServer() {
 	});
 	return new Promise((resolve, reject) => {
 		const timer = setTimeout(() => reject(new Error('vite dev did not start')), 60_000);
+		// The server's last words, for the report of a failing scenario (a
+		// dependency optimised late reloads every open page, for one).
+		const remember = (chunk) => {
+			for (const line of chunk.toString().replace(/\x1b\[[0-9;]*m/g, '').split('\n')) {
+				if (line.trim()) serverLines.push(`${new Date().toISOString().slice(11, 23)} ${line.trim()}`);
+			}
+			serverLines.splice(0, Math.max(0, serverLines.length - 200));
+		};
+		server.stdout.on('data', remember);
+		server.stderr.on('data', remember);
 		server.stdout.on('data', (chunk) => {
 			// Without colour codes: with CI set, vite colours the port separately.
 			if (chunk.toString().replace(/\x1b\[[0-9;]*m/g, '').includes(`localhost:${PORT}`)) {
@@ -100,6 +115,14 @@ async function freshPage(browser, setup) {
 	if (process.env.CPU_THROTTLE) await page.emulateCPUThrottling(Number(process.env.CPU_THROTTLE));
 	const errors = [];
 	page.on('pageerror', (err) => errors.push(err.message));
+	const stamp = () => new Date().toISOString().slice(11, 23);
+	page.on('error', (err) => pageEvents.push(`${stamp()} page crashed: ${err.message}`));
+	page.on('framenavigated', (frame) => {
+		if (frame === page.mainFrame()) pageEvents.push(`${stamp()} main frame now at ${frame.url()}`);
+	});
+	page.on('console', (msg) => {
+		if (msg.text().includes('[vite]')) pageEvents.push(`${stamp()} console: ${msg.text().slice(0, 200)}`);
+	});
 	// The automatic daily digest would add a note 5 s after start, in the
 	// middle of a scenario: mark today's as done.
 	await page.evaluateOnNewDocument(() => {
@@ -602,9 +625,14 @@ const scenarios = {
 			assert.ok(await page.evaluate(() => !!document.activeElement.closest('.k-dialog')), `Tab ${i + 1} left the dialog`);
 		}
 		await page.focus('.k-dialog input');
+		const atEscape = await page.evaluate(() => `${document.activeElement.tagName}[${document.activeElement.getAttribute('aria-label') ?? document.activeElement.getAttribute('type') ?? ''}]`);
 		await page.keyboard.press('Escape');
 		await sleep(300);
-		assert.equal(await page.$('.k-dialog'), null, 'Escape in the name field left the dialog open');
+		const left = await page.evaluate(() => {
+			const d = document.querySelector('.k-dialog');
+			return d ? `still there; closing: ${!!d.closest('[inert]')}; focus ${document.activeElement.tagName}` : null;
+		});
+		assert.equal(left, null, `Escape in the name field (focus on ${atEscape}) left the dialog open: ${left}`);
 		assert.match(await page.$eval(VAULT_MENU, (b) => (document.activeElement === b ? 'vault button' : document.activeElement.tagName)), /vault button/);
 		// Another page closes it.
 		await page.click(VAULT_MENU);
@@ -3862,12 +3890,19 @@ try {
 	browser = await launchBrowser(profile);
 	for (const [name, run] of Object.entries(scenarios)) {
 		if (only && !name.includes(only)) continue;
+		pageEvents = [];
+		const serverMark = serverLines.length;
+		const started = new Date().toISOString().slice(11, 23);
 		try {
 			await run(browser);
 			console.log(`  ✓ ${name}`);
 		} catch (err) {
 			failed++;
 			console.log(`  ✗ ${name}\n      ${err.message.split('\n').join('\n      ')}`);
+			const server = serverLines.slice(serverMark);
+			console.log(`      started ${started}, failed ${new Date().toISOString().slice(11, 23)}`);
+			if (pageEvents.length) console.log(`      page events:\n        ${pageEvents.join('\n        ')}`);
+			if (server.length) console.log(`      dev server meanwhile:\n        ${server.slice(-30).join('\n        ')}`);
 		} finally {
 			for (const context of openContexts.splice(0)) await context.close().catch(() => {});
 		}
