@@ -362,7 +362,7 @@
 		(e.currentTarget as HTMLInputElement).value = '';
 	}
 	let noteWidth = $state<NoteWidth>(
-		typeof localStorage === 'undefined' ? 'wide' : ((localStorage.getItem('kurumi-note-width') as NoteWidth | null) ?? 'wide')
+		typeof localStorage === 'undefined' ? 'narrow' : ((localStorage.getItem('kurumi-note-width') as NoteWidth | null) ?? 'narrow')
 	);
 
 	// Derived for the local-AI status panels

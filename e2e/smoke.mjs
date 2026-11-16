@@ -2345,7 +2345,7 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
-	async 'content width: wide by default, narrow and full in Appearance, on every page'(browser) {
+	async 'content width: narrow by default, wide and full in Appearance, on every page'(browser) {
 		const { page, errors } = await freshPage(browser);
 		await page.setViewport({ width: 1800, height: 900 });
 		const id = await page.evaluate(async () => {
@@ -2364,9 +2364,9 @@ const scenarios = {
 			const buttons = await page.$$('[aria-labelledby="width-label"] button');
 			for (const b of buttons) if ((await b.evaluate((e) => e.textContent.trim())) === label) await b.click();
 		};
-		const wide = await column();
-		await pick('Narrow');
 		const narrow = await column();
+		await pick('Wide');
+		const wide = await column();
 		await pick('Full');
 		const full = await column();
 		await page.reload({ waitUntil: 'load' }); // the choice survives a reload, before first paint

@@ -96,7 +96,7 @@
 				var f = localStorage.getItem('kurumi-editor-font') || 'quattro';
 				c.add('font-' + (/^[a-z0-9-]+$/.test(f) ? f : 'quattro'));
 				c.add('font-size-' + (localStorage.getItem('kurumi-editor-font-size') || 'medium'));
-				c.add('note-width-' + (localStorage.getItem('kurumi-note-width') || 'wide'));
+				c.add('note-width-' + (localStorage.getItem('kurumi-note-width') || 'narrow'));
 				c.add('accent-' + (localStorage.getItem('kurumi-accent') || 'lavender'));
 				var p = localStorage.getItem('kurumi-palette');
 				if (p && p !== 'catppuccin') c.add('palette-' + p);

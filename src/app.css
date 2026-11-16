@@ -520,13 +520,14 @@
 }
 
 /* Content width (Settings → Appearance): notes, Read mode and every page
-   built on .k-page, plus the home page. Wide is the default. */
+   built on .k-page, plus the home page. Narrow is the default: about 80
+   characters a line, which reads best. */
 :root {
-	--note-width: 64rem;
+	--note-width: 46rem;
 }
 
-:root.note-width-narrow {
-	--note-width: 46rem;
+:root.note-width-wide {
+	--note-width: 64rem;
 }
 
 :root.note-width-full {

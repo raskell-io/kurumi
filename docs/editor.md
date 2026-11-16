@@ -11,7 +11,7 @@ editor.
 
 Settings → Appearance sets the colour theme (Catppuccin, Nord, Gruvbox,
 Solarized, Rosé Pine or Plain, each light and dark), the accent colour, the
-editor font, its size, and the content width: Narrow, Wide (the default) or
+editor font, its size, and the content width: Narrow (the default), Wide or
 Full. Each device keeps its own. There are four **editor fonts**, each for
 something: iA Writer Quattro (the default, a writer's duospace), Geist (the
 interface's plain sans), Newsreader (a book serif with true italics) and
