@@ -23,7 +23,7 @@ import {
 	getCurrentVaultName
 } from '$lib/db';
 import type { MemoryObject, ActionItem, ReminderProposal, Template } from '$lib/db/types';
-import { inferenceRouter } from '$lib/inference';
+import { inferenceRouter, getLocalInferenceSettings } from '$lib/inference';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -495,8 +495,21 @@ export async function generateJournalPrompts(isoDate: string): Promise<string> {
  * filters out the source memory itself and any explicit wikilink
  * targets (those are already shown as regular backlinks).
  *
- * Returns up to `limit` memories with their similarity scores.
+ * Returns up to `limit` memories with their similarity scores, only those
+ * close enough to mean something (RELATED_MIN) and only for a note with
+ * enough text to compare (RELATED_MIN_WORDS): four "related" notes under a
+ * one-line note were arbitrary.
  */
+/**
+ * The least similarity that counts as related, per embedding model: their
+ * scales differ. all-MiniLM puts unrelated notes around 0.1–0.3 and notes
+ * on one subject from about 0.45; multilingual-e5 scores everything high,
+ * unrelated around 0.75–0.8.
+ */
+export const RELATED_MIN: Record<string, number> = { 'mini-lm-l6': 0.45, 'multilingual-e5-small': 0.84 };
+/** A note shorter than this has too little to be similar to anything. */
+export const RELATED_MIN_WORDS = 25;
+
 export async function findSemanticBacklinks(
 	memoryId: string,
 	limit: number = 5
@@ -510,12 +523,15 @@ export async function findSemanticBacklinks(
 		.filter(Boolean)
 		.join(' ');
 	if (!queryText.trim()) return [];
+	const words = `${source.summaryShort ?? ''} ${source.bodyMarkdown ?? ''}`.split(/\s+/).filter((w) => /\w/.test(w)).length;
+	if (words < RELATED_MIN_WORDS) return [];
+	const minScore = RELATED_MIN[getLocalInferenceSettings().embedModel] ?? 0.5;
 
 	try {
 		const { semanticSearch } = await import('./embeddings');
 		const hits = await semanticSearch(queryText, limit + 5);
 		return hits
-			.filter((h) => h.memoryId !== memoryId)
+			.filter((h) => h.memoryId !== memoryId && h.similarity >= minScore)
 			.slice(0, limit)
 			.map((h) => {
 				const memory = all.find((m) => m.id === h.memoryId);

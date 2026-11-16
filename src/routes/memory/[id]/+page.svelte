@@ -1486,7 +1486,7 @@
 							<details class="link-section" open>
 								<summary>
 									<ChevronRight class="chev h-3.5 w-3.5" />
-									Linked mentions
+									Linked from
 									<span class="count">{backlinks.length}</span>
 								</summary>
 								<div class="pb-2">
@@ -1541,7 +1541,7 @@
 									<span class="count">{relatedNotes.length}</span>
 								</summary>
 								<div class="pb-2">
-									{#each relatedNotes as { memory: related, score } (related.id)}
+									{#each relatedNotes as { memory: related } (related.id)}
 										<a href="/memory/{related.id}" class="link-row">
 											<Sparkles class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)]" />
 											<span class="shrink-0 font-medium text-[var(--color-text)]">{related.title || 'Untitled'}</span>
