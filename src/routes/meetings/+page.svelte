@@ -4,7 +4,10 @@
 	import { meetingSeries, projects, memoryObjects, addMeetingSeries, todayIso, type MeetingCadence } from '$lib/db';
 	import { CADENCE_LABELS, meetingsOf, nextMeetingDate } from '$lib/meetings';
 	import { dueInfo } from '$lib/utils/due';
-	import { CalendarClock, Users } from 'lucide-svelte';
+	import { formatDay } from '$lib/dates/format';
+	import { autofocus } from '$lib/actions/autofocus';
+	import MetaLine from '$lib/components/ui/MetaLine.svelte';
+	import { CalendarClock, Plus, Users } from 'lucide-svelte';
 
 	const today = todayIso();
 
@@ -13,6 +16,10 @@
 	let people = $state('');
 	let cadence = $state<MeetingCadence>('weekly');
 	let projectId = $state($page.url.searchParams.get('project') ?? '');
+	// The form opens from "New meeting"; it is simply there while there are
+	// none yet, or when a project page sent us here to make one.
+	let creating = $state(!!$page.url.searchParams.get('project'));
+	let showForm = $derived(creating || $meetingSeries.length === 0);
 
 	function create(e: SubmitEvent) {
 		e.preventDefault();
@@ -34,31 +41,44 @@
 <div class="k-page">
 	<header class="k-page-header">
 		<div class="min-w-0">
-			<h1 class="k-page-title">Recurring meetings</h1>
-			<p class="k-page-subtitle">1:1s, stand-ups and syncs, each with a running agenda for next time.</p>
+			<h1 class="k-page-title">Meetings</h1>
+			<p class="k-page-subtitle">Recurring 1:1s, stand-ups and syncs, each with a running agenda for next time.</p>
 		</div>
+		{#if !showForm}
+			<button class="k-btn k-btn-primary shrink-0" onclick={() => (creating = true)}>
+				<Plus class="h-4 w-4" />
+				New meeting
+			</button>
+		{/if}
 	</header>
 
+	{#if showForm}
 	<form class="k-card mb-5 grid gap-2 p-3" onsubmit={create}>
-		<input class="k-input" bind:value={name} placeholder="Meeting name, e.g. 1:1 with Sam" aria-label="Meeting name" />
+		<input class="k-input" bind:value={name} placeholder="Meeting name, e.g. 1:1 with Sam" aria-label="Meeting name" use:autofocus onkeydown={(e) => e.key === 'Escape' && $meetingSeries.length > 0 && (creating = false)} />
 		<input class="k-input" bind:value={people} placeholder="People, comma separated" aria-label="People" />
 		<div class="flex flex-wrap items-center gap-2">
-			<select class="k-input !h-8 !w-auto !py-0" bind:value={cadence} aria-label="How often">
+			<select class="k-input !w-auto" bind:value={cadence} aria-label="How often">
 				{#each Object.entries(CADENCE_LABELS) as [value, label] (value)}<option {value}>{label}</option>{/each}
 			</select>
-			<select class="k-input !h-8 !w-auto !py-0" bind:value={projectId} aria-label="Project">
+			<select class="k-input !w-auto" bind:value={projectId} aria-label="Project">
 				<option value="">No project</option>
 				{#each $projects as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
 			</select>
-			<button class="k-btn k-btn-primary k-btn-sm ml-auto" disabled={!name.trim()}>Create</button>
+			<span class="ml-auto flex gap-1.5">
+				{#if $meetingSeries.length > 0}
+					<button type="button" class="k-btn k-btn-ghost" onclick={() => (creating = false)}>Cancel</button>
+				{/if}
+				<button class="k-btn k-btn-primary" disabled={!name.trim()}>Create</button>
+			</span>
 		</div>
 	</form>
+	{/if}
 
 	{#if $meetingSeries.length === 0}
 		<div class="k-empty">
 			<CalendarClock />
 			<p class="k-empty-title">No recurring meetings yet</p>
-			<p>Create one above. Add agenda items whenever they come up, then start the meeting from its page.</p>
+			<p>Create one above. Add things to discuss whenever they come up, then start the meeting from its page.</p>
 		</div>
 	{:else}
 		<ul class="grid gap-2">
@@ -74,12 +94,12 @@
 							<span class="min-w-0 flex-1 truncate font-medium">{series.name}</span>
 							{#if due}<span class="k-badge" class:k-badge-danger={due.tone === 'danger'} class:k-badge-warn={due.tone === 'warn'}>Next {due.label}</span>{/if}
 						</div>
-						<p class="mt-1 flex flex-wrap gap-x-2 text-xs text-[var(--color-text-muted)]">
-							{#if series.people.length}<span class="inline-flex items-center gap-1"><Users class="h-3 w-3" />{series.people.join(', ')}</span>{/if}
+						<MetaLine class="mt-1 text-xs text-[var(--color-text-muted)]">
+							{#if series.people.length}<span><Users class="h-3 w-3" />{series.people.join(', ')}</span>{/if}
 							<span>{CADENCE_LABELS[series.cadence]}</span>
 							<span>{agenda} on the agenda</span>
-							{#if last}<span>last {new Date(last.createdAt).toLocaleDateString()}</span>{/if}
-						</p>
+							{#if last}<span>Last {formatDay(last.createdAt)}</span>{/if}
+						</MetaLine>
 					</a>
 				</li>
 			{/each}

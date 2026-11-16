@@ -12,7 +12,9 @@
 		type QuestionStatus
 	} from '$lib/db';
 	import { pushUndo } from '$lib/stores/undo';
-	import { HelpCircle, CheckCircle2, CircleSlash, RotateCcw, Trash2, UserRound } from 'lucide-svelte';
+	import { autofocus } from '$lib/actions/autofocus';
+	import MetaLine from '$lib/components/ui/MetaLine.svelte';
+	import { HelpCircle, CheckCircle2, CircleSlash, Plus, RotateCcw, Trash2, UserRound } from 'lucide-svelte';
 
 	// Open questions until they're answered (or dropped). Meetings add their
 	// unresolved questions here automatically.
@@ -41,12 +43,16 @@
 	let text = $state('');
 	let assignee = $state('');
 	let newProject = $state('');
+	// The form opens from "New question" (and is there while there are none).
+	let creating = $state(false);
+	let showForm = $derived(creating || $questions.length === 0);
 
 	function ask(e: SubmitEvent) {
 		e.preventDefault();
 		if (!text.trim()) return;
 		addQuestion({ text, assignee: assignee.trim() || null, projectId: newProject || null });
 		text = assignee = '';
+		creating = false;
 	}
 
 	// Answering / assigning inline
@@ -79,22 +85,35 @@
 <div class="k-page">
 	<header class="k-page-header">
 		<div class="min-w-0">
-			<h1 class="k-page-title">Open questions</h1>
+			<h1 class="k-page-title">Questions</h1>
 			<p class="k-page-subtitle">Questions to get answered. Meetings add their unresolved ones here automatically.</p>
 		</div>
+		{#if !showForm}
+			<button class="k-btn k-btn-primary shrink-0" onclick={() => (creating = true)}>
+				<Plus class="h-4 w-4" />
+				New question
+			</button>
+		{/if}
 	</header>
 
+	{#if showForm}
 	<form class="k-card mb-5 grid gap-2 p-3" onsubmit={ask}>
-		<input class="k-input" bind:value={text} placeholder="What needs answering?" aria-label="Question" />
+		<input class="k-input" bind:value={text} placeholder="What needs answering?" aria-label="Question" use:autofocus onkeydown={(e) => e.key === 'Escape' && $questions.length > 0 && (creating = false)} />
 		<div class="flex flex-wrap items-center gap-2">
-			<input class="k-input !h-8 !w-44" bind:value={assignee} placeholder="Who should answer?" aria-label="Who should answer" />
-			<select class="k-input !h-8 !w-auto !py-0" bind:value={newProject} aria-label="Project">
+			<input class="k-input !w-44" bind:value={assignee} placeholder="Who should answer?" aria-label="Who should answer" />
+			<select class="k-input !w-auto" bind:value={newProject} aria-label="Project">
 				<option value="">No project</option>
 				{#each $projects as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
 			</select>
-			<button class="k-btn k-btn-primary k-btn-sm ml-auto" disabled={!text.trim()}>Add question</button>
+			<span class="ml-auto flex gap-1.5">
+				{#if $questions.length > 0}
+					<button type="button" class="k-btn k-btn-ghost" onclick={() => (creating = false)}>Cancel</button>
+				{/if}
+				<button class="k-btn k-btn-primary" disabled={!text.trim()}>Add question</button>
+			</span>
 		</div>
 	</form>
+	{/if}
 
 	<div class="mb-3 flex flex-wrap items-center gap-2">
 		<div class="k-segmented" role="group" aria-label="Status">
@@ -116,6 +135,10 @@
 		<div class="k-empty">
 			<HelpCircle />
 			<p class="k-empty-title">{tab === 'open' ? 'No open questions' : 'Nothing here'}</p>
+			{#if tab === 'open' && !showForm}
+				<p>Anything you need to find out? Note it here, or in a meeting: unresolved questions land here.</p>
+				<button class="k-btn mt-2" onclick={() => (creating = true)}><Plus class="h-4 w-4" /> New question</button>
+			{/if}
 		</div>
 	{:else}
 		<ul>
@@ -128,21 +151,21 @@
 						{#if answering === q.id}
 							<form class="mt-1.5 flex gap-1.5" onsubmit={(e) => { e.preventDefault(); answer(q.id); }}>
 								<input class="k-input !h-8" bind:value={answerText} placeholder="The answer (optional)" aria-label="Answer" />
-								<button class="k-btn k-btn-primary k-btn-sm">Save</button>
-								<button type="button" class="k-btn k-btn-ghost k-btn-sm" onclick={() => (answering = null)}>Cancel</button>
+								<button class="k-btn k-btn-primary">Save</button>
+								<button type="button" class="k-btn k-btn-ghost" onclick={() => (answering = null)}>Cancel</button>
 							</form>
 						{/if}
 						{#if assigning === q.id}
 							<form class="mt-1.5 flex gap-1.5" onsubmit={(e) => { e.preventDefault(); updateQuestion(q.id, { assignee: assignText.trim() || null }); assigning = null; }}>
 								<input class="k-input !h-8" bind:value={assignText} placeholder="Name" aria-label="Who should answer" />
-								<button class="k-btn k-btn-primary k-btn-sm">Save</button>
+								<button class="k-btn k-btn-primary">Save</button>
 							</form>
 						{/if}
-						<p class="mt-0.5 flex flex-wrap gap-x-2 text-xs text-[var(--color-text-faint)]">
-							{#if q.assignee}<span class="inline-flex items-center gap-1"><UserRound class="h-3 w-3" />{q.assignee}</span>{/if}
+						<MetaLine class="mt-0.5 text-xs text-[var(--color-text-faint)]">
+							{#if q.assignee}<span><UserRound class="h-3 w-3" />{q.assignee}</span>{/if}
 							{#if projectOf(q)}<a href="/projects/{projectOf(q)!.id}">{projectOf(q)!.name}</a>{/if}
 							{#if noteTitle(q.memoryId)}<a href="/memory/{q.memoryId}">from {noteTitle(q.memoryId)}</a>{/if}
-						</p>
+						</MetaLine>
 					</div>
 					<span class="row-actions flex shrink-0 gap-0.5">
 						{#if q.status === 'open'}

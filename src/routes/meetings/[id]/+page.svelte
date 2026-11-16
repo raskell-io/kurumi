@@ -121,9 +121,10 @@
 		{#if meetings.length}
 			<div class="k-card p-1">
 				{#each meetings as m (m.id)}
+					{@const discussed = series.agenda.filter((a) => a.meetingId === m.id).length}
 					<a href="/memory/{m.id}" class="k-row">
 						<span class="min-w-0 flex-1 truncate">{m.title || 'Untitled'}</span>
-						<span class="text-xs text-[var(--color-text-faint)]">{series.agenda.filter((a) => a.meetingId === m.id).length} agenda items</span>
+						<span class="text-xs text-[var(--color-text-faint)]">{discussed} {discussed === 1 ? 'thing' : 'things'} on the agenda</span>
 					</a>
 				{/each}
 			</div>
