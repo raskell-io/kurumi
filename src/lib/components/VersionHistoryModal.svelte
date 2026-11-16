@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { dialog } from '$lib/actions/overlay';
 	import { fadeOut } from '$lib/motion';
 	/**
 	 * Per-note version history, reconstructed from the Automerge change log.
@@ -94,7 +95,7 @@
 	aria-labelledby="version-history-title"
 	tabindex="-1"
 >
-	<div class="k-dialog modal" onclick={(e) => e.stopPropagation()} role="document">
+	<div class="k-dialog modal" use:dialog={{ onClose: () => onClose?.(), escape: false }} onclick={(e) => e.stopPropagation()} role="document">
 		<div class="header">
 			<h2 id="version-history-title">Version history</h2>
 			<button type="button" class="k-icon-btn" onclick={() => onClose?.()} aria-label="Close">

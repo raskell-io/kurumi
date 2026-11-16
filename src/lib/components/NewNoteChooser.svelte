@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { dialog } from '$lib/actions/overlay';
 	import { fadeOut } from '$lib/motion';
 	import {
 		templates,
@@ -114,7 +115,7 @@
 	aria-labelledby="new-note-title"
 	tabindex="-1"
 >
-	<div class="k-dialog chooser" onclick={(e) => e.stopPropagation()} role="document">
+	<div class="k-dialog chooser" use:dialog={{ onClose, escape: false }} onclick={(e) => e.stopPropagation()} role="document">
 		<div class="chooser-header">
 			<h2 id="new-note-title">New note</h2>
 			<button type="button" class="k-icon-btn" onclick={onClose} aria-label="Close">

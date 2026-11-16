@@ -14,8 +14,8 @@ export const TAB_MIN = 88;
 export const TAB_GAP = 2;
 /** Room the stack control takes once there is one, px. */
 export const STACK_CONTROL = 48;
-/** What the tabs can't use: the gap after the pinned group, and the open note's tab being wider (`.tab-active { min-width }`). */
-export const STRIP_SLACK = 50;
+/** What the tabs can't use: the gap after the pinned group. (The open note's tab is no wider than the rest.) */
+export const STRIP_SLACK = 10;
 
 export interface FitTab {
 	id: string;

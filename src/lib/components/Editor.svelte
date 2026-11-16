@@ -577,6 +577,8 @@
 				ctx.set(rootCtx, editorContainer);
 				ctx.set(defaultValueCtx, displayContent);
 				if (mountedReadonly) ctx.update(editorViewOptionsCtx, (options) => ({ ...options, editable: () => false }));
+				// A name for screen readers (the editable area had none).
+				ctx.update(editorViewOptionsCtx, (options) => ({ ...options, attributes: { ...(typeof options.attributes === 'object' ? options.attributes : {}), 'aria-label': 'Note text', 'aria-multiline': 'true' } }));
 
 				// Listen for changes - transform code block back to frontmatter for storage
 				ctx.get(listenerCtx).markdownUpdated((_, markdown) => {

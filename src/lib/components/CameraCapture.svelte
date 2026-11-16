@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { dialog } from '$lib/actions/overlay';
 	import { fadeOut } from '$lib/motion';
 	import { processAndStoreImage } from '$lib/utils/image';
 	import { X, SwitchCamera, Loader2 } from 'lucide-svelte';
@@ -157,7 +158,7 @@
 		aria-labelledby="camera-title"
 		tabindex="-1"
 	>
-		<div class="k-dialog camera-modal" onclick={(e) => e.stopPropagation()} role="document">
+		<div class="k-dialog camera-modal" use:dialog={{ onClose: close, escape: false }} onclick={(e) => e.stopPropagation()} role="document">
 			<div class="camera-header">
 				<h2 id="camera-title">Take a photo</h2>
 				<button type="button" class="k-icon-btn" onclick={close} aria-label="Close">

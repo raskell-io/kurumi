@@ -12,6 +12,8 @@
 
 	const desktop = isTauri();
 	const desktopOS = detectDesktopOS();
+	// iPads and phones in desktop mode report a Mac: ask the pointer instead.
+	const touch = typeof matchMedia !== 'undefined' && matchMedia('(hover: none) and (pointer: coarse)').matches;
 	const osName = { mac: 'Mac', windows: 'Windows', linux: 'Linux' } as const;
 
 	const stories = [
@@ -77,7 +79,10 @@
 			keeps your data in plain files you own.
 		</p>
 		<div class="hero-actions">
-			{#if desktop || !desktopOS}
+			{#if touch && !desktop}
+				<!-- A phone or tablet: the app is installed from the browser, not downloaded. -->
+				<a href="/settings/offline" class="k-btn k-btn-primary no-underline">Add to Home Screen <ArrowRight class="h-4 w-4" /></a>
+			{:else if desktop || !desktopOS}
 				<a href="/daily" class="k-btn k-btn-primary no-underline">Open today's note <ArrowRight class="h-4 w-4" /></a>
 			{:else}
 				<a href="/settings/desktop" class="k-btn k-btn-primary no-underline">

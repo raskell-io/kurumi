@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { dialog } from '$lib/actions/overlay';
 	import { fadeOut } from '$lib/motion';
 	import { gitSyncState, clearGitConflicts, type MemoryConflict } from '$lib/git/status';
 	import { updateMemoryObject } from '$lib/db';
@@ -80,6 +81,7 @@
 	>
 		<div
 			class="k-dialog modal"
+			use:dialog={{ onClose: skip, escape: false }}
 			bind:this={panelRef}
 			onclick={(e) => e.stopPropagation()}
 			role="document"

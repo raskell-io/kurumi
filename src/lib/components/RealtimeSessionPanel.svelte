@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { dialog } from '$lib/actions/overlay';
 	import { fadeOut } from '$lib/motion';
 	import {
 		RealtimeSession,
@@ -86,7 +87,7 @@
 	aria-labelledby="realtime-title"
 	tabindex="-1"
 >
-	<div class="k-dialog panel" onclick={(e) => e.stopPropagation()} role="document">
+	<div class="k-dialog panel" use:dialog={{ onClose: handleClose, escape: false }} onclick={(e) => e.stopPropagation()} role="document">
 		<div class="header">
 			<div class="title">
 				<h2 id="realtime-title">Voice session</h2>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { dialog } from '$lib/actions/overlay';
 	import { fadeOut } from '$lib/motion';
 	import VoiceRecorder, { type RecorderState } from './VoiceRecorder.svelte';
 	import {
@@ -174,7 +175,7 @@
 		aria-labelledby="voice-capture-title"
 		tabindex="-1"
 	>
-		<div class="k-dialog !max-w-sm">
+		<div class="k-dialog !max-w-sm" use:dialog={{ onClose: requestClose, escape: false }}>
 			<div class="flex items-center justify-between py-2.5 pr-2.5 pl-4">
 				<h2 id="voice-capture-title" class="text-sm font-semibold text-[var(--color-text)]">
 					{mode === 'meeting' ? 'Record meeting' : 'Record voice memo'}

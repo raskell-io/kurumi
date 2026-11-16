@@ -15,7 +15,7 @@
 		focusCurrentMatch,
 		escapeRegExp
 	} from '$lib/editor/findReplace';
-	import { ChevronUp, ChevronDown, X, Replace, CaseSensitive } from 'lucide-svelte';
+	import { ChevronUp, ChevronDown, X, Replace, CaseSensitive, SlidersHorizontal } from 'lucide-svelte';
 
 	// Find (Cmd+F) / find & replace (Cmd+Option+F) bar for the open note,
 	// plus "replace in all notes" across the current vault.
@@ -37,6 +37,7 @@
 	);
 	let replacement = $state('');
 	let caseSensitive = $state(false);
+	let showOptions = $state(false);
 	let tick = $state(0); // bumped after editor changes so counts re-read
 	let input: HTMLInputElement | undefined = $state();
 	let confirmAll = $state(false);
@@ -147,8 +148,18 @@
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div use:belowHeader class="find-bar k-menu" onkeydown={handleKeydown} role="search" aria-label="Find in note">
 	<div class="flex items-center gap-1">
+		<!-- Phones: match case and replace sit behind one button, so the field keeps its width. -->
 		<button
-			class="k-icon-btn !h-7 !w-7"
+			class="k-icon-btn find-narrow !h-7 !w-7"
+			class:active={showOptions || showReplace || caseSensitive}
+			onclick={() => (showOptions = !showOptions)}
+			aria-label="Find options"
+			aria-expanded={showOptions}
+		>
+			<SlidersHorizontal class="h-3.5 w-3.5" />
+		</button>
+		<button
+			class="k-icon-btn find-wide !h-7 !w-7"
 			class:active={showReplace}
 			onclick={() => (showReplace = !showReplace)}
 			title="Toggle replace (⌥⌘F)"
@@ -166,11 +177,11 @@
 			aria-label="Find"
 			class="find-input"
 		/>
-		<span class="w-16 shrink-0 text-right text-xs tabular-nums text-[var(--color-text-faint)]">
+		<span class:find-count-empty={!query} class="find-count shrink-0 text-right text-xs tabular-nums text-[var(--color-text-faint)]">
 			{#if query}{find.matches.length ? `${find.current + 1} of ${find.matches.length}` : 'No results'}{/if}
 		</span>
 		<button
-			class="k-icon-btn !h-7 !w-7"
+			class="k-icon-btn find-wide !h-7 !w-7"
 			class:active={caseSensitive}
 			onclick={() => (caseSensitive = !caseSensitive)}
 			title="Match case"
@@ -190,8 +201,19 @@
 		</button>
 	</div>
 
+	{#if showOptions}
+		<div class="find-narrow mt-1 flex items-center gap-1">
+			<button class="k-btn k-btn-sm" class:active={caseSensitive} aria-pressed={caseSensitive} onclick={() => (caseSensitive = !caseSensitive)}>
+				<CaseSensitive class="h-4 w-4" /> Match case
+			</button>
+			<button class="k-btn k-btn-sm" class:active={showReplace} aria-pressed={showReplace} onclick={() => (showReplace = !showReplace)}>
+				<Replace class="h-3.5 w-3.5" /> Replace
+			</button>
+		</div>
+	{/if}
+
 	{#if showReplace}
-		<div class="mt-1 flex items-center gap-1 pl-8">
+		<div class="find-replace mt-1 flex items-center gap-1 pl-8">
 			<input
 				bind:value={replacement}
 				type="text"
@@ -262,5 +284,36 @@
 	.active {
 		background: var(--color-active);
 		color: var(--color-accent);
+	}
+
+	.find-count {
+		min-width: 4rem;
+	}
+
+	.find-count-empty {
+		min-width: 0;
+	}
+
+	.find-narrow {
+		display: none;
+	}
+
+	/* A phone: the field gets the room (it was 36 px wide between five buttons). */
+	@media (max-width: 640px) {
+		.find-wide {
+			display: none;
+		}
+
+		.find-narrow {
+			display: flex;
+		}
+
+		.find-count {
+			min-width: 0;
+		}
+
+		.find-replace {
+			padding-left: 0;
+		}
 	}
 </style>

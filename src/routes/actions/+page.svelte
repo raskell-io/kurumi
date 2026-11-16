@@ -39,8 +39,11 @@
 		Trash2,
 		X,
 		List,
-		Columns3
+		Columns3,
+		MoreHorizontal
 	} from 'lucide-svelte';
+	import { menu } from '$lib/actions/overlay';
+	import { popOut } from '$lib/motion';
 	import { onMount } from 'svelte';
 
 	const RECURRENCE_OPTIONS: Array<{ value: Recurrence; label: string }> = [
@@ -180,6 +183,9 @@
 	function isSelected(id: string): boolean {
 		return selected.has(id);
 	}
+
+	// Phones: a row's actions behind one button (four icons took a line of their own).
+	let actionsFor = $state<string | null>(null);
 
 	function toggleSelected(id: string) {
 		const next = new Set(selected);
@@ -849,6 +855,42 @@
 											<Trash2 class="h-4 w-4" />
 										</button>
 									</div>
+									<div class="row-more relative">
+										<button
+											class="k-icon-btn"
+											onclick={() => (actionsFor = actionsFor === item.id ? null : item.id)}
+											aria-label="Actions for {item.text}"
+											aria-haspopup="menu"
+											aria-expanded={actionsFor === item.id}
+										>
+											<MoreHorizontal class="h-4 w-4" />
+										</button>
+										{#if actionsFor === item.id}
+											<div
+												class="k-menu absolute right-0 top-full z-30 mt-1 w-48"
+												style="--pop-origin: top right"
+												role="menu"
+												aria-label="To-do actions"
+												use:menu={{ onClose: () => (actionsFor = null) }}
+												out:popOut
+											>
+												<button class="k-menu-item" role="menuitem" onclick={() => { actionsFor = null; startEdit(item); }}><Pencil class="h-4 w-4" /> Edit</button>
+												{#if item.status === 'open'}
+													<button class="k-menu-item" role="menuitem" onclick={() => { actionsFor = null; startProgress(item); }}><Play class="h-4 w-4" /> Mark in progress</button>
+												{/if}
+												{#if item.status === 'cancelled'}
+													<button class="k-menu-item" role="menuitem" onclick={() => { actionsFor = null; reopenItem(item); }}><RotateCcw class="h-4 w-4" /> Reopen</button>
+												{:else if item.status !== 'done'}
+													<button class="k-menu-item" role="menuitem" onclick={() => { actionsFor = null; cancelItem(item); }}><CircleSlash class="h-4 w-4" /> Cancel</button>
+												{/if}
+												<button class="k-menu-item" role="menuitem" onclick={() => { actionsFor = null; toggleSelected(item.id); }}>
+													<SquareCheck class="h-4 w-4" /> {isSelected(item.id) ? 'Deselect' : 'Select'}
+												</button>
+												<div class="k-menu-sep"></div>
+												<button class="k-menu-item danger" role="menuitem" onclick={() => { actionsFor = null; remove(item); }}><Trash2 class="h-4 w-4" /> Delete</button>
+											</div>
+										{/if}
+									</div>
 								{/if}
 							</li>
 						{/each}
@@ -1032,24 +1074,52 @@
 		}
 	}
 
-	/* Phones: checkbox, status and text on one line, due date and actions
-	   under the text. A grid, so it holds whatever size the touch targets get. */
+	.row-more {
+		display: none;
+	}
+
+	/* Phones: one control in front (the circle; the selection box only while
+	   selecting), the text, and one line under it with the due date and the
+	   source note; the actions behind one button. Three to-dos used to fill
+	   the screen. */
 	@media (max-width: 639px) {
 		.item:not(.editing) {
 			display: grid;
 			grid-template-columns: auto auto minmax(0, 1fr) auto;
 			grid-template-areas:
-				'select status body body'
-				'. . badges actions';
+				'status text text more'
+				'. badges meta more';
 			align-items: center;
-			row-gap: 0.25rem;
+			column-gap: 0.5rem;
+			row-gap: 0.125rem;
+		}
+
+		.item:not(.editing) .body {
+			display: contents;
+		}
+
+		.item:not(.editing) .status { grid-area: status; }
+		.item:not(.editing) .text { grid-area: text; }
+		.item:not(.editing) .meta { grid-area: meta; margin-top: 0; }
+		.item:not(.editing) .badges { grid-area: badges; justify-self: start; }
+		.item:not(.editing) .row-more { grid-area: more; display: block; }
+
+		.item:not(.editing) .row-actions {
+			display: none;
+		}
+
+		.items:not(.has-selection) .item:not(.editing) .select-box {
+			display: none;
+		}
+
+		.items.has-selection .item:not(.editing) {
+			grid-template-columns: auto auto auto minmax(0, 1fr) auto;
+			grid-template-areas:
+				'select status text text more'
+				'. . badges meta more';
 		}
 
 		.item:not(.editing) .select-box { grid-area: select; }
-		.item:not(.editing) .status { grid-area: status; }
-		.item:not(.editing) .body { grid-area: body; }
-		.item:not(.editing) .badges { grid-area: badges; justify-self: start; }
-		.item:not(.editing) .row-actions { grid-area: actions; }
 
 		.item.editing {
 			flex-wrap: wrap;

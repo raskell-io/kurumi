@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { dialog } from '$lib/actions/overlay';
 	import { fadeOut } from '$lib/motion';
 	/**
 	 * Linking a folder as a vault, and the settings of one that is linked
@@ -178,11 +179,11 @@
 	}
 </script>
 
+<!-- svelte-ignore a11y_click_events_have_key_events (Escape and the keyboard: use:dialog on the panel) -->
 <div
 	use:portal
 	class="k-dialog-backdrop" out:fadeOut|global
 	onclick={onclose}
-	onkeydown={(e) => e.key === 'Escape' && onclose()}
 	role="dialog"
 	aria-modal="true"
 	aria-labelledby="linked-dialog-title"
@@ -191,7 +192,7 @@
 >
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-	<div class="k-dialog max-h-[90vh] overflow-y-auto p-5" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="document">
+	<div class="k-dialog max-h-[90vh] overflow-y-auto p-5" use:dialog={{ onClose: () => onclose() }} onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="document">
 		<h2 id="linked-dialog-title" class="mb-1 flex items-center gap-2 text-base font-semibold text-[var(--color-text)]">
 			<Link2 class="h-4 w-4 text-[var(--color-text-muted)]" />
 			{editing ? 'Linked folder' : 'Link a folder'}

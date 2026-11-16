@@ -3,6 +3,7 @@
 	import { outlineShown } from '$lib/stores/outline';
 	import { ListTree } from 'lucide-svelte';
 	import { notePreview } from '$lib/utils/excerpt';
+	import NotFound from '$lib/components/NotFound.svelte';
 	import { page } from '$app/stores';
 	import { goto, beforeNavigate } from '$app/navigation';
 	import {
@@ -46,6 +47,8 @@
 	import { pushUndo } from '$lib/stores/undo';
 	import { noteBarSlot, openInSplit } from '$lib/stores/workspace';
 	import { dock } from '$lib/actions/dock';
+	import { menu } from '$lib/actions/overlay';
+	import { popOut } from '$lib/motion';
 	import { get } from 'svelte/store';
 	import Editor from '$lib/components/Editor.svelte';
 	import { stashEdit } from '$lib/unsaved';
@@ -98,7 +101,8 @@
 		Gavel,
 		ListChecks,
 		AlertTriangle,
-		FolderOpen
+		FolderOpen,
+		ArrowLeft
 	} from 'lucide-svelte';
 	import { triggerSearch } from '$lib/stores/snackbar';
 	import CameraCapture from '$lib/components/CameraCapture.svelte';
@@ -154,6 +158,10 @@
 	}
 	$effect(() => () => clearTimeout(relatedTimer));
 	let showMoreMenu = $state(false);
+	let showExport = $state(false);
+	// Something to go back to in this window (the browser's own history).
+	const canGoBack = typeof history !== 'undefined' && history.length > 1;
+	let moreMenuButton: HTMLButtonElement | undefined = $state();
 	let iconPickerAnchor = $state<{ left: number; top: number; bottom: number } | null>(null);
 	let projectPicker = $state<DOMRect | null>(null);
 	let recordKind = $state<RecordKind | null>(null);
@@ -936,15 +944,6 @@
 	<title>{memory && !isDefaultTitle(title) ? title : 'Untitled'} - Kurumi</title>
 </svelte:head>
 
-<svelte:window
-	onkeydown={(e) => {
-		if (e.key === 'Escape' && showMoreMenu) {
-			e.stopPropagation();
-			showMoreMenu = false;
-		}
-	}}
-/>
-
 {#if memory}
 	<div class="relative flex h-full flex-col">
 		<!-- The note's own top row. On a wide window it holds nothing: the
@@ -960,8 +959,18 @@
 			>
 				<Menu class="h-5 w-5" />
 			</button>
+			<!-- Phones have no tabs: a way back to the note before. -->
+			{#if canGoBack}
+				<button
+					onclick={() => history.back()}
+					class="-ml-1 rounded-lg p-2 text-[var(--color-text-muted)] hover:bg-[var(--color-hover)] md:hidden"
+					aria-label="Back"
+				>
+					<ArrowLeft class="h-5 w-5" />
+				</button>
+			{/if}
 			<span class="min-w-0 flex-1 truncate text-sm font-medium text-[var(--color-text)] md:hidden">
-				{folderPath.length > 0 ? `${folderPath[folderPath.length - 1].name} / ` : ''}{isDefaultTitle(title) ? 'Untitled' : title}
+				{isDefaultTitle(title) ? 'Untitled' : title}
 			</span>
 			<span class="hidden flex-1 md:block"></span>
 
@@ -1002,11 +1011,11 @@
 				</button>
 			{/if}
 
-			{#if wordCount > 0}
-				<span class="note-words hidden shrink-0 px-1 text-xs tabular-nums text-[var(--color-text-faint)] lg:inline">
-					{wordCount.toLocaleString()} {wordCount === 1 ? 'word' : 'words'}
-				</span>
-			{/if}
+			<!-- Always in place, empty for an empty note: the first word typed must not
+			     change the width beside the tabs (it narrowed them all). -->
+			<span class="note-words hidden shrink-0 px-1 text-xs tabular-nums text-[var(--color-text-faint)] lg:inline" aria-hidden={wordCount === 0 ? 'true' : undefined}>
+				{wordCount > 0 ? `${wordCount.toLocaleString()} ${wordCount === 1 ? 'word' : 'words'}` : ''}
+			</span>
 			<span class="note-edited hidden shrink-0 px-1 text-xs tabular-nums text-[var(--color-text-faint)] sm:inline" title="Last modified {formatDate(memory.updatedAt)}">
 				{formatEdited(memory.updatedAt, now)}
 			</span>
@@ -1032,7 +1041,8 @@
 
 			<div class="relative">
 				<button
-					onclick={() => (showMoreMenu = !showMoreMenu)}
+					bind:this={moreMenuButton}
+					onclick={() => { showMoreMenu = !showMoreMenu; showExport = false; }}
 					class="k-icon-btn"
 					class:bg-[var(--color-hover)]={showMoreMenu}
 					title="More actions"
@@ -1044,9 +1054,17 @@
 				</button>
 
 				{#if showMoreMenu}
-					<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-					<div class="fixed inset-0 z-40" onclick={() => (showMoreMenu = false)}></div>
-					<div class="k-menu absolute right-0 top-full z-50 mt-1 w-60" role="menu">
+					<!-- Fits the window and scrolls (a phone is 844 px tall: it used to run
+					     off the bottom). Favourite and history aren't repeated here: their
+					     buttons are beside this one. -->
+					<div
+						class="k-menu note-menu absolute right-0 top-full z-50 mt-1 w-60"
+						style="--pop-origin: top right"
+						role="menu"
+						aria-label="Note actions"
+						use:menu={{ onClose: () => (showMoreMenu = false), inside: [moreMenuButton] }}
+						out:popOut
+					>
 						{#if !linked}
 						<div class="k-menu-label">Insert</div>
 						<button class="k-menu-item" role="menuitem" onclick={() => { showMoreMenu = false; handleImageUpload(); }}>
@@ -1074,40 +1092,52 @@
 						<button class="k-menu-item" role="menuitem" onclick={() => { showMoreMenu = false; recordKind = 'agenda'; }}>
 							<ListChecks class="h-4 w-4 text-[var(--color-text-muted)]" /> Add to a meeting agenda…
 						</button>
-						<button class="k-menu-item" role="menuitem" onclick={() => { showMoreMenu = false; showHistory = true; }}>
-							<History class="h-4 w-4 text-[var(--color-text-muted)]" /> Version history
-						</button>
 						{/if}
 						{#if outlineFits}
 						<button class="k-menu-item" role="menuitemcheckbox" aria-checked={$outlineShown} onclick={() => { showMoreMenu = false; outlineShown.update((on) => !on); }}>
 							<ListTree class="h-4 w-4 text-[var(--color-text-muted)]" /> {$outlineShown ? 'Hide outline' : 'Show outline'}
 						</button>
 						{/if}
-						{#if !linked}
-						<button class="k-menu-item" role="menuitem" onclick={() => { showMoreMenu = false; if (memory) setMemoryFavorite(memory.id, !memory.favoritedAt); }}>
-							<Star class="h-4 w-4 text-[var(--color-text-muted)]" /> {memory.favoritedAt ? 'Remove from favorites' : 'Add to favorites'}
-						</button>
+						{#if !linked || outlineFits}
 						<div class="k-menu-sep"></div>
 						{/if}
-						<div class="k-menu-label">Export</div>
-						<button class="k-menu-item" role="menuitem" onclick={() => handleExport('vanilla')}>
-							<Download class="h-4 w-4 text-[var(--color-text-muted)]" /> Markdown
-						</button>
-						<button class="k-menu-item" role="menuitem" onclick={() => handleExport('hugo')}>
-							<FileCode class="h-4 w-4 text-[var(--color-text-muted)]" /> Markdown for Hugo
-						</button>
-						<button class="k-menu-item" role="menuitem" onclick={() => handleExport('zola')}>
-							<FileCode class="h-4 w-4 text-[var(--color-text-muted)]" /> Markdown for Zola
-						</button>
-						<button class="k-menu-item" role="menuitem" onclick={() => { if (memory) publishMemoryAsHtml(memory); showMoreMenu = false; }}>
-							<FileText class="h-4 w-4 text-[var(--color-text-muted)]" /> HTML file
-						</button>
 						<button class="k-menu-item" role="menuitem" onclick={() => { if (memory) copyMemoryAsHtml(memory); showMoreMenu = false; }}>
 							<Copy class="h-4 w-4 text-[var(--color-text-muted)]" /> Copy as rich text
 						</button>
 						<button class="k-menu-item" role="menuitem" onclick={() => { if (memory) shareMemory(memory); showMoreMenu = false; }}>
 							<Share2 class="h-4 w-4 text-[var(--color-text-muted)]" /> Share…
 						</button>
+						<!-- The four file formats behind one entry. -->
+						<button
+							class="k-menu-item"
+							role="menuitem"
+							aria-haspopup="true"
+							aria-expanded={showExport}
+							onclick={() => {
+								showExport = !showExport;
+								if (showExport) tick().then(() => document.querySelector<HTMLElement>('.note-menu [data-export]')?.focus());
+							}}
+						>
+							<Download class="h-4 w-4 text-[var(--color-text-muted)]" />
+							<span class="flex-1">Export…</span>
+							<ChevronRight class="h-3.5 w-3.5 k-chevron text-[var(--color-text-faint)] {showExport ? 'rotate-90' : ''}" />
+						</button>
+						{#if showExport}
+							<div class="note-menu-sub" role="group" aria-label="Export as">
+								<button class="k-menu-item" role="menuitem" data-export onclick={() => handleExport('vanilla')}>
+									<FileText class="h-4 w-4 text-[var(--color-text-muted)]" /> Markdown
+								</button>
+								<button class="k-menu-item" role="menuitem" onclick={() => handleExport('hugo')}>
+									<FileCode class="h-4 w-4 text-[var(--color-text-muted)]" /> Markdown for Hugo
+								</button>
+								<button class="k-menu-item" role="menuitem" onclick={() => handleExport('zola')}>
+									<FileCode class="h-4 w-4 text-[var(--color-text-muted)]" /> Markdown for Zola
+								</button>
+								<button class="k-menu-item" role="menuitem" onclick={() => { if (memory) publishMemoryAsHtml(memory); showMoreMenu = false; }}>
+									<FileText class="h-4 w-4 text-[var(--color-text-muted)]" /> HTML file
+								</button>
+							</div>
+						{/if}
 						{#if linked && !fileGone && isTauri()}
 						<div class="k-menu-sep"></div>
 						<button class="k-menu-item" role="menuitem" onclick={() => { showMoreMenu = false; if (memory) void revealLinkedFile(memory.id); }}>
@@ -1215,7 +1245,8 @@
 						<span class="ml-1 hidden text-xs text-[var(--color-text-faint)] md:inline">Type / in the editor for more</span>
 					</div>
 
-					<!-- Title -->
+					<!-- Title. The page's heading for screen readers is the title as text. -->
+					<h1 class="sr-only">{isDefaultTitle(title) ? 'Untitled' : title}</h1>
 					<input
 						bind:this={titleInput}
 						type="text"
@@ -1636,14 +1667,7 @@
 		/>
 	{/if}
 {:else}
-	<div class="flex h-full items-center justify-center p-4">
-		<div class="text-center">
-			<p class="text-lg text-[var(--color-text-muted)]">Note not found</p>
-			<a href="/" class="mt-4 inline-block text-[var(--color-accent)] hover:underline">
-				Go back home
-			</a>
-		</div>
-	</div>
+	<NotFound title="Note not found" detail="It may have been deleted, or it is in another vault." />
 {/if}
 
 {#if showConflict && memory && saveIssue?.kind === 'conflict'}
@@ -1674,13 +1698,16 @@
 		color: #d99a16;
 	}
 
+	/* On a phone: smaller, and an ellipsis when the title is longer than the
+	   line (it was cut mid-character). The whole title is in the top bar. */
 	.title-input {
 		border: none !important;
 		outline: none !important;
 		box-shadow: none !important;
 		-webkit-appearance: none;
 		appearance: none;
-		font-size: 2rem !important;
+		font-size: 1.625rem !important;
+		text-overflow: ellipsis;
 		line-height: 1.2;
 		letter-spacing: -0.015em;
 	}
@@ -1743,6 +1770,17 @@
 
 	.note-top {
 		background: var(--color-bg);
+	}
+
+	/* The note menu fits under its button and scrolls if the window is short. */
+	.note-menu {
+		max-height: calc(100dvh - 3.5rem - env(safe-area-inset-bottom, 0px));
+		overflow-y: auto;
+		overscroll-behavior: contain;
+	}
+
+	.note-menu-sub {
+		padding-left: 1rem;
 	}
 
 	/* The controls are in the top bar: the row has nothing left to show. */

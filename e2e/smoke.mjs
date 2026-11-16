@@ -550,6 +550,103 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
+	async 'menus and dialogs: Escape, a press outside and another page close them; the focus comes back'(browser) {
+		const { page, errors } = await freshPage(browser);
+		await newNote(page, 'Alpha');
+		const focused = () =>
+			page.evaluate(() => {
+				const a = document.activeElement;
+				return a === document.body ? 'body' : a.getAttribute('aria-label') || a.textContent.trim().slice(0, 40);
+			});
+		const open = (label) => page.evaluate((l) => !!document.querySelector(`[role="menu"][aria-label="${l}"]`), label);
+
+		// The sidebar's "More places" menu, from the keyboard: arrows move, Escape closes and the focus goes back.
+		await page.focus('button[aria-label="More places"]');
+		await page.keyboard.press('Enter');
+		await page.waitForSelector('[role="menu"][aria-label="More places"]');
+		assert.match(await focused(), /Graph/);
+		await page.keyboard.press('ArrowDown');
+		assert.match(await focused(), /Read mode/);
+		await page.keyboard.press('ArrowUp');
+		await page.keyboard.press('ArrowUp');
+		assert.ok((await focused()).length > 0);
+		await page.keyboard.press('Escape');
+		await sleep(250);
+		assert.equal(await open('More places'), false, 'Escape left the menu open');
+		assert.equal(await focused(), 'More places');
+		// A press in the note closes it too (it used to stay open).
+		await page.click('button[aria-label="More places"]');
+		await page.waitForSelector('[role="menu"][aria-label="More places"]');
+		await page.click('main .ProseMirror');
+		await sleep(250);
+		assert.equal(await open('More places'), false, 'a press in the note left the menu open');
+
+		// The note's menu: Escape from anywhere in it.
+		await page.click('button[aria-label="More actions"]');
+		await page.waitForSelector('[role="menu"][aria-label="Note actions"]');
+		await page.keyboard.press('ArrowDown');
+		await page.keyboard.press('Escape');
+		await sleep(250);
+		assert.equal(await open('Note actions'), false);
+		assert.equal(await focused(), 'More actions');
+
+		// New vault: the focus starts in the field and Tab keeps it inside; Escape from the field closes it.
+		await page.click(VAULT_MENU);
+		await page.waitForSelector('[role="menu"][aria-label="Vaults"]');
+		await clickText(page, '.k-menu-item', 'New vault');
+		await page.waitForSelector('.k-dialog input');
+		await sleep(100);
+		assert.equal(await page.evaluate(() => document.activeElement.tagName), 'INPUT');
+		for (let i = 0; i < 12; i++) {
+			await page.keyboard.press('Tab');
+			assert.ok(await page.evaluate(() => !!document.activeElement.closest('.k-dialog')), `Tab ${i + 1} left the dialog`);
+		}
+		await page.focus('.k-dialog input');
+		await page.keyboard.press('Escape');
+		await sleep(300);
+		assert.equal(await page.$('.k-dialog'), null, 'Escape in the name field left the dialog open');
+		assert.match(await page.$eval(VAULT_MENU, (b) => (document.activeElement === b ? 'vault button' : document.activeElement.tagName)), /vault button/);
+		// Another page closes it.
+		await page.click(VAULT_MENU);
+		await page.waitForSelector('[role="menu"][aria-label="Vaults"]');
+		await clickText(page, '.k-menu-item', 'New vault');
+		await page.waitForSelector('.k-dialog');
+		await page.evaluate(() => (location.hash = '#/actions'));
+		await page.waitForFunction(() => !document.querySelector('.k-dialog'), { timeout: 3000 });
+		assert.deepEqual(errors, []);
+	},
+
+	async 'keyboard: a skip link, and the notes tree opens with the arrow keys'(browser) {
+		const { page, errors } = await freshPage(browser);
+		await db(page, `const f = db.addFolder('Projects'); const n = db.addMemoryObject('Inside', 'x'); db.updateMemoryObject(n.id, { folderId: f.id }); db.addMemoryObject('Outside', 'y');`);
+		await page.reload({ waitUntil: 'load' });
+		await page.waitForSelector('.folder-row');
+		const focused = () => page.evaluate(() => (document.activeElement === document.body ? 'body' : (document.activeElement.getAttribute('aria-label') || document.activeElement.textContent).trim().slice(0, 40)));
+		// The first Tab stop goes straight past the sidebar.
+		await page.evaluate(() => document.activeElement?.blur());
+		await page.keyboard.press('Tab');
+		assert.equal(await focused(), 'Skip to content');
+		// The tree is one Tab stop; arrows move and open folders.
+		await page.focus('[role="tree"] [role="treeitem"][tabindex="0"]');
+		assert.equal(await page.$$eval('[role="tree"] [tabindex="0"]', (e) => e.length), 1, 'more than one Tab stop in the tree');
+		await page.keyboard.press('Home');
+		assert.equal(await focused(), 'Projects');
+		assert.equal(await page.$eval('.folder-row', (r) => r.getAttribute('aria-expanded')), 'false');
+		await page.keyboard.press('ArrowRight');
+		await page.waitForFunction(() => document.querySelector('.folder-row').getAttribute('aria-expanded') === 'true');
+		await page.keyboard.press('ArrowRight');
+		await sleep(200);
+		assert.equal(await focused(), 'Inside');
+		await page.keyboard.press('Enter');
+		await noteShown(page, 'Inside', { errors });
+		await page.focus('[role="tree"] [role="treeitem"][aria-current="page"]');
+		await page.keyboard.press('ArrowLeft');
+		assert.equal(await focused(), 'Projects');
+		await page.keyboard.press('ArrowLeft');
+		await page.waitForFunction(() => document.querySelector('.folder-row').getAttribute('aria-expanded') === 'false');
+		assert.deepEqual(errors, []);
+	},
+
 	async 'vault create, logo and edit'(browser) {
 		const { page, errors } = await freshPage(browser);
 		const trigger = 'aside button.flex.max-w-full';
@@ -1020,6 +1117,40 @@ const scenarios = {
 		await page.select('select[aria-label="Filter by assignee"]', 'Sam');
 		await sleep(200);
 		assert.deepEqual(await column(1), []);
+		assert.deepEqual(errors, []);
+	},
+
+	async 'undo toast: shown once, gone after its time and on another page, ⌘Z still works'(browser) {
+		const { page, errors } = await freshPage(browser);
+		await db(page, `db.addActionItem({ text: 'Book venue' }); db.addActionItem({ text: 'Draft brief' });`);
+		await page.goto(`${BASE}/actions`, { waitUntil: 'load' });
+		await page.waitForFunction(() => document.querySelector('main')?.innerText.includes('Book venue'));
+		const toast = () => page.evaluate(() => document.querySelector('.undo-toast .label')?.textContent ?? null);
+		const remove = (text) =>
+			page.evaluate((text) => {
+				const row = [...document.querySelectorAll('main li, main .item, main [data-row-id]')].find((r) => r.textContent.includes(text) && r.querySelector('button[aria-label="Delete"]'));
+				row.querySelector('button[aria-label="Delete"]').click();
+			}, text);
+		await remove('Book venue');
+		await page.waitForFunction(() => !!document.querySelector('.undo-toast'));
+		assert.match(await toast(), /Deleted "Book venue"/);
+		// Six seconds, then it is gone, and stays gone.
+		const shown = Date.now();
+		await page.waitForFunction(() => !document.querySelector('.undo-toast'), { timeout: 10000 });
+		assert.ok(Date.now() - shown > 4500, `gone after ${Date.now() - shown}ms`);
+		await sleep(1500);
+		assert.equal(await toast(), null, 'the toast came back');
+		// The deletion can still be undone from the keyboard.
+		await page.click('main h1, main');
+		await press(page, MOD, 'z');
+		await page.waitForFunction(() => document.querySelector('main')?.innerText.includes('Book venue'), { timeout: 5000 });
+		// A new entry shows; going to another page takes it away at once.
+		await remove('Draft brief');
+		await page.waitForFunction(() => !!document.querySelector('.undo-toast'));
+		await page.click('aside a[href="/inbox"]');
+		await page.waitForFunction(() => !document.querySelector('.undo-toast'), { timeout: 2000 });
+		await sleep(600);
+		assert.equal(await toast(), null);
 		assert.deepEqual(errors, []);
 	},
 
@@ -2992,16 +3123,18 @@ const scenarios = {
 		const bar = () =>
 			page.evaluate(() => {
 				const box = (el) => el?.getBoundingClientRect();
-				const tabs = [...document.querySelectorAll('.tab-strip .tab-item')];
+				// (A tab on its way into the stack shrinks away for a moment, inert: not counted.)
+				const tabs = [...document.querySelectorAll('.tab-strip .tab-item:not([inert])')];
 				const controls = box(document.querySelector('.note-bar-slot'));
 				return {
 					shown: tabs.map((t) => t.querySelector('.truncate').textContent),
-					active: document.querySelector('.tab-item.tab-active .truncate')?.textContent ?? null,
-					stacked: [...document.querySelectorAll('.tab-stack-item')].map((t) => t.textContent.trim()),
+					active: document.querySelector('.tab-strip .tab-item.tab-active:not([inert]) .truncate')?.textContent ?? null,
+					stacked: [...document.querySelectorAll('.tab-stack-menu:not([inert]) .tab-stack-item')].map((t) => t.textContent.trim()),
 					more: document.querySelector('.tab-stack')?.getAttribute('aria-label') ?? null,
 					// No tab reaches under the stack control or the note's controls.
 					overlap: tabs.some((t) => box(t).right > (box(document.querySelector('.tab-stack'))?.left ?? controls.left) + 0.5) || (box(document.querySelector('.tab-stack'))?.right ?? 0) > controls.left + 0.5,
-					narrowest: Math.min(...tabs.map((t) => Math.round(box(t).width))),
+					// Layout width: a tab arriving is scaled for a moment, which a bounding box would include.
+					narrowest: Math.min(...tabs.map((t) => t.offsetWidth)),
 					controlsInBar: !!document.querySelector('.tab-bar .note-bar-slot button[aria-label="More actions"]'),
 					noteRow: document.querySelector('.note-top')?.getClientRects().length ?? 0,
 					barHeight: document.querySelector('.tab-bar').offsetHeight,
@@ -3064,6 +3197,66 @@ const scenarios = {
 		await page.goto(`${BASE}/#/actions`, { waitUntil: 'load' });
 		await page.waitForFunction(() => !document.querySelector('.note-bar-slot button'));
 		assert.equal(await page.$eval('.tab-bar', (el) => el.offsetHeight), height);
+		assert.deepEqual(errors, []);
+	},
+
+	async 'closing tabs: the next tab takes over, Home after the last, and the tabs hold still under the pointer'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const ids = await db(page, `return ['One', 'Two', 'Three', 'Four'].map((t) => db.addMemoryObject(t, 'x').id);`);
+		for (const id of ids) {
+			await page.goto(`${BASE}/#/memory/${id}`, { waitUntil: 'load' });
+			await page.waitForSelector('main .ProseMirror');
+		}
+		// (A closed tab shrinks away for a moment, inert: not counted.)
+		const tabs = () => page.$$eval('.tab-strip .tab-item:not([inert])', (t) => t.map((x) => x.querySelector('.truncate').textContent));
+		const active = () => page.evaluate(() => document.querySelector('.tab-item.tab-active .truncate')?.textContent ?? null);
+		const widths = () => page.$$eval('.tab-strip .tab-item:not([inert])', (t) => t.map((x) => Math.round(x.getBoundingClientRect().width)));
+		// Switching tabs moves nothing: the open note's tab is no wider than it was.
+		await page.mouse.move(700, 500);
+		await sleep(300);
+		const before = await widths();
+		await clickOnTop(page, '.tab-strip .tab-item .truncate', 'Two');
+		await noteShown(page, 'Two', { errors });
+		await page.mouse.move(700, 500);
+		await sleep(400);
+		assert.deepEqual(await widths(), before, 'the tabs changed width when another one became active');
+		// Close Two's tab with the pointer: Three takes over.
+		const close = async (title) => {
+			const pt = await page.evaluate((title) => {
+				const tab = [...document.querySelectorAll('.tab-strip .tab-item')].find((t) => t.textContent.includes(title));
+				const r = tab.querySelector('button[aria-label="Close tab"]').getBoundingClientRect();
+				return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+			}, title);
+			await page.mouse.move(pt.x, pt.y);
+			await sleep(150);
+			await page.mouse.click(pt.x, pt.y);
+			return pt;
+		};
+		const pt = await close('Two');
+		await noteShown(page, 'Three', { errors });
+		await sleep(400);
+		assert.deepEqual(await tabs(), ['One', 'Three', 'Four']);
+		assert.equal(await active(), 'Three');
+		assert.equal(await page.$('main .ProseMirror') !== null, true);
+		// The pointer hasn't moved: the tabs kept their width, so a close button is still under it.
+		assert.deepEqual(await widths(), [before[1], before[1], before[1]], 'the tabs did not keep the closed tab\'s width under the pointer');
+		assert.equal(
+			await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('button')?.getAttribute('aria-label'), pt),
+			'Close tab',
+			'no close button under the pointer after closing'
+		);
+		// The last tab of the row hands over to the one before it.
+		await close('Four');
+		await noteShown(page, 'Three', { errors });
+		assert.deepEqual(await tabs(), ['One', 'Three']);
+		// The pointer leaves: the tabs settle.
+		await page.mouse.move(700, 500);
+		await sleep(400);
+		// Closing the only remaining tabs ends on Home.
+		await close('Three');
+		await noteShown(page, 'One', { errors });
+		await close('One');
+		await page.waitForFunction(() => !location.hash.includes('/memory/') && document.querySelectorAll('.tab-strip .tab-item').length === 0, { timeout: 5000 });
 		assert.deepEqual(errors, []);
 	},
 

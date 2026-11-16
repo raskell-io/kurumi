@@ -1,10 +1,12 @@
 <script lang="ts">
 	/**
-	 * A popup under `anchor`, kept on screen, closed by a click outside or
-	 * Escape. Portaled to <body> so tables and scroll areas don't clip it.
+	 * A popup under `anchor`, kept on screen. Portaled to <body> so tables and
+	 * scroll areas don't clip it. Closing, keys and focus: the shared menu
+	 * behaviour ($lib/actions/overlay).
 	 */
 	import { portal } from '$lib/actions/portal';
 	import { popOut } from '$lib/motion';
+	import { menu } from '$lib/actions/overlay';
 	import { onMount, type Snippet } from 'svelte';
 
 	interface Props {
@@ -34,27 +36,12 @@
 
 	onMount(() => {
 		place();
-		const outside = (e: PointerEvent) => {
-			const target = e.target as Node;
-			if (!el?.contains(target) && !anchor.contains(target)) onClose();
-		};
-		const key = (e: KeyboardEvent) => {
-			if (e.key === 'Escape') {
-				e.stopPropagation();
-				onClose();
-				anchor.focus?.();
-			}
-		};
 		const reflow = () => place();
-		document.addEventListener('pointerdown', outside, true);
-		document.addEventListener('keydown', key, true);
 		window.addEventListener('resize', reflow);
 		window.addEventListener('scroll', reflow, true);
 		const observer = new ResizeObserver(reflow);
 		if (el) observer.observe(el);
 		return () => {
-			document.removeEventListener('pointerdown', outside, true);
-			document.removeEventListener('keydown', key, true);
 			window.removeEventListener('resize', reflow);
 			window.removeEventListener('scroll', reflow, true);
 			observer.disconnect();
@@ -64,6 +51,7 @@
 
 <div
 	use:portal
+	use:menu={{ onClose, inside: [anchor], returnFocus: anchor }}
 	bind:this={el}
 	class="k-menu fixed z-[120]"
 	style="top: {top}px; left: {left}px; width: {width}; max-width: calc(100vw - 16px); --pop-origin: {above ? 'bottom' : 'top'} left;"

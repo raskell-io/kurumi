@@ -297,7 +297,7 @@
 								{:else}
 									<div class="note-list">
 										{#each folderMemories as memory (memory.id)}
-											<NoteCard {memory} showFolder={false} />
+											<NoteCard {memory} showFolder={false} level={3} />
 										{/each}
 									</div>
 								{/if}

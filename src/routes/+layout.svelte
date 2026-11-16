@@ -5,8 +5,9 @@
 	import { afterNavigate } from '$app/navigation';
 	import { flip } from 'svelte/animate';
 	import { fitTabs } from '$lib/tab-strip';
+	import { menu } from '$lib/actions/overlay';
 	import { applyEditorFont, savedEditorFont } from '$lib/editor-fonts';
-	import { armMotion, collapse, flipParams, pageEnter, panelSlide, popOut, tabIn } from '$lib/motion';
+	import { motionMs, growX, switchInstantly, armMotion, collapse, flipParams, pageEnter, panelSlide, popOut, tabIn } from '$lib/motion';
 	import {
 		initDB,
 		memoryObjects,
@@ -65,7 +66,8 @@
 		touchRecent,
 		closeTab,
 		splitNoteId,
-		closeSplit
+		closeSplit,
+		recentNoteIds
 	} from '$lib/stores/workspace';
 	import ImageViewer from '$lib/components/ImageViewer.svelte';
 	import PdfViewer from '$lib/components/PdfViewer.svelte';
@@ -261,7 +263,20 @@
 	// The top bar: tabs, and on a note its controls. There whenever it has
 	// something to hold, so its height never comes and goes between a note
 	// and another page while tabs are open.
-	let showTabBar = $derived(!$focusMode && !isMobile && ($openTabs.length > 0 || sidebarCollapsed || !!editNoteId));
+	// Always there on a wide window (not in focus mode): a bar that came and
+	// went with the first tab pushed the whole page down 40 px.
+	let showTabBar = $derived(!$focusMode && !isMobile);
+
+	// The drawer's "Recent" on phones: the last notes opened here, not the one on screen.
+	let recentNotes = $derived.by(() => {
+		if (!isMobile) return [];
+		const byId = new Map($memoryObjects.map((m) => [m.id, m]));
+		return $recentNoteIds
+			.filter((id) => currentPath !== `/memory/${id}`)
+			.map((id) => byId.get(id))
+			.filter((m): m is NonNullable<typeof m> => !!m && !m.deletedAt)
+			.slice(0, 5);
+	});
 
 	// Tabs that fit, and the ones stacked behind the "N more" control.
 	let tabArea: HTMLElement | undefined = $state();
@@ -300,14 +315,30 @@
 	let stackButton: HTMLButtonElement | undefined = $state();
 	let stackMenu: HTMLElement | undefined = $state();
 	const stackItems = () => [...(stackMenu?.querySelectorAll<HTMLElement>('.tab-stack-item') ?? [])];
+	// Closing a tab from the bar. The open note's tab hands over to its
+	// neighbour (the next one, else the one before), or Home if it was the
+	// last: the note no longer stays on screen with no tab selected.
+	let frozenTabWidth = $state<number | null>(null);
+	function closeTabFromBar(id: string, byPointer: boolean) {
+		if (byPointer) {
+			// The closed tab's width for all: the next tab slides into its place,
+			// with its close button where the pointer is.
+			const closed = [...(tabArea?.querySelectorAll<HTMLAnchorElement>('.tab-item:not(.tab-pinned)') ?? [])].find((t) => t.getAttribute('href') === `/memory/${id}`);
+			if (closed) frozenTabWidth = closed.getBoundingClientRect().width;
+		}
+		const order = $openTabs.map((t) => t.id);
+		const at = order.indexOf(id);
+		const wasOpen = currentPath === `/memory/${id}`;
+		closeTab(id);
+		if (wasOpen) goto(order[at + 1] ? `/memory/${order[at + 1]}` : order[at - 1] ? `/memory/${order[at - 1]}` : '/');
+	}
+
+	// Opening, closing, arrows, Escape and focus: the shared menu behaviour ($lib/actions/overlay).
 	function openTabStack() {
 		showTabStack = true;
-		// Focus goes in at once, not after the menu has arrived.
-		tick().then(() => stackItems()[0]?.focus());
 	}
-	function closeTabStack(refocus = true) {
+	function closeTabStack() {
 		showTabStack = false;
-		if (refocus) stackButton?.focus();
 	}
 	function closeStackedTab(id: string) {
 		const items = stackItems();
@@ -319,25 +350,13 @@
 			else left[Math.min(at, left.length - 1)]?.focus();
 		});
 	}
+	// Delete closes the tab under the focus; the rest is the shared menu behaviour.
 	function stackKeydown(e: KeyboardEvent) {
 		const items = stackItems();
 		const at = items.indexOf(document.activeElement as HTMLElement);
-		if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-			e.preventDefault();
-			const next = e.key === 'ArrowDown' ? (at + 1) % items.length : (at - 1 + items.length) % items.length;
-			items[next]?.focus();
-		} else if (e.key === 'Home' || e.key === 'End') {
-			e.preventDefault();
-			items[e.key === 'Home' ? 0 : items.length - 1]?.focus();
-		} else if ((e.key === 'Delete' || e.key === 'Backspace') && at >= 0) {
+		if ((e.key === 'Delete' || e.key === 'Backspace') && at >= 0) {
 			e.preventDefault();
 			closeStackedTab(items[at].dataset.tabId!);
-		} else if (e.key === 'Escape') {
-			e.preventDefault();
-			e.stopPropagation();
-			closeTabStack();
-		} else if (e.key === 'Tab') {
-			closeTabStack(false);
 		}
 	}
 	$effect(() => {
@@ -423,6 +442,7 @@
 	}
 	// The footer's menu: the places that were icons without names.
 	let showFooterMenu = $state(false);
+	let footerMenuButton: HTMLButtonElement | undefined = $state();
 	// "Graph (⌘G)": the name, and the shortcut.
 	const placeName = (label: string) => label.replace(/\s*\(.*\)$/, '');
 	const placeKey = (label: string) => /\((.*)\)$/.exec(label)?.[1] ?? '';
@@ -511,10 +531,15 @@
 			frame = performance.now() < until ? requestAnimationFrame(track) : 0;
 		};
 		const rows = new MutationObserver(() => {
-			until = performance.now() + 400;
+			// As long as an opening takes (the motion tokens, whatever they are set to), and a little more.
+			until = performance.now() + (motionMs('base') || 0) + 120;
 			if (!frame) frame = requestAnimationFrame(track);
 		});
 		rows.observe(navContent, { childList: true, subtree: true });
+		// And where it ends, exactly.
+		const settled = () => follow();
+		navContent.addEventListener('animationend', settled);
+		navContent.addEventListener('transitionend', settled);
 		// The window or the sidebar resizing.
 		const observer = new ResizeObserver(follow);
 		observer.observe(navScroller);
@@ -522,6 +547,8 @@
 			navScroller?.removeEventListener('scroll', follow);
 			observer.disconnect();
 			rows.disconnect();
+			navContent?.removeEventListener('animationend', settled);
+			navContent?.removeEventListener('transitionend', settled);
 			cancelAnimationFrame(frame);
 		};
 	});
@@ -533,12 +560,10 @@
 	let allTags = $derived(initialized ? getAllTags() : []);
 
 	function applyTheme(t: 'light' | 'dark' | 'system') {
-		if (t === 'system') {
+		switchInstantly(() => {
 			document.documentElement.classList.remove('light', 'dark');
-		} else {
-			document.documentElement.classList.remove('light', 'dark');
-			document.documentElement.classList.add(t);
-		}
+			if (t !== 'system') document.documentElement.classList.add(t);
+		});
 		localStorage.setItem('kurumi-theme', t);
 	}
 
@@ -715,6 +740,11 @@
 
 		sidebarCollapsed = localStorage.getItem('kurumi-sidebar-collapsed') === '1';
 
+		// The system switching between light and dark: at once, like a choice in the app.
+		const scheme = matchMedia('(prefers-color-scheme: dark)');
+		const schemeChanged = () => switchInstantly(() => {});
+		scheme.addEventListener('change', schemeChanged);
+
 		showMoreNav = localStorage.getItem('kurumi-nav-more') === '1';
 		// Load sidebar width from localStorage
 		const savedWidth = localStorage.getItem('kurumi-sidebar-width');
@@ -870,6 +900,7 @@
 		return () => {
 			window.removeEventListener('resize', checkMobile);
 			window.removeEventListener('keydown', handleKeydown);
+			scheme.removeEventListener('change', schemeChanged);
 			window.removeEventListener('kurumi-voice-memo', handleVoiceMemoEvent);
 			window.removeEventListener('kurumi-open-sidebar', handleOpenSidebar);
 			window.removeEventListener('kurumi-meeting', handleMeetingEvent);
@@ -909,6 +940,16 @@
 
 	function handleNoteClick() {
 		if (isMobile) sidebarOpen = false;
+	}
+
+	// Skip link: the note's title or editor if there is one, else the page itself.
+	function focusMain() {
+		const main = document.getElementById('main-content');
+		const target = main?.querySelector<HTMLElement>('input[aria-label="Note title"], .ProseMirror, h1, [autofocus]');
+		if (target) {
+			if (target.matches('h1')) target.tabIndex = -1;
+			target.focus();
+		} else main?.focus();
 	}
 
 	function toggleSidebar() {
@@ -992,6 +1033,8 @@
 		</div>
 	</div>
 {:else}
+	<!-- First Tab stop: straight to the page, past the sidebar and the tabs. -->
+	<a href="#main-content" class="skip-link" onclick={(e) => { e.preventDefault(); focusMain(); }}>Skip to content</a>
 	<div class="app-shell flex h-[100dvh]" class:shell-no-sidebar={($focusMode || sidebarCollapsed) && !isMobile}>
 		<!-- Mobile overlay -->
 		{#if isMobile && sidebarOpen}
@@ -1004,13 +1047,12 @@
 
 		<!-- Sidebar -->
 		<aside
-			class="sidebar fixed inset-y-0 left-0 z-50 flex w-[85vw] max-w-[340px] flex-col md:relative md:z-auto md:max-w-none {sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}"
+			class="sidebar fixed inset-y-0 left-0 z-50 flex w-[85vw] max-w-[340px] flex-col md:relative md:z-20 md:max-w-none {sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}"
 			class:sidebar-away={($focusMode || sidebarCollapsed) && !isMobile}
 			class:shadow-2xl={isMobile && sidebarOpen}
 			inert={($focusMode || sidebarCollapsed) && !isMobile}
 			style="width: {isMobile ? undefined : `${sidebarWidth}px`}; --sidebar-width: {sidebarWidth}px;"
-			role="navigation"
-			aria-label="Main navigation"
+			aria-label="Sidebar"
 			bind:this={asideEl}
 		>
 			<span
@@ -1147,6 +1189,19 @@
 						</div>
 					{/if}
 				</div>
+
+				<!-- Phones: no tabs, so the notes opened last are here, one tap away. -->
+				{#if isMobile && recentNotes.length > 0}
+					<div class="px-2 pt-3">
+						<div class="section-label">Recent</div>
+						{#each recentNotes as note (note.id)}
+							<a href="/memory/{note.id}" onclick={handleNoteClick} class="nav-row">
+								<NoteIcon icon={note.icon} class="nav-icon" />
+								<span class="truncate">{note.title || 'Untitled'}</span>
+							</a>
+						{/each}
+					</div>
+				{/if}
 
 				<!-- Favorites -->
 				{#if $favoriteMemoryObjects.length > 0}
@@ -1324,6 +1379,7 @@
 					{/if}
 				</button>
 				<button
+					bind:this={footerMenuButton}
 					onclick={() => (showFooterMenu = !showFooterMenu)}
 					class="k-icon-btn relative"
 					class:footer-active={showFooterMenu}
@@ -1338,9 +1394,14 @@
 					{/if}
 				</button>
 				{#if showFooterMenu}
-					<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-					<div class="fixed inset-0 z-40" onclick={() => (showFooterMenu = false)}></div>
-					<div class="k-menu absolute bottom-full right-2 z-50 mb-1 w-56" style="--pop-origin: bottom right" role="menu" out:popOut>
+					<div
+						class="k-menu absolute bottom-full right-2 z-50 mb-1 w-56"
+						style="--pop-origin: bottom right"
+						role="menu"
+						aria-label="More places"
+						use:menu={{ onClose: () => (showFooterMenu = false), inside: [footerMenuButton] }}
+						out:popOut
+					>
 						{#each footerNav.filter((item) => item.href !== '/settings' && ($currentVaultCaps.records || item.href !== '/trash')) as item (item.label)}
 							<a
 								href={item.href}
@@ -1392,11 +1453,21 @@
 				<!-- The strip has a fixed height, which a grid row can't shrink below: hence the plain div between. -->
 				<div class="k-collapse shrink-0" transition:collapse>
 				<div>
-				<div class="tab-bar" class:bar-no-path={barWidth > 0 && barWidth < 980} class:bar-no-words={barWidth > 0 && barWidth < 860} class:bar-no-edited={barWidth > 0 && barWidth < 720} bind:clientWidth={barWidth}>
+				<!-- A landmark: the open notes and the note's controls. -->
+				<header
+					class="tab-bar"
+					aria-label="Top bar"
+					class:bar-no-path={barWidth > 0 && barWidth < 980}
+					class:bar-no-words={barWidth > 0 && barWidth < 860}
+					class:bar-no-edited={barWidth > 0 && barWidth < 720}
+					bind:clientWidth={barWidth}
+					onpointerleave={() => (frozenTabWidth = null)}
+				>
 					{#if sidebarCollapsed}
 						<button
 							onclick={toggleSidebar}
 							class="k-icon-btn my-auto mr-1 shrink-0"
+							transition:growX
 							title={'Expand sidebar (' + modKey + '\\)'}
 							aria-label="Expand sidebar"
 						>
@@ -1405,23 +1476,33 @@
 					{/if}
 					<!-- The tabs get the width the controls leave. They shrink evenly to a minimum; what
 					     still doesn't fit is stacked behind one control ($lib/tab-strip.ts). -->
-					<div class="tab-area" bind:this={tabArea}>
-					<div class="tab-strip" class:tab-strip-tight={fitted.tight}>
+					<nav class="tab-area" aria-label="Open notes" bind:this={tabArea}>
+					<!-- After a tab is closed with the pointer the others keep their width
+					     until the pointer leaves the bar, so the next close button is where
+					     the last one was (as in browsers). -->
+					<div
+						class="tab-strip"
+						class:tab-strip-tight={fitted.tight}
+						class:tab-strip-frozen={frozenTabWidth !== null}
+						style={frozenTabWidth !== null ? `--frozen-tab-width: ${frozenTabWidth}px` : undefined}
+					>
 					{#each fitted.visible as tab, i (tab.id)}
 						<a
 							href="/memory/{tab.id}"
 							class="tab-item"
 							class:tab-active={currentPath === `/memory/${tab.id}`}
+							aria-current={currentPath === `/memory/${tab.id}` ? 'page' : undefined}
 							class:tab-pinned={tab.pinned}
 							class:tab-group-end={tab.pinned && !fitted.visible[i + 1]?.pinned && i < fitted.visible.length - 1}
 							draggable="true"
 							animate:flip={flipParams()}
 							in:tabIn
+							out:growX
 							title={tabPath(tab) + (tab.pinned ? ' (pinned; right-click to unpin)' : '')}
 							ondragstart={(e) => { e.dataTransfer?.setData('text/plain', tab.id); e.dataTransfer!.effectAllowed = 'move'; }}
 							ondragover={(e) => e.preventDefault()}
 							ondrop={(e) => { e.preventDefault(); const from = e.dataTransfer?.getData('text/plain'); if (from) moveTabTo(from, tab.id); }}
-							onauxclick={(e) => { if (e.button === 1) { e.preventDefault(); closeTab(tab.id); } }}
+							onauxclick={(e) => { if (e.button === 1) { e.preventDefault(); closeTabFromBar(tab.id, true); } }}
 							oncontextmenu={(e) => { e.preventDefault(); togglePinTab(tab.id); }}
 						>
 							{#if tab.icon}
@@ -1448,7 +1529,7 @@
 								</button>
 								<button
 									class="tab-close"
-									onclick={(e) => { e.preventDefault(); e.stopPropagation(); closeTab(tab.id); }}
+									onclick={(e) => { e.preventDefault(); e.stopPropagation(); closeTabFromBar(tab.id, e.detail > 0); }}
 									aria-label="Close tab"
 								>
 									<X class="h-3 w-3" />
@@ -1474,10 +1555,9 @@
 								<span class="tabular-nums">{fitted.stacked.length}</span>
 							</button>
 							{#if showTabStack}
-								<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-								<div class="fixed inset-0 z-40" onclick={() => closeTabStack(false)}></div>
 								<div
 									bind:this={stackMenu}
+									use:menu={{ onClose: closeTabStack, inside: [stackButton] }}
 									tabindex="-1"
 									class="k-menu tab-stack-menu absolute right-0 top-full z-50 mt-1"
 									style="--pop-origin: top right"
@@ -1494,7 +1574,7 @@
 												class="k-menu-item tab-stack-item no-underline"
 												role="menuitem"
 												data-tab-id={tab.id}
-												onclick={() => closeTabStack(false)}
+												onclick={() => closeTabStack()}
 											>
 												{#if tab.icon}<NoteIcon icon={tab.icon} class="h-3.5 w-3.5 shrink-0" />{:else if tab.pinned}<Pin class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />{/if}
 												<span class="min-w-0 flex-1">
@@ -1519,16 +1599,16 @@
 							{/if}
 						</div>
 					{/if}
-					</div>
+					</nav>
 					<!-- The open note's controls: the note page moves them in here ($lib/actions/dock). -->
 					<div class="note-bar-slot" bind:this={noteBarEl}></div>
-				</div>
+				</header>
 				</div>
 				</div>
 			{/if}
 
 		<!-- Main Content -->
-		<main class="shell-panel relative flex min-w-0 flex-1 flex-col" class:overflow-hidden={!isReadMode} aria-label="Main content">
+		<main id="main-content" tabindex="-1" class="shell-panel relative flex min-w-0 flex-1 flex-col" class:overflow-hidden={!isReadMode} aria-label="Main content">
 			<!-- Mobile header (hidden in read mode, on notes — which have their
 			     own top bar — and on desktop) -->
 			{#if !isReadMode && !editNoteId}
@@ -1848,8 +1928,10 @@
 		}
 	}
 
-	/* A side panel sliding in or out passes the right edge; that must not scroll. */
+	/* A side panel sliding in or out passes the right edge; that must not
+	   scroll. It slides over the page, placed against this box (panelSlide). */
 	.shell-panels {
+		position: relative;
 		overflow: hidden;
 		transition: padding var(--motion-base) var(--ease-enter);
 	}
@@ -1860,7 +1942,9 @@
 	   grows, all on the same clock. Hidden for real once it is out. */
 	.sidebar {
 		flex-shrink: 0;
-		transition: transform var(--motion-base) var(--ease-enter);
+		/* Tailwind's translate-x-* set `translate`, not `transform`: transitioning
+		   `transform` made the phone drawer pop instead of slide. */
+		transition: translate var(--motion-base) var(--ease-enter);
 	}
 
 	@media (min-width: 768px) {
@@ -1873,8 +1957,10 @@
 		.sidebar.sidebar-away {
 			margin-left: calc(-1 * var(--sidebar-width));
 			visibility: hidden;
+			/* The same curve as the expand button growing into the top bar, so
+			   the tabs move one way only. */
 			transition:
-				margin-left var(--motion-base) var(--ease-exit),
+				margin-left var(--motion-base) var(--ease-enter),
 				visibility 0s linear var(--motion-base);
 		}
 	}
@@ -1992,6 +2078,35 @@
 		user-select: none;
 	}
 
+	/* Keyboard focus inside the tab: the strip clips anything outside it. */
+	.tab-item:focus-visible {
+		outline: 2px solid var(--color-accent);
+		outline-offset: -2px;
+	}
+
+	.skip-link {
+		position: fixed;
+		top: 0.5rem;
+		left: 0.5rem;
+		z-index: 400;
+		padding: 0.5rem 0.875rem;
+		border-radius: var(--radius-md);
+		background: var(--color-accent);
+		color: white;
+		font-size: 0.875rem;
+		font-weight: 500;
+		text-decoration: none;
+		translate: 0 -200%;
+	}
+
+	.skip-link:focus-visible {
+		translate: 0 0;
+	}
+
+	main:focus {
+		outline: none;
+	}
+
 	.tab-item:hover {
 		background: var(--color-hover);
 		color: var(--color-text);
@@ -2015,19 +2130,38 @@
 	/* The open note's tab: a piece of the panel's surface on the chrome. It
 	   keeps more of its title than the others when they are squeezed. */
 	.tab-item.tab-active {
-		min-width: 8rem;
 		color: var(--color-text);
 		background: var(--shell-panel);
 		border-color: var(--shell-panel-border);
 		box-shadow: var(--shell-panel-shadow);
 	}
 
+	/* Resting tabs: a faint divider between two, so they read as tabs and
+	   not as loose words on pages where none is open. */
+	.tab-item:not(.tab-active, :hover) + .tab-item:not(.tab-active, :hover)::before {
+		content: '';
+		position: absolute;
+		top: 0.4375rem;
+		bottom: 0.4375rem;
+		left: -2px;
+		width: 1px;
+		background: var(--color-border);
+	}
+
+	.tab-strip-frozen .tab-item:not(.tab-pinned) {
+		flex: none;
+		width: var(--frozen-tab-width);
+		max-width: none;
+	}
+
+	/* 24 px targets (WCAG 2.5.8); the tab is 28 px tall. */
 	.tab-close {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 1.125rem;
-		height: 1.125rem;
+		width: 1.5rem;
+		height: 1.5rem;
+		margin: 0 -0.1875rem;
 		border-radius: 0.25rem;
 		color: var(--color-text-muted);
 		cursor: pointer;

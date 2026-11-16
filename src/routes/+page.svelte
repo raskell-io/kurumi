@@ -524,7 +524,7 @@
 			>
 				<Plus class="h-4 w-4" />
 				Create your first note
-				<span class="ml-1 text-xs opacity-70">{modKey}N</span>
+				<span class="desktop-only ml-1 text-xs opacity-70">{modKey}N</span>
 			</button>
 			<button type="button" onclick={exploreExample} class="k-btn k-btn-ghost mt-3">
 				<Compass class="h-4 w-4" />
@@ -577,7 +577,7 @@
 				<button type="button" onclick={handleNewNote} class="capture-primary text-white dark:text-[#1e1e2e]">
 					<Plus class="h-5 w-5" />
 					<span class="flex-1 text-left">New note</span>
-					<span class="text-xs opacity-70">{modKey}N</span>
+					<span class="desktop-only text-xs opacity-70">{modKey}N</span>
 				</button>
 				<button type="button" onclick={() => triggerVoiceCapture.set(true)} class="capture-secondary">
 					<Mic class="h-4 w-4" /> Voice memo

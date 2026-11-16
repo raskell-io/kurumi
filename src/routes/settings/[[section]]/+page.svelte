@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { dialog } from '$lib/actions/overlay';
+	import { switchInstantly } from '$lib/motion';
 	import { applyEditorFont, DEFAULT_EDITOR_FONT, EDITOR_FONTS, savedEditorFont } from '$lib/editor-fonts';
 	import { fadeOut } from '$lib/motion';
 	import { autofocus } from '$lib/actions/autofocus';
@@ -332,8 +334,10 @@
 		accent = id;
 		localStorage.setItem('kurumi-accent', id);
 		const classes = document.documentElement.classList;
-		for (const a of ACCENTS) classes.remove(`accent-${a.id}`);
-		classes.add(`accent-${id}`);
+		switchInstantly(() => {
+			for (const a of ACCENTS) classes.remove(`accent-${a.id}`);
+			classes.add(`accent-${id}`);
+		});
 	}
 	// Colour theme and CSS snippet ($lib/themes.ts), per device
 	let palette = $state<string>(
@@ -342,7 +346,7 @@
 	function setPalette(id: string) {
 		palette = id;
 		localStorage.setItem(PALETTE_KEY, id);
-		applyPalette(id);
+		switchInstantly(() => applyPalette(id));
 	}
 	let customCss = $state<string>(typeof localStorage === 'undefined' ? '' : (localStorage.getItem(CUSTOM_CSS_KEY) ?? ''));
 	let customCssTimer: ReturnType<typeof setTimeout> | undefined;
@@ -651,10 +655,10 @@
 		{ id: 'local-ai', label: 'Local AI' },
 		{ id: 'ai', label: 'AI assistant' },
 		{ id: 'notifications', label: 'Notifications' },
-		{ id: 'shortcuts', label: 'Keyboard shortcuts' },
+		{ id: 'shortcuts', label: 'Keyboard shortcuts', desktopOnly: true },
 		{ id: 'data', label: 'Data' },
 		{ id: 'offline', label: 'Offline & storage' },
-		{ id: 'desktop', label: 'Desktop app' },
+		{ id: 'desktop', label: 'Desktop app', desktopOnly: true },
 		{ id: 'plugins', label: 'Plugins' },
 		{ id: 'labs', label: 'Labs' },
 		{ id: 'about', label: 'About' },
@@ -734,12 +738,10 @@
 	function setTheme(t: 'system' | 'light' | 'dark') {
 		theme = t;
 		localStorage.setItem('kurumi-theme', t);
-		if (t === 'system') {
+		switchInstantly(() => {
 			document.documentElement.classList.remove('light', 'dark');
-		} else {
-			document.documentElement.classList.remove('light', 'dark');
-			document.documentElement.classList.add(t);
-		}
+			if (t !== 'system') document.documentElement.classList.add(t);
+		});
 	}
 
 	function setEditorFont(f: string) {
@@ -1195,6 +1197,10 @@
 <div class="h-full overflow-y-auto overscroll-contain" bind:this={scrollEl}>
 	<div class="k-page settings-page">
 		<div class="settings-layout" class:show-index={!section}>
+			{#if section}
+				<!-- The page's heading for screen readers; the section's own title is its h2. -->
+				<h1 class="sr-only">Settings</h1>
+			{/if}
 			<!-- Section nav: a sidebar on wide screens, the index page on narrow ones -->
 			<nav class="settings-nav" aria-label="Settings sections">
 				<h1 class="settings-index-title">Settings</h1>
@@ -1203,6 +1209,7 @@
 						href="/settings/{s.id}"
 						class="settings-nav-link"
 						class:danger={s.id === 'danger'}
+						class:desktop-only={'desktopOnly' in s}
 						aria-current={current === s.id ? 'page' : undefined}
 					>
 						{s.label}
@@ -1330,7 +1337,7 @@
 							</div>
 						</div>
 
-						<div class="set-row">
+						<div class="set-row desktop-only">
 							<div class="set-row-text">
 								<div class="set-row-label" id="width-label">Content width</div>
 								<p class="set-row-help">How wide notes and pages are: the editor, Read mode, lists and the home page. On this device.</p>
@@ -2349,7 +2356,7 @@
 						Click Change and press the new keys. Backspace removes a shortcut. Saved on this device.
 					</p>
 					<div class="set-rows">
-						<div class="set-row">
+						<div class="set-row desktop-only">
 							<div class="set-row-text">
 								<div class="set-row-label" id="vim-label">Vim mode</div>
 								<p class="set-row-help">
@@ -2525,7 +2532,7 @@
 							</button>
 						</div>
 
-						<div class="set-row">
+						<div class="set-row desktop-only">
 							<div class="set-row-text">
 								<div class="set-row-label">Web clipper</div>
 								<p class="set-row-help">
@@ -3017,10 +3024,10 @@
 
 <!-- Import Modal -->
 {#if showImportModal && importAnalysis}
+	<!-- svelte-ignore a11y_click_events_have_key_events (Escape and the keyboard: use:dialog on the panel) -->
 	<div
 		class="k-dialog-backdrop" out:fadeOut|global
 		onclick={closeImportModal}
-		onkeydown={(e) => e.key === 'Escape' && closeImportModal()}
 		role="dialog"
 		aria-modal="true"
 		aria-labelledby="import-title"
@@ -3028,7 +3035,7 @@
 	>
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-		<div class="k-dialog p-5" onclick={(e) => e.stopPropagation()} role="document">
+		<div class="k-dialog p-5" use:dialog={{ onClose: closeImportModal }} onclick={(e) => e.stopPropagation()} role="document">
 			<div class="mb-3 flex items-center justify-between">
 				<h2 id="import-title" class="text-base font-semibold text-[var(--color-text)]">Import backup</h2>
 				<button onclick={closeImportModal} class="k-icon-btn" aria-label="Close">
@@ -3098,10 +3105,10 @@
 
 <!-- Clear Data Confirmation Step 1 -->
 {#if showClearConfirm1}
+	<!-- svelte-ignore a11y_click_events_have_key_events (Escape and the keyboard: use:dialog on the panel) -->
 	<div
 		class="k-dialog-backdrop" out:fadeOut|global
 		onclick={cancelClear}
-		onkeydown={(e) => e.key === 'Escape' && cancelClear()}
 		role="dialog"
 		aria-modal="true"
 		aria-labelledby="clear1-title"
@@ -3109,7 +3116,7 @@
 	>
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-		<div class="k-dialog p-5" onclick={(e) => e.stopPropagation()} role="document">
+		<div class="k-dialog p-5" use:dialog={{ onClose: cancelClear }} onclick={(e) => e.stopPropagation()} role="document">
 			<h2 id="clear1-title" class="text-base font-semibold text-[var(--color-text)]">Clear all data?</h2>
 			<p class="mt-2 text-sm text-[var(--color-text-muted)]">This permanently deletes everything on this device:</p>
 			<ul class="mt-3 space-y-1 text-sm text-[var(--color-text)]">
@@ -3127,10 +3134,10 @@
 
 <!-- Clear Data Confirmation Step 2 -->
 {#if showClearConfirm2}
+	<!-- svelte-ignore a11y_click_events_have_key_events (Escape and the keyboard: use:dialog on the panel) -->
 	<div
 		class="k-dialog-backdrop" out:fadeOut|global
 		onclick={cancelClear}
-		onkeydown={(e) => e.key === 'Escape' && cancelClear()}
 		role="dialog"
 		aria-modal="true"
 		aria-labelledby="clear2-title"
@@ -3138,7 +3145,7 @@
 	>
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-		<div class="k-dialog p-5" onclick={(e) => e.stopPropagation()} role="document">
+		<div class="k-dialog p-5" use:dialog={{ onClose: cancelClear }} onclick={(e) => e.stopPropagation()} role="document">
 			<h2 id="clear2-title" class="text-base font-semibold text-[var(--color-text)]">Final confirmation</h2>
 			<p class="mt-2 text-sm text-[var(--color-text-muted)]">
 				This can't be undone. Type <strong class="font-medium text-[var(--color-danger)]">DELETE ALL</strong> to confirm.

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { dialog } from '$lib/actions/overlay';
 	import { fadeOut } from '$lib/motion';
 	import { autofocus } from '$lib/actions/autofocus';
 	import { templates, addTemplate, updateTemplate, deleteTemplate, addStarterTemplates, type Template } from '$lib/db';
@@ -279,10 +280,10 @@
 <!-- Delete Confirmation Modal (hard delete, no undo) -->
 {#if showDeleteConfirm && templateToDelete}
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events (Escape and the keyboard: use:dialog on the panel) -->
 	<div
 		class="k-dialog-backdrop" out:fadeOut|global
 		onclick={() => (showDeleteConfirm = false)}
-		onkeydown={(e) => e.key === 'Escape' && (showDeleteConfirm = false)}
 		role="dialog"
 		aria-modal="true"
 		aria-labelledby="template-delete-title"
@@ -290,7 +291,7 @@
 	>
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="k-dialog !max-w-sm p-5" onclick={(e) => e.stopPropagation()}>
+		<div class="k-dialog !max-w-sm p-5" use:dialog={{ onClose: () => (showDeleteConfirm = false) }} onclick={(e) => e.stopPropagation()}>
 			<h2 id="template-delete-title" class="text-base font-semibold text-[var(--color-text)]">Delete template?</h2>
 			<p class="mt-2 text-sm text-[var(--color-text-muted)]">
 				"{templateToDelete.name}" will be deleted. This can't be undone.

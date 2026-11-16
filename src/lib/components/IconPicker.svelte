@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { portal } from '$lib/actions/portal';
+	import { menu } from '$lib/actions/overlay';
 	import { autofocus } from '$lib/actions/autofocus';
 	import { emojiGroups, searchEmoji, randomEmoji, isEmoji } from '$lib/icons/emoji';
 	import { imageToIconDataUrl } from '$lib/utils/image';
@@ -43,10 +44,7 @@
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
-		if (e.key === 'Escape') {
-			e.stopPropagation();
-			onClose();
-		} else if (e.key === 'Enter') {
+		if (e.key === 'Enter') {
 			e.preventDefault();
 			const first = pasted ?? results[0]?.emoji;
 			if (first) pick(first);
@@ -67,11 +65,10 @@
 	}
 </script>
 
-<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-<div use:portal class="fixed inset-0 z-[150]" onclick={onClose}></div>
 <div
 	use:portal
 	use:place
+	use:menu={{ onClose }}
 	class="k-menu fixed z-[151] flex w-[22rem] max-w-[calc(100vw-1rem)] flex-col !p-0"
 	role="dialog"
 	aria-label="Choose an icon"

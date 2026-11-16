@@ -1,13 +1,17 @@
 <script lang="ts">
 	import { undoHead, undoLast, dismissUndo } from '$lib/stores/undo';
 	import { fadeOut } from '$lib/motion';
+	import { afterNavigate } from '$app/navigation';
 	import { Undo2, X } from 'lucide-svelte';
 
-	// Each time a new undo head appears we start an auto-dismiss timer.
-	// The toast shows for AUTO_DISMISS_MS unless the user clicks undo
-	// or manually dismisses first.
+	// Each new undo entry is shown once, for AUTO_DISMISS_MS, unless the user
+	// undoes or dismisses it first. It leaves for good when its time is up
+	// or the page changes (⌘Z still undoes it for five minutes).
 	const AUTO_DISMISS_MS = 6_000;
 	let visibleId = $state<string | null>(null);
+	// Entries already shown: never shown again. Not reactive, so hiding one
+	// doesn't run the effect that shows new ones.
+	let shownId: string | null = null;
 	let timer: ReturnType<typeof setTimeout> | null = null;
 
 	$effect(() => {
@@ -16,14 +20,21 @@
 			visibleId = null;
 			return;
 		}
-		if (head.id === visibleId) return;
+		if (head.id === shownId) return;
+		shownId = head.id;
 		visibleId = head.id;
 		if (timer) clearTimeout(timer);
 		timer = setTimeout(() => {
-			if (visibleId === head.id) {
-				visibleId = null;
-			}
+			if (visibleId === head.id) visibleId = null;
 		}, AUTO_DISMISS_MS);
+	});
+
+	$effect(() => () => {
+		if (timer) clearTimeout(timer);
+	});
+
+	afterNavigate(({ from, to }) => {
+		if (from?.url && to?.url && from.url.pathname !== to.url.pathname) visibleId = null;
 	});
 
 	function handleUndo() {

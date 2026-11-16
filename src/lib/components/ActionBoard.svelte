@@ -53,7 +53,7 @@
 
 <div class="board" role="list" aria-label="To-dos board">
 	{#each columns as col (col.status)}
-		<section
+		<div
 			class="board-col"
 			class:drop-target={dropTarget === col.status && dragId !== null}
 			aria-label={col.label}
@@ -143,7 +143,7 @@
 					{showAllDone ? 'Show recent only' : `Show all ${col.total}`}
 				</button>
 			{/if}
-		</section>
+		</div>
 	{/each}
 </div>
 
@@ -245,6 +245,20 @@
 
 	.meta-chip.warn {
 		color: #df8e1d;
+	}
+
+	/* A card's move arrows: the one that can't move is not shown (it was a
+	   pale arrow taking room), and on touch they are 32 px, not 44 px tall
+	   (they made a band of their own under each card). */
+	.board-card-meta .k-icon-btn:disabled {
+		visibility: hidden;
+	}
+
+	@media (hover: none) and (pointer: coarse) {
+		.board-card-meta .k-icon-btn {
+			min-width: 2rem;
+			min-height: 2rem;
+		}
 	}
 
 	.board-empty {
