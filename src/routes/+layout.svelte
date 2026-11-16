@@ -5,6 +5,7 @@
 	import { afterNavigate } from '$app/navigation';
 	import { flip } from 'svelte/animate';
 	import { fitTabs } from '$lib/tab-strip';
+	import { menu } from '$lib/actions/overlay';
 	import { applyEditorFont, savedEditorFont } from '$lib/editor-fonts';
 	import { growX, switchInstantly, armMotion, collapse, flipParams, pageEnter, panelSlide, popOut, tabIn } from '$lib/motion';
 	import {
@@ -302,14 +303,12 @@
 	let stackButton: HTMLButtonElement | undefined = $state();
 	let stackMenu: HTMLElement | undefined = $state();
 	const stackItems = () => [...(stackMenu?.querySelectorAll<HTMLElement>('.tab-stack-item') ?? [])];
+	// Opening, closing, arrows, Escape and focus: the shared menu behaviour ($lib/actions/overlay).
 	function openTabStack() {
 		showTabStack = true;
-		// Focus goes in at once, not after the menu has arrived.
-		tick().then(() => stackItems()[0]?.focus());
 	}
-	function closeTabStack(refocus = true) {
+	function closeTabStack() {
 		showTabStack = false;
-		if (refocus) stackButton?.focus();
 	}
 	function closeStackedTab(id: string) {
 		const items = stackItems();
@@ -321,25 +320,13 @@
 			else left[Math.min(at, left.length - 1)]?.focus();
 		});
 	}
+	// Delete closes the tab under the focus; the rest is the shared menu behaviour.
 	function stackKeydown(e: KeyboardEvent) {
 		const items = stackItems();
 		const at = items.indexOf(document.activeElement as HTMLElement);
-		if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-			e.preventDefault();
-			const next = e.key === 'ArrowDown' ? (at + 1) % items.length : (at - 1 + items.length) % items.length;
-			items[next]?.focus();
-		} else if (e.key === 'Home' || e.key === 'End') {
-			e.preventDefault();
-			items[e.key === 'Home' ? 0 : items.length - 1]?.focus();
-		} else if ((e.key === 'Delete' || e.key === 'Backspace') && at >= 0) {
+		if ((e.key === 'Delete' || e.key === 'Backspace') && at >= 0) {
 			e.preventDefault();
 			closeStackedTab(items[at].dataset.tabId!);
-		} else if (e.key === 'Escape') {
-			e.preventDefault();
-			e.stopPropagation();
-			closeTabStack();
-		} else if (e.key === 'Tab') {
-			closeTabStack(false);
 		}
 	}
 	$effect(() => {
@@ -425,6 +412,7 @@
 	}
 	// The footer's menu: the places that were icons without names.
 	let showFooterMenu = $state(false);
+	let footerMenuButton: HTMLButtonElement | undefined = $state();
 	// "Graph (⌘G)": the name, and the shortcut.
 	const placeName = (label: string) => label.replace(/\s*\(.*\)$/, '');
 	const placeKey = (label: string) => /\((.*)\)$/.exec(label)?.[1] ?? '';
@@ -917,6 +905,16 @@
 		if (isMobile) sidebarOpen = false;
 	}
 
+	// Skip link: the note's title or editor if there is one, else the page itself.
+	function focusMain() {
+		const main = document.getElementById('main-content');
+		const target = main?.querySelector<HTMLElement>('input[aria-label="Note title"], .ProseMirror, h1, [autofocus]');
+		if (target) {
+			if (target.matches('h1')) target.tabIndex = -1;
+			target.focus();
+		} else main?.focus();
+	}
+
 	function toggleSidebar() {
 		if (isMobile) {
 			sidebarOpen = !sidebarOpen;
@@ -998,6 +996,8 @@
 		</div>
 	</div>
 {:else}
+	<!-- First Tab stop: straight to the page, past the sidebar and the tabs. -->
+	<a href="#main-content" class="skip-link" onclick={(e) => { e.preventDefault(); focusMain(); }}>Skip to content</a>
 	<div class="app-shell flex h-[100dvh]" class:shell-no-sidebar={($focusMode || sidebarCollapsed) && !isMobile}>
 		<!-- Mobile overlay -->
 		{#if isMobile && sidebarOpen}
@@ -1330,6 +1330,7 @@
 					{/if}
 				</button>
 				<button
+					bind:this={footerMenuButton}
 					onclick={() => (showFooterMenu = !showFooterMenu)}
 					class="k-icon-btn relative"
 					class:footer-active={showFooterMenu}
@@ -1344,9 +1345,14 @@
 					{/if}
 				</button>
 				{#if showFooterMenu}
-					<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-					<div class="fixed inset-0 z-40" onclick={() => (showFooterMenu = false)}></div>
-					<div class="k-menu absolute bottom-full right-2 z-50 mb-1 w-56" style="--pop-origin: bottom right" role="menu" out:popOut>
+					<div
+						class="k-menu absolute bottom-full right-2 z-50 mb-1 w-56"
+						style="--pop-origin: bottom right"
+						role="menu"
+						aria-label="More places"
+						use:menu={{ onClose: () => (showFooterMenu = false), inside: [footerMenuButton] }}
+						out:popOut
+					>
 						{#each footerNav.filter((item) => item.href !== '/settings' && ($currentVaultCaps.records || item.href !== '/trash')) as item (item.label)}
 							<a
 								href={item.href}
@@ -1481,10 +1487,9 @@
 								<span class="tabular-nums">{fitted.stacked.length}</span>
 							</button>
 							{#if showTabStack}
-								<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-								<div class="fixed inset-0 z-40" onclick={() => closeTabStack(false)}></div>
 								<div
 									bind:this={stackMenu}
+									use:menu={{ onClose: closeTabStack, inside: [stackButton] }}
 									tabindex="-1"
 									class="k-menu tab-stack-menu absolute right-0 top-full z-50 mt-1"
 									style="--pop-origin: top right"
@@ -1501,7 +1506,7 @@
 												class="k-menu-item tab-stack-item no-underline"
 												role="menuitem"
 												data-tab-id={tab.id}
-												onclick={() => closeTabStack(false)}
+												onclick={() => closeTabStack()}
 											>
 												{#if tab.icon}<NoteIcon icon={tab.icon} class="h-3.5 w-3.5 shrink-0" />{:else if tab.pinned}<Pin class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />{/if}
 												<span class="min-w-0 flex-1">
@@ -1535,7 +1540,7 @@
 			{/if}
 
 		<!-- Main Content -->
-		<main class="shell-panel relative flex min-w-0 flex-1 flex-col" class:overflow-hidden={!isReadMode} aria-label="Main content">
+		<main id="main-content" tabindex="-1" class="shell-panel relative flex min-w-0 flex-1 flex-col" class:overflow-hidden={!isReadMode} aria-label="Main content">
 			<!-- Mobile header (hidden in read mode, on notes — which have their
 			     own top bar — and on desktop) -->
 			{#if !isReadMode && !editNoteId}
@@ -1999,6 +2004,35 @@
 		border: 1px solid transparent;
 		border-radius: var(--radius-md);
 		user-select: none;
+	}
+
+	/* Keyboard focus inside the tab: the strip clips anything outside it. */
+	.tab-item:focus-visible {
+		outline: 2px solid var(--color-accent);
+		outline-offset: -2px;
+	}
+
+	.skip-link {
+		position: fixed;
+		top: 0.5rem;
+		left: 0.5rem;
+		z-index: 400;
+		padding: 0.5rem 0.875rem;
+		border-radius: var(--radius-md);
+		background: var(--color-accent);
+		color: white;
+		font-size: 0.875rem;
+		font-weight: 500;
+		text-decoration: none;
+		translate: 0 -200%;
+	}
+
+	.skip-link:focus-visible {
+		translate: 0 0;
+	}
+
+	main:focus {
+		outline: none;
 	}
 
 	.tab-item:hover {

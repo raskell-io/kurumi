@@ -3,6 +3,7 @@
 </script>
 
 <script lang="ts">
+	import { dialog } from '$lib/actions/overlay';
 	import { fadeOut } from '$lib/motion';
 	import { untrack } from 'svelte';
 	import {
@@ -66,9 +67,9 @@
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<form
 		class="k-dialog grid gap-3 p-5"
+		use:dialog={{ onClose: () => onDone(null) }}
 		onsubmit={save}
 		onclick={(e) => e.stopPropagation()}
-		onkeydown={(e) => e.key === 'Escape' && onDone(null)}
 		aria-label={TITLES[kind]}
 	>
 		<h2 class="text-base font-semibold text-[var(--color-text)]">{TITLES[kind]}</h2>

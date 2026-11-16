@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { dialog } from '$lib/actions/overlay';
 	import { fadeOut } from '$lib/motion';
 	import {
 		templates,
@@ -181,7 +182,7 @@
 	>
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="k-dialog flex !max-w-lg flex-col !overflow-hidden" onclick={(e) => e.stopPropagation()}>
+		<div class="k-dialog flex !max-w-lg flex-col !overflow-hidden" use:dialog={{ onClose, escape: false }} onclick={(e) => e.stopPropagation()}>
 			{#if showTitlePrompt && selectedTemplate}
 				<!-- Title prompt -->
 				<div class="flex items-center justify-between gap-2 px-4 pt-3.5 pb-1">

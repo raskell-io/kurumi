@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { projects, addProject, setMemoryInProject, type MemoryObject } from '$lib/db';
 	import { portal } from '$lib/actions/portal';
+	import { menu } from '$lib/actions/overlay';
 	import { autofocus } from '$lib/actions/autofocus';
 	import { goto } from '$app/navigation';
 	import { FolderKanban, X, Plus } from 'lucide-svelte';
@@ -67,9 +68,7 @@
 {/if}
 
 {#if picker}
-	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-	<div use:portal class="fixed inset-0 z-[150]" onclick={() => (picker = null)}></div>
-	<div use:portal use:place class="k-menu fixed z-[151] w-64" role="dialog" aria-label="Add to project">
+	<div use:portal use:place use:menu={{ onClose: () => (picker = null) }} class="k-menu fixed z-[151] w-64" role="dialog" aria-label="Add to project">
 		<input
 			class="k-input mb-1 !h-8"
 			bind:value={query}
@@ -77,7 +76,6 @@
 			placeholder="Find or create a project…"
 			aria-label="Project name"
 			onkeydown={(e) => {
-				if (e.key === 'Escape') picker = null;
 				if (e.key === 'Enter') {
 					e.preventDefault();
 					if (options[0]) link(options[0].name);

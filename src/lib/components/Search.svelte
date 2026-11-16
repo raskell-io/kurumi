@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { dialog } from '$lib/actions/overlay';
 	import { fadeOut } from '$lib/motion';
 	import { search, type SearchResult } from '$lib/search';
 	import { goto } from '$app/navigation';
@@ -85,6 +86,7 @@
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
 		class="k-dialog flex !max-w-xl flex-col !overflow-hidden"
+		use:dialog={{ onClose, escape: false }}
 		onclick={(e) => e.stopPropagation()}
 		onkeydown={(e) => e.stopPropagation()}
 		role="search"

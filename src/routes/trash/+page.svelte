@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { dialog } from '$lib/actions/overlay';
 	import { fadeOut } from '$lib/motion';
 	import { autofocus } from '$lib/actions/autofocus';
 	import {
@@ -206,10 +207,10 @@
 <!-- Delete confirmation modal -->
 {#if showDeleteConfirm && itemToDelete}
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events (Escape and the keyboard: use:dialog on the panel) -->
 	<div
 		class="k-dialog-backdrop" out:fadeOut|global
 		onclick={() => (showDeleteConfirm = false)}
-		onkeydown={(e) => e.key === 'Escape' && (showDeleteConfirm = false)}
 		role="dialog"
 		aria-modal="true"
 		aria-labelledby="trash-delete-title"
@@ -217,7 +218,7 @@
 	>
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="k-dialog !max-w-sm p-5" onclick={(e) => e.stopPropagation()}>
+		<div class="k-dialog !max-w-sm p-5" use:dialog={{ onClose: () => (showDeleteConfirm = false) }} onclick={(e) => e.stopPropagation()}>
 			<h2 id="trash-delete-title" class="text-base font-semibold text-[var(--color-text)]">Delete permanently?</h2>
 			<p class="mt-2 text-sm text-[var(--color-text-muted)]">
 				"{itemToDelete.type === 'note'
@@ -235,10 +236,10 @@
 <!-- Empty trash confirmation modal -->
 {#if showEmptyConfirm}
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events (Escape and the keyboard: use:dialog on the panel) -->
 	<div
 		class="k-dialog-backdrop" out:fadeOut|global
 		onclick={() => (showEmptyConfirm = false)}
-		onkeydown={(e) => e.key === 'Escape' && (showEmptyConfirm = false)}
 		role="dialog"
 		aria-modal="true"
 		aria-labelledby="trash-empty-title"
@@ -246,7 +247,7 @@
 	>
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="k-dialog !max-w-sm p-5" onclick={(e) => e.stopPropagation()}>
+		<div class="k-dialog !max-w-sm p-5" use:dialog={{ onClose: () => (showEmptyConfirm = false) }} onclick={(e) => e.stopPropagation()}>
 			<h2 id="trash-empty-title" class="text-base font-semibold text-[var(--color-text)]">Empty trash?</h2>
 			<p class="mt-2 text-sm text-[var(--color-text-muted)]">
 				All {totalItems} item{totalItems !== 1 ? 's' : ''} in the trash will be deleted forever. This can't be undone.

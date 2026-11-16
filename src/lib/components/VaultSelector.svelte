@@ -2,6 +2,7 @@
 	import { autofocus } from '$lib/actions/autofocus';
 	import { fadeOut, popOut } from '$lib/motion';
 	import { portal } from '$lib/actions/portal';
+	import { dialog, menu } from '$lib/actions/overlay';
 	import { vaults, currentVault, currentVaultId, setCurrentVault, addVault, updateVault, deleteVault } from '$lib/db';
 	import { goto } from '$app/navigation';
 	import { searchIcons, getIconById } from '$lib/icons/vault-icons';
@@ -33,8 +34,8 @@
 	let iconSearchQuery = $state('');
 	let showIconPicker = $state(false);
 
-	let dropdownRef: HTMLDivElement;
-	let iconPickerRef: HTMLDivElement | undefined = $state();
+	let triggerButton: HTMLButtonElement | undefined = $state();
+	let iconPickerButton: HTMLButtonElement | undefined = $state();
 
 	let filteredIcons = $derived(searchIcons(iconSearchQuery));
 	let selectedIcon = $derived(formIconId ? getIconById(formIconId) : null);
@@ -164,58 +165,21 @@
 		}
 	}
 
-	function handleClickOutside(event: MouseEvent) {
-		if (dropdownRef && !dropdownRef.contains(event.target as Node)) {
-			showDropdown = false;
-		}
-	}
-
-	function handleIconPickerClickOutside(event: MouseEvent) {
-		if (iconPickerRef && !iconPickerRef.contains(event.target as Node)) {
-			showIconPicker = false;
-		}
-	}
-
-	function handleKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape') {
-			if (showIconPicker) {
-				showIconPicker = false;
-			} else if (showCreateModal || showEditModal) {
-				closeModals();
-			} else {
-				showDropdown = false;
-			}
-		}
-	}
-
 	// ⌘K "Link a folder as a vault" (CommandPalette).
 	$effect(() => {
 		window.addEventListener('kurumi-link-folder', openLinkDialog);
 		return () => window.removeEventListener('kurumi-link-folder', openLinkDialog);
 	});
 
-	$effect(() => {
-		if (showDropdown) {
-			document.addEventListener('click', handleClickOutside);
-			return () => document.removeEventListener('click', handleClickOutside);
-		}
-	});
-
-	$effect(() => {
-		if (showIconPicker) {
-			document.addEventListener('click', handleIconPickerClickOutside);
-			return () => document.removeEventListener('click', handleIconPickerClickOutside);
-		}
-	});
-
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
-
-<div class="relative" bind:this={dropdownRef}>
+<div class="relative">
 	<!-- Trigger Button -->
 	<button
+		bind:this={triggerButton}
 		onclick={() => (showDropdown = !showDropdown)}
+		aria-haspopup="menu"
+		aria-expanded={showDropdown}
 		class="flex max-w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left hover:bg-[var(--color-hover)]"
 	>
 		{#if $currentVault?.icon || $currentVault?.iconImage}
@@ -233,7 +197,14 @@
 
 	<!-- Dropdown Menu -->
 	{#if showDropdown}
-		<div class="k-menu absolute left-0 top-full z-50 mt-1 w-60" style="--pop-origin: top left" role="menu" out:popOut>
+		<div
+			class="k-menu absolute left-0 top-full z-50 mt-1 w-60"
+			style="--pop-origin: top left"
+			role="menu"
+			aria-label="Vaults"
+			use:menu={{ onClose: () => (showDropdown = false), inside: [triggerButton] }}
+			out:popOut
+		>
 			<div class="k-menu-label">Vaults</div>
 			<div class="max-h-[300px] overflow-y-auto">
 				{#each $vaults as vault (vault.id)}
@@ -261,6 +232,7 @@
 						<button
 							onclick={(e) => openEditModal(vault, e)}
 							class="k-icon-btn !h-6 !w-6 opacity-0 focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
+							role="menuitem"
 							title="Edit vault"
 							aria-label="Edit vault {vault.name}"
 						>
@@ -300,11 +272,12 @@
 
 <!-- Create/Edit Vault Modal -->
 {#if showCreateModal || showEditModal}
+	<!-- Escape and the keyboard: the dialog action on the panel ($lib/actions/overlay) -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div
 		use:portal
 		class="k-dialog-backdrop" out:fadeOut|global
 		onclick={closeModals}
-		onkeydown={(e) => e.key === 'Escape' && closeModals()}
 		role="dialog"
 		aria-modal="true"
 		aria-labelledby="vault-dialog-title"
@@ -314,6 +287,7 @@
 		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 		<div
 			class="k-dialog !overflow-visible p-5"
+			use:dialog={{ onClose: closeModals }}
 			onclick={(e) => e.stopPropagation()}
 			onkeydown={(e) => e.stopPropagation()}
 			role="document"
@@ -380,9 +354,10 @@
 
 				<div>
 					<span class="k-label">Icon <span class="font-normal text-[var(--color-text-faint)]">(optional)</span></span>
-					<div class="relative" bind:this={iconPickerRef}>
+					<div class="relative">
 						<button
 							type="button"
+							bind:this={iconPickerButton}
 							onclick={() => (showIconPicker = !showIconPicker)}
 							class="k-input flex items-center gap-2 text-left hover:bg-[var(--color-hover)]"
 							aria-expanded={showIconPicker}
@@ -421,7 +396,10 @@
 						</button>
 
 						{#if showIconPicker}
-							<div class="k-menu absolute left-0 right-0 top-full z-10 mt-1 !p-0">
+							<div
+								class="k-menu absolute left-0 right-0 top-full z-10 mt-1 !p-0"
+								use:menu={{ onClose: () => (showIconPicker = false), inside: [iconPickerButton] }}
+							>
 								<!-- Search Input -->
 								<div class="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-2">
 									<Search class="h-4 w-4 text-[var(--color-text-faint)]" />

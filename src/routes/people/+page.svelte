@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { dialog } from '$lib/actions/overlay';
 	import { fadeOut } from '$lib/motion';
 	import {
 		people,
@@ -295,6 +296,7 @@
 	<div class="k-dialog-backdrop" out:fadeOut|global onclick={cancelMerge}>
 		<div
 			class="k-dialog"
+			use:dialog={{ onClose: cancelMerge }}
 			role="dialog"
 			aria-modal="true"
 			aria-labelledby="merge-title"

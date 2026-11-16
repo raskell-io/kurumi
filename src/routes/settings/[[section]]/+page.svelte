@@ -3019,10 +3019,10 @@
 
 <!-- Import Modal -->
 {#if showImportModal && importAnalysis}
+	<!-- svelte-ignore a11y_click_events_have_key_events (Escape and the keyboard: use:dialog on the panel) -->
 	<div
 		class="k-dialog-backdrop" out:fadeOut|global
 		onclick={closeImportModal}
-		onkeydown={(e) => e.key === 'Escape' && closeImportModal()}
 		role="dialog"
 		aria-modal="true"
 		aria-labelledby="import-title"
@@ -3030,7 +3030,7 @@
 	>
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-		<div class="k-dialog p-5" onclick={(e) => e.stopPropagation()} role="document">
+		<div class="k-dialog p-5" use:dialog={{ onClose: closeImportModal }} onclick={(e) => e.stopPropagation()} role="document">
 			<div class="mb-3 flex items-center justify-between">
 				<h2 id="import-title" class="text-base font-semibold text-[var(--color-text)]">Import backup</h2>
 				<button onclick={closeImportModal} class="k-icon-btn" aria-label="Close">
@@ -3100,10 +3100,10 @@
 
 <!-- Clear Data Confirmation Step 1 -->
 {#if showClearConfirm1}
+	<!-- svelte-ignore a11y_click_events_have_key_events (Escape and the keyboard: use:dialog on the panel) -->
 	<div
 		class="k-dialog-backdrop" out:fadeOut|global
 		onclick={cancelClear}
-		onkeydown={(e) => e.key === 'Escape' && cancelClear()}
 		role="dialog"
 		aria-modal="true"
 		aria-labelledby="clear1-title"
@@ -3111,7 +3111,7 @@
 	>
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-		<div class="k-dialog p-5" onclick={(e) => e.stopPropagation()} role="document">
+		<div class="k-dialog p-5" use:dialog={{ onClose: cancelClear }} onclick={(e) => e.stopPropagation()} role="document">
 			<h2 id="clear1-title" class="text-base font-semibold text-[var(--color-text)]">Clear all data?</h2>
 			<p class="mt-2 text-sm text-[var(--color-text-muted)]">This permanently deletes everything on this device:</p>
 			<ul class="mt-3 space-y-1 text-sm text-[var(--color-text)]">
@@ -3129,10 +3129,10 @@
 
 <!-- Clear Data Confirmation Step 2 -->
 {#if showClearConfirm2}
+	<!-- svelte-ignore a11y_click_events_have_key_events (Escape and the keyboard: use:dialog on the panel) -->
 	<div
 		class="k-dialog-backdrop" out:fadeOut|global
 		onclick={cancelClear}
-		onkeydown={(e) => e.key === 'Escape' && cancelClear()}
 		role="dialog"
 		aria-modal="true"
 		aria-labelledby="clear2-title"
@@ -3140,7 +3140,7 @@
 	>
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-		<div class="k-dialog p-5" onclick={(e) => e.stopPropagation()} role="document">
+		<div class="k-dialog p-5" use:dialog={{ onClose: cancelClear }} onclick={(e) => e.stopPropagation()} role="document">
 			<h2 id="clear2-title" class="text-base font-semibold text-[var(--color-text)]">Final confirmation</h2>
 			<p class="mt-2 text-sm text-[var(--color-text-muted)]">
 				This can't be undone. Type <strong class="font-medium text-[var(--color-danger)]">DELETE ALL</strong> to confirm.

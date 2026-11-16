@@ -550,6 +550,103 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
+	async 'menus and dialogs: Escape, a press outside and another page close them; the focus comes back'(browser) {
+		const { page, errors } = await freshPage(browser);
+		await newNote(page, 'Alpha');
+		const focused = () =>
+			page.evaluate(() => {
+				const a = document.activeElement;
+				return a === document.body ? 'body' : a.getAttribute('aria-label') || a.textContent.trim().slice(0, 40);
+			});
+		const open = (label) => page.evaluate((l) => !!document.querySelector(`[role="menu"][aria-label="${l}"]`), label);
+
+		// The sidebar's "More places" menu, from the keyboard: arrows move, Escape closes and the focus goes back.
+		await page.focus('button[aria-label="More places"]');
+		await page.keyboard.press('Enter');
+		await page.waitForSelector('[role="menu"][aria-label="More places"]');
+		assert.match(await focused(), /Graph/);
+		await page.keyboard.press('ArrowDown');
+		assert.match(await focused(), /Read mode/);
+		await page.keyboard.press('ArrowUp');
+		await page.keyboard.press('ArrowUp');
+		assert.ok((await focused()).length > 0);
+		await page.keyboard.press('Escape');
+		await sleep(250);
+		assert.equal(await open('More places'), false, 'Escape left the menu open');
+		assert.equal(await focused(), 'More places');
+		// A press in the note closes it too (it used to stay open).
+		await page.click('button[aria-label="More places"]');
+		await page.waitForSelector('[role="menu"][aria-label="More places"]');
+		await page.click('main .ProseMirror');
+		await sleep(250);
+		assert.equal(await open('More places'), false, 'a press in the note left the menu open');
+
+		// The note's menu: Escape from anywhere in it.
+		await page.click('button[aria-label="More actions"]');
+		await page.waitForSelector('[role="menu"][aria-label="Note actions"]');
+		await page.keyboard.press('ArrowDown');
+		await page.keyboard.press('Escape');
+		await sleep(250);
+		assert.equal(await open('Note actions'), false);
+		assert.equal(await focused(), 'More actions');
+
+		// New vault: the focus starts in the field and Tab keeps it inside; Escape from the field closes it.
+		await page.click(VAULT_MENU);
+		await page.waitForSelector('[role="menu"][aria-label="Vaults"]');
+		await clickText(page, '.k-menu-item', 'New vault');
+		await page.waitForSelector('.k-dialog input');
+		await sleep(100);
+		assert.equal(await page.evaluate(() => document.activeElement.tagName), 'INPUT');
+		for (let i = 0; i < 12; i++) {
+			await page.keyboard.press('Tab');
+			assert.ok(await page.evaluate(() => !!document.activeElement.closest('.k-dialog')), `Tab ${i + 1} left the dialog`);
+		}
+		await page.focus('.k-dialog input');
+		await page.keyboard.press('Escape');
+		await sleep(300);
+		assert.equal(await page.$('.k-dialog'), null, 'Escape in the name field left the dialog open');
+		assert.match(await page.$eval(VAULT_MENU, (b) => (document.activeElement === b ? 'vault button' : document.activeElement.tagName)), /vault button/);
+		// Another page closes it.
+		await page.click(VAULT_MENU);
+		await page.waitForSelector('[role="menu"][aria-label="Vaults"]');
+		await clickText(page, '.k-menu-item', 'New vault');
+		await page.waitForSelector('.k-dialog');
+		await page.evaluate(() => (location.hash = '#/actions'));
+		await page.waitForFunction(() => !document.querySelector('.k-dialog'), { timeout: 3000 });
+		assert.deepEqual(errors, []);
+	},
+
+	async 'keyboard: a skip link, and the notes tree opens with the arrow keys'(browser) {
+		const { page, errors } = await freshPage(browser);
+		await db(page, `const f = db.addFolder('Projects'); const n = db.addMemoryObject('Inside', 'x'); db.updateMemoryObject(n.id, { folderId: f.id }); db.addMemoryObject('Outside', 'y');`);
+		await page.reload({ waitUntil: 'load' });
+		await page.waitForSelector('.folder-row');
+		const focused = () => page.evaluate(() => (document.activeElement === document.body ? 'body' : (document.activeElement.getAttribute('aria-label') || document.activeElement.textContent).trim().slice(0, 40)));
+		// The first Tab stop goes straight past the sidebar.
+		await page.evaluate(() => document.activeElement?.blur());
+		await page.keyboard.press('Tab');
+		assert.equal(await focused(), 'Skip to content');
+		// The tree is one Tab stop; arrows move and open folders.
+		await page.focus('[role="tree"] [role="treeitem"][tabindex="0"]');
+		assert.equal(await page.$$eval('[role="tree"] [tabindex="0"]', (e) => e.length), 1, 'more than one Tab stop in the tree');
+		await page.keyboard.press('Home');
+		assert.equal(await focused(), 'Projects');
+		assert.equal(await page.$eval('.folder-row', (r) => r.getAttribute('aria-expanded')), 'false');
+		await page.keyboard.press('ArrowRight');
+		await page.waitForFunction(() => document.querySelector('.folder-row').getAttribute('aria-expanded') === 'true');
+		await page.keyboard.press('ArrowRight');
+		await sleep(200);
+		assert.equal(await focused(), 'Inside');
+		await page.keyboard.press('Enter');
+		await noteShown(page, 'Inside', { errors });
+		await page.focus('[role="tree"] [role="treeitem"][aria-current="page"]');
+		await page.keyboard.press('ArrowLeft');
+		assert.equal(await focused(), 'Projects');
+		await page.keyboard.press('ArrowLeft');
+		await page.waitForFunction(() => document.querySelector('.folder-row').getAttribute('aria-expanded') === 'false');
+		assert.deepEqual(errors, []);
+	},
+
 	async 'vault create, logo and edit'(browser) {
 		const { page, errors } = await freshPage(browser);
 		const trigger = 'aside button.flex.max-w-full';

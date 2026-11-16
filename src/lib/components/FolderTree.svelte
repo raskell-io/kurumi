@@ -2,9 +2,11 @@
 	import { autofocus } from '$lib/actions/autofocus';
 	import { collapse } from '$lib/motion';
 	import { portal } from '$lib/actions/portal';
+	import { menu } from '$lib/actions/overlay';
 	import VaultIcon from './VaultIcon.svelte';
 	import NoteIcon from './NoteIcon.svelte';
 	import { page } from '$app/stores';
+	import { tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { currentRoutePath } from '$lib/hash-router';
 	import {
@@ -171,6 +173,86 @@
 			selectedFolderId = folderId;
 		}
 		expandedFolders = newSet;
+	}
+
+	// --- Keyboard (an ARIA tree with one Tab stop) ---------------------------
+	let treeEl: HTMLElement | undefined = $state();
+	let lastFocusedRow: HTMLElement | null = null;
+	const treeRows = () =>
+		[...(treeEl?.querySelectorAll<HTMLElement>('[role="treeitem"]') ?? [])].filter(
+			(el) => el.getClientRects().length > 0 && !el.closest('[inert]')
+		);
+	function rememberFocus(e: FocusEvent) {
+		const row = (e.target as HTMLElement).closest<HTMLElement>('[role="treeitem"]');
+		if (row && treeEl?.contains(row)) {
+			lastFocusedRow = row;
+			setTabStop(row);
+		}
+	}
+	function setTabStop(row: HTMLElement | null) {
+		for (const el of treeEl?.querySelectorAll<HTMLElement>('[role="treeitem"][tabindex="0"]') ?? []) if (el !== row) el.tabIndex = -1;
+		if (row) row.tabIndex = 0;
+	}
+	// The Tab stop: the row last focused if it's still there, else the open note's, else the first.
+	$effect(() => {
+		void [$memoryObjects, $folders, expandedFolders, $page.url.pathname, expandedLists];
+		tick().then(() => {
+			if (!treeEl) return;
+			const rows = treeRows();
+			const keep = lastFocusedRow && rows.includes(lastFocusedRow) ? lastFocusedRow : null;
+			setTabStop(keep ?? treeEl.querySelector<HTMLElement>('[role="treeitem"][aria-current="page"]') ?? rows[0] ?? null);
+		});
+	});
+	function folderOf(row: HTMLElement): HTMLElement | null {
+		return row.closest('.tree-children')?.closest('.folder-item')?.querySelector<HTMLElement>(':scope > .swipe-container > .folder-row') ?? null;
+	}
+	function treeKeydown(e: KeyboardEvent) {
+		const target = e.target as HTMLElement;
+		if (/^(INPUT|TEXTAREA)$/.test(target.tagName)) return;
+		const row = target.closest<HTMLElement>('[role="treeitem"]');
+		if (!row || e.altKey || e.metaKey || e.ctrlKey) return;
+		const rows = treeRows();
+		const at = rows.indexOf(row);
+		const folderId = row.dataset.folderId;
+		const move = (next: HTMLElement | null | undefined) => {
+			e.preventDefault();
+			if (!next) return;
+			setTabStop(next);
+			next.focus();
+			next.scrollIntoView({ block: 'nearest' });
+		};
+		switch (e.key) {
+			case 'ArrowDown':
+				return move(rows[at + 1]);
+			case 'ArrowUp':
+				return move(rows[at - 1]);
+			case 'Home':
+				return move(rows[0]);
+			case 'End':
+				return move(rows[rows.length - 1]);
+			case 'ArrowRight':
+				if (folderId && !expandedFolders.has(folderId)) {
+					e.preventDefault();
+					toggleFolder(folderId);
+				} else if (folderId) move(rows[at + 1] && folderOf(rows[at + 1]) === row ? rows[at + 1] : null);
+				return;
+			case 'ArrowLeft':
+				if (folderId && expandedFolders.has(folderId)) {
+					e.preventDefault();
+					toggleFolder(folderId);
+				} else move(folderOf(row));
+				return;
+			case 'Enter':
+			case ' ':
+				if (folderId) {
+					e.preventDefault();
+					toggleFolder(folderId);
+				} else if (e.key === ' ') {
+					e.preventDefault();
+					row.click();
+				}
+				return;
+		}
 	}
 
 	function selectFolder(folderId: string) {
@@ -993,8 +1075,7 @@
 	ondragleave={handleDragLeave}
 	ondrop={(e) => handleDrop(e, null)}
 	class:drop-target-root={dropTargetRoot}
-	role="tree"
-	tabindex="-1"
+	role="presentation"
 >
 	<!-- Section header -->
 	<div class="group/tree mb-0.5 flex items-center gap-0.5 pl-2 pr-0.5">
@@ -1032,9 +1113,14 @@
 		</div>
 	</div>
 
+	<!-- The rows: an ARIA tree. One row is a Tab stop (the open note's, else
+	     the first); arrow keys move, → opens a folder, ← closes it or goes to
+	     its parent, Enter opens. -->
+	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+	<div class="tree-rows" role="tree" aria-label="Notes" tabindex="-1" bind:this={treeEl} onkeydown={treeKeydown} onfocusin={rememberFocus}>
 	<!-- New folder input at root -->
 	{#if creatingFolderIn === 'root'}
-		<div class="tree-row bg-[var(--color-hover)]">
+		<div class="tree-row bg-[var(--color-hover)]" role="treeitem" aria-selected="false">
 			<span class="tree-chevron"></span>
 			<Folder class="tree-icon text-[var(--color-text-muted)]" />
 						<input
@@ -1061,14 +1147,16 @@
 		{@const folderSwipeOffset = getSwipeOffset('folder', folder.id)}
 		{@const isSelected = selectedFolderId === folder.id}
 
-		<div class="folder-item" class:deleting={isDeleting('folder', folder.id)}>
+		<div class="folder-item" class:deleting={isDeleting('folder', folder.id)} role="none">
 			<!-- Folder header with swipe container -->
-			<div class="swipe-container relative overflow-hidden rounded-[var(--radius-sm)]">
+			<div class="swipe-container relative overflow-hidden rounded-[var(--radius-sm)]" role="none">
 				<button
 					onclick={() => requestDelete('folder', folder.id)}
 					class="delete-action absolute right-0 top-0 flex h-full items-center justify-center bg-red-500 text-white transition-opacity"
 					style="width: {DELETE_BUTTON_WIDTH}px; opacity: {folderSwipeOffset > 0 ? 1 : 0};"
 					tabindex={folderSwipeOffset > 0 ? 0 : -1}
+					aria-label="Delete folder {folder.name}"
+					aria-hidden={folderSwipeOffset > 0 ? undefined : 'true'}
 				>
 					<Trash2 class="h-4 w-4" />
 				</button>
@@ -1094,6 +1182,8 @@
 					oncontextmenu={(e) => handleFolderContextMenu(e, folder.id)}
 					role="treeitem"
 					aria-selected={isSelected}
+					aria-expanded={isExpanded}
+					aria-label={folder.name}
 					tabindex="-1"
 				>
 					<button
@@ -1169,10 +1259,10 @@
 			{#if isExpanded}
 				<!-- Long folders open at once: only short ones animate. -->
 				<div class="k-collapse" transition:collapse={{ skip: subfolders.length + folderMemories.length > 40 }}>
-				<div class="tree-children">
+				<div class="tree-children" role="group" aria-label={folder.name}>
 					<!-- New folder input inside this folder -->
 					{#if creatingFolderIn === folder.id}
-						<div class="tree-row bg-[var(--color-hover)]">
+						<div class="tree-row bg-[var(--color-hover)]" role="treeitem" aria-selected="false">
 							<span class="tree-chevron"></span>
 							<Folder class="tree-icon text-[var(--color-text-muted)]" />
 														<input
@@ -1209,12 +1299,14 @@
 	<!-- Memory snippet for reuse -->
 	{#snippet renderNote(memory: typeof $memoryObjects[0])}
 		{@const swipeOffset = getSwipeOffset('note', memory.id)}
-		<div class="swipe-container relative overflow-hidden rounded-[var(--radius-sm)]" class:deleting={isDeleting('note', memory.id)}>
+		<div class="swipe-container relative overflow-hidden rounded-[var(--radius-sm)]" class:deleting={isDeleting('note', memory.id)} role="none">
 			<button
 				onclick={() => requestDelete('note', memory.id)}
 				class="delete-action absolute right-0 top-0 flex h-full items-center justify-center bg-red-500 text-white transition-opacity"
 				style="width: {DELETE_BUTTON_WIDTH}px; opacity: {swipeOffset > 0 ? 1 : 0};"
 				tabindex={swipeOffset > 0 ? 0 : -1}
+				aria-label="Delete {memory.title || 'Untitled'}"
+				aria-hidden={swipeOffset > 0 ? undefined : 'true'}
 			>
 				<Trash2 class="h-5 w-5" />
 			</button>
@@ -1236,6 +1328,9 @@
 				class="note-row tree-row"
 				class:tree-row-active={isNoteActive(memory.id)}
 				aria-current={isNoteActive(memory.id) ? 'page' : undefined}
+				role="treeitem"
+				aria-selected={isNoteActive(memory.id)}
+				tabindex="-1"
 				class:dragging={draggedItem?.type === 'note' && draggedItem.id === memory.id}
 				style="transform: translateX(-{swipeOffset}px);"
 				draggable="true"
@@ -1295,6 +1390,7 @@
 		{@render renderNote(memory)}
 	{/each}
 	{@render showMore(rootMemories.length, 'root')}
+	</div>
 </div>
 
 {#snippet showMore(total: number, key: string)}
@@ -1302,6 +1398,9 @@
 		<button
 			class="tree-row w-full text-left text-[var(--color-text-faint)] hover:text-[var(--color-text-muted)]"
 			onclick={() => (expandedLists = new Set([...expandedLists, key]))}
+			role="treeitem"
+			aria-selected="false"
+			tabindex="-1"
 		>
 			<span class="tree-chevron" aria-hidden="true"></span>
 			<span class="pl-1 text-xs">Show {total - NOTE_LIMIT} more…</span>
@@ -1321,40 +1420,41 @@
 		onclick={(e) => e.stopPropagation()}
 		role="menu"
 		tabindex="-1"
+		use:menu={{ onClose: closeContextMenu }}
 	>
 		<button
 			onclick={() => handleCreateNote(contextMenuFolder)}
-			class="k-menu-item"
+			class="k-menu-item" role="menuitem"
 		>
 			<FilePlus class="h-4 w-4" />
 			New Note
 		</button>
 		<button
 			onclick={() => handleCreateFolder(contextMenuFolder)}
-			class="k-menu-item"
+			class="k-menu-item" role="menuitem"
 		>
 			<FolderPlus class="h-4 w-4" />
 			New Subfolder
 		</button>
-		<button onclick={() => newCanvasIn(contextMenuFolder!)} class="k-menu-item">
+		<button onclick={() => newCanvasIn(contextMenuFolder!)} class="k-menu-item" role="menuitem">
 			<LayoutDashboard class="h-4 w-4" />
 			New canvas
 		</button>
-		<button onclick={() => openAsDatabase(contextMenuFolder!)} class="k-menu-item">
+		<button onclick={() => openAsDatabase(contextMenuFolder!)} class="k-menu-item" role="menuitem">
 			<Database class="h-4 w-4" />
 			{databaseFolderIds.has(contextMenuFolder) ? 'Open database' : 'Open as database'}
 		</button>
 		<div class="k-menu-sep"></div>
 		<button
 			onclick={() => handleRenameFolder(contextMenuFolder!)}
-			class="k-menu-item"
+			class="k-menu-item" role="menuitem"
 		>
 			<Pencil class="h-4 w-4" />
 			Rename
 		</button>
 		<button
 			onclick={() => handleDeleteFolder(contextMenuFolder!)}
-			class="k-menu-item danger"
+			class="k-menu-item danger" role="menuitem"
 		>
 			<Trash2 class="h-4 w-4" />
 			Delete
@@ -1364,7 +1464,7 @@
 			<div class="relative">
 				<button
 					onclick={() => (showVaultSubmenu = !showVaultSubmenu)}
-					class="k-menu-item justify-between"
+					class="k-menu-item justify-between" role="menuitem"
 				>
 					<div class="flex items-center gap-2">
 						<FolderInput class="h-4 w-4" />
@@ -1380,7 +1480,7 @@
 									moveFolderToVault(contextMenuFolder!, vault.id);
 									closeContextMenu();
 								}}
-								class="k-menu-item"
+								class="k-menu-item" role="menuitem"
 							>
 								<VaultIcon {vault} class="h-4 w-4 text-[var(--color-text-muted)]" />
 								<span class="truncate">{vault.name}</span>
@@ -1406,18 +1506,19 @@
 		onclick={(e) => e.stopPropagation()}
 		role="menu"
 		tabindex="-1"
+		use:menu={{ onClose: closeContextMenu }}
 	>
 		{#if !readOnly}
-		<button onclick={() => handleRenameNote(contextMenuNote!)} class="k-menu-item">
+		<button onclick={() => handleRenameNote(contextMenuNote!)} class="k-menu-item" role="menuitem">
 			<Pencil class="h-4 w-4" />
 			Rename
 		</button>
 		{/if}
-		<button onclick={() => copyNoteLink(contextMenuNote!)} class="k-menu-item">
+		<button onclick={() => copyNoteLink(contextMenuNote!)} class="k-menu-item" role="menuitem">
 			<Link2 class="h-4 w-4" />
 			Copy [[link]]
 		</button>
-		<button onclick={() => openToSide(contextMenuNote!)} class="k-menu-item">
+		<button onclick={() => openToSide(contextMenuNote!)} class="k-menu-item" role="menuitem">
 			<Columns2 class="h-4 w-4" />
 			Open to the side
 		</button>
@@ -1427,7 +1528,7 @@
 				if (memory) setMemoryFavorite(memory.id, !memory.favoritedAt);
 				closeContextMenu();
 			}}
-			class="k-menu-item"
+			class="k-menu-item" role="menuitem"
 		>
 			<Star class="h-4 w-4" />
 			{memory?.favoritedAt ? 'Remove from favorites' : 'Add to favorites'}
@@ -1435,7 +1536,7 @@
 		{#if memory?.folderId}
 			<button
 				onclick={handleMoveNoteToRoot}
-				class="k-menu-item"
+				class="k-menu-item" role="menuitem"
 			>
 				<FolderSymlink class="h-4 w-4" />
 				Move to Root
@@ -1445,7 +1546,7 @@
 			<div class="relative">
 				<button
 					onclick={() => (showVaultSubmenu = !showVaultSubmenu)}
-					class="k-menu-item justify-between"
+					class="k-menu-item justify-between" role="menuitem"
 				>
 					<div class="flex items-center gap-2">
 						<FolderInput class="h-4 w-4" />
@@ -1461,7 +1562,7 @@
 									moveMemoryObjectToVault(contextMenuNote!, vault.id);
 									closeContextMenu();
 								}}
-								class="k-menu-item"
+								class="k-menu-item" role="menuitem"
 							>
 								<VaultIcon {vault} class="h-4 w-4 text-[var(--color-text-muted)]" />
 								<span class="truncate">{vault.name}</span>
@@ -1474,7 +1575,7 @@
 		<div class="k-menu-sep"></div>
 		<button
 			onclick={() => { const id = contextMenuNote!; closeContextMenu(); requestDelete('note', id); }}
-			class="k-menu-item danger"
+			class="k-menu-item danger" role="menuitem"
 		>
 			<Trash2 class="h-4 w-4" />
 			Move to trash
@@ -1688,6 +1789,13 @@
 		background: color-mix(in srgb, var(--color-text) 10%, var(--shell-chrome, var(--color-bg-secondary)));
 		color: var(--color-text);
 		font-weight: 500;
+	}
+
+	/* Keyboard focus drawn inside the row: the swipe container clips anything
+	   outside it, and the focused row must not look like the selected one. */
+	.tree-row:focus-visible {
+		outline: 2px solid var(--color-accent);
+		outline-offset: -2px;
 	}
 
 	.tree-row :global(.tree-icon) {

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { dialog } from '$lib/actions/overlay';
 	import { fadeOut } from '$lib/motion';
 	/**
 	 * A linked note changed in its folder on the same lines as in Kurumi
@@ -29,11 +30,11 @@
 	}
 </script>
 
+<!-- svelte-ignore a11y_click_events_have_key_events (Escape and the keyboard: use:dialog on the panel) -->
 <div
 	use:portal
 	class="k-dialog-backdrop" out:fadeOut|global
 	onclick={onclose}
-	onkeydown={(e) => e.key === 'Escape' && onclose()}
 	role="dialog"
 	aria-modal="true"
 	aria-labelledby="linked-conflict-title"
@@ -42,7 +43,7 @@
 >
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-	<div class="k-dialog conflict p-5" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="document">
+	<div class="k-dialog conflict p-5" use:dialog={{ onClose: () => onclose() }} onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="document">
 		<h2 id="linked-conflict-title" class="mb-1 text-base font-semibold text-[var(--color-text)]">“{title}” changed in two places</h2>
 		<p class="mb-4 text-sm text-[var(--color-text-muted)]">
 			The file was changed outside Kurumi on the same lines you edited here. Nothing has been written. Choose what the file should contain.
