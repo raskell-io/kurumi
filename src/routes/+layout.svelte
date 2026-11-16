@@ -111,7 +111,7 @@
 		Bot,
 		Inbox,
 		Calendar,
-		Sparkles,
+		House,
 		SquarePen,
 		PanelLeftClose,
 		PanelLeftOpen,
@@ -397,13 +397,13 @@
 	let pendingProposalCount = $derived($reminderProposals.filter((p) => p.status === 'pending').length);
 
 	const primaryNav: NavItem[] = [
-		{ href: '/', label: 'Ask Kurumi', icon: Sparkles },
+		{ href: '/', label: 'Home', icon: House, hint: 'Home: capture, to-dos and Ask Kurumi' },
 		{ href: '/daily', label: 'Today', icon: CalendarDays, hint: `Today's daily note (${modKey}D)` },
 		{ href: '/inbox', label: 'Inbox', icon: Inbox, hint: `Inbox (${modKey}⇧I)` },
 		{ href: '/calendar', label: 'Calendar', icon: Calendar, hint: `Calendar (${modKey}⇧C)` },
 		{ href: '/actions', label: 'To-dos', icon: CheckSquare, hint: `To-dos (${modKey}⇧A)`, count: () => openActionCount },
-		{ href: '/proposals', label: 'Proposals', icon: Bell, hint: 'Reminder proposals', count: () => pendingProposalCount, warn: true },
-		{ href: '/drafts', label: 'Drafts', icon: Pencil, hint: 'Email & calendar drafts' }
+		{ href: '/proposals', label: 'Suggested reminders', icon: Bell, hint: 'Reminders suggested from your notes, to approve or skip', count: () => pendingProposalCount, warn: true },
+		{ href: '/drafts', label: 'Drafts', icon: Pencil, hint: 'Email and calendar drafts from your notes' }
 	];
 
 	// Shown under "More" until opened (remembered per device): reachable, not in the way.
@@ -431,7 +431,7 @@
 		{ href: '/projects', label: 'Projects', icon: FolderKanban },
 		{ href: '/meetings', label: 'Meetings', icon: CalendarClock, hint: 'Recurring meetings and their agendas' },
 		{ href: '/decisions', label: 'Decisions', icon: Gavel, hint: 'Decision log' },
-		{ href: '/questions', label: 'Questions', icon: HelpCircle, hint: 'Open questions', count: () => openQuestionCount }
+		{ href: '/questions', label: 'Questions', icon: HelpCircle, hint: 'Questions to get answered', count: () => openQuestionCount }
 	];
 
 	let footerNav = $derived<NavItem[]>([
@@ -1695,7 +1695,8 @@
 		color: var(--color-text);
 	}
 
-	.nav-row-active {
+	.nav-row-active,
+	.nav-row-active:hover {
 		background: var(--color-active);
 		color: var(--color-text);
 		font-weight: 500;
@@ -1749,7 +1750,7 @@
 		padding: 0 0.3125rem;
 		border-radius: 999px;
 		background: var(--color-accent-soft);
-		color: var(--color-accent);
+		color: var(--color-accent-ink);
 		font-size: 0.6875rem;
 		font-weight: 600;
 		line-height: 1.125rem;
@@ -1758,8 +1759,8 @@
 	}
 
 	.nav-count-warn {
-		background: color-mix(in srgb, #df8e1d 18%, transparent);
-		color: #df8e1d;
+		background: color-mix(in srgb, var(--color-warn) 18%, transparent);
+		color: var(--color-warn);
 	}
 
 	.section-label {

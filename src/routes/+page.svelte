@@ -22,6 +22,9 @@
 	import { createExampleVault, EXAMPLE_VAULT_NAME } from '$lib/example-vault';
 	import { pushUndo } from '$lib/stores/undo';
 	import { dueInfo } from '$lib/utils/due';
+	import { formatDayLong, formatRelative } from '$lib/dates/format';
+	import DoneToggle from '$lib/components/ui/DoneToggle.svelte';
+	import DueChip from '$lib/components/ui/DueChip.svelte';
 	import { openNoteTasks, checkTaskInBody, sortOpenActionItems, type NoteTask } from '$lib/todos';
 	import { myNames, isWaitingFor } from '$lib/work';
 	import { meetingsOf, nextMeetingDate } from '$lib/meetings';
@@ -30,7 +33,7 @@
 	import { parseSearchQuery, hasAnyFilter } from '$lib/search';
 	import { isAIConfigured } from '$lib/ai';
 	import { generateDailyDigest, detectPatterns, type DetectedPattern } from '$lib/digest';
-	import { inferenceRouter } from '$lib/inference';
+	import { inferenceRouter, localInferenceSettings } from '$lib/inference';
 	import { startPushToTalk, speak, stopSpeaking, type RecorderHandle } from '$lib/voice';
 	import type { MemoryObject } from '$lib/db/types';
 	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
@@ -44,13 +47,10 @@
 		Sparkles,
 		Send,
 		AlertCircle,
-		Settings,
 		RotateCcw,
 		Mic,
 		Volume2,
 		VolumeX,
-		CheckSquare,
-		Square,
 		Bell,
 		Radio,
 		Users,
@@ -61,7 +61,9 @@
 		UserRoundCheck,
 		HelpCircle,
 		CalendarClock,
-		Compass
+		Compass,
+		Cpu,
+		KeyRound
 	} from 'lucide-svelte';
 	import {
 		showNewNoteSnackbar,
@@ -245,6 +247,12 @@
 		// reload anyway since localStorage changes don't propagate.
 		aiAvailable = isAIConfigured();
 	});
+
+	// Ask works with a remote model (an API key) or, once it is turned on in
+	// Settings → Local AI, with a text model on this device.
+	let askAvailable = $derived(
+		aiAvailable || ($localInferenceSettings.enabled && $localInferenceSettings.textModelEnabled)
+	);
 
 	let question = $state('');
 	// Parse the in-flight question so we can render filter chips under
@@ -436,20 +444,6 @@
 		question = '';
 	}
 
-	function formatRelativeTime(timestamp: number): string {
-		const now = Date.now();
-		const diff = now - timestamp;
-		const minutes = Math.floor(diff / 60000);
-		const hours = Math.floor(diff / 3600000);
-		const days = Math.floor(diff / 86400000);
-
-		if (minutes < 1) return 'Just now';
-		if (minutes < 60) return `${minutes}m ago`;
-		if (hours < 24) return `${hours}h ago`;
-		if (days < 7) return `${days}d ago`;
-		return new Date(timestamp).toLocaleDateString();
-	}
-
 	function memoryPreview(text: string | null, max = 120): string {
 		if (!text) return '';
 		const cleaned = text.replace(/\s+/g, ' ').trim();
@@ -502,11 +496,7 @@
 		if (hour < 18) return 'Good afternoon';
 		return 'Good evening';
 	})();
-	const todayLabel = new Date().toLocaleDateString(undefined, {
-		weekday: 'long',
-		month: 'long',
-		day: 'numeric'
-	});
+	const todayLabel = formatDayLong(new Date());
 </script>
 
 <div class="mx-auto max-w-[var(--note-width)] px-5 py-8 md:px-8 md:py-16" data-testid="home-page">
@@ -517,11 +507,7 @@
 			<h1 class="mb-2 text-2xl font-semibold tracking-tight text-[var(--color-text)] md:text-3xl">Welcome to Kurumi</h1>
 			<p class="mb-8 text-[var(--color-text-muted)]">A quiet place to offload a thought — and find it again.</p>
 
-			<button
-				type="button"
-				onclick={handleNewNote}
-				class="inline-flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2.5 text-sm font-medium text-white shadow-[var(--shadow-sm)] hover:bg-[var(--color-accent-hover)] dark:text-[#1e1e2e]"
-			>
+			<button type="button" onclick={handleNewNote} class="k-btn k-btn-primary">
 				<Plus class="h-4 w-4" />
 				Create your first note
 				<span class="ml-1 text-xs opacity-70">{modKey}N</span>
@@ -574,7 +560,7 @@
 				</p>
 			{/if}
 			<div class="capture-actions">
-				<button type="button" onclick={handleNewNote} class="capture-primary text-white dark:text-[#1e1e2e]">
+				<button type="button" onclick={handleNewNote} class="capture-primary">
 					<Plus class="h-5 w-5" />
 					<span class="flex-1 text-left">New note</span>
 					<span class="text-xs opacity-70">{modKey}N</span>
@@ -597,13 +583,13 @@
 				<div class="mb-1 flex items-center justify-between gap-3">
 					<h2 id="todo-title" class="!m-0 flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
 						<ListTodo class="h-4 w-4 text-[var(--color-accent)]" />
-						To do
+						To-dos
 						<span class="rounded-full bg-[var(--color-bg)] px-2 text-xs font-normal tabular-nums text-[var(--color-text-muted)]">
 							{openItems.length + noteTasks.length}
 						</span>
 					</h2>
 					<a href="/actions" class="inline-flex shrink-0 items-center text-xs text-[var(--color-text-muted)] hover:text-[var(--color-accent)]">
-						All actions →
+						All to-dos →
 					</a>
 				</div>
 				{#if todoSummary}
@@ -613,11 +599,8 @@
 				{/if}
 				<ul class="space-y-0.5">
 					{#each shownItems as item (item.id)}
-						{@const due = item.dueDate ? dueInfo(item.dueDate, true, today) : null}
 						<li class="todo-row">
-							<button class="todo-check" onclick={() => completeItem(item)} aria-label="Mark “{item.text}” done">
-								<Square class="h-4 w-4" />
-							</button>
+							<DoneToggle class="todo-check" onclick={() => completeItem(item)} label="Mark “{item.text}” done" />
 							<span class="min-w-0 flex-1 truncate text-[var(--color-text)]">{item.text}</span>
 							{#if item.id.startsWith('nt-') && item.memoryObjectId && noteTitles.has(item.memoryObjectId)}
 								{@const noteTitle = noteTitles.get(item.memoryObjectId)}
@@ -628,18 +611,14 @@
 							{#if item.status === 'in_progress'}
 								<span class="shrink-0 text-xs text-[var(--color-accent)]">In progress</span>
 							{/if}
-							{#if due}
-								<span class="shrink-0 text-xs" class:text-[var(--color-danger)]={due.tone === 'danger'} class:todo-warn={due.tone === 'warn'} class:text-[var(--color-text-faint)]={!due.tone}>
-									{due.label}
-								</span>
+							{#if item.dueDate}
+								<DueChip date={item.dueDate} {today} />
 							{/if}
 						</li>
 					{/each}
 					{#each shownNoteTasks as task (task.memoryId + ':' + task.line)}
 						<li class="todo-row">
-							<button class="todo-check" onclick={() => completeNoteTask(task)} aria-label="Check “{task.text}”">
-								<Square class="h-4 w-4" />
-							</button>
+							<DoneToggle class="todo-check" onclick={() => completeNoteTask(task)} label="Check “{task.text}”" />
 							<span class="min-w-0 flex-1 truncate text-[var(--color-text)]">{task.text}</span>
 							<a href="/memory/{task.memoryId}" class="todo-source" title="Open “{task.noteTitle}”">
 								<NotebookText class="h-3 w-3" /><span class="truncate">{task.noteTitle}</span>
@@ -649,7 +628,7 @@
 				</ul>
 				{#if moreItems > 0 || moreTasks > 0}
 					<p class="mt-2 text-xs text-[var(--color-text-faint)]">
-						{#if moreItems > 0}<a href="/actions" class="hover:text-[var(--color-accent)]">{moreItems} more action {moreItems === 1 ? 'item' : 'items'}</a>{/if}
+						{#if moreItems > 0}<a href="/actions" class="hover:text-[var(--color-accent)]">{moreItems} more {moreItems === 1 ? 'to-do' : 'to-dos'}</a>{/if}
 						{#if moreItems > 0 && moreTasks > 0} · {/if}
 						{#if moreTasks > 0}{moreTasks} more in your notes{/if}
 					</p>
@@ -661,7 +640,7 @@
 		{#if waitingCount > 0 || openQuestionCount > 0 || nextMeeting}
 			<div class="work-strip mb-6">
 				{#if waitingCount > 0}
-					<a href="/actions?filter=waiting"><UserRoundCheck class="h-3.5 w-3.5" /> Waiting on others · {waitingCount}</a>
+					<a href="/actions?filter=waiting"><UserRoundCheck class="h-3.5 w-3.5" /> Waiting for · {waitingCount}</a>
 				{/if}
 				{#if openQuestionCount > 0}
 					<a href="/questions"><HelpCircle class="h-3.5 w-3.5" /> Open questions · {openQuestionCount}</a>
@@ -680,10 +659,10 @@
 				href="/proposals"
 				class="mb-6 flex items-center gap-3 rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-3 text-sm text-[var(--color-text)] transition-colors hover:border-yellow-500/50"
 			>
-				<Bell class="h-4 w-4 text-yellow-500" />
+				<Bell class="h-4 w-4 text-[var(--color-warn)]" />
 				<span class="flex-1">
-					{pendingProposalsCount} reminder proposal{pendingProposalsCount === 1 ? '' : 's'}
-					waiting for your review
+					{pendingProposalsCount} suggested reminder{pendingProposalsCount === 1 ? '' : 's'}
+					to review
 				</span>
 				<span class="text-xs text-[var(--color-text-muted)]">Review →</span>
 			</a>
@@ -756,7 +735,7 @@
 				</div>
 			</div>
 
-			{#if aiAvailable}
+			{#if askAvailable}
 				<form
 					onsubmit={(e) => {
 						e.preventDefault();
@@ -802,7 +781,7 @@
 						<button
 							type="submit"
 							disabled={!question.trim() || asking || recording || transcribing}
-							class="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--color-accent)] text-white transition-all hover:bg-[var(--color-accent-hover)] disabled:bg-transparent disabled:text-[var(--color-text-faint)] dark:text-[#1e1e2e]"
+							class="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--color-accent)] text-[var(--color-on-accent)] transition-all hover:bg-[var(--color-accent-hover)] disabled:bg-transparent disabled:text-[var(--color-text-faint)]"
 							aria-label="Ask"
 						>
 							{#if asking}
@@ -844,7 +823,7 @@
 				{#if asking}
 					<div class="mt-4 flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4 text-sm text-[var(--color-text-muted)]">
 						<div class="h-4 w-4 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent"></div>
-						Searching your memories and thinking…
+						Searching your notes and thinking…
 					</div>
 				{/if}
 
@@ -876,7 +855,7 @@
 									</div>
 									<div class="mt-3 flex items-center justify-between gap-2 text-xs text-[var(--color-text-muted)]">
 										<span>
-											{turn.result.candidates.length} memories searched · {turn.result.citations.length} cited
+											{turn.result.candidates.length} notes searched · {turn.result.citations.length} cited
 										</span>
 										{#if ttsAvailable}
 											{#if speaking && idx === turns.length - 1}
@@ -946,17 +925,25 @@
 					</div>
 				{/if}
 			{:else}
-				<div class="flex flex-col gap-3 rounded-xl bg-[var(--color-bg-secondary)] p-4 text-sm text-[var(--color-text-muted)] sm:flex-row sm:items-center">
-					<p class="flex-1">
-						Add an OpenAI API key to ask questions across your memories, with citations.
+				<!-- No model yet: say what Ask does, then the two ways to turn it on,
+				     the one that keeps everything on this device first. -->
+				<div class="ask-intro">
+					<p class="text-sm text-[var(--color-text)]">
+						Ask a question in your own words and get an answer from your notes, with links to the notes it used.
 					</p>
-					<a
-						href="/settings/ai"
-						class="inline-flex shrink-0 items-center gap-2 self-start rounded-md border border-[var(--color-border)] px-2.5 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-hover)] sm:self-auto"
-					>
-						<Settings class="h-3.5 w-3.5" />
-						Set up
-					</a>
+					<p class="mt-1 text-xs text-[var(--color-text-muted)]">
+						It needs an AI model: one that runs on this device, or an AI service you have an account with.
+					</p>
+					<div class="mt-3 flex flex-wrap gap-2">
+						<a href="/settings/local-ai" class="k-btn">
+							<Cpu class="h-4 w-4" />
+							Use a model on this device
+						</a>
+						<a href="/settings/ai" class="k-btn k-btn-ghost">
+							<KeyRound class="h-4 w-4" />
+							Connect an AI service
+						</a>
+					</div>
 				</div>
 			{/if}
 		</div>
@@ -979,7 +966,7 @@
 									{memory.title || 'Untitled'}
 								</span>
 								<span class="flex shrink-0 items-center gap-1 text-xs tabular-nums text-[var(--color-text-faint)]">
-									{formatRelativeTime(memory.updatedAt)}
+									{formatRelative(memory.updatedAt)}
 								</span>
 							</a>
 						</li>
@@ -1079,13 +1066,22 @@
 		padding: 0 1rem;
 		border-radius: var(--radius-md, 8px);
 		background: var(--color-accent);
+		color: var(--color-on-accent);
 		font-size: 0.9375rem;
-		font-weight: 600;
+		font-weight: 500;
 		box-shadow: var(--shadow-sm, none);
 	}
 
 	.capture-primary:hover {
 		background: var(--color-accent-hover, var(--color-accent));
+	}
+
+	.capture-primary:active {
+		background: var(--color-accent-press, var(--color-accent));
+	}
+
+	.capture-secondary:active {
+		background: var(--color-press);
 	}
 
 	/* Wider than a phone: the page's own surface instead of a box in a box,
@@ -1099,11 +1095,11 @@
 
 		.capture-primary {
 			flex: 0 0 auto;
-			min-height: 2.25rem;
-			padding: 0 0.875rem;
+			min-height: 2rem;
+			padding: 0 0.75rem;
 			gap: 0.375rem;
-			font-size: 0.875rem;
-			box-shadow: none;
+			font-size: 0.8125rem;
+			box-shadow: var(--shadow-sm, none);
 		}
 
 		.capture-primary :global(svg) {
@@ -1134,7 +1130,7 @@
 			flex: 0 0 auto;
 			flex-direction: row;
 			gap: 0.375rem;
-			min-height: 2.25rem;
+			min-height: 2rem;
 			padding: 0 0.75rem;
 			border-color: transparent;
 			background: transparent;
@@ -1160,21 +1156,6 @@
 		gap: 0.5rem;
 		min-height: 2rem;
 		font-size: 0.875rem;
-	}
-
-	.todo-check {
-		display: flex;
-		width: 1.5rem;
-		height: 1.5rem;
-		flex-shrink: 0;
-		align-items: center;
-		justify-content: center;
-		border-radius: 4px;
-		color: var(--color-text-muted);
-	}
-
-	.todo-check:hover {
-		color: var(--color-accent);
 	}
 
 	.todo-source {
@@ -1222,8 +1203,10 @@
 		color: var(--color-text);
 	}
 
-	.todo-warn {
-		color: #df8e1d;
+	.ask-intro {
+		padding: 1rem;
+		border: 1px dashed var(--color-border);
+		border-radius: var(--radius-lg, 12px);
 	}
 
 	.ask-input:focus {

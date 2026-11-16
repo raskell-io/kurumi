@@ -139,7 +139,9 @@ match.
 On the home page, ask a question in plain words. Kurumi finds the
 relevant notes (keyword and meaning search together), answers from them
 and cites each source as `[1]`, `[2]`, … linking to the note. Follow-up
-questions keep the conversation. It needs an AI provider; see
+questions keep the conversation. It needs an AI model: a text model on
+this device (Settings → Local AI) or an AI service (Settings → AI
+assistant); until one is set up, the home page offers both. See
 [AI](ai.md).
 
 <picture>
