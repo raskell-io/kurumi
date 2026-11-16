@@ -1,4 +1,5 @@
 <script lang="ts">
+	import NotFound from '$lib/components/NotFound.svelte';
 	import { page } from '$app/stores';
 	import { goto, beforeNavigate } from '$app/navigation';
 	import {
@@ -1642,14 +1643,7 @@
 		/>
 	{/if}
 {:else}
-	<div class="flex h-full items-center justify-center p-4">
-		<div class="text-center">
-			<p class="text-lg text-[var(--color-text-muted)]">Note not found</p>
-			<a href="/" class="mt-4 inline-block text-[var(--color-accent)] hover:underline">
-				Go back home
-			</a>
-		</div>
-	</div>
+	<NotFound title="Note not found" detail="It may have been deleted, or it is in another vault." />
 {/if}
 
 {#if showConflict && memory && saveIssue?.kind === 'conflict'}

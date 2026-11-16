@@ -1,4 +1,5 @@
 <script lang="ts">
+	import NotFound from '$lib/components/NotFound.svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import {
@@ -102,7 +103,7 @@
 	</a>
 
 	{#if !project}
-		<div class="k-empty"><p class="k-empty-title">Project not found</p><p>It may have been deleted or is in another vault.</p></div>
+		<NotFound title="Project not found" detail="It may have been deleted, or it is in another vault." />
 	{:else}
 		<input
 			class="project-title"
