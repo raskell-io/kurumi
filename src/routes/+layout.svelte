@@ -1,7 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import { pwaInfo } from 'virtual:pwa-info';
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { afterNavigate } from '$app/navigation';
 	import { flip } from 'svelte/animate';
 	import { armMotion, collapse, flipParams, pageEnter, panelSlide, popOut, tabIn } from '$lib/motion';
@@ -366,6 +366,53 @@
 		if (href === '/') return path === '/';
 		return path === href || path.startsWith(href + '/');
 	}
+
+	// The selected row's mark: one short accent bar at the sidebar's left
+	// edge, a thing of its own and not part of the row's shape. It sits
+	// beside whichever row is the current page (`aria-current="page"`), at
+	// any depth of the tree, slides there when the page changes, and follows
+	// scrolling and opening groups without sliding.
+	let asideEl: HTMLElement | undefined = $state();
+	let navScroller: HTMLElement | undefined = $state();
+	let navContent: HTMLElement | undefined = $state();
+	let indicator = $state({ y: 0, on: false, slide: false });
+	let indicatorSlideUntil = 0;
+	function placeIndicator(pageChanged = false) {
+		if (!asideEl) return;
+		const row = [...asideEl.querySelectorAll<HTMLElement>('[aria-current="page"]')].find((el) => el.getClientRects().length > 0);
+		if (!row) {
+			if (indicator.on) indicator = { ...indicator, on: false, slide: false };
+			return;
+		}
+		const aside = asideEl.getBoundingClientRect();
+		const rect = row.getBoundingClientRect();
+		const middle = rect.top + rect.height / 2;
+		// Scrolled out of the list: no bar floating over the header or footer.
+		const list = navScroller?.contains(row) ? navScroller.getBoundingClientRect() : null;
+		const on = !list || (middle > list.top + 6 && middle < list.bottom - 6);
+		if (pageChanged) indicatorSlideUntil = performance.now() + 200;
+		const y = Math.round(middle - aside.top);
+		const slide = indicator.on && on && performance.now() < indicatorSlideUntil;
+		if (y !== indicator.y || on !== indicator.on || slide !== indicator.slide) indicator = { y, on, slide };
+	}
+	$effect(() => {
+		// Whatever can change which row is current, or bring it into being.
+		void [currentPath, initialized, sidebarCollapsed, isMobile, sidebarOpen, $focusMode, $currentVaultCaps, $openTabs];
+		tick().then(() => placeIndicator(true));
+	});
+	$effect(() => {
+		if (!navScroller || !navContent) return;
+		const follow = () => placeIndicator();
+		navScroller.addEventListener('scroll', follow, { passive: true });
+		// Groups and folders opening, rows arriving, the window resizing.
+		const observer = new ResizeObserver(follow);
+		observer.observe(navContent);
+		observer.observe(navScroller);
+		return () => {
+			navScroller?.removeEventListener('scroll', follow);
+			observer.disconnect();
+		};
+	});
 
 	// Sync status
 	let showSyncStatus = $derived(initialized && isSyncConfigured());
@@ -856,7 +903,15 @@
 			style="width: {isMobile ? undefined : `${sidebarWidth}px`}; --sidebar-width: {sidebarWidth}px;"
 			role="navigation"
 			aria-label="Main navigation"
+			bind:this={asideEl}
 		>
+			<span
+				class="nav-indicator"
+				class:nav-indicator-on={indicator.on}
+				class:nav-indicator-slide={indicator.slide}
+				style="transform: translateY({indicator.y}px)"
+				aria-hidden="true"
+			></span>
 			<!-- Header: vault + quick actions -->
 			<div class="flex items-center gap-1 px-2 pb-1 pt-2 safe-top">
 				<a href="/" class="shrink-0 rounded-md p-1 hover:bg-[var(--color-hover)]" aria-label="Go to home" onclick={handleNoteClick}>
@@ -890,7 +945,8 @@
 				{/if}
 			</div>
 
-			<div class="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+			<div bind:this={navScroller} class="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+				<div bind:this={navContent} class="flex min-h-full flex-col">
 				<!-- Primary navigation -->
 				<div class="space-y-px px-2 py-1">
 					<button onclick={openSearch} class="nav-row w-full">
@@ -1038,6 +1094,7 @@
 										onclick={handleNoteClick}
 										class="nav-row"
 										class:nav-row-active={isActive(lab.href)}
+										aria-current={isActive(lab.href) ? 'page' : undefined}
 										title={lab.description}
 									>
 										<FlaskConical class="nav-icon" />
@@ -1069,7 +1126,8 @@
 									<a
 										href="/read/tag/{encodeURIComponent(tag)}"
 										onclick={handleNoteClick}
-										class="rounded-md px-1.5 py-0.5 text-xs text-[var(--color-text-muted)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
+										class="tag-row rounded-md px-1.5 py-0.5 text-xs text-[var(--color-text-muted)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
+										aria-current={currentPath === `/read/tag/${encodeURIComponent(tag)}` || currentPath === `/read/tag/${tag}` ? 'page' : undefined}
 										aria-label="Notes tagged {tag}, {count} notes"
 									>
 										#{tag}<span class="ml-1 text-[var(--color-text-faint)]" aria-hidden="true">{count}</span>
@@ -1114,6 +1172,7 @@
 						onNewNoteInFolder={handleNewNoteInFolder}
 					/>
 				</nav>
+				</div>
 			</div>
 
 			<!-- Footer: Settings by name, the theme, the assistant, and a menu
@@ -1458,7 +1517,37 @@
 		background: var(--color-active);
 		color: var(--color-text);
 		font-weight: 500;
-		box-shadow: inset 2px 0 0 var(--color-accent);
+	}
+
+	.tag-row[aria-current='page'] {
+		background: var(--color-active);
+		color: var(--color-text);
+	}
+
+	/* The mark beside the selected row (placeIndicator): 3px, straight, round
+	   ends, at the sidebar's very edge; never part of the row. */
+	.nav-indicator {
+		position: absolute;
+		top: -0.5rem;
+		left: 0;
+		z-index: 2;
+		width: 3px;
+		height: 1rem;
+		border-radius: 999px;
+		background: var(--color-accent);
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity var(--motion-fast) var(--ease-enter);
+	}
+
+	.nav-indicator-on {
+		opacity: 1;
+	}
+
+	.nav-indicator-slide {
+		transition:
+			opacity var(--motion-fast) var(--ease-enter),
+			transform var(--motion-fast) var(--ease-enter);
 	}
 
 	.nav-row-active :global(.nav-icon) {

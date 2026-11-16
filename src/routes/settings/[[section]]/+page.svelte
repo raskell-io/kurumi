@@ -3280,9 +3280,24 @@
 	}
 
 	.settings-nav-link[aria-current='page'] {
+		position: relative;
 		background: var(--color-active);
 		color: var(--color-text);
 		font-weight: 500;
+	}
+
+	/* The same mark as the sidebar's selected row (app.css .k-mark). */
+	.settings-layout:not(.show-index) .settings-nav-link[aria-current='page']::before {
+		content: '';
+		position: absolute;
+		top: 50%;
+		left: -0.5rem;
+		width: 3px;
+		height: 1rem;
+		border-radius: 999px;
+		background: var(--color-accent);
+		translate: 0 -50%;
+		animation: fadeIn var(--motion-fast) var(--ease-enter);
 	}
 
 	.settings-nav-link.danger {

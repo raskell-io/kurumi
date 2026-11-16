@@ -1220,8 +1220,25 @@ textarea {
 	}
 
 	.k-row.focused {
+		position: relative;
 		background: var(--color-hover);
-		box-shadow: inset 2px 0 0 var(--color-accent);
+	}
+
+	/* The app's one mark for "this row": a short accent bar beside it, a
+	   thing of its own, never the row's edge. The sidebar places one bar
+	   for the current page (+layout.svelte); lists use this. */
+	.k-row.focused::before,
+	.k-mark::before {
+		content: '';
+		position: absolute;
+		top: 50%;
+		left: var(--mark-inset, -0.5rem);
+		width: 3px;
+		height: 1rem;
+		border-radius: 999px;
+		background: var(--color-accent);
+		translate: 0 -50%;
+		animation: fadeIn var(--motion-fast) var(--ease-enter);
 	}
 
 	.k-row.selected {
