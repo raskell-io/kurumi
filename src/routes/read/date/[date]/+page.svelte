@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDayLong } from '$lib/dates/format';
 	import { page } from '$app/stores';
 	import { getMemoryObjectsByDate } from '$lib/db';
 	import ReadNav from '$lib/components/ReadNav.svelte';
@@ -13,12 +14,7 @@
 	function formatDate(date: string): string {
 		try {
 			const d = new Date(date + 'T00:00:00');
-			return d.toLocaleDateString('en-US', {
-				weekday: 'long',
-				year: 'numeric',
-				month: 'long',
-				day: 'numeric'
-			});
+			return formatDayLong(d);
 		} catch {
 			return date;
 		}

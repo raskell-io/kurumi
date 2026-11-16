@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDay } from '$lib/dates/format';
 	import { parseWikilink, wikilinkLabel, markdownSection, markdownBlock, stripBlockIds } from '$lib/wikilinks';
 	/**
 	 * Hover preview for [[wikilinks]] (Obsidian-style page preview).
@@ -62,11 +63,7 @@
 	});
 
 	function formatEdited(timestamp: number): string {
-		return new Date(timestamp).toLocaleDateString(undefined, {
-			month: 'short',
-			day: 'numeric',
-			year: 'numeric'
-		});
+		return formatDay(timestamp);
 	}
 
 	function clearTimers() {

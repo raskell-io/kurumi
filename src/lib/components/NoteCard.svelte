@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDay } from '$lib/dates/format';
 	import { markdownExcerpt } from '$lib/utils/excerpt';
 	import { goto } from '$app/navigation';
 	import { getFolder, extractTags } from '$lib/db';
@@ -36,11 +37,7 @@
 		if (diffDays === 1) return 'Yesterday';
 		if (diffDays < 7) return `${diffDays} days ago`;
 
-		return date.toLocaleDateString('en-US', {
-			month: 'short',
-			day: 'numeric',
-			year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
-		});
+		return formatDay(date);
 	}
 </script>
 

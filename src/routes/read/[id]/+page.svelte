@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDay } from '$lib/dates/format';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import {
@@ -65,12 +66,7 @@
 	});
 
 	function formatDate(timestamp: number): string {
-		const date = new Date(timestamp);
-		return date.toLocaleDateString('en-US', {
-			month: 'long',
-			day: 'numeric',
-			year: 'numeric'
-		});
+		return formatDay(timestamp);
 	}
 
 	function excerpt(text: string): string {

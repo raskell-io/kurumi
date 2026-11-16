@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDay } from '$lib/dates/format';
 	import { autofocus } from '$lib/actions/autofocus';
 	import {
 		savedSearches,
@@ -252,9 +253,9 @@
 
 			<div class="sf-results">
 				{#if !selectedFolder}
-					<p class="py-8 text-center text-sm text-[var(--color-text-faint)]">Select a smart folder to see its memories.</p>
+					<p class="py-8 text-center text-sm text-[var(--color-text-faint)]">Select a smart folder to see its notes.</p>
 				{:else if selectedResults.length === 0}
-					<p class="py-8 text-center text-sm text-[var(--color-text-faint)]">No memories match this filter.</p>
+					<p class="py-8 text-center text-sm text-[var(--color-text-faint)]">No notes match this filter.</p>
 				{:else}
 					<ul>
 						{#each selectedResults as m (m.id)}
@@ -269,7 +270,7 @@
 									{/if}
 									<span class="min-w-0 flex-1 truncate">{m.title || 'Untitled'}</span>
 									<span class="shrink-0 text-xs text-[var(--color-text-faint)]">
-										{new Date(m.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+										{formatDay(m.updatedAt)}
 									</span>
 								</a>
 							</li>
