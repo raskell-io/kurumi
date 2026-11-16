@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { markdownExcerpt, notePreview } from '$lib/utils/excerpt';
 	import { wikilinkLabel } from '$lib/wikilinks';
 	import { createExampleVault, EXAMPLE_VAULT_NAME } from '$lib/example-vault';
 	import { generateWeeklyReview } from '$lib/weekly-review';
@@ -489,7 +490,7 @@
 				title: m.title || 'Untitled',
 				icon: 'note',
 				noteIcon: m.icon,
-				description: openedIds.has(m.id) ? 'Recently opened' : stripHtml(m.bodyMarkdown).slice(0, 60),
+				description: openedIds.has(m.id) ? 'Recently opened' : notePreview(m, 60),
 				action: () => {
 					goto(`/memory/${m.id}`);
 					onClose();
@@ -610,7 +611,7 @@
 				title: r.title,
 				icon: 'note',
 				noteIcon: iconById.get(r.id),
-				description: stripHtml(r.content).slice(0, 60),
+				description: markdownExcerpt(stripHtml(r.content), 60),
 				action: () => {
 					goto(`/memory/${r.id}`);
 					onClose();

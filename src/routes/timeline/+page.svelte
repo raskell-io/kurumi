@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { notePreview } from '$lib/utils/excerpt';
 	import { memoryObjects, getAllPeople, getAllTags, todayIso } from '$lib/db';
 	import type { MemoryObject } from '$lib/db/types';
 	import { Clock, FileText, Mic, Users, ListFilter, X } from 'lucide-svelte';
@@ -175,10 +176,8 @@
 									<Icon class="tl-icon h-4 w-4 shrink-0" />
 									<div class="min-w-0 flex-1">
 										<div class="tl-title">{m.title || 'Untitled'}</div>
-										{#if m.summaryShort}
-											<p class="tl-summary">{m.summaryShort}</p>
-										{:else if m.bodyMarkdown}
-											<p class="tl-summary">{m.bodyMarkdown.slice(0, 120)}{m.bodyMarkdown.length > 120 ? '…' : ''}</p>
+										{#if notePreview(m, 120)}
+											<p class="tl-summary">{notePreview(m, 120)}</p>
 										{/if}
 										{#if (m.tags?.length ?? 0) > 0 || (m.participants?.length ?? 0) > 0}
 											<div class="tl-meta">

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { notePreview } from '$lib/utils/excerpt';
 	import { page } from '$app/stores';
 	import { goto, beforeNavigate } from '$app/navigation';
 	import {
@@ -1493,7 +1494,7 @@
 										<a href="/memory/{backlink.id}" class="link-row">
 											<FileText class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)]" />
 											<span class="shrink-0 font-medium text-[var(--color-text)]">{backlink.title || 'Untitled'}</span>
-											<span class="min-w-0 truncate text-[var(--color-text-faint)]">{backlink.bodyMarkdown.slice(0, 120)}</span>
+											<span class="min-w-0 truncate text-[var(--color-text-faint)]">{notePreview(backlink, 120)}</span>
 										</a>
 									{/each}
 								</div>
@@ -1514,7 +1515,7 @@
 											<FileText class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)]" />
 											<a href="/memory/{mention.id}" class="flex min-w-0 flex-1 items-center gap-2">
 												<span class="shrink-0 font-medium text-[var(--color-text)]">{mention.title || 'Untitled'}</span>
-												<span class="min-w-0 truncate text-[var(--color-text-faint)]">{mention.bodyMarkdown.slice(0, 120)}</span>
+												<span class="min-w-0 truncate text-[var(--color-text-faint)]">{notePreview(mention, 120)}</span>
 											</a>
 											<button
 												hidden={readOnly}
@@ -1544,8 +1545,7 @@
 										<a href="/memory/{related.id}" class="link-row">
 											<Sparkles class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)]" />
 											<span class="shrink-0 font-medium text-[var(--color-text)]">{related.title || 'Untitled'}</span>
-											<span class="min-w-0 flex-1 truncate text-[var(--color-text-faint)]">{(related.summaryShort || related.bodyMarkdown || '').slice(0, 120)}</span>
-											<span class="shrink-0 text-[0.6875rem] tabular-nums text-[var(--color-text-faint)]">{Math.round(score * 100)}%</span>
+											<span class="min-w-0 flex-1 truncate text-[var(--color-text-faint)]">{notePreview(related, 120)}</span>
 										</a>
 									{/each}
 								</div>
