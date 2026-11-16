@@ -66,7 +66,8 @@
 		touchRecent,
 		closeTab,
 		splitNoteId,
-		closeSplit
+		closeSplit,
+		recentNoteIds
 	} from '$lib/stores/workspace';
 	import ImageViewer from '$lib/components/ImageViewer.svelte';
 	import PdfViewer from '$lib/components/PdfViewer.svelte';
@@ -265,6 +266,17 @@
 	// Always there on a wide window (not in focus mode): a bar that came and
 	// went with the first tab pushed the whole page down 40 px.
 	let showTabBar = $derived(!$focusMode && !isMobile);
+
+	// The drawer's "Recent" on phones: the last notes opened here, not the one on screen.
+	let recentNotes = $derived.by(() => {
+		if (!isMobile) return [];
+		const byId = new Map($memoryObjects.map((m) => [m.id, m]));
+		return $recentNoteIds
+			.filter((id) => currentPath !== `/memory/${id}`)
+			.map((id) => byId.get(id))
+			.filter((m): m is NonNullable<typeof m> => !!m && !m.deletedAt)
+			.slice(0, 5);
+	});
 
 	// Tabs that fit, and the ones stacked behind the "N more" control.
 	let tabArea: HTMLElement | undefined = $state();
@@ -1171,6 +1183,19 @@
 						</div>
 					{/if}
 				</div>
+
+				<!-- Phones: no tabs, so the notes opened last are here, one tap away. -->
+				{#if isMobile && recentNotes.length > 0}
+					<div class="px-2 pt-3">
+						<div class="section-label">Recent</div>
+						{#each recentNotes as note (note.id)}
+							<a href="/memory/{note.id}" onclick={handleNoteClick} class="nav-row">
+								<NoteIcon icon={note.icon} class="nav-icon" />
+								<span class="truncate">{note.title || 'Untitled'}</span>
+							</a>
+						{/each}
+					</div>
+				{/if}
 
 				<!-- Favorites -->
 				{#if $favoriteMemoryObjects.length > 0}

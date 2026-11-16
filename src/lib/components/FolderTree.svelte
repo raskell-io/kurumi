@@ -1518,7 +1518,7 @@
 			<Link2 class="h-4 w-4" />
 			Copy [[link]]
 		</button>
-		<button onclick={() => openToSide(contextMenuNote!)} class="k-menu-item" role="menuitem">
+		<button onclick={() => openToSide(contextMenuNote!)} class="k-menu-item desktop-only" role="menuitem">
 			<Columns2 class="h-4 w-4" />
 			Open to the side
 		</button>

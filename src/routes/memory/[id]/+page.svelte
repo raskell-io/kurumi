@@ -96,7 +96,8 @@
 		Gavel,
 		ListChecks,
 		AlertTriangle,
-		FolderOpen
+		FolderOpen,
+		ArrowLeft
 	} from 'lucide-svelte';
 	import { triggerSearch } from '$lib/stores/snackbar';
 	import CameraCapture from '$lib/components/CameraCapture.svelte';
@@ -153,6 +154,8 @@
 	$effect(() => () => clearTimeout(relatedTimer));
 	let showMoreMenu = $state(false);
 	let showExport = $state(false);
+	// Something to go back to in this window (the browser's own history).
+	const canGoBack = typeof history !== 'undefined' && history.length > 1;
 	let moreMenuButton: HTMLButtonElement | undefined = $state();
 	let iconPickerAnchor = $state<{ left: number; top: number; bottom: number } | null>(null);
 	let projectPicker = $state<DOMRect | null>(null);
@@ -942,8 +945,18 @@
 			>
 				<Menu class="h-5 w-5" />
 			</button>
+			<!-- Phones have no tabs: a way back to the note before. -->
+			{#if canGoBack}
+				<button
+					onclick={() => history.back()}
+					class="-ml-1 rounded-lg p-2 text-[var(--color-text-muted)] hover:bg-[var(--color-hover)] md:hidden"
+					aria-label="Back"
+				>
+					<ArrowLeft class="h-5 w-5" />
+				</button>
+			{/if}
 			<span class="min-w-0 flex-1 truncate text-sm font-medium text-[var(--color-text)] md:hidden">
-				{folderPath.length > 0 ? `${folderPath[folderPath.length - 1].name} / ` : ''}{isDefaultTitle(title) ? 'Untitled' : title}
+				{isDefaultTitle(title) ? 'Untitled' : title}
 			</span>
 			<span class="hidden flex-1 md:block"></span>
 
@@ -1667,13 +1680,16 @@
 		color: #d99a16;
 	}
 
+	/* On a phone: smaller, and an ellipsis when the title is longer than the
+	   line (it was cut mid-character). The whole title is in the top bar. */
 	.title-input {
 		border: none !important;
 		outline: none !important;
 		box-shadow: none !important;
 		-webkit-appearance: none;
 		appearance: none;
-		font-size: 2rem !important;
+		font-size: 1.625rem !important;
+		text-overflow: ellipsis;
 		line-height: 1.2;
 		letter-spacing: -0.015em;
 	}

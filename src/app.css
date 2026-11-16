@@ -590,12 +590,27 @@ body {
 	overscroll-behavior-y: contain;
 }
 
-/* Better touch targets on mobile */
+/* Touch targets on phones and tablets: 44 px for real controls (buttons,
+   icon buttons, rows, menu items). Not for links and chips inside text
+   (a #tag, an @person, a project chip, a link in a sentence): a 44 px box
+   there broke lines and pulled pills apart. Those are inline targets,
+   which WCAG exempts; chips keep at least 24 px. */
 @media (hover: none) and (pointer: coarse) {
-	button,
-	a {
+	:where(button, .k-btn, .k-icon-btn, .nav-row, .tree-row, .k-menu-item, .tab-item, .k-row):not(
+			:where(p, h1, h2, h3, h4, h5, h6, blockquote, figcaption, .markdown-content, .ProseMirror, .milkdown, .k-chip, .chip, [class*='-chip']) *
+		):not(:where(.k-chip, .chip, .chip-x, .k-badge, [class*='tag-'], [class*='mention'], [class*='-chip'], [data-inline])) {
 		min-height: 44px;
 		min-width: 44px;
+	}
+
+	:where(.k-chip, .chip, [class*='-chip']) {
+		min-height: 24px;
+	}
+
+	/* Things only a keyboard, a mouse or a desktop computer can use:
+	   shortcut hints, Vim keys, the bookmarklet, the desktop app, side by side. */
+	.desktop-only {
+		display: none !important;
 	}
 
 	input,

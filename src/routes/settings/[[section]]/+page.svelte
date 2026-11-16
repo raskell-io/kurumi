@@ -655,10 +655,10 @@
 		{ id: 'local-ai', label: 'Local AI' },
 		{ id: 'ai', label: 'AI assistant' },
 		{ id: 'notifications', label: 'Notifications' },
-		{ id: 'shortcuts', label: 'Keyboard shortcuts' },
+		{ id: 'shortcuts', label: 'Keyboard shortcuts', desktopOnly: true },
 		{ id: 'data', label: 'Data' },
 		{ id: 'offline', label: 'Offline & storage' },
-		{ id: 'desktop', label: 'Desktop app' },
+		{ id: 'desktop', label: 'Desktop app', desktopOnly: true },
 		{ id: 'plugins', label: 'Plugins' },
 		{ id: 'labs', label: 'Labs' },
 		{ id: 'about', label: 'About' },
@@ -1205,6 +1205,7 @@
 						href="/settings/{s.id}"
 						class="settings-nav-link"
 						class:danger={s.id === 'danger'}
+						class:desktop-only={'desktopOnly' in s}
 						aria-current={current === s.id ? 'page' : undefined}
 					>
 						{s.label}
@@ -1332,7 +1333,7 @@
 							</div>
 						</div>
 
-						<div class="set-row">
+						<div class="set-row desktop-only">
 							<div class="set-row-text">
 								<div class="set-row-label" id="width-label">Content width</div>
 								<p class="set-row-help">How wide notes and pages are: the editor, Read mode, lists and the home page. On this device.</p>
@@ -2351,7 +2352,7 @@
 						Click Change and press the new keys. Backspace removes a shortcut. Saved on this device.
 					</p>
 					<div class="set-rows">
-						<div class="set-row">
+						<div class="set-row desktop-only">
 							<div class="set-row-text">
 								<div class="set-row-label" id="vim-label">Vim mode</div>
 								<p class="set-row-help">
@@ -2527,7 +2528,7 @@
 							</button>
 						</div>
 
-						<div class="set-row">
+						<div class="set-row desktop-only">
 							<div class="set-row-text">
 								<div class="set-row-label">Web clipper</div>
 								<p class="set-row-help">
