@@ -106,11 +106,11 @@ export function whisperModelLabel(size: WhisperModelSize): string {
 	// onnx-runtime QDQ bugs that hit q4 variants.
 	switch (size) {
 		case 'tiny':
-			return 'Whisper Tiny (~150 MB) — fastest, default';
+			return 'Fastest (Whisper Tiny, 150 MB)';
 		case 'base':
-			return 'Whisper Base (~290 MB) — balanced';
+			return 'Balanced (Whisper Base, 290 MB)';
 		case 'small':
-			return 'Whisper Small (~970 MB) — slower, best accuracy';
+			return 'Most accurate, slower (Whisper Small, 970 MB)';
 	}
 }
 
@@ -136,15 +136,15 @@ export function textModelId(choice: TextModelChoice): string {
 export function textModelLabel(choice: TextModelChoice): string {
 	switch (choice) {
 		case 'smollm2-360m':
-			return 'SmolLM2 360M (~360 MB) — small, fast, summaries only';
+			return 'Small and fast, summaries only (SmolLM2, 360 MB)';
 		case 'qwen2-0_5b':
-			return 'Qwen2.5 0.5B (~500 MB) — slightly bigger';
+			return 'A little better (Qwen2.5 0.5B, 500 MB)';
 		case 'llama-3_2-1b':
-			return 'Llama 3.2 1B (~900 MB) — basic Q&A, fast';
+			return 'Answers simple questions (Llama 3.2 1B, 900 MB)';
 		case 'llama-3_2-3b':
-			return 'Llama 3.2 3B (~1.7 GB) — solid local Q&A';
+			return 'Answers questions well (Llama 3.2 3B, 1.7 GB)';
 		case 'qwen2_5-3b':
-			return 'Qwen2.5 3B (~1.8 GB) — strong local Q&A, multilingual';
+			return 'Best answers, many languages (Qwen2.5 3B, 1.8 GB)';
 	}
 }
 
@@ -160,8 +160,8 @@ export function embedModelId(choice: EmbedModelChoice): string {
 export function embedModelLabel(choice: EmbedModelChoice): string {
 	switch (choice) {
 		case 'mini-lm-l6':
-			return 'all-MiniLM-L6-v2 (~25 MB) — fast, English-focused';
+			return 'English, fast (MiniLM, 25 MB)';
 		case 'multilingual-e5-small':
-			return 'multilingual-e5-small (~120 MB) — supports 100+ languages';
+			return 'Over 100 languages (multilingual E5, 120 MB)';
 	}
 }

@@ -20,8 +20,9 @@ flight.
 | Summaries, titles, Ask Kurumi | SmolLM2 360M, Qwen2 0.5B, Llama 3.2 1B / 3B, Qwen2.5 3B | Off (≥ 360 MB download) |
 | Speech | MMS text-to-speech | Used when no remote voice is set up |
 
-*Preload on startup* downloads enabled models in the background when the
-app opens, so the first recording doesn't wait. Small local text models
+*Load the models when Kurumi starts* (under *Advanced*) downloads the
+models that are on in the background when the app opens, so the first
+recording doesn't wait. Small local text models
 are useful offline but noticeably weaker than remote ones.
 
 ## Remote providers (Settings → AI assistant)
