@@ -2981,30 +2981,44 @@ const scenarios = {
 		const cell = await page.waitForSelector('main .ProseMirror td:nth-child(2)');
 		await cell.click();
 		await page.waitForSelector('.kurumi-table-toolbar:not([hidden])');
-		const saved = async () => {
-			await sleep(1200);
-			return (await db(page, `return db.getMemoryObject(arg).bodyMarkdown;`, id)).trim();
+		// The stored note, once it shows what the step did. An edit is stored about
+		// half a second after the last change (the editor reports it 200 ms late,
+		// autosave waits 300 ms more), later on a busy machine: a fixed pause read
+		// the note too early on CI. Waits up to 8 s, then the assertions say what
+		// was stored.
+		const saved = async (done) => {
+			const until = Date.now() + 8000;
+			let md;
+			do {
+				md = (await db(page, `return db.getMemoryObject(arg).bodyMarkdown;`, id)).trim();
+				if (done(md)) return md;
+				await sleep(150);
+			} while (Date.now() < until);
+			return md;
 		};
 		// Sort by Count (numbers by value), then centre it.
 		await page.click('.kurumi-table-toolbar [data-action="sort-asc"]');
 		await page.click('.kurumi-table-toolbar [data-action="align-center"]');
-		let md = await saved();
-		assert.match(md, /\| alpha +\| +2 +\|\n\| beta +\| +10 +\|/);
-		assert.match(md, /\| :?-+ \| :-+: \|/);
+		const sorted = /\| alpha +\| +2 +\|\n\| beta +\| +10 +\|/;
+		const centred = /\| :?-+ \| :-+: \|/;
+		let md = await saved((m) => sorted.test(m) && centred.test(m));
+		assert.match(md, sorted);
+		assert.match(md, centred);
 		// A row below, typed into, and a new column.
 		await page.click('.kurumi-table-toolbar [data-action="row-below"]');
 		await page.keyboard.type('gamma');
 		await page.click('.kurumi-table-toolbar [data-action="col-right"]');
-		md = await saved();
-		assert.equal(md.split('\n').length, 5);
+		const columns = (m) => m.split('\n')[0].split('|').length - 2;
+		md = await saved((m) => m.split('\n').length === 5 && /gamma/.test(m) && columns(m) === 3);
+		assert.equal(md.split('\n').length, 5, md);
 		assert.match(md, /gamma/);
-		assert.equal(md.split('\n')[0].split('|').length - 2, 3);
+		assert.equal(columns(md), 3, md);
 		// Tab in the last cell adds a row and moves into it.
 		await page.click('main .ProseMirror tr:last-child td:last-child');
 		await page.keyboard.press('Tab');
 		await page.keyboard.type('delta');
-		md = await saved();
-		assert.match(md.split('\n').at(-1), /^\| delta /);
+		md = await saved((m) => /^\| delta /.test(m.split('\n').at(-1)));
+		assert.match(md.split('\n').at(-1), /^\| delta /, md);
 		// The header row has no "insert above" and can't be deleted.
 		await page.click('main .ProseMirror th');
 		await sleep(200);
@@ -3012,7 +3026,7 @@ const scenarios = {
 		// Delete the table from the menu.
 		await page.click('.kurumi-table-toolbar button[aria-label="More table actions"]');
 		await clickOnTop(page, '.kurumi-table-menu .k-menu-item', 'Delete table');
-		md = await saved();
+		md = await saved((m) => !/\|/.test(m));
 		assert.doesNotMatch(md, /\|/);
 		assert.ok(await page.$eval('.kurumi-table-toolbar', (b) => b.hidden));
 		assert.deepEqual(errors, []);
