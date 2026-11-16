@@ -467,7 +467,8 @@ export const builtInSlashCommands: SlashCommand[] = [
 				view,
 				from,
 				to,
-				'<details>\n<summary>Toggle title</summary>\n\nContent here...\n\n</details>\n'
+				'<details>\n<summary>Toggle title</summary>\n\n</details>\n',
+				'first'
 			)
 	},
 	{

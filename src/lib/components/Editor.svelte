@@ -43,6 +43,7 @@
 	import { columnsPlugins } from '$lib/editor/columns';
 	import { audioEmbedPlugin } from '$lib/editor/audioEmbed';
 	import { calloutPlugin } from '$lib/editor/callout';
+	import { togglePlugins } from '$lib/editor/toggle';
 	import { startCheckboxRenderer } from '$lib/editor/checkboxRenderer';
 	import { processAndStoreImage } from '$lib/utils/image';
 	import CameraCapture from './CameraCapture.svelte';
@@ -614,6 +615,7 @@
 			.use(gfm)
 			.use(mathPlugins)
 			.use(columnsPlugins)
+			.use(togglePlugins)
 			.use(listener)
 			.use(history)
 			// Before clipboard: ProseMirror asks plugins in order and the
