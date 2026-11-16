@@ -936,6 +936,37 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
+	async 'outline: a long note lists its headings beside it, jumps to one, and can be hidden'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const body = Array.from({ length: 12 }, (_, i) => `## Part ${i + 1}\n\n${'Some words to fill the part. '.repeat(30)}\n`).join('\n');
+		await db(page, `db.addMemoryObject('Long read', arg); db.addMemoryObject('Short', '## One\\n\\nText\\n\\n## Two\\n');`, body);
+		await openTreeNote(page, 'Long read');
+		await page.waitForSelector('main nav[aria-label="Outline"] button', { timeout: 5000 });
+		const labels = await page.$$eval('nav[aria-label="Outline"] button', (b) => b.map((x) => x.textContent.trim()));
+		assert.equal(labels.length, 12);
+		assert.equal(labels[8], 'Part 9');
+		await page.evaluate(() => [...document.querySelectorAll('nav[aria-label="Outline"] button')][8].click());
+		await page.waitForFunction(() => {
+			const h = [...document.querySelectorAll('main .ProseMirror h2')].find((x) => x.textContent === 'Part 9');
+			const area = h.closest('.overflow-y-auto').getBoundingClientRect();
+			const r = h.getBoundingClientRect();
+			return r.top >= area.top - 2 && r.top < area.top + 120;
+		}, { timeout: 5000 });
+		await page.waitForFunction(() => document.querySelector('nav[aria-label="Outline"] [aria-current="location"]')?.textContent.trim() === 'Part 9', { timeout: 3000 });
+		// Two headings are not an outline.
+		await openTreeNote(page, 'Short');
+		await sleep(500);
+		assert.equal(await page.$('nav[aria-label="Outline"]'), null);
+		// The note's menu hides it, on this device.
+		await openTreeNote(page, 'Long read');
+		await page.click('button[aria-label="More actions"]');
+		await clickText(page, '.k-menu-item', 'Hide outline');
+		await sleep(300);
+		assert.equal(await page.$('nav[aria-label="Outline"]'), null);
+		assert.equal(await page.evaluate(() => localStorage.getItem('kurumi-outline')), 'off');
+		assert.deepEqual(errors, []);
+	},
+
 	async 'split view edits the right note and never loses text'(browser) {
 		const { page, errors } = await freshPage(browser);
 		await newNote(page, 'Beta');

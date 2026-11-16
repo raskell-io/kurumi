@@ -1,4 +1,7 @@
 <script lang="ts">
+	import NoteOutline from '$lib/components/NoteOutline.svelte';
+	import { outlineShown } from '$lib/stores/outline';
+	import { ListTree } from 'lucide-svelte';
 	import { notePreview } from '$lib/utils/excerpt';
 	import { page } from '$app/stores';
 	import { goto, beforeNavigate } from '$app/navigation';
@@ -161,6 +164,15 @@
 	}
 	let titleInput: HTMLInputElement | undefined = $state();
 	let scrollArea: HTMLDivElement | undefined = $state();
+	// The outline shows on windows wide enough for it beside the note (NoteOutline).
+	let outlineFits = $state(false);
+	$effect(() => {
+		const query = window.matchMedia('(min-width: 1280px)');
+		outlineFits = query.matches;
+		const change = () => (outlineFits = query.matches);
+		query.addEventListener('change', change);
+		return () => query.removeEventListener('change', change);
+	});
 	// The controls are shown in the top bar while there is one (wide window, not focus mode).
 	let docked = $derived(!!$noteBarSlot);
 
@@ -1065,6 +1077,13 @@
 						<button class="k-menu-item" role="menuitem" onclick={() => { showMoreMenu = false; showHistory = true; }}>
 							<History class="h-4 w-4 text-[var(--color-text-muted)]" /> Version history
 						</button>
+						{/if}
+						{#if outlineFits}
+						<button class="k-menu-item" role="menuitemcheckbox" aria-checked={$outlineShown} onclick={() => { showMoreMenu = false; outlineShown.update((on) => !on); }}>
+							<ListTree class="h-4 w-4 text-[var(--color-text-muted)]" /> {$outlineShown ? 'Hide outline' : 'Show outline'}
+						</button>
+						{/if}
+						{#if !linked}
 						<button class="k-menu-item" role="menuitem" onclick={() => { showMoreMenu = false; if (memory) setMemoryFavorite(memory.id, !memory.favoritedAt); }}>
 							<Star class="h-4 w-4 text-[var(--color-text-muted)]" /> {memory.favoritedAt ? 'Remove from favorites' : 'Add to favorites'}
 						</button>
@@ -1145,6 +1164,10 @@
 					><X class="h-3 w-3" /></button>
 				{/if}
 			</div>
+		{/if}
+
+		{#if $outlineShown}
+			<NoteOutline {scrollArea} />
 		{/if}
 
 		<!-- Editor -->
