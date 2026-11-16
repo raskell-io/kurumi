@@ -4,6 +4,7 @@
 	import { memoryObjects, folders, extractWikilinks, vaultLinkResolver, type MemoryObject, type Folder } from '$lib/db';
 	import { goto } from '$app/navigation';
 	import ForceGraph from 'force-graph';
+	import { formatDay } from '$lib/dates/format';
 	import { Search, X, ArrowRight, ZoomIn, ZoomOut, Maximize } from 'lucide-svelte';
 
 	interface Props {
@@ -127,6 +128,8 @@
 		fontSans: string;
 	}
 
+	// Bumped when the theme is read again, so the legend's colours follow it.
+	let themeVersion = $state(0);
 	let theme: GraphTheme = {
 		isDark: false,
 		accent: '#7287fd',
@@ -259,11 +262,7 @@
 	}
 
 	function formatDate(timestamp: number): string {
-		return new Date(timestamp).toLocaleDateString('en-US', {
-			month: 'short',
-			day: 'numeric',
-			year: 'numeric'
-		});
+		return formatDay(timestamp);
 	}
 
 	function getWordCount(content: string): number {
@@ -343,7 +342,8 @@
 			node.id === selectedNode?.id ||
 			node.id === highlightNoteId ||
 			(matchingIds?.has(node.id) ?? false);
-		if (!emphasized && (globalScale < 1.6 || matchingIds)) return;
+		const few = (graph?.graphData().nodes.length ?? 0) <= FEW_NODES;
+		if (!emphasized && ((globalScale < 1.6 && !few) || matchingIds)) return;
 
 		const fontSize = 11 / globalScale;
 		const radius = Math.sqrt(Math.max(0, node.val)) * 4; // force-graph default nodeRelSize
@@ -357,6 +357,56 @@
 		ctx.strokeText(label, node.x, node.y + radius + 2 / globalScale);
 		ctx.fillStyle = emphasized ? theme.text : theme.muted;
 		ctx.fillText(label, node.x, node.y + radius + 2 / globalScale);
+	}
+
+	// ---- Fitting the view ----
+	// A graph of a handful of notes fitted edge to edge became a few giant
+	// circles. The view is fitted with room for the labels and the overlays
+	// (title top left, toolbar top right, hints at the bottom), and never
+	// zoomed in so far that a node is drawn wider than MAX_NODE_PX.
+	const FEW_NODES = 30;
+	const MAX_NODE_PX = 20;
+
+	function fitView(ms = 400) {
+		if (!graph || !containerRef) return;
+		const nodes = graph.graphData().nodes.filter((n) => n.x !== undefined && n.y !== undefined);
+		if (nodes.length === 0) return;
+		const width = containerRef.clientWidth;
+		const height = containerRef.clientHeight;
+		let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, maxR = 0;
+		for (const n of nodes) {
+			const r = Math.sqrt(Math.max(0, n.val)) * 4;
+			maxR = Math.max(maxR, r);
+			minX = Math.min(minX, n.x! - r);
+			maxX = Math.max(maxX, n.x! + r);
+			minY = Math.min(minY, n.y! - r);
+			maxY = Math.max(maxY, n.y! + r);
+		}
+		// Labels hang below a node and reach to both sides of it.
+		const side = Math.min(nodes.length <= FEW_NODES ? 120 : 48, width * 0.2);
+		const top = Math.min(72, height * 0.15);
+		const bottom = Math.min(64, height * 0.15);
+		const spanX = Math.max(maxX - minX, 1);
+		const spanY = Math.max(maxY - minY, 1);
+		let zoom = Math.min((width - 2 * side) / spanX, (height - top - bottom) / spanY);
+		zoom = Math.min(zoom, MAX_NODE_PX / Math.max(maxR, 1), 4);
+		zoom = Math.max(zoom, 0.05);
+		// Centre the nodes in the space between the overlays.
+		const cx = (minX + maxX) / 2;
+		const cy = (minY + maxY) / 2 - (top - bottom) / 2 / zoom;
+		graph.centerAt(cx, cy, ms);
+		graph.zoom(zoom, ms);
+	}
+
+	// The same notes start in the same places, so the layout doesn't change
+	// from one visit (or device) to the next.
+	function seedPosition(n: GraphNode) {
+		let hash = 0;
+		for (let i = 0; i < n.id.length; i++) hash = (Math.imul(hash, 31) + n.id.charCodeAt(i)) | 0;
+		const angle = ((hash >>> 0) % 3600) / 3600 * Math.PI * 2;
+		const radius = 20 + ((hash >>> 12) % 80);
+		n.x = Math.cos(angle) * radius;
+		n.y = Math.sin(angle) * radius;
 	}
 
 	/** Re-assign accessors so force-graph repaints with current state. */
@@ -397,6 +447,8 @@
 			if (prev) {
 				n.x = prev.x;
 				n.y = prev.y;
+			} else {
+				seedPosition(n);
 			}
 		}
 
@@ -407,6 +459,7 @@
 		if (!containerRef || graph) return;
 
 		theme = readTheme();
+		themeVersion++;
 
 		graph = new ForceGraph<GraphNode, GraphLink>(containerRef)
 			.nodeLabel(() => '') // Disable default tooltip, we use custom
@@ -450,12 +503,18 @@
 			})
 			.cooldownTicks(100)
 			.onEngineStop(() => {
-				graph?.zoomToFit(400, 50);
+				fitView(400);
 			})
 			.onBackgroundClick(() => {
 				// Dismiss popup when clicking on empty space
 				selectedNode = null;
 			});
+
+		// Linked notes far enough apart for their labels, and unlinked ones
+		// not pushed off to the edges (a small graph stays one picture).
+		(graph.d3Force('link') as { distance?: (d: number) => unknown } | undefined)?.distance?.(56);
+		(graph.d3Force('charge') as { strength?: (s: number) => unknown; distanceMax?: (d: number) => unknown } | undefined)?.strength?.(-90);
+		(graph.d3Force('charge') as { distanceMax?: (d: number) => unknown } | undefined)?.distanceMax?.(220);
 
 		refreshGraphData();
 
@@ -501,6 +560,7 @@
 		// Repaint with fresh tokens when the theme changes
 		const onThemeChange = () => {
 			theme = readTheme();
+			themeVersion++;
 			repaint();
 		};
 		const themeObserver = new MutationObserver(onThemeChange);
@@ -572,7 +632,7 @@
 			if (wasFiltered || willFilter) {
 				refreshGraphData();
 				// Zoom to fit after filter
-				if (willFilter) setTimeout(() => graph?.zoomToFit(400, 50), 100);
+				if (willFilter) setTimeout(() => fitView(400), 100);
 			} else {
 				const nodes = graph!.graphData().nodes;
 				matchingIds = q ? new Set(nodes.filter((n) => nodeMatchesSearch(n)).map((n) => n.id)) : null;
@@ -587,7 +647,7 @@
 	}
 
 	function zoomToFit() {
-		graph?.zoomToFit(300, 50);
+		fitView(300);
 	}
 
 	function toggleSearch() {
@@ -605,6 +665,23 @@
 			searchQuery = '';
 		}
 	}
+
+	// What the colours mean: a node takes its folder's colour. The folders
+	// with the most notes, then a count of the rest.
+	let legend = $derived.by(() => {
+		if (!mounted || themeVersion < 0) return { items: [] as { id: string | null; name: string; color: string; count: number }[], more: 0 };
+		const counts = new Map<string | null, number>();
+		for (const m of memoriesData) counts.set(m.folderId ?? null, (counts.get(m.folderId ?? null) ?? 0) + 1);
+		const all = [...counts.entries()]
+			.map(([id, count]) => ({
+				id,
+				name: id ? (foldersData.find((f) => f.id === id)?.name ?? 'Folder') : 'Not in a folder',
+				color: getFolderColor(id),
+				count
+			}))
+			.sort((a, b) => b.count - a.count);
+		return { items: all.slice(0, 5), more: Math.max(0, all.length - 5) };
+	});
 
 	// Count matching nodes
 	let matchCount = $derived.by(() => {
@@ -667,6 +744,15 @@
 
 <div class="graph-container">
 	<div bind:this={containerRef} class="h-full w-full"></div>
+
+	{#if legend.items.length > 1}
+		<ul class="graph-legend" aria-label="Colours: the folder a note is in">
+			{#each legend.items as item (item.id)}
+				<li><span class="legend-dot" style="background: {item.color}"></span>{item.name}</li>
+			{/each}
+			{#if legend.more > 0}<li class="legend-more">{legend.more} more {legend.more === 1 ? 'folder' : 'folders'}</li>{/if}
+		</ul>
+	{/if}
 
 	<!-- Floating toolbar: search + zoom -->
 	<div class="graph-toolbar k-card">
@@ -775,6 +861,46 @@
 </div>
 
 <style>
+	/* What the colours mean, bottom right, out of the way of the hints */
+	.graph-legend {
+		position: absolute;
+		right: 1rem;
+		bottom: 0.75rem;
+		z-index: 10;
+		display: flex;
+		max-width: min(16rem, 45%);
+		flex-direction: column;
+		gap: 0.125rem;
+		padding: 0.375rem 0.5rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		background: color-mix(in srgb, var(--color-bg) 88%, transparent);
+		font-size: 0.6875rem;
+		color: var(--color-text-muted);
+		pointer-events: none;
+	}
+
+	.graph-legend li {
+		display: flex;
+		align-items: center;
+		gap: 0.375rem;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+	}
+
+	.legend-dot {
+		width: 0.5rem;
+		height: 0.5rem;
+		flex-shrink: 0;
+		border-radius: 999px;
+	}
+
+	.legend-more {
+		padding-left: 0.875rem;
+		color: var(--color-text-faint);
+	}
+
 	.graph-container {
 		position: relative;
 		height: 100%;

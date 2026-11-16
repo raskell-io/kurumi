@@ -6,6 +6,7 @@
 	 * sort. Values live on the notes (customProps), so a row is just a note.
 	 */
 	import { goto } from '$app/navigation';
+	import { formatDayWithWeekday, formatMonth } from '$lib/dates/format';
 	import {
 		databaseViews,
 		memoryObjects,
@@ -1052,14 +1053,17 @@
 					<button type="button" class="k-btn k-btn-primary mt-2" onclick={addDateProperty}><Plus class="h-3.5 w-3.5" />Add a Date property</button>
 				</div>
 			{:else}
+				<!-- The same month grid as the Calendar page: title left, Today and the arrows right. -->
 				<div class="db-cal-head">
-					<button type="button" class="k-icon-btn" onclick={() => shiftMonth(-1)} aria-label="Previous month"><ChevronLeft class="h-4 w-4" /></button>
-					<h2 class="min-w-40 text-center text-sm font-semibold">{month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</h2>
-					<button type="button" class="k-icon-btn" onclick={() => shiftMonth(1)} aria-label="Next month"><ChevronRight class="h-4 w-4" /></button>
-					<button type="button" class="k-btn k-btn-ghost" onclick={() => (month = new Date(new Date().getFullYear(), new Date().getMonth(), 1))}>Today</button>
+					<h2 class="db-cal-title">{formatMonth(month)}</h2>
+					<button type="button" class="k-btn k-btn-sm" onclick={() => (month = new Date(new Date().getFullYear(), new Date().getMonth(), 1))}>Today</button>
+					<button type="button" class="k-icon-btn" onclick={() => shiftMonth(-1)} aria-label="Previous month" title="Previous month"><ChevronLeft class="h-4 w-4" /></button>
+					<button type="button" class="k-icon-btn" onclick={() => shiftMonth(1)} aria-label="Next month" title="Next month"><ChevronRight class="h-4 w-4" /></button>
+				</div>
+				<div class="db-cal-wds" aria-hidden="true">
+					{#each weekdays as wd (wd)}<div>{wd}</div>{/each}
 				</div>
 				<div class="db-cal" role="grid" aria-label="Calendar">
-					{#each weekdays as wd (wd)}<div class="db-cal-wd" role="columnheader">{wd}</div>{/each}
 					{#each weeks as week, w (w)}
 						{#each week as day (iso(day))}
 							{@const key = iso(day)}
@@ -1069,6 +1073,7 @@
 								class:is-today={key === todayIso}
 								class:is-target={dropTarget === key}
 								role="gridcell"
+								aria-label={formatDayWithWeekday(day)}
 								tabindex="-1"
 								ondragover={(e) => {
 									if (!dragging) return;
@@ -1733,43 +1738,60 @@
 		color: var(--color-text-faint);
 	}
 
-	/* Calendar */
+	/* Calendar: the Calendar page's month grid (routes/calendar): hairlines
+	   inside a rounded frame, weekday names above it, the day's number top
+	   left in a round chip, the neighbouring months' numbers faint. */
 	.db-cal-head {
 		display: flex;
 		align-items: center;
-		gap: 0.375rem;
-		margin-bottom: 0.5rem;
+		gap: 0.125rem;
+		margin-bottom: 0.75rem;
+	}
+
+	.db-cal-title {
+		flex: 1;
+		margin-right: 0.25rem;
+		font-size: 1.125rem;
+		font-weight: 600;
+		letter-spacing: -0.01em;
+		color: var(--color-text);
+	}
+
+	.db-cal-head .k-btn {
+		margin-right: 0.25rem;
+	}
+
+	.db-cal-wds {
+		display: grid;
+		grid-template-columns: repeat(7, minmax(0, 1fr));
+		padding-bottom: 0.375rem;
+		font-size: 0.6875rem;
+		font-weight: 500;
+		color: var(--color-text-faint);
+	}
+
+	.db-cal-wds > div {
+		padding: 0 0.5rem;
 	}
 
 	.db-cal {
 		display: grid;
 		grid-template-columns: repeat(7, minmax(0, 1fr));
-		border-top: 1px solid var(--color-border);
-		border-left: 1px solid var(--color-border);
-	}
-
-	.db-cal-wd {
-		padding: 0.375rem;
-		border-right: 1px solid var(--color-border);
-		border-bottom: 1px solid var(--color-border);
-		font-size: 0.6875rem;
-		color: var(--color-text-faint);
-		text-align: right;
+		gap: 1px;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		background: var(--color-border);
+		overflow: hidden;
 	}
 
 	.db-cal-day {
 		display: flex;
-		min-height: 6.5rem;
+		min-height: 6rem;
 		min-width: 0;
 		flex-direction: column;
 		gap: 0.125rem;
-		padding: 0.25rem;
-		border-right: 1px solid var(--color-border);
-		border-bottom: 1px solid var(--color-border);
-	}
-
-	.db-cal-day.is-other {
-		background: var(--color-bg-secondary);
+		padding: 0.375rem;
+		background: var(--color-bg);
 	}
 
 	.db-cal-day.is-target {
@@ -1780,20 +1802,33 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
+	}
+
+	.db-cal-num span {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 1.5rem;
+		height: 1.5rem;
+		padding: 0 0.25rem;
+		border-radius: 999px;
 		font-size: 0.75rem;
-		color: var(--color-text-muted);
+		font-weight: 500;
+		font-variant-numeric: tabular-nums;
+		color: var(--color-text);
+	}
+
+	.db-cal-day.is-other .db-cal-num span {
+		color: var(--color-text-faint);
 	}
 
 	.db-cal-day.is-today .db-cal-num span {
-		padding: 0 0.375rem;
-		border-radius: 999px;
 		background: var(--color-accent);
-		color: var(--color-bg);
+		color: var(--color-on-accent);
 		font-weight: 600;
 	}
 
 	.db-cal-add {
-		order: -1;
 		display: inline-flex;
 		padding: 0.125rem;
 		border-radius: var(--radius-sm);
