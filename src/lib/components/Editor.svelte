@@ -1259,6 +1259,12 @@
 		padding: 0;
 	}
 
+	/* Long lines scroll sideways, as in Read mode, instead of wrapping */
+	:global(.milkdown .ProseMirror pre) {
+		white-space: pre;
+		overflow-x: auto;
+	}
+
 	/* The language of a code block, as a small label in its corner */
 	:global(.milkdown pre[data-language]) {
 		position: relative;
@@ -1270,12 +1276,9 @@
 		top: 0.5em;
 		right: 0.75em;
 		font-family: var(--font-sans);
-		font-size: 0.65em;
-		font-weight: 600;
-		letter-spacing: 0.05em;
-		text-transform: uppercase;
-		color: var(--color-accent);
-		opacity: 0.8;
+		font-size: 0.6875rem;
+		text-transform: lowercase;
+		color: var(--color-text-faint);
 		pointer-events: none;
 	}
 
@@ -1311,13 +1314,11 @@
 		border: 1px solid transparent;
 		border-radius: var(--radius-sm, 4px);
 		background: transparent;
-		color: var(--color-accent);
+		color: var(--color-text-faint);
 		font: inherit;
-		font-weight: 600;
-		letter-spacing: 0.04em;
-		text-transform: uppercase;
+		font-size: 0.6875rem;
+		text-transform: lowercase;
 		text-align: right;
-		opacity: 0.8;
 	}
 
 	:global(.milkdown .kurumi-code-lang::placeholder) {
@@ -1329,9 +1330,9 @@
 	:global(.milkdown .kurumi-code-lang:is(:hover, :focus)) {
 		border-color: var(--color-border);
 		background: var(--color-bg);
+		color: var(--color-text);
 		text-align: left;
 		text-transform: none;
-		opacity: 1;
 		outline: none;
 	}
 
@@ -1952,36 +1953,36 @@
 		font-style: italic;
 	}
 
-	/* Tables (GFM) */
-	:global(.milkdown table) {
-		border-collapse: collapse;
-		width: 100%;
+	/* Tables (GFM), as in Read mode: sized to their content with plain
+	   borders, scrolling sideways when wider than the column. The theme
+	   made them full-width, fixed-layout and shadowed. */
+	:global(.milkdown-editor .milkdown .ProseMirror table) {
+		display: block;
+		width: max-content;
+		max-width: 100%;
 		margin: 1em 0;
+		overflow-x: auto;
+		-webkit-overflow-scrolling: touch;
+		border-collapse: collapse;
+		border: none;
+		border-radius: 0;
+		box-shadow: none;
+		table-layout: auto;
+		font-size: 0.95em;
+		line-height: inherit;
 	}
 
-	/* Phones: wide tables scroll sideways instead of squeezing their columns
-	   to a letter each. The theme makes tables fixed-layout; here the table
-	   becomes its own scroller (as in Read mode) with natural column widths. */
-	@media (max-width: 768px) {
-		:global(.milkdown .ProseMirror table) {
-			display: block;
-			max-width: 100%;
-			width: max-content;
-			overflow-x: auto;
-			table-layout: auto;
-			-webkit-overflow-scrolling: touch;
-		}
-
-		:global(.milkdown .ProseMirror :is(td, th)) {
-			min-width: 6em;
-		}
-	}
-
-	:global(.milkdown th),
-	:global(.milkdown td) {
+	:global(.milkdown-editor .milkdown .ProseMirror :is(th, td)) {
+		min-width: 5em;
+		padding: 0.4em 0.9em !important;
 		border: 1px solid var(--color-border);
-		padding: 0.5em 1em;
 		text-align: left;
+		vertical-align: top;
+	}
+
+	:global(.milkdown-editor .milkdown .ProseMirror :is(th, td) > p) {
+		margin: 0;
+		font-size: inherit;
 	}
 
 	:global(.milkdown th) {

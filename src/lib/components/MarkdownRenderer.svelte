@@ -922,6 +922,15 @@
 		vertical-align: top;
 	}
 
+	/* A column's alignment (|---:|), as the editor shows it */
+	.markdown-content :global(:is(th, td)[align='right']) {
+		text-align: right;
+	}
+
+	.markdown-content :global(:is(th, td)[align='center']) {
+		text-align: center;
+	}
+
 	.markdown-content :global(th) {
 		background: var(--color-bg-secondary);
 		font-weight: 600;
