@@ -1140,6 +1140,16 @@ function scheduleCompaction(delay = COMPACT_AFTER_IDLE_MS): void {
 	}, delay);
 }
 
+/**
+ * Resolves once every change made so far is in IndexedDB: for anything about
+ * to reload or leave the page (the browser tests use it instead of guessing
+ * how long a save takes).
+ */
+export function whenSaved(): Promise<void> {
+	if (!saving) return saveDirty ? saveDoc() : Promise.resolve();
+	return saving.then(() => (saveDirty ? saveDoc() : undefined));
+}
+
 function saveDoc(): Promise<void> {
 	saveDirty = true;
 	if (!saving) {

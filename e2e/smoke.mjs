@@ -178,6 +178,9 @@ async function freshPage(browser, setup) {
 	if (setup) await setup(page);
 	await page.goto(BASE, { waitUntil: 'load' });
 	await page.waitForSelector('aside');
+	// Deliberate: lets the start-up work (digest and review checks, the
+	// note-task sync starting) finish before a scenario begins. Nothing is
+	// read here; scenarios wait for what they look at.
 	await sleep(800);
 	return { page, errors, context };
 }
@@ -365,6 +368,8 @@ async function openTreeNote(page, title) {
 	await clickText(page, '.note-row', title);
 	await page.waitForFunction((title) => document.querySelector('input[aria-label="Note title"]')?.value === title, { timeout: 15000 }, title);
 	await page.waitForSelector('main .ProseMirror');
+	// Deliberate: the editor finishes setting up before a scenario types or
+	// clicks in it. Nothing is read here.
 	await sleep(700);
 }
 
@@ -395,17 +400,53 @@ const LINKED_FOO =
 	'---\nid: project.foo\ntype: project\nscope: "team"\ntitle: Foo launch\nsummary: Ship it.\nstatus: active\nsource: https://example.com/a#b\nupdated: 2026-01-02\npaths:\n  - src/a\n  - src/b\n---\n\n# Foo\n\nLine one.\nLine two.\nLine three.\n\nNeeds [[project.bar]] and [[Nowhere note]].\n';
 const LINKED_BAR = '---\nid: project.bar\ntitle: Bar plan\n---\nThe bar plan, after [[project.foo|the launch]].\n';
 
-// Click the first element matching `selector` whose text includes `text`.
+// Waits until `read()` gives a value `ok` accepts, checking every 100 ms
+// for up to 8 s, and returns it. Out of time it returns the last value read,
+// so the assertion that follows fails on what was actually there (and says
+// what that was, also where the assertion's message doesn't). For state
+// the app produces late: stored notes, to-dos, the page after a debounced
+// update, files in a folder. A fixed pause before reading it passed on a fast
+// machine and failed on a busy CI runner.
+async function settled(read, ok, timeout = 8000) {
+	const until = Date.now() + timeout;
+	for (;;) {
+		const value = await read();
+		if (await ok(value)) return value;
+		if (Date.now() > until) {
+			let shown;
+			try {
+				shown = JSON.stringify(value);
+			} catch {
+				shown = String(value);
+			}
+			console.log(`    waited ${timeout} ms; last seen: ${shown?.length > 2000 ? `${shown.slice(0, 2000)}…` : shown}`);
+			return value;
+		}
+		await sleep(100);
+	}
+}
+
+// The stored body of note `id`, once `ok` accepts it (see settled).
+const storedBody = (page, id, ok) => settled(() => db(page, `return db.getMemoryObject(arg)?.bodyMarkdown ?? null;`, id), (body) => body !== null && ok(body));
+
+// Everything the page has changed is in IndexedDB: before a reload or a
+// full navigation, which would otherwise race the save.
+const saved = (page) => db(page, 'await db.whenSaved();');
+
+// Click the first element matching `selector` whose text includes `text`
+// (waiting up to 8 s for it to appear: a menu or list being drawn).
 async function clickText(page, selector, text) {
-	const found = await page.evaluate(
-		(selector, text) => {
-			const el = [...document.querySelectorAll(selector)].find((e) => e.textContent.includes(text));
-			el?.click();
-			return !!el;
-		},
-		selector,
-		text
-	);
+	const click = () =>
+		page.evaluate(
+			(selector, text) => {
+				const el = [...document.querySelectorAll(selector)].find((e) => e.textContent.includes(text));
+				el?.click();
+				return !!el;
+			},
+			selector,
+			text
+		);
+	const found = await settled(click, (clicked) => clicked);
 	assert.ok(found, `no ${selector} containing "${text}"`);
 	await sleep(250);
 }
@@ -414,18 +455,21 @@ async function clickText(page, selector, text) {
 // element is actually what's on top there (catches menus hidden behind
 // other panes).
 async function clickOnTop(page, selector, text) {
-	const point = await page.evaluate(
-		(selector, text) => {
-			const el = [...document.querySelectorAll(selector)].find((e) => e.textContent.includes(text));
-			if (!el) return null;
-			const r = el.getBoundingClientRect();
-			const x = r.left + r.width / 2;
-			const y = r.top + r.height / 2;
-			return { x, y, onTop: el.contains(document.elementFromPoint(x, y)) };
-		},
-		selector,
-		text
-	);
+	const where = () =>
+		page.evaluate(
+			(selector, text) => {
+				const el = [...document.querySelectorAll(selector)].find((e) => e.textContent.includes(text));
+				if (!el) return null;
+				const r = el.getBoundingClientRect();
+				const x = r.left + r.width / 2;
+				const y = r.top + r.height / 2;
+				return { x, y, onTop: el.contains(document.elementFromPoint(x, y)) };
+			},
+			selector,
+			text
+		);
+	// Waits for it to be there (a menu opening); being covered still fails at once.
+	const point = await settled(where, (p) => p !== null);
 	assert.ok(point, `no ${selector} containing "${text}"`);
 	assert.ok(point.onTop, `${selector} "${text}" is covered by another element`);
 	await page.mouse.click(point.x, point.y);
@@ -461,7 +505,11 @@ async function db(page, source, arg) {
 				.find((n) => n.includes('/src/lib/db/store.ts'));
 			const db = await import(url);
 			const kv = await import('/node_modules/idb-keyval/dist/index.js');
-			return new Function('db', 'kv', 'arg', `return (async () => {${source}})()`)(db, kv, arg);
+			const result = await new Function('db', 'kv', 'arg', `return (async () => {${source}})()`)(db, kv, arg);
+			// What it changed is in IndexedDB before the scenario goes on (a
+			// reload or full navigation next would race the save).
+			await Promise.race([db.whenSaved?.().catch(() => {}), new Promise((r) => setTimeout(r, 8000))]);
+			return result;
 		},
 		source,
 		arg
@@ -607,7 +655,7 @@ const scenarios = {
 		await page.click('.note-row .row-action');
 		await sleep(250);
 		await clickOnTop(page, '.k-menu .k-menu-item', 'Rename');
-		assert.ok(await page.$('.note-row input'), 'rename input did not appear');
+		assert.ok(await settled(() => page.$('.note-row input'), Boolean), 'rename input did not appear');
 		assert.deepEqual(errors, []);
 	},
 
@@ -632,23 +680,20 @@ const scenarios = {
 		await page.keyboard.press('ArrowUp');
 		assert.ok((await focused()).length > 0);
 		await page.keyboard.press('Escape');
-		await sleep(250);
-		assert.equal(await open('More places'), false, 'Escape left the menu open');
+		assert.equal(await settled(() => open('More places'), (o) => !o), false, 'Escape left the menu open');
 		assert.equal(await focused(), 'More places');
 		// A press in the note closes it too (it used to stay open).
 		await page.click('button[aria-label="More places"]');
 		await page.waitForSelector('[role="menu"][aria-label="More places"]');
 		await page.click('main .ProseMirror');
-		await sleep(250);
-		assert.equal(await open('More places'), false, 'a press in the note left the menu open');
+		assert.equal(await settled(() => open('More places'), (o) => !o), false, 'a press in the note left the menu open');
 
 		// The note's menu: Escape from anywhere in it.
 		await page.click('button[aria-label="More actions"]');
 		await page.waitForSelector('[role="menu"][aria-label="Note actions"]');
 		await page.keyboard.press('ArrowDown');
 		await page.keyboard.press('Escape');
-		await sleep(250);
-		assert.equal(await open('Note actions'), false);
+		assert.equal(await settled(() => open('Note actions'), (o) => !o), false);
 		assert.equal(await focused(), 'More actions');
 
 		// New vault: the focus starts in the field and Tab keeps it inside; Escape from the field closes it.
@@ -656,8 +701,7 @@ const scenarios = {
 		await page.waitForSelector('[role="menu"][aria-label="Vaults"]');
 		await clickText(page, '.k-menu-item', 'New vault');
 		await page.waitForSelector('.k-dialog input');
-		await sleep(100);
-		assert.equal(await page.evaluate(() => document.activeElement.tagName), 'INPUT');
+		assert.equal(await settled(() => page.evaluate(() => document.activeElement.tagName), (t) => t === 'INPUT'), 'INPUT');
 		for (let i = 0; i < 12; i++) {
 			await page.keyboard.press('Tab');
 			assert.ok(await page.evaluate(() => !!document.activeElement.closest('.k-dialog')), `Tab ${i + 1} left the dialog`);
@@ -704,8 +748,7 @@ const scenarios = {
 		await page.keyboard.press('ArrowRight');
 		await page.waitForFunction(() => document.querySelector('.folder-row').getAttribute('aria-expanded') === 'true');
 		await page.keyboard.press('ArrowRight');
-		await sleep(200);
-		assert.equal(await focused(), 'Inside');
+		assert.equal(await settled(focused, (f) => f === 'Inside'), 'Inside');
 		await page.keyboard.press('Enter');
 		await noteShown(page, 'Inside', { errors });
 		await page.focus('[role="tree"] [role="treeitem"][aria-current="page"]');
@@ -736,9 +779,10 @@ const scenarios = {
 		const { writeFileSync } = await import('node:fs');
 		writeFileSync(file, png);
 		await (await page.$('.k-dialog input[type=file]')).uploadFile(file);
-		await sleep(500);
+		// The file is read before Save takes it.
+		await page.waitForFunction(() => [...document.querySelectorAll('.k-dialog button')].some((b) => b.textContent.includes('Replace image')));
 		await clickText(page, '.k-dialog button', 'Save');
-		assert.ok(await page.$(`${trigger} img`), 'vault logo not shown');
+		assert.ok(await settled(() => page.$(`${trigger} img`), Boolean), 'vault logo not shown');
 		rmSync(dir, { recursive: true, force: true });
 		assert.deepEqual(errors, []);
 	},
@@ -752,15 +796,15 @@ const scenarios = {
 		await clickText(page, 'button.insert-btn', 'Icon');
 		await page.keyboard.type('rocket');
 		await page.keyboard.press('Enter');
-		await sleep(300);
-		assert.ok(await page.$('button[aria-label="Change icon"]'), 'page icon not shown above title');
+		assert.ok(await settled(() => page.$('button[aria-label="Change icon"]'), Boolean), 'page icon not shown above title');
+		await settled(() => treeRowText(page), (rows) => rows.some((t) => t.includes('🚀') && t.includes('Alpha')));
 		assert.ok((await treeRowText(page)).some((t) => t.includes('🚀') && t.includes('Alpha')), 'tree row has no icon');
 		assert.match(await page.$eval('.tab-bar', (el) => el.textContent), /🚀/, 'tab has no icon');
 
 		// Favorite via the header star; it appears in the sidebar section.
 		await page.click('button[aria-label="Add to favorites"]');
-		await sleep(300);
-		assert.match(await page.$eval('#favorites-list', (el) => el.textContent), /Alpha/);
+		await page.waitForSelector('#favorites-list');
+		assert.match(await settled(() => page.$eval('#favorites-list', (el) => el.textContent), (t) => /Alpha/.test(t)), /Alpha/);
 
 		// Unfavorite from the tree row menu; the section disappears.
 		await page.evaluate(() => {
@@ -769,11 +813,12 @@ const scenarios = {
 		});
 		await sleep(250);
 		await clickOnTop(page, '.k-menu .k-menu-item', 'Remove from favorites');
-		assert.equal(await page.$('#favorites-list'), null, 'favorites section still shown');
+		assert.equal(await settled(() => page.$('#favorites-list'), (el) => el === null), null, 'favorites section still shown');
 
 		// Persisted across reload.
 		await page.click('button[aria-label="Add to favorites"]');
-		await sleep(800);
+		await page.waitForSelector('#favorites-list');
+		await saved(page);
 		await page.reload({ waitUntil: 'load' });
 		await page.waitForSelector('#favorites-list');
 		assert.match(await page.$eval('#favorites-list', (el) => el.textContent), /🚀\s*Alpha/);
@@ -806,7 +851,8 @@ const scenarios = {
 		await newNote(page, 'Beta');
 		await newNote(page, 'Alpha');
 		await page.click('button[aria-label="Add to favorites"]');
-		await sleep(800);
+		await page.waitForSelector('#favorites-list');
+		await saved(page);
 		let hold = 0;
 		await page.setRequestInterception(true);
 		page.on('request', (request) => {
@@ -823,6 +869,8 @@ const scenarios = {
 			await press(page, MOD, 'o');
 			await page.waitForSelector('[role="listbox"]');
 			await page.waitForFunction(() => document.querySelector('input[aria-label="Note title"]')?.value === 'Alpha', { timeout: 20000 });
+			// Deliberate: the focus must still be in the switcher a moment after
+			// the note page arrived (it used to be taken right then).
 			await sleep(300);
 			assert.ok(await inSwitcher(), `note page held ${delay}ms: the switcher lost the focus (${JSON.stringify(await pageState(page))})`);
 			const before = await pageState(page);
@@ -833,7 +881,8 @@ const scenarios = {
 			await page.waitForSelector('[role="listbox"]');
 			await page.keyboard.press('Enter');
 			await noteShown(page, 'Alpha', { errors, timeout: 10000 });
-			await sleep(500);
+			// The note's view is recorded before the next reload.
+			await saved(page);
 		}
 		hold = 0;
 
@@ -846,6 +895,7 @@ const scenarios = {
 		await noteShown(page, 'Beta', { errors, timeout: 10000 });
 		// And once it is closed, it holds nothing.
 		await page.click('main .ProseMirror');
+		// Deliberate: a closed switcher must not pull the focus back in this time.
 		await sleep(200);
 		assert.equal(await page.evaluate(() => !!document.activeElement?.closest?.('.ProseMirror')), true);
 		assert.deepEqual(errors, []);
@@ -860,7 +910,10 @@ const scenarios = {
 		await newNote(page, 'Source');
 		await page.click('.ProseMirror');
 		await page.keyboard.type('See [[Target]] here');
-		await sleep(500);
+		// Once saved, and (deliberate pause) the redraw that follows a save is
+		// done: it would take the link from under the pointer.
+		await savedBody(page, 'Source', /\[\[Target\]\] here/);
+		await sleep(300);
 		await page.hover('.ProseMirror .wikilink');
 		await page.waitForSelector('[role="tooltip"]', { timeout: 3000 });
 		const preview = await page.$eval('[role="tooltip"]', (el) => el.textContent);
@@ -875,26 +928,23 @@ const scenarios = {
 		// Rename through the title field
 		await page.click('input[aria-label="Note title"]', { clickCount: 3 });
 		await page.keyboard.type('Q3 plan');
-		await sleep(700);
-		assert.ok((await treeRowText(page)).includes('Q3 plan'), 'rename not reflected in the tree');
+		assert.ok((await settled(() => treeRowText(page), (rows) => rows.includes('Q3 plan'))).includes('Q3 plan'), 'rename not reflected in the tree');
 		// Search finds it
 		await page.click('.note-header');
 		await press(page, MOD, 'k');
 		await page.keyboard.type('falcon');
-		await sleep(400);
-		const hits = await page.$$eval('[role="option"]', (o) => o.map((x) => x.textContent));
+		const hits = await settled(() => page.$$eval('[role="option"]', (o) => o.map((x) => x.textContent)), (h) => h.some((x) => x.includes('Q3 plan')));
 		assert.ok(hits.some((h) => h.includes('Q3 plan')), `search results: ${hits}`);
 		await page.keyboard.press('Escape');
 		// Trash from the note menu, then restore from Trash
 		await page.click('button[aria-label="More actions"]');
 		await clickText(page, '.k-menu-item', 'Move to trash');
-		await sleep(500);
-		assert.ok(!(await treeRowText(page)).includes('Q3 plan'), 'note still in tree after trash');
+		assert.ok(!(await settled(() => treeRowText(page), (rows) => !rows.includes('Q3 plan'))).includes('Q3 plan'), 'note still in tree after trash');
+		await saved(page);
 		await page.goto(`${BASE}/trash`, { waitUntil: 'load' });
-		await sleep(800);
+		await page.waitForSelector('button[aria-label="Restore Q3 plan"]');
 		await page.click('button[aria-label="Restore Q3 plan"]');
-		await sleep(500);
-		assert.ok((await treeRowText(page)).includes('Q3 plan'), 'note not restored');
+		assert.ok((await settled(() => treeRowText(page), (rows) => rows.includes('Q3 plan'))).includes('Q3 plan'), 'note not restored');
 		assert.equal(await savedBody(page, 'Q3 plan', 'Budget for Falcon\n'), 'Budget for Falcon\n');
 		assert.deepEqual(errors, []);
 	},
@@ -913,8 +963,7 @@ const scenarios = {
 			await page.keyboard.press('Enter');
 		}
 		await page.keyboard.type('Read the docs here');
-		await sleep(700);
-		let html = await editorHtml(page);
+		let html = await settled(() => editorHtml(page), (h) => /<h2>Title<\/h2>/.test(h) && /data-item-type="task"[^>]*data-checked="false"><p>Call Sam/.test(h) && /<blockquote><p>Quoted/.test(h));
 		assert.match(html, /<h2>Title<\/h2>/, html);
 		assert.match(html, /data-item-type="task"[^>]*data-checked="false"><p>Call Sam/, html);
 		assert.match(html, /<blockquote><p>Quoted/, html);
@@ -926,7 +975,7 @@ const scenarios = {
 			return { x: r.left + 20, y: r.top + r.height / 2 };
 		});
 		await page.mouse.move(para.x, para.y);
-		await sleep(500);
+		await page.waitForSelector('.bh-grip');
 		const grip = await page.evaluate(() => {
 			const r = document.querySelector('.bh-grip').getBoundingClientRect();
 			return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
@@ -934,7 +983,7 @@ const scenarios = {
 		await page.mouse.click(grip.x, grip.y);
 		await sleep(300);
 		await clickOnTop(page, '.k-menu .k-menu-item', 'Heading 3');
-		assert.match(await editorHtml(page), /<h3>Read the docs here<\/h3>/);
+		assert.match(await settled(() => editorHtml(page), (h) => /<h3>Read the docs here<\/h3>/.test(h)), /<h3>Read the docs here<\/h3>/);
 
 		// Tick the to-do
 		const box = await page.evaluate(() => {
@@ -981,8 +1030,7 @@ const scenarios = {
 		await typeInEditor(page, 'Falcon is the plan. falcon again.');
 		await press(page, MOD, 'Alt', 'KeyF');
 		await page.keyboard.type('falcon');
-		await sleep(300);
-		assert.equal(await page.$$eval('main .find-match', (m) => m.length), 2);
+		assert.equal(await settled(() => page.$$eval('main .find-match', (m) => m.length), (n) => n === 2), 2);
 		await page.type('input[aria-label="Replace with"]', 'Osprey');
 		await clickText(page, '.find-bar button', 'Replace in all notes');
 		await clickText(page, '.find-bar button', 'Replace all');
@@ -1018,8 +1066,7 @@ const scenarios = {
 		await page.waitForSelector('main .note-embed', { timeout: 3000 });
 		assert.match(await page.$eval('main .note-embed', (e) => e.textContent), /Must work offline/);
 		await db(page, `let ms; db.allMemoryObjects.subscribe((v) => (ms = v))(); const s = ms.find((m) => m.title === 'Specs'); db.updateMemoryObject(s.id, { bodyMarkdown: 'Updated spec' });`);
-		await sleep(400);
-		assert.match(await page.$eval('main .note-embed', (e) => e.textContent), /Updated spec/);
+		assert.match(await settled(() => page.$eval('main .note-embed', (e) => e.textContent), (t) => /Updated spec/.test(t)), /Updated spec/);
 		assert.deepEqual(errors, []);
 	},
 
@@ -1065,8 +1112,7 @@ const scenarios = {
 
 		// The caret opens the toggle; Enter in its title goes inside.
 		await page.click('main .kurumi-toggle-caret');
-		await sleep(200);
-		assert.equal((await look()).toggleOpen, true);
+		assert.equal((await settled(look, (l) => l.toggleOpen === true)).toggleOpen, true);
 		await caretAfter(page, 'Toggle title');
 		await page.keyboard.press('Enter');
 		await page.keyboard.type('Inside');
@@ -1121,14 +1167,12 @@ const scenarios = {
 		await page.waitForFunction(() => document.querySelector('nav[aria-label="Outline"] [aria-current="location"]')?.textContent.trim() === 'Part 9', { timeout: 3000 });
 		// Two headings are not an outline.
 		await openTreeNote(page, 'Short');
-		await sleep(500);
-		assert.equal(await page.$('nav[aria-label="Outline"]'), null);
+		assert.equal(await settled(() => page.$('nav[aria-label="Outline"]'), (el) => el === null), null);
 		// The note's menu hides it, on this device.
 		await openTreeNote(page, 'Long read');
 		await page.click('button[aria-label="More actions"]');
 		await clickText(page, '.k-menu-item', 'Hide outline');
-		await sleep(300);
-		assert.equal(await page.$('nav[aria-label="Outline"]'), null);
+		assert.equal(await settled(() => page.$('nav[aria-label="Outline"]'), (el) => el === null), null);
 		assert.equal(await page.evaluate(() => localStorage.getItem('kurumi-outline')), 'off');
 		assert.deepEqual(errors, []);
 	},
@@ -1144,14 +1188,14 @@ const scenarios = {
 			row.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, altKey: true }));
 		});
 		await page.waitForSelector('.split-pane .ProseMirror');
-		await sleep(500);
-		assert.match(await page.$eval('.split-pane .ProseMirror', (e) => e.textContent), /Beta body/, 'split pane opened empty');
+		assert.match(await settled(() => page.$eval('.split-pane .ProseMirror', (e) => e.textContent), (t) => /Beta body/.test(t)), /Beta body/, 'split pane opened empty');
 		await typeInEditor(page, ' plus split', '.split-pane .ProseMirror');
 		await typeInEditor(page, ' plus main');
 		assert.equal(await savedBody(page, 'Beta', 'Beta body plus split\n'), 'Beta body plus split\n');
 		assert.equal(await savedBody(page, 'Alpha', 'Alpha body plus main\n'), 'Alpha body plus main\n');
 		// A note created in the background (sync, the morning digest) leaves both editors alone
 		await db(page, `db.addMemoryObject('Arrived in the background', 'x');`);
+		// Deliberate: the editors get time to (wrongly) react to the new note.
 		await sleep(1500);
 		assert.deepEqual(errors, [], 'a background note broke an editor');
 		assert.equal(await bodyOf(page, 'Beta'), 'Beta body plus split\n');
@@ -1164,8 +1208,7 @@ const scenarios = {
 		await sleep(300);
 		await page.keyboard.press('Enter');
 		await page.keyboard.type('Q');
-		await sleep(300);
-		assert.match(await editorHtml(page), /<blockquote>/);
+		assert.match(await settled(() => editorHtml(page), (h) => /<blockquote>/.test(h)), /<blockquote>/);
 		assert.deepEqual(errors, []);
 	},
 
@@ -1173,19 +1216,16 @@ const scenarios = {
 		const { page, errors } = await freshPage(browser);
 		await db(page, `db.addActionItem({ text: 'Book venue', assignee: 'Ana' }); db.addActionItem({ text: 'Draft brief', assignee: 'Sam' });`);
 		await page.goto(`${BASE}/actions`, { waitUntil: 'load' });
-		await sleep(800);
 		await clickText(page, '.k-segmented button', 'Board');
-		const column = (i) => page.$$eval('.board-col', (cs, i) => [...cs[i].querySelectorAll('.board-card-text')].map((t) => t.textContent), i);
-		assert.deepEqual((await column(0)).sort(), ['Book venue', 'Draft brief']);
+		const column = (i) => page.$$eval('.board-col', (cs, i) => (cs[i] ? [...cs[i].querySelectorAll('.board-card-text')].map((t) => t.textContent) : []), i);
+		assert.deepEqual((await settled(() => column(0), (c) => c.length === 2)).sort(), ['Book venue', 'Draft brief']);
 		await page.evaluate(() => {
 			const card = [...document.querySelectorAll('.board-card')].find((c) => c.textContent.includes('Book venue'));
 			card.querySelector('button[title="Move right"]').click();
 		});
-		await sleep(300);
-		assert.deepEqual(await column(1), ['Book venue']);
+		assert.deepEqual(await settled(() => column(1), (c) => c.length === 1), ['Book venue']);
 		await page.select('select[aria-label="Filter by assignee"]', 'Sam');
-		await sleep(200);
-		assert.deepEqual(await column(1), []);
+		assert.deepEqual(await settled(() => column(1), (c) => c.length === 0), []);
 		assert.deepEqual(errors, []);
 	},
 
@@ -1207,6 +1247,7 @@ const scenarios = {
 		const shown = Date.now();
 		await page.waitForFunction(() => !document.querySelector('.undo-toast'), { timeout: 10000 });
 		assert.ok(Date.now() - shown > 4500, `gone after ${Date.now() - shown}ms`);
+		// Deliberate: it must not come back in this time.
 		await sleep(1500);
 		assert.equal(await toast(), null, 'the toast came back');
 		// The deletion can still be undone from the keyboard.
@@ -1218,6 +1259,7 @@ const scenarios = {
 		await page.waitForFunction(() => !!document.querySelector('.undo-toast'));
 		await page.click('aside a[href="/inbox"]');
 		await page.waitForFunction(() => !document.querySelector('.undo-toast'), { timeout: 2000 });
+		// Deliberate: it must not come back on the new page.
 		await sleep(600);
 		assert.equal(await toast(), null);
 		assert.deepEqual(errors, []);
@@ -1243,9 +1285,9 @@ const scenarios = {
 		await page.waitForSelector('#labs input[type=checkbox]');
 		assert.equal(await page.$('#labs-list'), null);
 		await page.evaluate(() => document.querySelector('#labs input[type=checkbox]').click());
-		await sleep(300);
 		await clickText(page, 'button.section-label', 'Labs');
-		assert.match(await page.$eval('#labs-list', (e) => e.textContent), /Habits/);
+		const labs = () => page.$eval('#labs-list', (e) => e.textContent).catch(() => '');
+		assert.match(await settled(labs, (t) => /Habits/.test(t)), /Habits/);
 		assert.deepEqual(errors, []);
 	},
 
@@ -1324,9 +1366,11 @@ const scenarios = {
 				dt.setData('text/html', '<img src="https://example.com/x.png">');
 				document.querySelector('main .ProseMirror').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
 			}, color);
-			await sleep(1500);
 		}
 		const images = () => page.$$('main .ProseMirror img:not(.ProseMirror-separator)');
+		await settled(images, (imgs) => imgs.length >= 2);
+		// Deliberate: a second copy of either image would show up in this time.
+		await sleep(1000);
 		assert.equal((await images()).length, 2, 'each paste should insert one image');
 		// Once both images are saved in the note.
 		assert.doesNotMatch(await savedBody(page, 'Photos', (body) => (body.match(/!\[[^\]]*\]\(/g) ?? []).length === 2), /example\.com/);
@@ -1337,16 +1381,14 @@ const scenarios = {
 		});
 		await (await images())[0].click();
 		await page.waitForSelector('.viewer');
-		await sleep(300);
-		const fit = await state();
+		const fit = await settled(state, (s) => /^\d+% 1 \/ 2$/.test(s));
 		assert.match(fit, /^\d+% 1 \/ 2$/, fit);
 		await page.keyboard.press('+');
 		assert.notEqual(await state(), fit, 'zoom did not change');
 		await page.keyboard.press('0');
 		assert.equal(await state(), fit);
 		await page.keyboard.press('ArrowRight');
-		await sleep(300);
-		assert.match(await state(), / 2 \/ 2$/);
+		assert.match(await settled(state, (s) => / 2 \/ 2$/.test(s)), / 2 \/ 2$/);
 		await page.keyboard.press('Escape');
 		assert.equal(await state(), 'closed');
 		assert.equal((await images()).length, 2, 'opening the viewer changed the note');
@@ -1396,6 +1438,7 @@ const scenarios = {
 		// window) keeps the last keystrokes: the editor saves on pagehide.
 		await page.goto(`${BASE}/memory/${id}`, { waitUntil: 'load' });
 		await page.waitForSelector('main .ProseMirror');
+		// Deliberate: the editor finishes drawing the note before the focus goes in.
 		await sleep(500);
 		// Focus, not a click (that would open the chip); the cursor lands at
 		// the start of the line, right before the chip.
@@ -1419,7 +1462,7 @@ const scenarios = {
 			db.setMemoryInProject(m.id, 'Falcon', true);
 			db.addQuestion({ text: 'Who owns the budget?', memoryId: m.id, assignee: 'Sam' });
 		`);
-		await sleep(600); // let the save land before reloading
+		await saved(page); // the save lands before the page is loaded anew
 		// A note's project name is suggested, then made a project
 		await page.goto(`${BASE}/projects`, { waitUntil: 'load' });
 		await page.waitForFunction(() => [...document.querySelectorAll('button')].some((b) => b.textContent.includes('Make project')));
@@ -1429,11 +1472,15 @@ const scenarios = {
 			await page.evaluate((p) => [...document.querySelectorAll('input')].find((i) => (i.placeholder || '').startsWith(p)).focus(), prefix);
 			await page.keyboard.type(value);
 			await page.keyboard.press('Enter');
-			await sleep(300);
+			await page.waitForFunction((v) => document.querySelector('main')?.innerText.includes(v.replace(/ @\w+$/, '')), {}, value);
 		};
 		await quickAdd('Add a to-do', 'Send the deck @Sam');
 		await quickAdd('Log a decision', 'Launch in Q1');
-		const projectText = await page.$eval('main', (e) => e.innerText);
+		const projectText = await settled(
+			() => page.$eval('main', (e) => e.innerText),
+			(t) => /Send the deck\s+Waiting · Sam/.test(t) && /Who owns the budget\?/.test(t) && /Launch in Q1/.test(t)
+		);
+		await saved(page);
 		assert.match(projectText, /Send the deck\s+Waiting · Sam/);
 		assert.match(projectText, /Who owns the budget\?/, 'question from a project note missing');
 		assert.match(projectText, /Launch in Q1/);
@@ -1452,8 +1499,10 @@ const scenarios = {
 		await quickAdd('Add something to discuss', 'Hiring plan');
 		await clickText(page, 'button', 'Start meeting');
 		await page.waitForSelector('input[aria-label="Note title"]');
-		await sleep(300);
-		const body = await db(page, `let ms; db.memoryObjects.subscribe((v) => (ms = v))(); return ms.find((m) => m.title.startsWith('1:1 with Sam')).bodyMarkdown;`);
+		const body = await settled(
+			() => db(page, `let ms; db.memoryObjects.subscribe((v) => (ms = v))(); return ms.find((m) => m.title.startsWith('1:1 with Sam'))?.bodyMarkdown ?? '';`),
+			(b) => /## Agenda\n\n- Hiring plan/.test(b) && /Send the deck \(@Sam\)/.test(b) && /Who owns the budget\? \(@Sam\)/.test(b)
+		);
 		assert.match(body, /## Agenda\n\n- Hiring plan/);
 		assert.match(body, /Send the deck \(@Sam\)/);
 		assert.match(body, /Who owns the budget\? \(@Sam\)/);
@@ -1480,7 +1529,7 @@ const scenarios = {
 			const series = db.addMeetingSeries({ name: 'Sync with Ana', people: ['Ana'], cadence: 'weekly' });
 			db.startSeriesMeeting(series.id);
 		`);
-		await sleep(600);
+		await saved(page);
 		// References → People rows open the person page
 		await page.goto(`${BASE}/references?tab=people`, { waitUntil: 'load' });
 		await page.waitForFunction(() => [...document.querySelectorAll('a')].some((a) => a.textContent.includes('@Ana')));
@@ -1548,8 +1597,7 @@ const scenarios = {
 		});
 		await page.goto(`${BASE}/?share=incoming`, { waitUntil: 'load' });
 		await page.waitForFunction(() => location.hash.startsWith('#/memory/'), { timeout: 15000 });
-		await sleep(500);
-		const all = await notes();
+		const all = await settled(notes, (ns) => ns.some((n) => n.title === 'From my phone') && ns.some((n) => n.title === 'Spec draft'));
 		const photo = all.find((n) => n.title === 'From my phone');
 		assert.ok(photo, 'shared text + image note missing');
 		assert.match(photo.body, /From my phone\n\n!\[whiteboard\]\(blob:/);
@@ -1557,7 +1605,7 @@ const scenarios = {
 		assert.deepEqual([spec?.body.trim(), spec?.tags], ['The body', ['spec']]);
 		// Mark done from a notification while the app was closed
 		const id = await db(page, `return db.addActionItem({ text: 'Renew passport', dueDate: db.todayIso() }).id;`);
-		await sleep(600);
+		await saved(page);
 		await page.evaluate(async (id) => {
 			const req = indexedDB.open('kurumi-sw', 1);
 			const idb = await new Promise((r) => (req.onsuccess = () => r(req.result)));
@@ -1584,8 +1632,11 @@ const scenarios = {
 		// Settings → Offline & storage
 		await page.goto(`${BASE}/settings/offline`, { waitUntil: 'load' });
 		await page.waitForSelector('#offline-title');
-		await sleep(500); // status reads are async
-		const text = await page.$eval('main', (e) => e.innerText);
+		// Status reads are async.
+		const text = await settled(
+			() => page.$eval('main', (e) => e.innerText),
+			(t) => /Not in the development server/.test(t) && /Version/.test(t) && /The database loaded in \d+(\.\d)? m?s: \d+ notes? with/.test(t)
+		);
 		assert.match(text, /Not in the development server/);
 		assert.match(text, /Version/);
 		assert.match(text, /The database loaded in \d+(\.\d)? m?s: \d+ notes? with/);
@@ -1595,12 +1646,15 @@ const scenarios = {
 	async 'edits persist across reloads (incremental saves)'(browser) {
 		const { page, errors } = await freshPage(browser);
 		await db(page, `for (let i = 0; i < 5; i++) db.addMemoryObject('Saved ' + i, 'b');`);
-		await sleep(600);
+		await saved(page);
 		const chunks = await db(page, `return ((await kv.get('kurumi-doc-changes')) || []).length;`);
 		assert.ok(chunks > 0, 'expected incremental chunks');
 		await page.reload({ waitUntil: 'load' });
-		await sleep(1500);
-		const titles = await db(page, `let ms; db.allMemoryObjects.subscribe((v) => (ms = v))(); return ms.map((m) => m.title);`);
+		await page.waitForSelector('aside');
+		const titles = await settled(
+			() => db(page, `let ms; db.allMemoryObjects.subscribe((v) => (ms = v))(); return (ms ?? []).map((m) => m.title);`),
+			(ts) => Array.from({ length: 5 }, (_, i) => 'Saved ' + i).every((t) => ts.includes(t))
+		);
 		for (let i = 0; i < 5; i++) assert.ok(titles.includes('Saved ' + i), `missing Saved ${i}`);
 		// Chunks loaded at start are folded into a snapshot shortly after
 		await page.waitForFunction(
@@ -1620,7 +1674,7 @@ const scenarios = {
 			const words = (n) => Array.from({ length: n }, (_, i) => W[(i * 7 + n) % W.length]).join(' ');
 			const m = db.addMemoryObject('Long note', words(450));
 			const stored = async () => {
-				await new Promise((r) => setTimeout(r, 300));
+				await db.whenSaved();
 				const snap = (await kv.get('kurumi-doc'))?.length ?? 0;
 				const chunks = ((await kv.get('kurumi-doc-changes')) || []).reduce((a, c) => a + c.length, 0);
 				return snap + chunks;
@@ -1630,6 +1684,7 @@ const scenarios = {
 			for (let i = 0; i < 300; i++) {
 				body += ' ' + W[i % W.length] + i;
 				db.updateMemoryObject(m.id, { bodyMarkdown: body, title: 'Long note ' + (i % 3) });
+				// Deliberate: lets saves run between the edits, as they do while typing.
 				if (i % 50 === 0) await new Promise((r) => setTimeout(r, 0));
 			}
 			return (await stored()) - before;
@@ -1830,7 +1885,7 @@ const scenarios = {
 			db.addQuestion({ text: 'Budget?', projectId: p.id });
 			db.addMeetingSeries({ name: 'Weekly', people: ['Sam Lee'], cadence: 'weekly' });
 		`);
-		await sleep(800);
+		await saved(page);
 		const before = await db(page, snapshot);
 		assert.equal(before.optimized, false);
 		// Load time of the stored database, before
@@ -1879,7 +1934,7 @@ const scenarios = {
 		assert.ok(checks.searchHits >= 1, 'search misses optimized notes');
 
 		// A reload reads the new format, and the note opens in the editor
-		await sleep(800);
+		await saved(page);
 		await page.reload({ waitUntil: 'load' });
 		await page.waitForSelector('aside');
 		const id = await db(page, `let ms; db.memoryObjects.subscribe((v) => (ms = v))(); return ms.find((m) => m.title === 'Note 7').id;`);
@@ -1917,6 +1972,7 @@ const scenarios = {
 			const b = await pair();
 			await b.page.goto(link, { waitUntil: 'load' });
 			await b.page.waitForFunction(() => document.querySelector('main')?.innerText.includes('Syncing with localhost'), { timeout: 15_000 });
+			// Deliberate: B's own sync on joining runs before this one starts.
 			await sleep(1500);
 			assert.deepEqual(await syncOn(b.page), { success: true });
 
@@ -2233,6 +2289,7 @@ const scenarios = {
 
 			// Nothing changed: files aren't rewritten.
 			const before = await stamp(dir, 'other-note.md');
+			// Deliberate: the clock moves on, so a rewrite would change the stamp.
 			await new Promise((r) => setTimeout(r, 50));
 			await svc.sync();
 			res.untouched = before === (await stamp(dir, 'other-note.md'));
@@ -2563,7 +2620,7 @@ const scenarios = {
 			const ref = await blobs.storeBlob(png, 'image/png');
 			return db.addMemoryObject('With image', `before\n\n![pasted image](${ref})\n\nafter`).id;
 		});
-		await new Promise((r) => setTimeout(r, 800)); // saved
+		await saved(page);
 		await page.goto(`${BASE}/#/memory/${id}`, { waitUntil: 'load' });
 		const loaded = () =>
 			page.waitForFunction(() => {
@@ -2643,6 +2700,7 @@ const scenarios = {
 		const standard = await face('main .ProseMirror p');
 		assert.equal(standard.family, 'iA Writer Quattro S');
 		assert.equal(standard.leading, 1.7);
+		// Deliberate: an optional face would be fetched in this time.
 		await sleep(500);
 		assert.deepEqual(fontFiles, [], 'an optional face was downloaded without being chosen');
 		const ui = await face('aside .nav-row');
@@ -2714,7 +2772,7 @@ const scenarios = {
 			const db = await import(find('/src/lib/db/store.ts'));
 			return db.addMemoryObject('Diagram', `Intro\n\n\`\`\`mermaid\n${src}\n\`\`\`\n\nAfter`).id;
 		}, source);
-		await new Promise((r) => setTimeout(r, 800));
+		await saved(page);
 		await page.goto(`${BASE}/#/memory/${id}`, { waitUntil: 'load' });
 		await page.waitForSelector('main .kurumi-mermaid-preview svg', { timeout: 30000 });
 		const shown = await page.$eval('main .kurumi-mermaid', (el) => ({
@@ -2734,12 +2792,7 @@ const scenarios = {
 		await page.waitForSelector('main .kurumi-mermaid-error', { timeout: 15000 });
 		for (let i = 0; i < 4; i++) await page.keyboard.press('Backspace');
 		await page.waitForFunction(() => !document.querySelector('main .kurumi-mermaid-error'), { timeout: 15000 });
-		await new Promise((r) => setTimeout(r, 1500)); // autosave
-		const stored = await page.evaluate(async (noteId) => {
-			const find = (frag) => performance.getEntriesByType('resource').map((e) => e.name).find((n) => n.includes(frag));
-			const db = await import(find('/src/lib/db/store.ts'));
-			return db.getMemoryObject(noteId).bodyMarkdown;
-		}, id);
+		const stored = await storedBody(page, id, (b) => /```mermaid\ngraph TD\n {2}A\[Capture\] --> B\[Recall\]\n {2}B --> C\[Act\]\n```/.test(b));
 		assert.match(stored, /```mermaid\ngraph TD\n {2}A\[Capture\] --> B\[Recall\]\n {2}B --> C\[Act\]\n```/);
 
 		// Read mode renders it too.
@@ -2783,8 +2836,7 @@ const scenarios = {
 		await page.keyboard.type(' Area $a_1^2$ done.');
 		await page.waitForSelector('main .kurumi-math-inline .katex', { timeout: 15000 });
 		assert.equal(await page.$$eval('main .kurumi-math-inline', (e) => e.length), 1);
-		await sleep(1500); // autosave
-		const body = await db(page, `return db.getMemoryObject(arg).bodyMarkdown;`, ids.note);
+		const body = await storedBody(page, ids.note, (b) => b.trim() === 'See [[Roadmap|the plan]] for $5 and $10. Area $a_1^2$ done.');
 		assert.equal(body.trim(), 'See [[Roadmap|the plan]] for $5 and $10. Area $a_1^2$ done.');
 		await page.goto(`${BASE}/#/read/${ids.note}`, { waitUntil: 'load' });
 		await page.waitForSelector('.markdown-content .math-inline .katex', { timeout: 15000 });
@@ -2796,11 +2848,11 @@ const scenarios = {
 		await page.waitForSelector('td .pv-btn');
 		await page.click('td .pv-btn');
 		await page.waitForSelector('[role="dialog"] input');
-		await sleep(100);
+		await page.waitForFunction(() => document.activeElement?.matches('[role="dialog"] input'));
 		await page.keyboard.type('Blocked');
 		await page.keyboard.press('Enter');
 		await page.waitForFunction(() => document.querySelector('td .k-chip')?.textContent === 'Blocked');
-		const view = await db(page, `let vs; db.databaseViews.subscribe((v) => (vs = v))(); return vs[0].properties[0].options;`);
+		const view = await settled(() => db(page, `let vs; db.databaseViews.subscribe((v) => (vs = v))(); return vs[0].properties[0].options;`), (o) => o.length === 3);
 		assert.deepEqual(view, ['Todo', 'Done', 'Blocked']);
 		await page.goto(`${BASE}/#/memory/${ids.row}`, { waitUntil: 'load' });
 		await page.waitForSelector('.note-prop');
@@ -2823,8 +2875,7 @@ const scenarios = {
 		await page.click('main .kurumi-column:nth-child(2) li:last-child p');
 		await page.keyboard.press('End');
 		await page.keyboard.type('!');
-		await sleep(1500);
-		const body = await db(page, `return db.getMemoryObject(arg).bodyMarkdown;`, ids.note);
+		const body = await storedBody(page, ids.note, (b) => b.includes('- two!'));
 		assert.match(body, /::::columns\n:::column\nLeft\n:::\n\n:::column\n- one\n- two!\n:::\n::::/);
 		// Folding hides the section, not the text
 		await page.evaluate(() => {
@@ -2843,8 +2894,7 @@ const scenarios = {
 			t.dispatchEvent(new Event('input', { bubbles: true }));
 		});
 		await page.click('main .note-embed-edit');
-		await sleep(800);
-		assert.match(await db(page, `return db.getMemoryObject(arg).bodyMarkdown;`, ids.src), /Ship the beta and docs \^g01/);
+		assert.match(await storedBody(page, ids.src, (b) => /Ship the beta and docs \^g01/.test(b)), /Ship the beta and docs \^g01/);
 		// A heading link opens the note scrolled to the heading
 		await page.click('main .milkdown .wikilink');
 		await page.waitForFunction((id) => location.hash.includes(id), {}, ids.src);
@@ -2905,12 +2955,12 @@ const scenarios = {
 		const vp = await (await page.$('main .canvas-viewport')).boundingBox();
 		await page.mouse.click(vp.x + 250, vp.y + 220, { clickCount: 2 });
 		await page.waitForSelector('main .card-editor');
-		await sleep(100);
+		await page.waitForFunction(() => document.activeElement?.closest('main .card-editor'));
 		await page.keyboard.type('An idea');
 		await page.mouse.click(vp.x + vp.width - 40, vp.y + vp.height - 40);
 		await clickText(page, 'main .canvas-toolbar button', 'Note');
 		await page.waitForSelector('[role="dialog"] input');
-		await sleep(100);
+		await page.waitForFunction(() => document.activeElement?.matches('[role="dialog"] input'));
 		await page.keyboard.type('Road');
 		await page.keyboard.press('Enter');
 		await page.waitForFunction(() => document.querySelectorAll('main .canvas-card').length === 2);
@@ -2923,8 +2973,14 @@ const scenarios = {
 		await page.mouse.down();
 		await page.mouse.move(note.x + note.width / 2, note.y + note.height / 2, { steps: 8 });
 		await page.mouse.up();
-		await sleep(1000);
-		const saved = JSON.parse(await db(page, `return db.getMemoryObject(arg).bodyMarkdown;`, id));
+		const asCanvas = (b) => {
+			try {
+				return JSON.parse(b);
+			} catch {
+				return null;
+			}
+		};
+		const saved = JSON.parse(await storedBody(page, id, (b) => asCanvas(b)?.edges?.length === 1 && asCanvas(b).nodes?.[0]?.text === 'An idea'));
 		assert.deepEqual(saved.nodes.map((n) => n.type), ['text', 'file']);
 		assert.equal(saved.nodes[0].text, 'An idea');
 		assert.equal(saved.edges.length, 1);
@@ -2945,8 +3001,7 @@ const scenarios = {
 		await page.keyboard.type('GAMMA');
 		await page.keyboard.press('Escape');
 		for (const key of ['j', 'd', 'd', 'u']) await page.keyboard.type(key);
-		await sleep(1500);
-		assert.equal((await db(page, `return db.getMemoryObject(arg).bodyMarkdown;`, id)).trim(), 'beta GAMMA\n\nsecond line');
+		assert.equal((await storedBody(page, id, (b) => b.trim() === 'beta GAMMA\n\nsecond line')).trim(), 'beta GAMMA\n\nsecond line');
 		assert.equal(await page.$eval('main .vim-badge', (b) => b.textContent), 'NORMAL');
 		assert.deepEqual(errors, []);
 	},
@@ -2961,8 +3016,7 @@ const scenarios = {
 		await page.click('main .kurumi-code-lang', { clickCount: 3 });
 		await page.keyboard.type('python');
 		await page.keyboard.press('Enter');
-		await sleep(1500);
-		assert.match(await db(page, `return db.getMemoryObject(arg).bodyMarkdown;`, id), /```python\nconst answer = 42;/);
+		assert.match(await storedBody(page, id, (b) => /```python\nconst answer = 42;/.test(b)), /```python\nconst answer = 42;/);
 		// Typing in the block keeps it highlighted.
 		await page.click('main .kurumi-code pre');
 		await press(page, MOD, 'End');
@@ -3021,8 +3075,7 @@ const scenarios = {
 		assert.match(md.split('\n').at(-1), /^\| delta /, md);
 		// The header row has no "insert above" and can't be deleted.
 		await page.click('main .ProseMirror th');
-		await sleep(200);
-		assert.ok(await page.$eval('.kurumi-table-toolbar [data-action="row-above"]', (b) => b.disabled));
+		assert.ok(await settled(() => page.$eval('.kurumi-table-toolbar [data-action="row-above"]', (b) => b.disabled), (d) => d === true));
 		// Delete the table from the menu.
 		await page.click('.kurumi-table-toolbar button[aria-label="More table actions"]');
 		await clickOnTop(page, '.kurumi-table-menu .k-menu-item', 'Delete table');
@@ -3038,8 +3091,11 @@ const scenarios = {
 		const items = () =>
 			db(page, `let a; db.actionItems.subscribe((v) => (a = v))(); return a.filter((i) => i.memoryObjectId === arg).map((i) => ({ id: i.id, text: i.text, status: i.status, dueDate: i.dueDate, assignee: i.assignee }));`, id);
 		const body = () => db(page, `return db.getMemoryObject(arg).bodyMarkdown;`, id);
-		await sleep(1500);
-		let list = await items();
+		// The note's checkboxes become to-dos shortly after a change (store.ts,
+		// scheduleNoteTaskSync: 800 ms after the last one), more on a busy machine.
+		const itemsWhen = (ok) => settled(items, ok);
+		const bodyWhen = (ok) => settled(body, ok);
+		let list = await itemsWhen((l) => l.length === 2);
 		assert.equal(list.length, 2);
 		const draft = list.find((i) => i.text === 'Send the draft');
 		assert.deepEqual([draft.dueDate, draft.assignee, draft.status], ['2030-01-15', 'Alice', 'open']);
@@ -3048,35 +3104,31 @@ const scenarios = {
 		await page.goto(`${BASE}/#/memory/${id}`, { waitUntil: 'load' });
 		await page.waitForSelector('main .ProseMirror li[data-item-type="task"]');
 		await page.click('main .ProseMirror');
+		// Deliberate: the click lands before the next one (no state is read).
 		await sleep(300);
 		const box = await page.$$eval('main .ProseMirror li[data-item-type="task"]', (ls) => {
 			const r = ls.find((x) => x.textContent.includes('Book the room')).getBoundingClientRect();
 			return { x: r.left + 8, y: r.top + 12 };
 		});
 		await page.mouse.click(box.x, box.y);
-		await sleep(2500);
-		assert.match(await body(), /- \[x\] Book the room/);
-		list = await items();
+		assert.match(await bodyWhen((b) => /- \[x\] Book the room/.test(b)), /- \[x\] Book the room/);
+		list = await itemsWhen((l) => l.find((i) => i.text === 'Book the room')?.status === 'done');
 		assert.equal(list.find((i) => i.text === 'Book the room').status, 'done');
 
 		// Done on /actions ticks the line; a new due date is written into it.
 		await db(page, `db.updateActionItemStatus(arg, 'done'); db.updateActionItem(arg, { dueDate: '2030-02-01' });`, draft.id);
-		await sleep(400);
-		assert.match(await body(), /- \[x\] Send the draft @Alice \/\/2030-02-01/);
+		assert.match(await bodyWhen((b) => /- \[x\] Send the draft @Alice \/\/2030-02-01/.test(b)), /- \[x\] Send the draft @Alice \/\/2030-02-01/);
 		// Deleting the to-do removes the line; undo (restore) brings it back.
 		const saved = (await db(page, `let a; db.actionItems.subscribe((v) => (a = v))(); return a.find((i) => i.id === arg);`, draft.id));
 		await db(page, `db.deleteActionItem(arg);`, draft.id);
-		await sleep(1500);
-		assert.doesNotMatch(await body(), /Send the draft/);
-		assert.equal((await items()).length, 1);
+		assert.doesNotMatch(await bodyWhen((b) => !/Send the draft/.test(b)), /Send the draft/);
+		assert.equal((await itemsWhen((l) => l.length === 1)).length, 1);
 		await db(page, `db.restoreActionItem(arg);`, saved);
-		await sleep(1500);
-		assert.match(await body(), /Send the draft/);
-		assert.equal((await items()).length, 2);
+		assert.match(await bodyWhen((b) => /Send the draft/.test(b)), /Send the draft/);
+		assert.equal((await itemsWhen((l) => l.length === 2)).length, 2);
 		// Removing the line in the note removes the to-do.
 		await db(page, `db.updateMemoryObject(arg, { bodyMarkdown: '- [x] Book the room\\n' });`, id);
-		await sleep(1500);
-		assert.deepEqual((await items()).map((i) => i.text), ['Book the room']);
+		assert.deepEqual((await itemsWhen((l) => l.length === 1)).map((i) => i.text), ['Book the room']);
 		assert.deepEqual(errors, []);
 	},
 
@@ -3090,16 +3142,17 @@ const scenarios = {
 		// Link the first: becomes [[Title|text]] in the note.
 		await page.click('main .kurumi-link-suggestion');
 		await clickOnTop(page, '.kurumi-link-suggest-menu .k-menu-item', 'Link to');
-		await sleep(1500);
-		assert.match(await db(page, `return db.getMemoryObject(arg).bodyMarkdown;`, id), /Talked about \[\[Project Alpha\|project alpha\]\] today/);
+		assert.match(await storedBody(page, id, (b) => /Talked about \[\[Project Alpha\|project alpha\]\] today/.test(b)), /Talked about \[\[Project Alpha\|project alpha\]\] today/);
 		// Dismiss the second: gone, and stays gone after a reload.
 		await page.waitForFunction(() => document.querySelectorAll('main .kurumi-link-suggestion').length === 1, { timeout: 10000 });
 		await page.click('main .kurumi-link-suggestion');
 		await clickOnTop(page, '.kurumi-link-suggest-menu .k-menu-item', 'Dismiss');
-		await sleep(300);
-		assert.equal(await page.$$eval('main .kurumi-link-suggestion', (els) => els.length), 0);
+		assert.equal(await settled(() => page.$$eval('main .kurumi-link-suggestion', (els) => els.length), (n) => n === 0), 0);
+		await saved(page);
 		await page.reload({ waitUntil: 'load' });
 		await page.waitForSelector('main .ProseMirror');
+		// Deliberate: suggestions are drawn within this time after a note opens
+		// (they came up within it above); none may come back.
 		await sleep(2500);
 		assert.equal(await page.$$eval('main .kurumi-link-suggestion', (els) => els.length), 0);
 		assert.deepEqual(errors, []);
@@ -3131,8 +3184,7 @@ const scenarios = {
 		const mod = (path) => `performance.getEntriesByType('resource').map((e) => e.name).find((n) => n.includes('/src/lib/db/store.ts')).replace('/db/store.ts', '${path}')`;
 		const run = (path, source) => page.evaluate(`(async () => { const m = await import(${mod(path)}); ${source} })()`);
 		await run('/agent-memory.ts', `m.remember('Prefers summaries as bullet points'); m.remember('prefers summaries as bullet points.'); m.remember('Works on Project Falcon');`);
-		await sleep(300);
-		const prompt = await run('/agent.ts', 'return m.systemPrompt();');
+		const prompt = await settled(() => run('/agent.ts', 'return m.systemPrompt();'), (p) => /What you remember about the user[^]*- Prefers summaries as bullet points\n- Works on Project Falcon/.test(p));
 		assert.match(prompt, /What you remember about the user[^]*- Prefers summaries as bullet points\n- Works on Project Falcon/);
 		assert.equal(prompt.match(/bullet points/g).length, 1);
 		assert.deepEqual(await run('/agent-memory.ts', `return m.forget('falcon').removed;`), ['Works on Project Falcon']);
@@ -3180,16 +3232,15 @@ const scenarios = {
 		// Pin the last one from its tab: it moves to the front.
 		await page.hover('.tab-item:last-child');
 		await page.click('.tab-item:last-child button[aria-label="Pin tab"]');
-		await sleep(200);
-		assert.deepEqual(await tabs(), ['📌Three', 'One', 'Two']);
+		assert.deepEqual(await settled(tabs, (t) => t[0] === '📌Three'), ['📌Three', 'One', 'Two']);
 		// After a reload only the pinned tab is back (open tabs are per session).
+		await saved(page);
 		await page.reload({ waitUntil: 'load' });
 		await page.waitForSelector('.tab-item');
 		assert.deepEqual((await tabs()).filter((t) => t.startsWith('📌')), ['📌Three']);
 		// Right-click unpins.
 		await page.click('.tab-item.tab-pinned', { button: 'right' });
-		await sleep(200);
-		assert.equal((await tabs()).filter((t) => t.startsWith('📌')).length, 0);
+		assert.equal((await settled(tabs, (t) => !t.some((x) => x.startsWith('📌')))).filter((t) => t.startsWith('📌')).length, 0);
 		assert.deepEqual(errors, []);
 	},
 
@@ -3259,17 +3310,15 @@ const scenarios = {
 		await page.waitForSelector('.tab-stack-item');
 		const gone = (await bar()).stacked[0];
 		await page.keyboard.press('Delete');
-		await sleep(300);
-		now = await bar();
+		now = await settled(bar, (b) => !b.stacked.includes(gone) && !b.shown.includes(gone));
 		assert.ok(!now.stacked.includes(gone) && !now.shown.includes(gone), `${gone} is still open`);
 		await page.keyboard.press('Escape');
-		await sleep(200);
-		assert.equal(await page.$('.tab-stack-item'), null);
+		assert.equal(await settled(() => page.$('.tab-stack-item'), (el) => el === null), null);
 		// A narrower window: more are stacked, the text of the controls gives way, the icons stay.
 		const height = now.barHeight;
 		await page.setViewport({ width: 900, height: 800 });
-		await sleep(400);
-		now = await bar();
+		await still();
+		now = await settled(bar, (b) => !b.overlap && b.edited === false && b.controlsInBar && b.shown.length < shownBefore && b.active === second);
 		assert.equal(now.overlap, false, JSON.stringify(now));
 		assert.equal(now.edited, false, 'the edited time still shows on a narrow bar');
 		assert.ok(now.controlsInBar);
@@ -3277,8 +3326,8 @@ const scenarios = {
 		assert.equal(now.active, second);
 		// A wide one: everything fits again, with the word count and the edited time.
 		await page.setViewport({ width: 1900, height: 800 });
-		await sleep(400);
-		now = await bar();
+		await still();
+		now = await settled(bar, (b) => b.more === null && b.edited && b.words);
 		assert.equal(now.more, null, JSON.stringify(now));
 		assert.ok(now.edited && now.words, JSON.stringify(now));
 		// Another page: no note controls, and the bar keeps its height.
@@ -3301,13 +3350,13 @@ const scenarios = {
 		const widths = () => page.$$eval('.tab-strip .tab-item:not([inert])', (t) => t.map((x) => Math.round(x.getBoundingClientRect().width)));
 		// Switching tabs moves nothing: the open note's tab is no wider than it was.
 		await page.mouse.move(700, 500);
+		// Deliberate: the tabs settle once the pointer has left them.
 		await sleep(300);
 		const before = await widths();
 		await clickOnTop(page, '.tab-strip .tab-item .truncate', 'Two');
 		await noteShown(page, 'Two', { errors });
 		await page.mouse.move(700, 500);
-		await sleep(400);
-		assert.deepEqual(await widths(), before, 'the tabs changed width when another one became active');
+		assert.deepEqual(await settled(widths, (w) => JSON.stringify(w) === JSON.stringify(before)), before, 'the tabs changed width when another one became active');
 		// Close Two's tab with the pointer: Three takes over.
 		const close = async (title) => {
 			const pt = await page.evaluate((title) => {
@@ -3316,15 +3365,16 @@ const scenarios = {
 				return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
 			}, title);
 			await page.mouse.move(pt.x, pt.y);
+			// Deliberate: the pointer rests on the tab, as a person's would.
 			await sleep(150);
 			await page.mouse.click(pt.x, pt.y);
 			return pt;
 		};
 		const pt = await close('Two');
 		await noteShown(page, 'Three', { errors });
-		await sleep(400);
-		assert.deepEqual(await tabs(), ['One', 'Three', 'Four']);
-		assert.equal(await active(), 'Three');
+		assert.deepEqual(await settled(tabs, (t) => t.length === 3), ['One', 'Three', 'Four']);
+		// (The closed tab keeps its active look while it shrinks away.)
+		assert.equal(await settled(active, (a) => a === 'Three'), 'Three');
 		assert.equal(await page.$('main .ProseMirror') !== null, true);
 		// The pointer hasn't moved: the tabs kept their width, so a close button is still under it.
 		assert.deepEqual(await widths(), [before[1], before[1], before[1]], 'the tabs did not keep the closed tab\'s width under the pointer');
@@ -3339,6 +3389,7 @@ const scenarios = {
 		assert.deepEqual(await tabs(), ['One', 'Three']);
 		// The pointer leaves: the tabs settle.
 		await page.mouse.move(700, 500);
+		// Deliberate: the tabs settle once the pointer has left them.
 		await sleep(400);
 		// Closing the only remaining tabs ends on Home.
 		await close('Three');
@@ -3496,15 +3547,13 @@ const scenarios = {
 			await press(page, MOD, 'k');
 			await page.waitForSelector('input[aria-label="Search notes or run an action"]');
 			await page.keyboard.type(`>${title}`);
-			await sleep(300);
+			await page.waitForFunction((t) => [...document.querySelectorAll('[role="option"]')].some((o) => o.textContent.includes(t)), {}, title);
 			await page.keyboard.press('Enter');
-			await sleep(800);
 		};
 		await runCommand('Note statistics');
-		assert.match(await notice(), /^Note tools: 8 words · 1 min read · 1 links · 0 open to-dos$/);
+		assert.match(await settled(notice, (n) => /^Note tools: 8 words · 1 min read · 1 links · 0 open to-dos$/.test(n)), /^Note tools: 8 words · 1 min read · 1 links · 0 open to-dos$/);
 		await runCommand('Add a table of contents');
-		await sleep(800);
-		assert.match(await db(page, `return db.getMemoryObject(arg).bodyMarkdown;`, id), /^## Contents\n\n- \[\[Guide#Setup\|Setup\]\]\n- \[\[Guide#Use\|Use\]\]\n\n## Setup/);
+		assert.match(await storedBody(page, id, (b) => /^## Contents\n\n- \[\[Guide#Setup\|Setup\]\]\n- \[\[Guide#Use\|Use\]\]\n\n## Setup/.test(b)), /^## Contents\n\n- \[\[Guide#Setup\|Setup\]\]\n- \[\[Guide#Use\|Use\]\]\n\n## Setup/);
 		// A plugin with no permissions trying to get out of its sandbox.
 		const hostile = `/* kurumi-plugin {"id":"escape","name":"Escape","permissions":[]} */
 			(async () => {
@@ -3585,6 +3634,7 @@ const scenarios = {
 		// Typing changes nothing, on screen or in the file.
 		await caretAfter(page, 'Line one.');
 		await page.keyboard.type(' typed');
+		// Deliberate: an edit would be on screen and written within this time.
 		await sleep(900);
 		assert.ok(!(await page.$eval('main .ProseMirror', (el) => el.textContent)).includes('typed'));
 		assert.equal(await folderFile(page, 'foo.md'), LINKED_FOO);
@@ -3602,6 +3652,7 @@ const scenarios = {
 		await clickText(page, '.note-row', 'Foo launch');
 		await page.waitForSelector('main .ProseMirror .wikilink[data-wikilink-title="Nowhere note"]');
 		await page.click('main .ProseMirror .wikilink[data-wikilink-title="Nowhere note"]');
+		// Deliberate: a new note would have opened in this time.
 		await sleep(500);
 		assert.equal(await page.$eval('input[aria-label="Note title"]', (el) => el.value), 'Foo launch');
 
@@ -3640,9 +3691,11 @@ const scenarios = {
 			await openTreeNote(page, titles[rel]);
 			assert.equal(await page.$eval('main .ProseMirror', (el) => el.getAttribute('contenteditable')), 'true');
 			await page.click('main .ProseMirror');
+			// Deliberate: a write would start in this time.
 			await sleep(500);
 		}
 		await clickText(page, '.note-row', 'Lists');
+		// Deliberate: a write of the note left would be done in this time.
 		await sleep(800);
 		assert.equal((await folderCalls(page)).includes('linked_write'), false, 'a note was written without an edit');
 		for (const [rel, content] of Object.entries(corpus)) assert.equal(await folderFile(page, rel), content, `${rel} changed without an edit`);
@@ -3652,8 +3705,8 @@ const scenarios = {
 			await openTreeNote(page, titles[rel]);
 			await caretAfter(page, 'EDIT HERE');
 			await page.keyboard.type(' now');
-			await sleep(1100);
-			assert.equal(await folderFile(page, rel), original.replace('EDIT HERE', 'EDIT HERE now'), `${rel}: more than the edited line changed`);
+			const want = original.replace('EDIT HERE', 'EDIT HERE now');
+			assert.equal(await settled(() => folderFile(page, rel), (f) => f === want), want, `${rel}: more than the edited line changed`);
 		}
 		// The frontmatter of the first, byte for byte.
 		const written = await folderFile(page, 'a-frontmatter.md');
@@ -3665,8 +3718,8 @@ const scenarios = {
 		await page.click('input[aria-label="Note title"]');
 		await press(page, MOD, 'End');
 		await page.keyboard.type(' 2');
-		await sleep(900);
-		assert.equal(await folderFile(page, 'a-frontmatter.md'), corpus['a-frontmatter.md'].replace('EDIT HERE', 'EDIT HERE now').replace('title: Foo launch', 'title: Foo launch 2'));
+		const retitled = corpus['a-frontmatter.md'].replace('EDIT HERE', 'EDIT HERE now').replace('title: Foo launch', 'title: Foo launch 2');
+		assert.equal(await settled(() => folderFile(page, 'a-frontmatter.md'), (f) => f === retitled), retitled);
 		// Where it comes from a heading it can't be changed here.
 		await openTreeNote(page, 'Table');
 		assert.equal(await page.$eval('input[aria-label="Note title"]', (el) => el.disabled), true);
@@ -3674,8 +3727,7 @@ const scenarios = {
 		// A table cell: its row comes back padded, the other rows stay.
 		await caretAfter(page, '1');
 		await page.keyboard.type('0');
-		await sleep(1100);
-		const table = (await folderFile(page, 'b-table.md')).split('\n');
+		const table = (await settled(() => folderFile(page, 'b-table.md'), (f) => f.split('\n').some((line) => line.replace(/\s+/g, ' ') === '| a | 10 |'))).split('\n');
 		const before = corpus['b-table.md'].replace('EDIT HERE', 'EDIT HERE now').split('\n');
 		assert.equal(table.length, before.length);
 		assert.deepEqual(table.filter((line, i) => line !== before[i]).map((line) => line.replace(/\s+/g, ' ')), ['| a | 10 |']);
@@ -3695,8 +3747,7 @@ const scenarios = {
 		await caretAfter(page, '[['); // the first link's opening brackets
 		assert.ok((await drawn()).includes('Needs [[project.bar]] and'), await drawn());
 		await caretAfter(page, 'Line one.');
-		await sleep(300);
-		assert.ok((await drawn()).includes('Needs Bar plan and'), await drawn());
+		assert.ok((await settled(drawn, (d) => d.includes('Needs Bar plan and'))).includes('Needs Bar plan and'), await drawn());
 		// Looking at it wrote nothing.
 		assert.equal(await folderFile(page, 'foo.md'), LINKED_FOO);
 		assert.equal((await folderCalls(page)).includes('linked_write'), false);
@@ -3707,6 +3758,7 @@ const scenarios = {
 		await page.waitForFunction(() => document.querySelector('main .ProseMirror')?.textContent.includes('Line three, from outside.'), { timeout: 10000 });
 		assert.deepEqual(await vaultTitles(page), ['Bar plan', 'Dropped in', 'Foo launch']);
 		assert.equal(await page.$('[data-testid="linked-save-issue"]'), null);
+		// Deliberate: the change from outside settles before the next step.
 		await sleep(600);
 
 		// Changed outside on another line while typing here (the watcher hasn't said so yet): merged.
@@ -3724,6 +3776,7 @@ const scenarios = {
 		// Once typing pauses the editor shows the merged note.
 		await page.waitForFunction(() => document.querySelector('main .ProseMirror')?.textContent.includes('Line three, again.'), { timeout: 10000 });
 		assert.ok((await editor()).includes('Line one. Mine.'));
+		// Deliberate: the merge settles before the next step.
 		await sleep(600);
 
 		// The same line changed in both places: nothing is written, and the app asks.
@@ -3734,6 +3787,7 @@ const scenarios = {
 		await page.waitForSelector('[data-testid="linked-save-issue"]', { timeout: 10000 });
 		assert.equal(await folderFile(page, 'foo.md'), theirs);
 		await page.keyboard.type(' And more.');
+		// Deliberate: a write would be done in this time.
 		await sleep(900);
 		assert.equal(await folderFile(page, 'foo.md'), theirs, 'written while the conflict was open');
 		await clickText(page, '[data-testid="linked-save-issue"] button', 'Resolve');
@@ -3761,8 +3815,7 @@ const scenarios = {
 
 		// A file removed outside disappears from the list.
 		await changeOutside(page, 'inbox/new.md', null);
-		await sleep(500);
-		assert.deepEqual(await vaultTitles(page), ['Bar plan', 'Foo launch']);
+		assert.deepEqual(await settled(() => vaultTitles(page), (t) => t.length === 2), ['Bar plan', 'Foo launch']);
 		assert.deepEqual(errors, []);
 	},
 
@@ -3775,6 +3828,7 @@ const scenarios = {
 		// A blank note gets its file with its first change.
 		await press(page, MOD, 'n');
 		await page.waitForSelector('main .ProseMirror');
+		// Deliberate: a file would be written in this time.
 		await sleep(700);
 		assert.equal(await folderFile(page, 'inbox/Untitled.md'), null);
 		await page.click('main .ProseMirror');
@@ -3785,7 +3839,7 @@ const scenarios = {
 		// Images, photos and databases need Kurumi's own storage: refused, and the note stays as it was.
 		for (const [command, notice] of [['/image', /Files can't be added/], ['/take photo', /Files can't be added/], ['/database', /isn't available in a linked folder/]]) {
 			await page.keyboard.type(` ${command}`);
-			await sleep(400);
+			await page.waitForSelector('.slash-menu');
 			await page.keyboard.press('Enter');
 			await page.waitForFunction((source) => new RegExp(source).test(document.querySelector('.notice-toast')?.textContent ?? ''), { timeout: 5000 }, notice.source);
 		}
@@ -3795,8 +3849,7 @@ const scenarios = {
 		// One that is left untouched never becomes a file.
 		await press(page, MOD, 'n');
 		await page.waitForFunction(() => document.querySelector('input[aria-label="Note title"]')?.value === '', { timeout: 15000 });
-		await sleep(500);
-		assert.deepEqual(await vaultTitles(page), ['Foo launch', 'Untitled', 'Untitled']);
+		assert.deepEqual(await settled(() => vaultTitles(page), (t) => t.length === 3), ['Foo launch', 'Untitled', 'Untitled']);
 		await openTreeNote(page, 'Foo launch');
 		assert.deepEqual(await vaultTitles(page), ['Foo launch', 'Untitled']);
 		assert.deepEqual(await page.evaluate(() => window.__folder.list()), ['foo.md', 'inbox/Untitled.md']);
@@ -3810,8 +3863,7 @@ const scenarios = {
 		assert.deepEqual(await vaultTitles(page), ['Foo launch', 'Nowhere note', 'Untitled']);
 		// Recordings still belong to Kurumi vaults.
 		await page.evaluate(() => window.dispatchEvent(new Event('kurumi-voice-memo')));
-		await sleep(300);
-		assert.match(await noticeText(page), /Recordings and uploads aren't available in a linked folder/);
+		assert.match(await settled(() => noticeText(page), (t) => /Recordings and uploads aren't available in a linked folder/.test(t)), /Recordings and uploads aren't available in a linked folder/);
 		assert.deepEqual(errors, []);
 	},
 
@@ -3835,6 +3887,7 @@ const scenarios = {
 		// More typing is not written anywhere, and not lost either.
 		await caretAfter(page, 'Line two.');
 		await page.keyboard.type(' After it was gone.');
+		// Deliberate: a write would be done in this time.
 		await sleep(900);
 		assert.equal(await folderFile(page, 'foo.md'), null);
 		assert.ok((await editor()).includes('Line two. After it was gone.'));
@@ -3855,9 +3908,10 @@ const scenarios = {
 		await page.waitForSelector('[data-testid="linked-file-gone"]', { timeout: 10000 });
 		await clickText(page, '[data-testid="linked-file-gone"] button', 'Discard');
 		await page.waitForSelector('[data-testid="home-page"]', { timeout: 10000 });
+		// Deliberate: nothing may recreate the file in this time.
 		await sleep(500);
 		assert.equal(await folderFile(page, 'foo.md'), null);
-		assert.deepEqual(await vaultTitles(page), ['Bar plan']);
+		assert.deepEqual(await settled(() => vaultTitles(page), (t) => t.length === 1), ['Bar plan']);
 		assert.deepEqual(errors, []);
 	},
 

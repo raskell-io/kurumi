@@ -270,6 +270,8 @@ const checks = {
 		await page.waitForSelector('input[aria-label="Note title"]', { timeout: 20_000 });
 		await page.click('input[aria-label="Note title"]', { clickCount: 3 });
 		await page.keyboard.type('Written offline');
+		// Deliberate: time for the autosave (the built app's store can't be
+		// asked from here). The check after the reload waits for the result.
 		await sleep(1500);
 		await page.reload({ waitUntil: 'load' });
 		await page.waitForFunction(() => document.body.innerText.includes('Written offline'), { timeout: 20_000 });
