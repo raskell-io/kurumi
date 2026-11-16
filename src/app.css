@@ -697,6 +697,18 @@ article,
 	}
 }
 
+/* A theme, palette or accent switch applies in one frame (switchInstantly
+   in $lib/motion.ts), not as backgrounds at once and text a moment later. */
+:root.motion-instant {
+	--motion-scale: 0;
+}
+
+:root.motion-instant *,
+:root.motion-instant *::before,
+:root.motion-instant *::after {
+	transition: none !important;
+}
+
 /* Global transition for interactive elements */
 button,
 a,

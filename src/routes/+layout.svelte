@@ -6,7 +6,7 @@
 	import { flip } from 'svelte/animate';
 	import { fitTabs } from '$lib/tab-strip';
 	import { applyEditorFont, savedEditorFont } from '$lib/editor-fonts';
-	import { armMotion, collapse, flipParams, pageEnter, panelSlide, popOut, tabIn } from '$lib/motion';
+	import { growX, switchInstantly, armMotion, collapse, flipParams, pageEnter, panelSlide, popOut, tabIn } from '$lib/motion';
 	import {
 		initDB,
 		memoryObjects,
@@ -261,7 +261,9 @@
 	// The top bar: tabs, and on a note its controls. There whenever it has
 	// something to hold, so its height never comes and goes between a note
 	// and another page while tabs are open.
-	let showTabBar = $derived(!$focusMode && !isMobile && ($openTabs.length > 0 || sidebarCollapsed || !!editNoteId));
+	// Always there on a wide window (not in focus mode): a bar that came and
+	// went with the first tab pushed the whole page down 40 px.
+	let showTabBar = $derived(!$focusMode && !isMobile);
 
 	// Tabs that fit, and the ones stacked behind the "N more" control.
 	let tabArea: HTMLElement | undefined = $state();
@@ -533,12 +535,10 @@
 	let allTags = $derived(initialized ? getAllTags() : []);
 
 	function applyTheme(t: 'light' | 'dark' | 'system') {
-		if (t === 'system') {
+		switchInstantly(() => {
 			document.documentElement.classList.remove('light', 'dark');
-		} else {
-			document.documentElement.classList.remove('light', 'dark');
-			document.documentElement.classList.add(t);
-		}
+			if (t !== 'system') document.documentElement.classList.add(t);
+		});
 		localStorage.setItem('kurumi-theme', t);
 	}
 
@@ -715,6 +715,11 @@
 
 		sidebarCollapsed = localStorage.getItem('kurumi-sidebar-collapsed') === '1';
 
+		// The system switching between light and dark: at once, like a choice in the app.
+		const scheme = matchMedia('(prefers-color-scheme: dark)');
+		const schemeChanged = () => switchInstantly(() => {});
+		scheme.addEventListener('change', schemeChanged);
+
 		showMoreNav = localStorage.getItem('kurumi-nav-more') === '1';
 		// Load sidebar width from localStorage
 		const savedWidth = localStorage.getItem('kurumi-sidebar-width');
@@ -870,6 +875,7 @@
 		return () => {
 			window.removeEventListener('resize', checkMobile);
 			window.removeEventListener('keydown', handleKeydown);
+			scheme.removeEventListener('change', schemeChanged);
 			window.removeEventListener('kurumi-voice-memo', handleVoiceMemoEvent);
 			window.removeEventListener('kurumi-open-sidebar', handleOpenSidebar);
 			window.removeEventListener('kurumi-meeting', handleMeetingEvent);
@@ -1004,7 +1010,7 @@
 
 		<!-- Sidebar -->
 		<aside
-			class="sidebar fixed inset-y-0 left-0 z-50 flex w-[85vw] max-w-[340px] flex-col md:relative md:z-auto md:max-w-none {sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}"
+			class="sidebar fixed inset-y-0 left-0 z-50 flex w-[85vw] max-w-[340px] flex-col md:relative md:z-20 md:max-w-none {sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}"
 			class:sidebar-away={($focusMode || sidebarCollapsed) && !isMobile}
 			class:shadow-2xl={isMobile && sidebarOpen}
 			inert={($focusMode || sidebarCollapsed) && !isMobile}
@@ -1397,6 +1403,7 @@
 						<button
 							onclick={toggleSidebar}
 							class="k-icon-btn my-auto mr-1 shrink-0"
+							transition:growX
 							title={'Expand sidebar (' + modKey + '\\)'}
 							aria-label="Expand sidebar"
 						>
@@ -1860,7 +1867,9 @@
 	   grows, all on the same clock. Hidden for real once it is out. */
 	.sidebar {
 		flex-shrink: 0;
-		transition: transform var(--motion-base) var(--ease-enter);
+		/* Tailwind's translate-x-* set `translate`, not `transform`: transitioning
+		   `transform` made the phone drawer pop instead of slide. */
+		transition: translate var(--motion-base) var(--ease-enter);
 	}
 
 	@media (min-width: 768px) {

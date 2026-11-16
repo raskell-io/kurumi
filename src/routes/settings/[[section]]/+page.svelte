@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { dialog } from '$lib/actions/overlay';
+	import { switchInstantly } from '$lib/motion';
 	import { applyEditorFont, DEFAULT_EDITOR_FONT, EDITOR_FONTS, savedEditorFont } from '$lib/editor-fonts';
 	import { fadeOut } from '$lib/motion';
 	import { autofocus } from '$lib/actions/autofocus';
@@ -332,8 +334,10 @@
 		accent = id;
 		localStorage.setItem('kurumi-accent', id);
 		const classes = document.documentElement.classList;
-		for (const a of ACCENTS) classes.remove(`accent-${a.id}`);
-		classes.add(`accent-${id}`);
+		switchInstantly(() => {
+			for (const a of ACCENTS) classes.remove(`accent-${a.id}`);
+			classes.add(`accent-${id}`);
+		});
 	}
 	// Colour theme and CSS snippet ($lib/themes.ts), per device
 	let palette = $state<string>(
@@ -342,7 +346,7 @@
 	function setPalette(id: string) {
 		palette = id;
 		localStorage.setItem(PALETTE_KEY, id);
-		applyPalette(id);
+		switchInstantly(() => applyPalette(id));
 	}
 	let customCss = $state<string>(typeof localStorage === 'undefined' ? '' : (localStorage.getItem(CUSTOM_CSS_KEY) ?? ''));
 	let customCssTimer: ReturnType<typeof setTimeout> | undefined;
@@ -734,12 +738,10 @@
 	function setTheme(t: 'system' | 'light' | 'dark') {
 		theme = t;
 		localStorage.setItem('kurumi-theme', t);
-		if (t === 'system') {
+		switchInstantly(() => {
 			document.documentElement.classList.remove('light', 'dark');
-		} else {
-			document.documentElement.classList.remove('light', 'dark');
-			document.documentElement.classList.add(t);
-		}
+			if (t !== 'system') document.documentElement.classList.add(t);
+		});
 	}
 
 	function setEditorFont(f: string) {

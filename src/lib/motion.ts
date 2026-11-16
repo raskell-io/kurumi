@@ -26,6 +26,20 @@ export function armMotion() {
 	document.documentElement.classList.add('motion-ready');
 }
 
+/**
+ * Change the look at once, with no transition: a theme, palette or accent
+ * switch. Without this the backgrounds (no transition) changed in one
+ * frame and buttons, tabs and text faded from the old colours for 100 ms.
+ */
+export function switchInstantly(change: () => void) {
+	if (typeof document === 'undefined') return change();
+	const root = document.documentElement;
+	root.classList.add('motion-instant');
+	change();
+	void root.offsetWidth; // the new colours are computed here, with no transition to run
+	requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove('motion-instant')));
+}
+
 /** For tests. */
 export function disarmMotion() {
 	armed = false;
@@ -133,6 +147,24 @@ export function fadeOut(_node: Element): TransitionConfig {
 	const duration = motionMs('fast');
 	if (!duration) return NONE;
 	return { duration, easing: easing('exit'), css: (t) => `opacity:${t}` };
+}
+
+/**
+ * Something appearing in a row (the sidebar's expand button in the top
+ * bar): it grows from no width, so what follows slides instead of jumping.
+ */
+export function growX(node: HTMLElement): TransitionConfig {
+	const duration = motionMs('base');
+	if (!duration) return NONE;
+	const style = getComputedStyle(node);
+	const width = node.offsetWidth;
+	const left = parseFloat(style.marginLeft) || 0;
+	const right = parseFloat(style.marginRight) || 0;
+	return {
+		duration,
+		easing: easing('enter'),
+		css: (t) => `width:${t * width}px;min-width:0;margin-left:${t * left}px;margin-right:${t * right}px;opacity:${t};overflow:hidden`
+	};
 }
 
 /** A tab appearing. */
