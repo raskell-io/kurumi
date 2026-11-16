@@ -213,6 +213,48 @@ const checks = {
 		assert.match(await mainText(page), /Version[\s\S]*\d+\.\d+\.\d+ · /);
 	},
 
+	async 'editor font: not precached for everyone, there offline once chosen'(page) {
+		const optional = '/fonts/optional/';
+		const cached = () =>
+			page.evaluate(async () => {
+				const out = {};
+				for (const name of await caches.keys()) out[name] = (await (await caches.open(name)).keys()).map((r) => new URL(r.url).pathname).filter((p) => p.startsWith('/fonts/'));
+				return out;
+			});
+		// The app shell has the default faces and none of the optional ones.
+		await page.waitForFunction(async () => (await caches.keys()).some((k) => k.includes('precache')), { timeout: 60_000 });
+		let now = await cached();
+		const precache = Object.keys(now).find((k) => k.includes('precache'));
+		assert.ok(now[precache].some((p) => p.startsWith('/fonts/Geist-Variable')), `precache fonts: ${now[precache]}`);
+		assert.ok(now[precache].some((p) => p.startsWith('/fonts/iAWriterQuattroS-Regular')));
+		assert.deepEqual(Object.values(now).flat().filter((p) => p.startsWith(optional)), [], 'an optional face is cached before anyone chose it');
+		// Choose one: both of its files are kept, the other face's are not.
+		await page.goto(`${BASE}/#/settings/appearance`, { waitUntil: 'load' });
+		await page.waitForSelector('.font-option[data-font="newsreader"]', { timeout: 20_000 });
+		await page.click('.font-option[data-font="newsreader"]');
+		await page.waitForFunction(async () => (await caches.has('kurumi-fonts')) && (await (await caches.open('kurumi-fonts')).keys()).length >= 2, { timeout: 20_000 });
+		now = await cached();
+		assert.deepEqual(now['kurumi-fonts'].sort(), [`${optional}Newsreader-Italic-Variable.woff2`, `${optional}Newsreader-Variable.woff2`]);
+		// Without a connection the app starts in that face, italics included.
+		await page.setOfflineMode(true);
+		try {
+			await page.goto(`${BASE}/#/settings/appearance`, { waitUntil: 'load' });
+			await page.waitForSelector('.font-option[data-font="newsreader"][aria-checked="true"]', { timeout: 20_000 });
+			await page.evaluate(() => Promise.all([document.fonts.load('17px Newsreader'), document.fonts.load('italic 17px Newsreader')]));
+			const loaded = await page.evaluate(() => [...document.fonts].filter((f) => f.family.replace(/["']/g, '') === 'Newsreader').map((f) => `${f.style}:${f.status}`).sort());
+			assert.deepEqual(loaded, ['italic:loaded', 'normal:loaded']);
+			// The face nobody chose is in no cache: looking at the picker kept nothing.
+			// (Asked of the caches, not by fetching: the worker itself is not offline here.)
+			assert.deepEqual(Object.values(await cached()).flat().filter((p) => p.includes('Atkinson')), []);
+		} finally {
+			await page.setOfflineMode(false);
+		}
+		// Back to the default for the checks that follow.
+		await page.goto(`${BASE}/#/settings/appearance`, { waitUntil: 'load' });
+		await page.waitForSelector('.font-option[data-font="quattro"]', { timeout: 20_000 });
+		await page.click('.font-option[data-font="quattro"]');
+	},
+
 	async 'offline: starts, navigates, and keeps a note written offline'(page) {
 		await page.setOfflineMode(true);
 		await page.goto(`${BASE}/`, { waitUntil: 'load' });

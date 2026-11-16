@@ -246,6 +246,13 @@ OpenAI to MMS when the API key is missing.
 - Live queries (```kurumi) render live in the editor too (`editor/queryBlock.svelte.ts`,
   through mermaid.ts, which owns the code_block node view: only one plugin can).
   `from:`, `where:` (`parseCondition`/`meetsCondition`), `show:`, property sort/group
+- Editor fonts (`$lib/editor-fonts.ts`, `kurumi-editor-font`, class `font-<id>`):
+  Quattro and Geist ship with the shell; Newsreader and Atkinson Hyperlegible
+  Next live in `static/fonts/optional/`, are excluded from the precache
+  (`globIgnores`) and kept in the `kurumi-fonts` cache once chosen
+  (`keepEditorFont`). Each face sets `--font-editor-scale` and
+  `--line-height-editor` in app.css. A new face needs its licence in
+  `static/fonts/licenses/` and a line in `static/fonts/README.md`
 - Appearance (per device, applied before first paint in `app.html`): colour
   theme (`palette-*`, `$lib/themes.ts`; theme selectors use `:root:where(…)` so a
   CSS snippet's plain `:root` wins), CSS snippet (`kurumi-custom-css`, a <style>

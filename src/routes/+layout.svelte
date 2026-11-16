@@ -5,6 +5,7 @@
 	import { afterNavigate } from '$app/navigation';
 	import { flip } from 'svelte/animate';
 	import { fitTabs } from '$lib/tab-strip';
+	import { applyEditorFont, savedEditorFont } from '$lib/editor-fonts';
 	import { armMotion, collapse, flipParams, pageEnter, panelSlide, popOut, tabIn } from '$lib/motion';
 	import {
 		initDB,
@@ -693,13 +694,9 @@
 		}
 
 		// Load editor font from localStorage
-		const savedFont = localStorage.getItem('kurumi-editor-font') as 'quattro' | 'geist' | null;
-		if (savedFont) {
-			document.documentElement.classList.add(`font-${savedFont}`);
-		} else {
-			// Default to quattro
-			document.documentElement.classList.add('font-quattro');
-		}
+		// (an unknown value, e.g. from a newer Kurumi, is the default; the
+		// chosen face's files are kept where the service worker finds them offline)
+		applyEditorFont(savedEditorFont().id, { save: false });
 
 		// Load editor font size from localStorage
 		const savedFontSize = localStorage.getItem('kurumi-editor-font-size') as 'small' | 'medium' | 'large' | null;

@@ -12,7 +12,14 @@ editor.
 Settings → Appearance sets the colour theme (Catppuccin, Nord, Gruvbox,
 Solarized, Rosé Pine or Plain, each light and dark), the accent colour, the
 editor font, its size, and the content width: Narrow, Wide (the default) or
-Full. Each device keeps its own. A **CSS snippet** there styles anything
+Full. Each device keeps its own. There are four **editor fonts**, each for
+something: iA Writer Quattro (the default, a writer's duospace), Geist (the
+interface's plain sans), Newsreader (a book serif with true italics) and
+Atkinson Hyperlegible (drawn so no two characters look alike). They set the
+text of notes everywhere; the interface keeps its own. The last two are
+downloaded when you choose them and then work offline. All are open fonts
+(SIL Open Font License); text in a script a face lacks falls back to your
+device's font. A **CSS snippet** there styles anything
 else: `:root { --color-bg: #fcfcf9; }` changes a theme colour, any selector
 works, and you can load a `.css` file. The interface's transitions are short
 and follow three variables: `:root { --motion-scale: 0; }` turns them off

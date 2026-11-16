@@ -2312,6 +2312,90 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
+	async 'editor font: chosen in Appearance, set everywhere notes are, kept, and only then downloaded'(browser) {
+		const { page, errors } = await freshPage(browser);
+		const fontFiles = [];
+		page.on('request', (r) => {
+			if (r.url().includes('/fonts/optional/')) fontFiles.push(r.url().split('/').pop());
+		});
+		const id = await db(page, `return db.addMemoryObject('Set in type', 'Plain and *italic* and **bold** words.').id;`);
+		const openNote = async () => {
+			await page.goto(`${BASE}/#/memory/${id}`, { waitUntil: 'load' });
+			await page.waitForSelector('main .ProseMirror p');
+		};
+		const face = (selector) =>
+			page.$eval(selector, (el) => {
+				const cs = getComputedStyle(el);
+				return { family: cs.fontFamily.split(',')[0].replace(/["']/g, '').trim(), size: parseFloat(cs.fontSize), leading: Math.round((parseFloat(cs.lineHeight) / parseFloat(cs.fontSize)) * 100) / 100 };
+			});
+		// The default, and nothing fetched for the faces nobody chose.
+		await openNote();
+		const standard = await face('main .ProseMirror p');
+		assert.equal(standard.family, 'iA Writer Quattro S');
+		assert.equal(standard.leading, 1.7);
+		await sleep(500);
+		assert.deepEqual(fontFiles, [], 'an optional face was downloaded without being chosen');
+		const ui = await face('aside .nav-row');
+
+		// The picker names each face in its own type; choosing one sets notes in it.
+		await page.goto(`${BASE}/#/settings/appearance`, { waitUntil: 'load' });
+		await page.waitForSelector('.font-option[data-font="newsreader"]');
+		assert.deepEqual(await page.$$eval('.font-option', (o) => o.map((b) => `${b.dataset.font}:${b.getAttribute('aria-checked')}`)), ['quattro:true', 'geist:false', 'newsreader:false', 'atkinson:false']);
+		assert.equal((await face('.font-option[data-font="newsreader"] .font-option-name')).family, 'Newsreader');
+		assert.ok((await page.$eval('.font-option[data-font="atkinson"] .font-option-blurb', (e) => e.textContent)).length > 20);
+		await page.click('.font-option[data-font="newsreader"]');
+		assert.equal(await page.$eval('.font-option[data-font="newsreader"]', (b) => b.getAttribute('aria-checked')), 'true');
+		await openNote();
+		await page.waitForFunction(() => document.fonts.check('17px Newsreader') && document.fonts.check('italic 17px Newsreader'), { timeout: 15000 });
+		const serif = await face('main .ProseMirror p');
+		assert.equal(serif.family, 'Newsreader');
+		// Its own size and leading: a low x-height, so larger type and tighter lines.
+		assert.ok(serif.size > standard.size * 1.1 && serif.size < standard.size * 1.2, `size ${serif.size} against ${standard.size}`);
+		assert.equal(serif.leading, 1.6);
+		assert.equal((await face('main .ProseMirror em')).family, 'Newsreader');
+		// The interface keeps its own face and size.
+		assert.deepEqual(await face('aside .nav-row'), ui);
+		// Read mode is set in it too.
+		await page.goto(`${BASE}/#/read/${id}`, { waitUntil: 'load' });
+		await page.waitForSelector('.markdown-content p');
+		const read = await face('.markdown-content p');
+		assert.equal(read.family, 'Newsreader');
+		assert.ok(read.size > 17 * 1.1 && read.size < 17 * 1.2, `read mode size ${read.size}`);
+		assert.equal(read.leading, 1.6);
+
+		// Kept across a reload, before first paint.
+		await page.reload({ waitUntil: 'load' });
+		assert.equal(await page.evaluate(() => document.documentElement.classList.contains('font-newsreader')), true);
+		await page.waitForSelector('.markdown-content p');
+		assert.equal((await face('.markdown-content p')).family, 'Newsreader');
+		// Both of its files are kept for offline use, the italic too; the other optional face is not.
+		await page.waitForFunction(async () => (await (await caches.open('kurumi-fonts')).keys()).length >= 2, { timeout: 15000 });
+		const kept = await page.evaluate(async () => (await (await caches.open('kurumi-fonts')).keys()).map((r) => r.url.split('/').pop()).sort());
+		assert.deepEqual(kept, ['Newsreader-Italic-Variable.woff2', 'Newsreader-Variable.woff2']);
+
+		// The other new face, with its own adjustment.
+		await page.goto(`${BASE}/#/settings/appearance`, { waitUntil: 'load' });
+		await page.waitForSelector('.font-option[data-font="atkinson"]');
+		await page.click('.font-option[data-font="atkinson"]');
+		await openNote();
+		const plain = await face('main .ProseMirror p');
+		assert.equal(plain.family, 'Atkinson Hyperlegible Next');
+		assert.equal(plain.leading, 1.65);
+
+		// A value from a newer Kurumi (or a broken one) is the default again, without an error.
+		for (const stored of ['literata-2027', 'not a class']) {
+			await page.evaluate((v) => localStorage.setItem('kurumi-editor-font', v), stored);
+			await page.reload({ waitUntil: 'load' });
+			await page.waitForSelector('main .ProseMirror p');
+			assert.deepEqual(await face('main .ProseMirror p'), standard, `stored "${stored}"`);
+			assert.equal(await page.evaluate(() => document.documentElement.classList.contains('font-size-medium')), true, 'the rest of the appearance was not applied');
+		}
+		await page.goto(`${BASE}/#/settings/appearance`, { waitUntil: 'load' });
+		await page.waitForSelector('.font-option');
+		assert.equal(await page.$eval('.font-option[data-font="quattro"]', (b) => b.getAttribute('aria-checked')), 'true');
+		assert.deepEqual(errors, []);
+	},
+
 	async 'mermaid diagrams render in notes, and accents can be chosen'(browser) {
 		const { page, errors } = await freshPage(browser);
 		const source = 'graph TD\n  A[Capture] --> B[Recall]';

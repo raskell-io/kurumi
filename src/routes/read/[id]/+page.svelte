@@ -393,12 +393,12 @@
 	.reader-body :global(.markdown-content) {
 		font-family: var(--font-editor);
 		font-size: var(--font-size-editor);
-		line-height: 1.75;
+		line-height: var(--line-height-editor);
 		color: var(--color-text);
 	}
 
 	.reader-body :global(.markdown-content p) {
-		line-height: 1.7;
+		line-height: calc(var(--line-height-editor, 1.75) - 0.05);
 	}
 
 	@media (max-width: 768px) {

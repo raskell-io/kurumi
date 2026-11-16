@@ -57,6 +57,42 @@
 	font-display: swap;
 }
 
+/* Optional editor faces ($lib/editor-fonts.ts): outside the app shell,
+   fetched only when one is chosen or previewed in the picker. Variable
+   fonts, so one upright and one italic file carry every weight.
+   Licences: /fonts/licenses/. */
+@font-face {
+	font-family: 'Newsreader';
+	src: url('/fonts/optional/Newsreader-Variable.woff2') format('woff2');
+	font-weight: 200 800;
+	font-style: normal;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: 'Newsreader';
+	src: url('/fonts/optional/Newsreader-Italic-Variable.woff2') format('woff2');
+	font-weight: 200 800;
+	font-style: italic;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: 'Atkinson Hyperlegible Next';
+	src: url('/fonts/optional/AtkinsonHyperlegibleNext-Variable.woff2') format('woff2');
+	font-weight: 200 800;
+	font-style: normal;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: 'Atkinson Hyperlegible Next';
+	src: url('/fonts/optional/AtkinsonHyperlegibleNext-Italic-Variable.woff2') format('woff2');
+	font-weight: 200 800;
+	font-style: italic;
+	font-display: swap;
+}
+
 /* Custom CSS Variables for theming - Catppuccin Latte (with white bg) */
 :root {
 	/* Font families */
@@ -74,7 +110,13 @@
 	--shell-panel-shadow: 0 1px 2px color-mix(in srgb, var(--color-text) 6%, transparent);
 	--shell-radius: 12px;
 	--shell-gutter: 8px;
-	--font-size-editor: 1.0625rem;
+	/* Note text: the size chosen in Appearance times the face's own
+	   adjustment (a face with a low x-height is set larger), and the
+	   face's line height (paragraphs are 0.05 tighter: 1.7 by default). */
+	--font-size-editor-base: 1.0625rem;
+	--font-editor-scale: 1;
+	--font-size-editor: calc(var(--font-size-editor-base) * var(--font-editor-scale));
+	--line-height-editor: 1.75;
 
 	/* Shape */
 	--radius-sm: 0.3125rem;
@@ -391,7 +433,10 @@
 	--color-accent-soft: color-mix(in srgb, var(--color-accent) 14%, transparent);
 }
 
-/* Editor font options */
+/* Editor font options ($lib/editor-fonts.ts). A class this file doesn't
+   know (a newer Kurumi's choice) changes nothing: the default stays. Each
+   stack ends in the device's own fonts, which also set the scripts the
+   face doesn't have. */
 :root.font-quattro {
 	--font-editor: 'iA Writer Quattro S', Georgia, 'Times New Roman', serif;
 }
@@ -400,17 +445,34 @@
 	--font-editor: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
+/* A book serif. Its x-height is low (0.43 em against Quattro's 0.52), so it
+   is set an eighth larger and needs less leading for the same texture. Its
+   optical-size axis follows the font size by itself: headings get the
+   display cut. */
+:root.font-newsreader {
+	--font-editor: 'Newsreader', 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, 'Noto Serif', serif;
+	--font-editor-scale: 1.125;
+	--line-height-editor: 1.65;
+}
+
+/* Wide, open letters: a touch larger, and a little less leading than the duospace. */
+:root.font-atkinson {
+	--font-editor: 'Atkinson Hyperlegible Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;
+	--font-editor-scale: 1.03;
+	--line-height-editor: 1.7;
+}
+
 /* Editor font size options */
 :root.font-size-small {
-	--font-size-editor: 0.9375rem; /* 15px */
+	--font-size-editor-base: 0.9375rem; /* 15px */
 }
 
 :root.font-size-medium {
-	--font-size-editor: 1.0625rem; /* 17px - default */
+	--font-size-editor-base: 1.0625rem; /* 17px - default */
 }
 
 :root.font-size-large {
-	--font-size-editor: 1.1875rem; /* 19px */
+	--font-size-editor-base: 1.1875rem; /* 19px */
 }
 
 /* Accent colour (Settings → Appearance), from the same palette as the theme:
@@ -852,7 +914,7 @@ textarea {
 .milkdown {
 	font-family: var(--font-editor);
 	font-size: var(--font-size-editor);
-	line-height: 1.75;
+	line-height: var(--line-height-editor);
 }
 
 .milkdown .editor {

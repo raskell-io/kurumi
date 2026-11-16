@@ -1171,7 +1171,12 @@
 	/* Paragraphs */
 	:global(.milkdown p) {
 		margin-bottom: 0.6em;
-		line-height: 1.7;
+		/* Body text is a pixel under the editor's size (16px at Medium, as it
+		   always was), times the face's adjustment. Without this the theme's
+		   own 1rem held it at 16px whatever size or face was chosen. */
+		font-size: calc((var(--font-size-editor-base, 1.0625rem) - 0.0625rem) * var(--font-editor-scale, 1));
+		/* A shade tighter than lists and the rest (1.7 with the default face). */
+		line-height: calc(var(--line-height-editor, 1.75) - 0.05);
 	}
 
 	/* Links */
@@ -1791,8 +1796,8 @@
 	/* Mobile: larger font for better readability */
 	@media (max-width: 768px) {
 		:global(.milkdown .ProseMirror) {
-			font-size: 1.125rem;
-			line-height: 1.75;
+			font-size: calc(1.125rem * var(--font-editor-scale, 1));
+			line-height: var(--line-height-editor, 1.75);
 		}
 
 		:global(.milkdown h1) {

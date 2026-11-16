@@ -115,7 +115,10 @@ export default defineConfig({
 				// local inference is used; the browser cache + transformers.js's
 				// own IndexedDB cache make subsequent loads instant.
 				// KaTeX ships each font as woff2, woff and ttf; browsers use the woff2.
-				globIgnores: ['**/ort-*.wasm', '**/onnxruntime-*.wasm', '**/KaTeX_*.woff'],
+				// fonts/optional: the editor faces beyond the default two. Only the
+				// one a person chooses is fetched, and kept in the `kurumi-fonts`
+				// cache below ($lib/editor-fonts.ts), not precached for everyone.
+				globIgnores: ['**/ort-*.wasm', '**/onnxruntime-*.wasm', '**/KaTeX_*.woff', '**/fonts/optional/**'],
 				maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MiB for Automerge WASM
 				// Inject our custom notification handlers into the generated
 				// Workbox service worker. sw-notify.js adds the periodicsync
@@ -126,6 +129,20 @@ export default defineConfig({
 				// the app shell the navigation fallback would answer with.
 				navigateFallbackDenylist: [/^\/(robots\.txt|sitemap\.xml|llms\.txt)$/],
 				runtimeCaching: [
+					{
+						// The chosen editor face (see globIgnores above). The page
+						// puts its files into this cache when a face is chosen
+						// (keepEditorFont); this answers from it, also offline.
+						// It never adds to the cache itself: the picker shows
+						// every face in its own type, and looking must not keep
+						// them all.
+						urlPattern: /\/fonts\/optional\/.+\.woff2$/i,
+						handler: 'CacheFirst',
+						options: {
+							cacheName: 'kurumi-fonts',
+							plugins: [{ cacheWillUpdate: async () => null }]
+						}
+					},
 					{
 						urlPattern: /^https:\/\/api\.(openai|anthropic)\.com\/.*/i,
 						handler: 'NetworkOnly'

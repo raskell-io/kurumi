@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { applyEditorFont, DEFAULT_EDITOR_FONT, EDITOR_FONTS, savedEditorFont } from '$lib/editor-fonts';
 	import { fadeOut } from '$lib/motion';
 	import { autofocus } from '$lib/actions/autofocus';
 	import ShortcutSettings from '$lib/components/ShortcutSettings.svelte';
@@ -312,7 +313,7 @@
 	}
 	let showSaved = $state(false);
 	let theme = $state<'system' | 'light' | 'dark'>('system');
-	let editorFont = $state<'quattro' | 'geist'>('quattro');
+	let editorFont = $state(DEFAULT_EDITOR_FONT);
 	let editorFontSize = $state<'small' | 'medium' | 'large'>('medium');
 	type NoteWidth = 'narrow' | 'wide' | 'full';
 	const ACCENTS = [
@@ -678,10 +679,8 @@
 		}
 
 		// Load editor font
-		const savedFont = localStorage.getItem('kurumi-editor-font') as 'quattro' | 'geist' | null;
-		if (savedFont) {
-			editorFont = savedFont;
-		}
+		// (an unknown value, e.g. a newer Kurumi's face, shows as the default)
+		editorFont = savedEditorFont().id;
 
 		// Load editor font size
 		const savedFontSize = localStorage.getItem('kurumi-editor-font-size') as 'small' | 'medium' | 'large' | null;
@@ -743,11 +742,8 @@
 		}
 	}
 
-	function setEditorFont(f: 'quattro' | 'geist') {
-		editorFont = f;
-		localStorage.setItem('kurumi-editor-font', f);
-		document.documentElement.classList.remove('font-quattro', 'font-geist');
-		document.documentElement.classList.add(`font-${f}`);
+	function setEditorFont(f: string) {
+		editorFont = applyEditorFont(f).id;
 	}
 
 	function setNoteWidth(w: NoteWidth) {
@@ -1288,19 +1284,38 @@
 							</div>
 						</div>
 
-						<div class="set-row">
-							<div class="set-row-text">
+						<div class="set-block">
+							<div>
 								<div class="set-row-label" id="font-label">Editor font</div>
-								<p class="set-row-help">Typeface used in the note editor.</p>
+								<p class="set-row-help">
+									The typeface notes are set in: the editor, Read mode, split view. The interface keeps its own.
+									A face is downloaded when you choose it, and kept for offline use.
+								</p>
 							</div>
-							<div class="k-segmented" role="group" aria-labelledby="font-label">
-								<button aria-pressed={editorFont === 'quattro'} onclick={() => setEditorFont('quattro')}>
-									<span style="font-family: 'iA Writer Quattro S', serif">iA Quattro</span>
-								</button>
-								<button aria-pressed={editorFont === 'geist'} onclick={() => setEditorFont('geist')}>
-									<span style="font-family: 'Geist', sans-serif">Geist</span>
-								</button>
+							<!-- Each name is set in its own face: the optional faces are fetched here, when this list is shown, not before. -->
+							<div class="font-options" role="radiogroup" aria-labelledby="font-label">
+								{#each EDITOR_FONTS as font (font.id)}
+									<button
+										type="button"
+										role="radio"
+										class="font-option"
+										aria-checked={editorFont === font.id}
+										data-font={font.id}
+										onclick={() => setEditorFont(font.id)}
+									>
+										<span class="font-option-name" style="font-family: '{font.family}', sans-serif">{font.name}</span>
+										<span class="font-option-blurb">{font.blurb}</span>
+									</button>
+								{/each}
 							</div>
+							<p class="set-row-help">
+								All four are open fonts under the SIL Open Font License:
+								<a href="/fonts/licenses/iA-Writer-Quattro-LICENSE.md" target="_blank" rel="noopener">iA Writer Quattro</a>,
+								<a href="/fonts/licenses/Geist-OFL.txt" target="_blank" rel="noopener">Geist</a>,
+								<a href="/fonts/licenses/Newsreader-OFL.txt" target="_blank" rel="noopener">Newsreader</a>,
+								<a href="/fonts/licenses/AtkinsonHyperlegibleNext-OFL.txt" target="_blank" rel="noopener">Atkinson Hyperlegible Next</a>.
+								Text in a script a face doesn't have is set in your device's own font.
+							</p>
 						</div>
 
 						<div class="set-row">
@@ -3353,6 +3368,52 @@
 		background: var(--p-dark-bg);
 		color: var(--p-dark-text);
 		box-shadow: inset 0 -3px 0 var(--p-dark-ref);
+	}
+
+	/* ---- Editor font ---- */
+	.font-options {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 0.5rem;
+	}
+
+	@media (min-width: 640px) {
+		.font-options {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+	}
+
+	.font-option {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.25rem;
+		padding: 0.75rem 0.875rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		background: var(--color-bg);
+		text-align: left;
+	}
+
+	.font-option:hover {
+		background: var(--color-hover);
+	}
+
+	.font-option[aria-checked='true'] {
+		border-color: var(--color-accent);
+		box-shadow: 0 0 0 1px var(--color-accent);
+	}
+
+	.font-option-name {
+		font-size: 1.0625rem;
+		line-height: 1.3;
+		color: var(--color-text);
+	}
+
+	.font-option-blurb {
+		font-size: 0.75rem;
+		line-height: 1.45;
+		color: var(--color-text-muted);
 	}
 
 	.css-snippet {
