@@ -42,6 +42,7 @@
 	import { mathPlugins } from '$lib/editor/math';
 	import { columnsPlugins } from '$lib/editor/columns';
 	import { audioEmbedPlugin } from '$lib/editor/audioEmbed';
+	import { calloutPlugin } from '$lib/editor/callout';
 	import { startCheckboxRenderer } from '$lib/editor/checkboxRenderer';
 	import { processAndStoreImage } from '$lib/utils/image';
 	import CameraCapture from './CameraCapture.svelte';
@@ -667,6 +668,7 @@
 			.use(block)
 			.use(findReplacePlugin)
 			.use(noteEmbedPlugin)
+			.use(calloutPlugin)
 			.use(blockRefPlugin)
 			.use(headingFoldPlugin)
 			.use(vimPlugin)
@@ -1641,6 +1643,173 @@
 
 	:global(.milkdown blockquote > :last-child) {
 		margin-bottom: 0;
+	}
+
+	/* The theme sets quotes in a serif; they keep the note's face, as in Read mode */
+	:global(.milkdown .ProseMirror blockquote) {
+		font-family: inherit;
+	}
+
+	/* Toggles (editor/toggle.ts): a <details> block, drawn as in Read mode */
+	:global(.milkdown .kurumi-toggle) {
+		position: relative;
+		margin: 0.75em 0;
+		padding: 0.375em 0.875em 0.375em 2.25em;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+	}
+
+	:global(.milkdown .kurumi-toggle-caret) {
+		position: absolute;
+		top: 0.5em;
+		left: 0.5em;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.5em;
+		height: 1.5em;
+		padding: 0;
+		border: none;
+		border-radius: var(--radius-sm);
+		background: none;
+		color: var(--color-text-faint);
+		cursor: pointer;
+		transition: background-color var(--motion-fast) var(--ease-enter), color var(--motion-fast) var(--ease-enter);
+	}
+
+	:global(.milkdown .kurumi-toggle-caret svg) {
+		transition: transform var(--motion-fast) var(--ease-enter);
+	}
+
+	:global(.milkdown .kurumi-toggle.is-open > .kurumi-toggle-caret svg) {
+		transform: rotate(90deg);
+	}
+
+	:global(.milkdown .kurumi-toggle-caret:hover) {
+		background: var(--color-hover);
+		color: var(--color-text);
+	}
+
+	:global(.milkdown .kurumi-toggle-caret:focus-visible) {
+		outline: 2px solid var(--color-accent);
+		outline-offset: 1px;
+	}
+
+	:global(.milkdown .kurumi-toggle-summary) {
+		font-weight: 500;
+		font-size: calc((var(--font-size-editor-base, 1.0625rem) - 0.0625rem) * var(--font-editor-scale, 1));
+		line-height: calc(var(--line-height-editor, 1.75) - 0.05);
+	}
+
+	/* An empty title: the word Toggle, faint, until one is typed */
+	:global(.milkdown .kurumi-toggle-summary:has(> br:only-child)::before) {
+		content: 'Toggle';
+		float: left;
+		height: 0;
+		color: var(--color-text-faint);
+		pointer-events: none;
+	}
+
+	:global(.milkdown .kurumi-toggle:not(.is-open) > .kurumi-toggle-content > :not(.kurumi-toggle-summary)) {
+		display: none;
+	}
+
+	:global(.milkdown .kurumi-toggle-content > :nth-child(2)) {
+		margin-top: 0.35em;
+	}
+
+	:global(.milkdown .kurumi-toggle-content > :last-child:not(.kurumi-toggle-summary)) {
+		margin-bottom: 0.25em;
+	}
+
+	:global(.milkdown .kurumi-toggle.is-open.is-empty > .kurumi-toggle-content::after) {
+		content: 'Empty. Press Enter in the title to write inside.';
+		display: block;
+		margin-top: 0.25em;
+		color: var(--color-text-faint);
+		font-size: 0.875em;
+	}
+
+	/* Callouts (editor/callout.ts): a quote starting [!type], drawn as in Read mode */
+	:global(.milkdown blockquote.kurumi-callout) {
+		--callout: var(--color-ref-date);
+		border-left-color: var(--callout);
+		border-radius: var(--radius-md);
+		background: color-mix(in srgb, var(--callout) 8%, transparent);
+		padding: 0.75em 1em;
+		margin: 1em 0;
+		color: var(--color-text);
+	}
+
+	:global(.milkdown blockquote:is(.callout-tip, .callout-success)) {
+		--callout: var(--color-ref-person);
+	}
+
+	:global(.milkdown blockquote.callout-warning) {
+		--callout: #df8e1d;
+	}
+
+	:global(.milkdown blockquote.callout-danger) {
+		--callout: var(--color-danger);
+	}
+
+	:global(.milkdown blockquote.callout-quote) {
+		--callout: var(--color-text-faint);
+		color: var(--color-text-muted);
+	}
+
+	:global(.milkdown blockquote.kurumi-callout > p:first-child) {
+		margin-bottom: 0.35em;
+	}
+
+	:global(.milkdown .callout-marker) {
+		display: none;
+	}
+
+	:global(.milkdown .callout-title) {
+		font-weight: 600;
+		color: var(--callout);
+	}
+
+	:global(.milkdown .callout-title-placeholder) {
+		opacity: 0.75;
+		pointer-events: none;
+		user-select: none;
+	}
+
+	/* The line break after the title starts the body on its own line */
+	:global(.milkdown .callout-title-break) {
+		display: block;
+		height: 0.35em;
+		font-size: 0;
+		line-height: 0;
+	}
+
+	:global(.milkdown .callout-icon) {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.5em;
+		height: 1.5em;
+		margin: 0 0.25em 0 -0.25em;
+		padding: 0;
+		border: none;
+		border-radius: var(--radius-sm);
+		background: none;
+		color: var(--callout);
+		vertical-align: -0.3em;
+		cursor: pointer;
+		transition: background-color var(--motion-fast) var(--ease-enter);
+	}
+
+	:global(.milkdown .callout-icon:hover),
+	:global(.milkdown .callout-icon[aria-expanded='true']) {
+		background: color-mix(in srgb, var(--callout) 16%, transparent);
+	}
+
+	:global(.milkdown .callout-icon:focus-visible) {
+		outline: 2px solid var(--callout);
+		outline-offset: 1px;
 	}
 
 	:global(.milkdown ::selection) {

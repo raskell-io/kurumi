@@ -14,6 +14,7 @@
 	import DataviewBlock from './DataviewBlock.svelte';
 	import { onMount, mount, unmount, tick } from 'svelte';
 	import { loadHighlighter, highlightToHtml } from '$lib/highlight';
+	import { CALLOUT_BLOCK, CALLOUT_LABELS, calloutType } from '$lib/callouts';
 	import DatabaseBlock from './database/DatabaseBlock.svelte';
 	import { databaseBlockViewId } from '$lib/database';
 
@@ -144,16 +145,15 @@
 		// Obsidian-style callouts. Convert to HTML divs with classes so
 		// CSS can style them. Must run before marked wraps the > as a
 		// blockquote.
-		md = md.replace(
-			/^> \[!(info|warning|tip|note|success|danger|quote)\](.*?)$\n((?:^> .*$\n?)*)/gm,
-			(_, type, title, body) => {
-				const cleanBody = body.replace(/^> ?/gm, '').trim();
-				const titleHtml = title.trim()
-					? `<div class="callout-title">${title.trim()}</div>`
-					: '';
-				return `<div class="callout callout-${type}">${titleHtml}<div class="callout-body">${cleanBody}</div></div>\n`;
-			}
-		);
+		// Lines of only `>` (what the editor writes between paragraphs)
+		// belong to the callout, and its body stays Markdown: blank lines
+		// around it let marked read it. Untitled: the type's name.
+		md = md.replace(CALLOUT_BLOCK, (_, name: string, title: string, body: string) => {
+			const type = calloutType(name) ?? 'info';
+			const cleanBody = body.replace(/^> ?/gm, '').trim();
+			const heading = title.trim() || CALLOUT_LABELS[type];
+			return `<div class="callout callout-${type}"><div class="callout-title">${heading}</div><div class="callout-body">\n\n${cleanBody}\n\n</div></div>\n\n`;
+		});
 
 		// --- Toggles: <details> already supported by GFM ---
 		// No preprocessing needed; marked handles <details>/<summary>
@@ -1000,6 +1000,14 @@
 		margin-bottom: 0.25em;
 		font-weight: 600;
 		color: var(--callout);
+	}
+
+	.markdown-content :global(.callout-body > :first-child) {
+		margin-top: 0;
+	}
+
+	.markdown-content :global(.callout-body > :last-child) {
+		margin-bottom: 0;
 	}
 
 	.markdown-content :global(:is(.callout-tip, .callout-success)) {

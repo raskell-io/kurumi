@@ -28,6 +28,7 @@ import { Plugin, PluginKey } from '@milkdown/kit/prose/state';
 import { $prose } from '@milkdown/kit/utils';
 import type { EditorView } from '@milkdown/kit/prose/view';
 import { turnInto, insertMarkdownBlocks, type BlockKind } from './blocks';
+import { selectCalloutBody } from './callout';
 import { createRegistry } from './registry';
 
 const slashKey = new PluginKey('slash-commands');
@@ -214,6 +215,13 @@ function insertBlocks(
 	return insertMarkdownBlocks(view, from, to, markdown, select) || replaceWithText(view, from, to, markdown);
 }
 
+/** A callout with its body selected, ready to type over (editor/callout.ts). */
+function insertCallout(view: EditorView, from: number, to: number, type: string): boolean {
+	if (!insertMarkdownBlocks(view, from, to, `> [!${type}]\n> Write here`, 'first')) return replaceWithText(view, from, to, `[!${type}] `);
+	selectCalloutBody(view);
+	return true;
+}
+
 function replaceWithText(
 	view: EditorView,
 	from: number,
@@ -356,7 +364,7 @@ export const builtInSlashCommands: SlashCommand[] = [
 		description: 'Blue information box',
 		icon: 'info',
 		category: 'Insert',
-		execute: (view, from, to) => insertBlocks(view, from, to, '> [!info]\n>\n> Write here')
+		execute: (view, from, to) => insertCallout(view, from, to, 'info')
 	},
 	{
 		id: 'callout-warning',
@@ -364,7 +372,7 @@ export const builtInSlashCommands: SlashCommand[] = [
 		description: 'Yellow warning box',
 		icon: 'alert-triangle',
 		category: 'Insert',
-		execute: (view, from, to) => insertBlocks(view, from, to, '> [!warning]\n>\n> Write here')
+		execute: (view, from, to) => insertCallout(view, from, to, 'warning')
 	},
 	{
 		id: 'callout-tip',
@@ -372,7 +380,7 @@ export const builtInSlashCommands: SlashCommand[] = [
 		description: 'Green tip box',
 		icon: 'lightbulb',
 		category: 'Insert',
-		execute: (view, from, to) => insertBlocks(view, from, to, '> [!tip]\n>\n> Write here')
+		execute: (view, from, to) => insertCallout(view, from, to, 'tip')
 	},
 	{
 		id: 'dataview',
