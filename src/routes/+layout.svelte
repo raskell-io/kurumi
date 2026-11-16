@@ -498,13 +498,24 @@
 		if (!navScroller || !navContent) return;
 		const follow = () => placeIndicator();
 		navScroller.addEventListener('scroll', follow, { passive: true });
-		// Groups and folders opening, rows arriving, the window resizing.
+		// Groups and folders opening, rows arriving, the window resizing. The
+		// sections are watched one by one: while the list is shorter than the
+		// sidebar its own box keeps its size whatever opens inside it.
+		const content = navContent;
 		const observer = new ResizeObserver(follow);
-		observer.observe(navContent);
-		observer.observe(navScroller);
+		const watch = () => {
+			observer.disconnect();
+			observer.observe(navScroller!);
+			for (const section of content.children) observer.observe(section);
+			follow();
+		};
+		const sections = new MutationObserver(watch);
+		sections.observe(content, { childList: true });
+		watch();
 		return () => {
 			navScroller?.removeEventListener('scroll', follow);
 			observer.disconnect();
+			sections.disconnect();
 		};
 	});
 
