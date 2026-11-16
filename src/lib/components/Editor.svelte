@@ -932,11 +932,24 @@
 		color: #1e1e2e;
 	}
 
-	/* ![[embed]] source line: keep it, but quiet (see $lib/editor/noteEmbed.ts) */
+	/* ![[embed]] source line: only while the cursor is in it, quiet (see $lib/editor/noteEmbed.ts) */
 	.milkdown-editor :global(.note-embed-source) {
 		margin-bottom: 0 !important;
 		font-size: 0.8125em;
 		color: var(--color-text-faint);
+	}
+
+	.milkdown-editor :global(.note-embed-source:not(.is-editing)) {
+		display: none;
+	}
+
+	/* The card's title row edits the line it comes from */
+	.milkdown-editor :global(.note-embed-widget .note-embed-bar) {
+		cursor: text;
+	}
+
+	.milkdown-editor :global(.note-embed-widget .note-embed-bar :is(button, a)) {
+		cursor: pointer;
 	}
 
 	/* Images open in the viewer on click */
