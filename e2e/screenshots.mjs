@@ -9,6 +9,16 @@
  * Builds the app and serves it with `vite preview` (a production build, so
  * the offline settings show what users see). Set CHROME_PATH to use a
  * specific Chrome.
+ *
+ * For design reviews, without touching docs/images:
+ *   SHOTS_OUT=<dir>      write there instead (nothing is copied to static/)
+ *   SHOTS_FORMAT=png     PNG instead of WebP; files are <shot>-<light|dark>
+ *   SHOTS_SET=design     the app shell set (home, note, split view, project,
+ *                        to-dos, graph, command palette, settings, sidebar
+ *                        collapsed, and home and a note at phone width)
+ *   SHOTS_FONT=<id>      an editor font from Settings → Appearance for the
+ *                        note shots (with SHOTS_SET=design: only those)
+ *   SHOTS_DEV=1          serve with `vite dev` (no build needed)
  */
 
 import { spawn } from 'node:child_process';
@@ -21,13 +31,20 @@ const PORT = Number(process.env.E2E_PORT ?? 5298);
 const BASE = `http://localhost:${PORT}`;
 const MAC_CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const THEME = process.env.THEME === 'dark' ? 'dark' : 'light';
-const OUT = new URL('../docs/images/', import.meta.url).pathname;
+const DOCS = new URL('../docs/images/', import.meta.url).pathname;
+const OUT = process.env.SHOTS_OUT ? join(process.env.SHOTS_OUT, '/') : DOCS;
+const FORMAT = process.env.SHOTS_FORMAT === 'png' ? 'png' : 'webp';
+const DESIGN = process.env.SHOTS_SET === 'design';
+const FONT = process.env.SHOTS_FONT || null;
+// Docs images are name.webp / name-dark.webp; review sets name-light / name-dark.
+const fileOf = (name) => join(OUT, OUT === DOCS ? `${name}${THEME === 'dark' ? '-dark' : ''}.${FORMAT}` : `${name}-${THEME}.${FORMAT}`);
+const capture = (page, name) => page.screenshot({ path: fileOf(name), type: FORMAT, ...(FORMAT === 'webp' ? { quality: 85 } : {}) });
 const ABOUT = new URL('../static/about/', import.meta.url).pathname;
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function startServer() {
-	const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], {
+	const server = spawn('npx', ['vite', process.env.SHOTS_DEV ? 'dev' : 'preview', '--port', String(PORT), '--strictPort'], {
 		stdio: ['ignore', 'pipe', 'pipe'],
 		detached: true
 	});
@@ -86,11 +103,11 @@ async function shot(page, name) {
 	// No "works offline" toast in the picture.
 	await page.evaluate(() => document.querySelector('.update-toast .close-btn')?.click());
 	await sleep(200);
-	const file = join(OUT, `${name}${THEME === 'dark' ? '-dark' : ''}.webp`);
-	await page.screenshot({ path: file, type: 'webp', quality: 85 });
-	console.log(`  ✓ ${file.replace(OUT, 'docs/images/')}`);
+	const file = fileOf(name);
+	await capture(page, name);
+	console.log(`  ✓ ${file}`);
 	// Settings → About shows the note screenshot (AboutKurumi.svelte).
-	if (name === 'note') copyFileSync(file, join(ABOUT, basename(file)));
+	if (name === 'note' && OUT === DOCS) copyFileSync(file, join(ABOUT, basename(file)));
 }
 
 // The built app routes by hash (/#/projects), like on a static host.
@@ -126,6 +143,118 @@ try {
 		// No model downloads while taking pictures.
 		localStorage.setItem('kurumi-local-inference', JSON.stringify({ preloadOnStartup: false }));
 	}, THEME);
+
+	if (DESIGN) {
+		await designSet(page);
+		process.exitCode = 0;
+	} else {
+		await docsSet(page);
+	}
+} finally {
+	await browser?.close();
+	try {
+		process.kill(-server.pid);
+	} catch {
+		server.kill();
+	}
+	rmSync(profile, { recursive: true, force: true });
+}
+
+/** The app shell, for a design review: the same screens in every run. */
+async function designSet(page) {
+	const notesOnly = !!FONT;
+	await go(page, '/');
+	await mainIncludes(page, 'Welcome to Kurumi');
+	await clickText(page, 'main button', 'explore an example');
+	await page.waitForFunction(() => document.querySelector('input[aria-label="Note title"]')?.value === 'Start here', { timeout: 15_000 });
+	if (FONT) {
+		// As Settings → Appearance → Editor font does.
+		await page.evaluate((font) => localStorage.setItem('kurumi-editor-font', font), FONT);
+		await page.reload({ waitUntil: 'load' });
+		await page.waitForFunction(() => document.querySelector('input[aria-label="Note title"]')?.value === 'Start here', { timeout: 15_000 });
+	}
+	await sleep(1500);
+	await shot(page, 'note');
+
+	// A second note beside it.
+	const other = () => page.evaluate(() => !![...document.querySelectorAll('.note-row')].find((r) => !r.textContent.includes('Start here')));
+	// The example's other notes are in folders: open the first.
+	if (!(await other())) {
+		await page.click('.folder-row');
+		await sleep(400);
+	}
+	await page.evaluate(() => {
+		const row = [...document.querySelectorAll('.note-row')].find((r) => !r.textContent.includes('Start here'));
+		row.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, altKey: true }));
+	});
+	await page.waitForSelector('.split-pane .ProseMirror', { timeout: 15_000 });
+	await sleep(800);
+	await shot(page, 'split');
+	await page.click('button[aria-label="Close split view"]');
+
+	if (!notesOnly) {
+		await page.keyboard.down(MOD);
+		await page.keyboard.press('Backslash');
+		await page.keyboard.up(MOD);
+		await sleep(600);
+		await shot(page, 'sidebar-collapsed');
+		await page.keyboard.down(MOD);
+		await page.keyboard.press('Backslash');
+		await page.keyboard.up(MOD);
+
+		await go(page, '/projects');
+		await page.waitForFunction(() => [...document.querySelectorAll('main a')].some((a) => a.textContent.includes('Falcon launch')), { timeout: 10_000 });
+		await clickText(page, 'main a', 'Falcon launch');
+		await mainIncludes(page, 'Which SSO vendor fits our budget?');
+		await shot(page, 'project');
+
+		await go(page, '/actions');
+		await sleep(800);
+		await shot(page, 'todos');
+
+		await go(page, '/graph');
+		await sleep(2500);
+		for (let i = 0; i < 3; i++) {
+			await page.click('button[aria-label="Zoom out"]').catch(() => {});
+			await sleep(300);
+		}
+		await sleep(800);
+		await shot(page, 'graph');
+
+		await go(page, '/settings/appearance');
+		await sleep(800);
+		await shot(page, 'settings');
+
+		await go(page, '/');
+		await mainIncludes(page, 'Ask Kurumi');
+		await shot(page, 'home');
+		await page.keyboard.down(MOD);
+		await page.keyboard.press('k');
+		await page.keyboard.up(MOD);
+		await sleep(400);
+		await page.keyboard.type('falcon');
+		await sleep(800);
+		await capture(page, 'command-palette');
+		console.log(`  ✓ ${fileOf('command-palette')}`);
+		await page.keyboard.press('Escape');
+	}
+
+	// A phone.
+	await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+	if (!notesOnly) {
+		await go(page, '/');
+		await mainIncludes(page, 'Ask Kurumi');
+		await shot(page, 'home-phone');
+	}
+	await go(page, '/');
+	const noteId = await page.evaluate(() => JSON.parse(localStorage.getItem('kurumi-recent-notes') ?? '[]')[0]);
+	await go(page, `/memory/${noteId}`);
+	await page.waitForSelector('main .ProseMirror', { timeout: 15_000 });
+	await sleep(1200);
+	await shot(page, 'note-phone');
+}
+
+async function docsSet(page) {
 
 	await go(page, '/');
 	await mainIncludes(page, 'Welcome to Kurumi');
@@ -180,8 +309,8 @@ try {
 	await sleep(400);
 	await page.keyboard.type('falcon');
 	await sleep(800);
-	await page.screenshot({ path: join(OUT, `command-palette${THEME === 'dark' ? '-dark' : ''}.webp`), type: 'webp', quality: 85 });
-	console.log('  ✓ docs/images/command-palette');
+	await capture(page, 'command-palette');
+	console.log(`  ✓ ${fileOf('command-palette')}`);
 	await page.keyboard.press('Escape');
 
 	await go(page, '/settings/sync');
@@ -191,12 +320,4 @@ try {
 	await go(page, '/settings/offline');
 	await mainIncludes(page, 'Offline');
 	await shot(page, 'settings-offline');
-} finally {
-	await browser?.close();
-	try {
-		process.kill(-server.pid);
-	} catch {
-		server.kill();
-	}
-	rmSync(profile, { recursive: true, force: true });
 }
