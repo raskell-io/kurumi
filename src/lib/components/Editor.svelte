@@ -44,6 +44,7 @@
 	import { audioEmbedPlugin } from '$lib/editor/audioEmbed';
 	import { calloutPlugin } from '$lib/editor/callout';
 	import { togglePlugins } from '$lib/editor/toggle';
+	import { highlightTextPlugin } from '$lib/editor/highlightText';
 	import { startCheckboxRenderer } from '$lib/editor/checkboxRenderer';
 	import { processAndStoreImage } from '$lib/utils/image';
 	import CameraCapture from './CameraCapture.svelte';
@@ -671,6 +672,7 @@
 			.use(findReplacePlugin)
 			.use(noteEmbedPlugin)
 			.use(calloutPlugin)
+			.use(highlightTextPlugin)
 			.use(blockRefPlugin)
 			.use(headingFoldPlugin)
 			.use(vimPlugin)
@@ -1032,7 +1034,26 @@
 		transition: background-color var(--motion-fast) var(--ease-enter), text-decoration-color var(--motion-fast) var(--ease-enter);
 	}
 
-	/* [[Note|text]] reads [[text]] unless the cursor is in it (editor/wikilink.ts) */
+	/* A date written //2026-11-20 reads "Nov 20" unless the cursor is at it (editor/datePeople.ts) */
+	:global(.milkdown .date-raw-hidden) {
+		display: none;
+	}
+
+	/* ==highlight== (editor/highlightText.ts): the marks show, faintly, only while editing it */
+	:global(.milkdown .kurumi-highlight) {
+		border-radius: 3px;
+		background: color-mix(in srgb, #df8e1d 22%, transparent);
+	}
+
+	:global(.milkdown .md-marker) {
+		color: var(--color-text-faint);
+	}
+
+	:global(.milkdown .md-marker-hidden) {
+		display: none;
+	}
+
+	/* [[Note|text]] reads text unless the cursor is in it (editor/wikilink.ts) */
 	:global(.milkdown .wikilink-target-hidden) {
 		display: none;
 	}

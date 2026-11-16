@@ -24,7 +24,7 @@ import { addFolder, getMemoryObject, openFolderAsDatabase } from '$lib/db';
 import { isLinkedNoteId } from '$lib/linked/backend';
 import { NO_FILES, NOT_IN_LINKED } from '$lib/linked/capabilities';
 import { showNotice } from '$lib/stores/notice';
-import { Plugin, PluginKey } from '@milkdown/kit/prose/state';
+import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state';
 import { $prose } from '@milkdown/kit/utils';
 import type { EditorView } from '@milkdown/kit/prose/view';
 import { turnInto, insertMarkdownBlocks, type BlockKind } from './blocks';
@@ -395,10 +395,16 @@ export const builtInSlashCommands: SlashCommand[] = [
 	{
 		id: 'highlight',
 		label: 'Highlight',
-		description: 'Highlight text with ==markers==',
+		description: 'Highlighted text; on a selection, ⌘/Ctrl+Shift+H',
 		icon: 'minus',
 		category: 'Basic',
-		execute: (view, from, to) => replaceWithText(view, from, to, '==highlighted text==')
+		execute: (view, from, to) => {
+			// Drawn highlighted; the placeholder is selected, to type over.
+			replaceWithText(view, from, to, '==highlighted text==');
+			view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from + 2, from + 18)));
+			view.focus();
+			return true;
+		}
 	},
 
 	{

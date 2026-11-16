@@ -11,6 +11,7 @@ import { Plugin, PluginKey } from '@milkdown/kit/prose/state';
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view';
 import { $prose } from '@milkdown/kit/utils';
 import { createRegistry } from './registry';
+import { formatDay, formatDayLong } from '$lib/format-date';
 
 const datePeopleKey = new PluginKey('date-people');
 
@@ -53,7 +54,23 @@ const tagRegex = /#([a-zA-Z][a-zA-Z0-9_-]*)/g;
 // Match URLs (http/https)
 const urlRegex = /https?:\/\/[^\s<>"\])+]+(?:\([^\s<>"]*\))?[^\s<>"\]).,;:!?'"]*/g;
 
-function findDecorations(doc: any): Decoration[] {
+/**
+ * A date reads as a date ("Nov 20") unless the cursor is at it, when the
+ * `//2026-11-20` it is written as shows instead, to edit.
+ */
+function dateWidget(date: string) {
+	const label = formatDay(date);
+	return () => {
+		const span = document.createElement('span');
+		span.className = 'date-reference date-shown';
+		span.dataset.date = date;
+		span.title = formatDayLong(date);
+		span.textContent = label;
+		return span;
+	};
+}
+
+function findDecorations(doc: any, selection?: { from: number; to: number }): Decoration[] {
 	const decorations: Decoration[] = [];
 
 	doc.descendants((node: any, pos: number) => {
@@ -65,13 +82,21 @@ function findDecorations(doc: any): Decoration[] {
 				const start = pos + match.index;
 				const end = start + match[0].length;
 				const date = match[1];
+				const editing = selection && selection.from <= end && selection.to >= start;
 
-				decorations.push(
-					Decoration.inline(start, end, {
-						class: 'date-reference',
-						'data-date': date
-					})
-				);
+				if (editing) {
+					decorations.push(
+						Decoration.inline(start, end, {
+							class: 'date-reference',
+							'data-date': date
+						})
+					);
+				} else {
+					decorations.push(
+						Decoration.inline(start, end, { class: 'date-raw-hidden' }),
+						Decoration.widget(start, dateWidget(date), { side: -1, key: `date:${date}:${formatDay(date)}` })
+					);
+				}
 			}
 
 			// Find people mentions
@@ -137,11 +162,12 @@ export const datePeoplePlugin = $prose(() => {
 		key: datePeopleKey,
 		state: {
 			init(_, state) {
-				return DecorationSet.create(state.doc, findDecorations(state.doc));
+				return DecorationSet.create(state.doc, findDecorations(state.doc, state.selection));
 			},
-			apply(tr, oldSet) {
-				if (tr.docChanged) {
-					return DecorationSet.create(tr.doc, findDecorations(tr.doc));
+			apply(tr, oldSet, _old, state) {
+				// The selection decides which dates show how they're written.
+				if (tr.docChanged || tr.selectionSet) {
+					return DecorationSet.create(tr.doc, findDecorations(tr.doc, state.selection));
 				}
 				return oldSet.map(tr.mapping, tr.doc);
 			}
