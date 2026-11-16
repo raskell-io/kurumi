@@ -7,7 +7,7 @@
 	import { fitTabs } from '$lib/tab-strip';
 	import { menu } from '$lib/actions/overlay';
 	import { applyEditorFont, savedEditorFont } from '$lib/editor-fonts';
-	import { growX, switchInstantly, armMotion, collapse, flipParams, pageEnter, panelSlide, popOut, tabIn } from '$lib/motion';
+	import { motionMs, growX, switchInstantly, armMotion, collapse, flipParams, pageEnter, panelSlide, popOut, tabIn } from '$lib/motion';
 	import {
 		initDB,
 		memoryObjects,
@@ -531,10 +531,15 @@
 			frame = performance.now() < until ? requestAnimationFrame(track) : 0;
 		};
 		const rows = new MutationObserver(() => {
-			until = performance.now() + 400;
+			// As long as an opening takes (the motion tokens, whatever they are set to), and a little more.
+			until = performance.now() + (motionMs('base') || 0) + 120;
 			if (!frame) frame = requestAnimationFrame(track);
 		});
 		rows.observe(navContent, { childList: true, subtree: true });
+		// And where it ends, exactly.
+		const settled = () => follow();
+		navContent.addEventListener('animationend', settled);
+		navContent.addEventListener('transitionend', settled);
 		// The window or the sidebar resizing.
 		const observer = new ResizeObserver(follow);
 		observer.observe(navScroller);
@@ -542,6 +547,8 @@
 			navScroller?.removeEventListener('scroll', follow);
 			observer.disconnect();
 			rows.disconnect();
+			navContent?.removeEventListener('animationend', settled);
+			navContent?.removeEventListener('transitionend', settled);
 			cancelAnimationFrame(frame);
 		};
 	});
