@@ -3221,6 +3221,10 @@ const scenarios = {
 		assert.equal(now.overlap, false, JSON.stringify(now));
 		assert.ok(now.narrowest >= 88, `a tab is ${now.narrowest}px wide`);
 		const shownBefore = now.shown.length;
+		// Tabs that just arrived or moved into the stack slide for 160 ms, and the
+		// stack control moves with them: a click aimed at it waits until they rest.
+		const still = () => page.waitForFunction(() => document.querySelector('.tab-bar').getAnimations({ subtree: true }).length === 0, { timeout: 5000 });
+		await still();
 		// The stack lists the rest; arrow keys move, Enter opens, and the chosen tab is shown.
 		await page.click('.tab-stack');
 		await page.waitForSelector('.tab-stack-item');
@@ -3236,6 +3240,7 @@ const scenarios = {
 		assert.equal(now.shown.length, shownBefore);
 		assert.equal(now.overlap, false, JSON.stringify(now));
 		// Delete in the stack closes that tab.
+		await still();
 		await page.click('.tab-stack');
 		await page.waitForSelector('.tab-stack-item');
 		const gone = (await bar()).stacked[0];
