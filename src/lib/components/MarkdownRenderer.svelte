@@ -15,6 +15,7 @@
 	import { onMount, mount, unmount, tick } from 'svelte';
 	import { loadHighlighter, highlightToHtml } from '$lib/highlight';
 	import { CALLOUT_BLOCK, CALLOUT_LABELS, calloutType } from '$lib/callouts';
+	import { formatDay, formatDayLong } from '$lib/format-date';
 	import DatabaseBlock from './database/DatabaseBlock.svelte';
 	import { databaseBlockViewId } from '$lib/database';
 
@@ -251,7 +252,7 @@
 		// Negative lookbehind `(?<!:)` excludes URL schemes so
 		// https://... doesn't get its `//` turned into a date button.
 		html = html.replace(/(?<!:)\/\/(\d{4}-\d{2}-\d{2})/g, (_, date) => {
-			return `<button type="button" class="date-reference" data-ref-type="date" data-ref-value="${date}">${date}</button>`;
+			return `<button type="button" class="date-reference" data-ref-type="date" data-ref-value="${date}" title="${escapeAttr(formatDayLong(date))}">${escapeHtml(formatDay(date))}</button>`;
 		});
 
 		// Process people @Full Name - use data attributes for popup
@@ -625,10 +626,11 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25em;
-		padding: 0.05em 0.4em;
+		padding: 0.05em 0.15em;
 		border: none;
 		border-radius: 4px;
-		background: color-mix(in srgb, var(--ref) 12%, transparent);
+		/* Quiet: the colour of the kind only, a tint on hover */
+		background: transparent;
 		color: var(--ref);
 		font-family: inherit;
 		font-size: 0.92em;
@@ -641,7 +643,7 @@
 	}
 
 	.markdown-content :global(:is(.date-reference, .person-reference, .tag-reference, .url-reference):hover) {
-		background: color-mix(in srgb, var(--ref) 22%, transparent);
+		background: color-mix(in srgb, var(--ref) 12%, transparent);
 	}
 
 	.markdown-content :global(:is(.date-reference, .person-reference, .url-reference)::before) {
@@ -681,8 +683,9 @@
 		--ref: var(--color-ref-tag);
 	}
 
+	/* A web address is a link, in the colour of links */
 	.markdown-content :global(.url-reference) {
-		--ref: var(--color-ref-url);
+		--ref: var(--color-accent);
 		word-break: break-all;
 	}
 

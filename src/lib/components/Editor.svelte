@@ -1084,9 +1084,10 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25em;
-		background: color-mix(in srgb, var(--ref) 12%, transparent);
+		/* Quiet: the colour of the kind only, a tint on hover */
+		background: transparent;
 		color: var(--ref);
-		padding: 0.05em 0.4em;
+		padding: 0.05em 0.15em;
 		border-radius: 4px;
 		font-weight: 500;
 		font-size: 0.92em;
@@ -1099,7 +1100,7 @@
 	:global(.milkdown .person-reference:hover),
 	:global(.milkdown .tag-reference:hover),
 	:global(.milkdown .url-reference:hover) {
-		background: color-mix(in srgb, var(--ref) 22%, transparent);
+		background: color-mix(in srgb, var(--ref) 12%, transparent);
 	}
 
 	:global(.milkdown .date-reference::before),
@@ -1141,8 +1142,9 @@
 		--ref: var(--color-ref-tag);
 	}
 
+	/* A web address is a link, in the colour of links */
 	:global(.milkdown .url-reference) {
-		--ref: var(--color-ref-url);
+		--ref: var(--color-accent);
 		word-break: break-all;
 	}
 
