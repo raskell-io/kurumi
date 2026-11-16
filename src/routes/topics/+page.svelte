@@ -1,4 +1,5 @@
 <script lang="ts">
+	import KeyHints from '$lib/components/ui/KeyHints.svelte';
 	import { autofocus } from '$lib/actions/autofocus';
 	import {
 		memoryObjects,
@@ -183,21 +184,21 @@
 </script>
 
 <svelte:head>
-	<title>Topics & projects - Kurumi</title>
+	<title>Topics and project names - Kurumi</title>
 </svelte:head>
 
 <div class="k-page">
 	<header class="k-page-header">
 		<div class="min-w-0">
-			<h1 class="k-page-title">Topics & projects</h1>
-			<p class="k-page-subtitle">Extracted automatically from voice memos and meetings</p>
-			<div class="k-hints">
+			<h1 class="k-page-title">Topics and project names</h1>
+			<p class="k-page-subtitle">The topics and project names found in your voice memos and meetings, to tidy up. Your projects themselves are under Projects.</p>
+		</div>
+		<KeyHints>
 				<span><kbd class="k-kbd">1</kbd> <kbd class="k-kbd">2</kbd> switch</span>
-				<span><kbd class="k-kbd">j</kbd> <kbd class="k-kbd">k</kbd> navigate</span>
+				<span><kbd class="k-kbd">j</kbd> <kbd class="k-kbd">k</kbd> next, previous</span>
 				<span><kbd class="k-kbd">↵</kbd> open</span>
 				<span><kbd class="k-kbd">r</kbd> rename</span>
-			</div>
-		</div>
+		</KeyHints>
 	</header>
 
 	<div class="k-segmented mb-6" role="group" aria-label="Kind">

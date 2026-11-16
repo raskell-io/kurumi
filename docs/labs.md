@@ -17,7 +17,7 @@ command-palette entries.
 A workflow runs the [agent](ai.md#the-agent) with your instructions, in the
 background, without changing anything: it can read your notes, to-dos,
 people and projects and follow how they connect, and it can **propose**
-to-dos, which wait on Proposals for you to approve. What it writes back is
+to-dos, which wait under Suggested reminders for you to approve. What it writes back is
 saved as a note (*Workflow name — date*), and it can send a notification.
 
 - **When:** while Kurumi is open, checked every minute. A run that was due

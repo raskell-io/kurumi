@@ -1,4 +1,5 @@
 <script lang="ts">
+	import KeyHints from '$lib/components/ui/KeyHints.svelte';
 	import {
 		draftProposals,
 		memoryObjects,
@@ -330,15 +331,15 @@
 					· {$draftProposals.length - pendingCount} decided
 				{/if}
 			</p>
-			<div class="k-hints">
-				<span><kbd class="k-kbd">j</kbd> <kbd class="k-kbd">k</kbd> navigate</span>
+		</div>
+		<KeyHints>
+				<span><kbd class="k-kbd">j</kbd> <kbd class="k-kbd">k</kbd> next, previous</span>
 				<span><kbd class="k-kbd">Space</kbd> select</span>
 				<span><kbd class="k-kbd">c</kbd> copy</span>
 				<span><kbd class="k-kbd">r</kbd> reject</span>
 				<span><kbd class="k-kbd">d</kbd> delete</span>
-				<span><kbd class="k-kbd">↵</kbd> open source</span>
-			</div>
-		</div>
+				<span><kbd class="k-kbd">↵</kbd> open the note it came from</span>
+		</KeyHints>
 		{#if visiblePendingCount > 0}
 			<button class="k-btn shrink-0" onclick={selectAllPending}>
 				<SquareCheck class="h-4 w-4" />

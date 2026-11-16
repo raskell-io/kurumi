@@ -87,7 +87,7 @@
 		{
 			id: 'new-note',
 			type: 'action',
-			title: 'New Note',
+			title: 'New note',
 			description: 'Create a new note',
 			icon: 'plus',
 			action: () => {
@@ -203,7 +203,7 @@
 		{
 			id: 'graph',
 			type: 'action',
-			title: 'Open Graph',
+			title: 'Open graph',
 			description: 'View knowledge graph',
 			icon: 'graph',
 			action: () => {
@@ -225,7 +225,7 @@
 		{
 			id: 'read',
 			type: 'action',
-			title: 'Read Mode',
+			title: 'Read mode',
 			description: 'View notes as a blog',
 			icon: 'read',
 			action: () => {
@@ -247,7 +247,7 @@
 		{
 			id: 'home',
 			type: 'action',
-			title: 'Go Home',
+			title: 'Home',
 			description: 'Return to home page',
 			icon: 'home',
 			action: () => {
@@ -259,7 +259,7 @@
 			id: 'ask-kurumi',
 			type: 'action',
 			title: 'Ask Kurumi',
-			description: 'Question your memories with AI',
+			description: 'Ask a question, answered from your notes',
 			icon: 'sparkles',
 			action: () => {
 				goto('/');
@@ -291,7 +291,7 @@
 		{
 			id: 'proposals',
 			type: 'action',
-			title: 'Reminder proposals',
+			title: 'Suggested reminders',
 			description: 'Review time-anchored nudges Kurumi extracted',
 			icon: 'bell',
 			action: () => {
@@ -302,8 +302,8 @@
 		{
 			id: 'drafts',
 			type: 'action',
-			title: 'Draft proposals',
-			description: 'Review email and calendar drafts from memories',
+			title: 'Drafts',
+			description: 'Review email and calendar drafts from your notes',
 			icon: 'mail',
 			action: () => {
 				goto('/drafts');
@@ -335,7 +335,7 @@
 		{
 			id: 'topics-manage',
 			type: 'action',
-			title: 'Manage topics & projects',
+			title: 'Topics and project names',
 			description: 'Merge and rename extracted topics',
 			icon: 'hash',
 			action: () => {
@@ -357,7 +357,7 @@
 		{
 			id: 'meetings',
 			type: 'action',
-			title: 'Recurring meetings',
+			title: 'Meetings',
 			description: '1:1s and syncs with a running agenda',
 			icon: 'references',
 			action: () => {
@@ -368,7 +368,7 @@
 		{
 			id: 'decisions',
 			type: 'action',
-			title: 'Decision log',
+			title: 'Decisions',
 			description: 'What was decided, when and why',
 			icon: 'references',
 			action: () => {
@@ -379,7 +379,7 @@
 		{
 			id: 'questions',
 			type: 'action',
-			title: 'Open questions',
+			title: 'Questions',
 			description: 'Questions waiting for an answer',
 			icon: 'references',
 			action: () => {
@@ -409,7 +409,7 @@
 		{
 			id: 'export-hugo',
 			type: 'action',
-			title: 'Export as Hugo-flavoured Markdown',
+			title: 'Export as Hugo-flavored Markdown',
 			description: 'Export vault with Hugo front matter',
 			icon: 'download',
 			action: () => handleMarkdownExport('hugo')
@@ -417,7 +417,7 @@
 		{
 			id: 'export-zola',
 			type: 'action',
-			title: 'Export as Zola-flavoured Markdown',
+			title: 'Export as Zola-flavored Markdown',
 			description: 'Export vault with Zola front matter',
 			icon: 'download',
 			action: () => handleMarkdownExport('zola')
@@ -436,7 +436,7 @@
 		{
 			id: 'templates',
 			type: 'action',
-			title: 'Manage Templates',
+			title: 'Manage templates',
 			description: 'Create and edit note templates',
 			icon: 'template',
 			action: () => {

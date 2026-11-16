@@ -42,17 +42,17 @@ Whisper, or OpenAI as a fallback; see [AI](ai.md)) and then, in parallel:
 
 - writes a title and short and long summaries;
 - picks out people, projects and topics;
-- proposes [reminders](work.md#reminder-proposals) and
-  [email or calendar drafts](work.md#draft-proposals) for you to review.
+- proposes [reminders](work.md#suggested-reminders) and
+  [email or calendar drafts](work.md#drafts) for you to review.
 
 ## Meetings
 
 Meeting mode is a long recording with a structured summary: decisions,
 to-dos with owners, open questions and participants. Decisions and open
 questions land in the [decision log](work.md#decisions) and
-[open questions](work.md#open-questions) by themselves; to-dos become real
+[open questions](work.md#questions) by themselves; to-dos become real
 [to-dos](work.md#to-dos). For recurring meetings, start the meeting from
-its [series](work.md#recurring-meetings) so the agenda comes along.
+its [series](work.md#meetings) so the agenda comes along.
 
 ## Existing recordings
 
