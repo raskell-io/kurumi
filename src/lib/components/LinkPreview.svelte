@@ -193,7 +193,7 @@
 		border-radius: var(--radius-lg);
 		background: var(--color-bg);
 		box-shadow: var(--shadow-lg);
-		animation: preview-in 120ms var(--ease-out);
+		animation: preview-in var(--motion-fast) var(--ease-enter);
 	}
 
 	.link-preview.above {

@@ -607,7 +607,7 @@
 	.markdown-content :global(.wikilink) {
 		border-radius: 3px;
 		font-weight: 500;
-		transition: background-color 0.12s ease, text-decoration-color 0.12s ease;
+		transition: background-color var(--motion-fast) var(--ease-enter), text-decoration-color var(--motion-fast) var(--ease-enter);
 	}
 
 	.markdown-content :global(.wikilink:hover) {
@@ -637,7 +637,7 @@
 		text-decoration: none;
 		vertical-align: baseline;
 		cursor: pointer;
-		transition: background-color 0.12s ease;
+		transition: background-color var(--motion-fast) var(--ease-enter);
 	}
 
 	.markdown-content :global(:is(.date-reference, .person-reference, .tag-reference, .url-reference):hover) {
@@ -1137,7 +1137,7 @@
 		border: solid var(--color-text-faint);
 		border-width: 0 1.5px 1.5px 0;
 		transform: rotate(-45deg);
-		transition: transform 0.15s var(--ease-out);
+		transition: transform var(--motion-fast) var(--ease-enter);
 	}
 
 	.markdown-content :global(details[open] summary::before) {

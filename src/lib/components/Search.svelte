@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { fadeOut } from '$lib/motion';
 	import { search, type SearchResult } from '$lib/search';
 	import { goto } from '$app/navigation';
 	import { Search } from 'lucide-svelte';
@@ -73,7 +74,7 @@
 </script>
 
 <div
-	class="k-dialog-backdrop"
+	class="k-dialog-backdrop" out:fadeOut|global
 	onclick={onClose}
 	onkeydown={handleKeydown}
 	role="dialog"

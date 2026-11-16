@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { fadeOut } from '$lib/motion';
 	import { autofocus } from '$lib/actions/autofocus';
 	import { templates, addTemplate, updateTemplate, deleteTemplate, addStarterTemplates, type Template } from '$lib/db';
 	import { Plus, FileText, Pencil, Trash2, X, Info, Sparkles } from 'lucide-svelte';
@@ -279,7 +280,7 @@
 {#if showDeleteConfirm && templateToDelete}
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
-		class="k-dialog-backdrop"
+		class="k-dialog-backdrop" out:fadeOut|global
 		onclick={() => (showDeleteConfirm = false)}
 		onkeydown={(e) => e.key === 'Escape' && (showDeleteConfirm = false)}
 		role="dialog"

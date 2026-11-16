@@ -4,6 +4,7 @@
 	 * Escape. Portaled to <body> so tables and scroll areas don't clip it.
 	 */
 	import { portal } from '$lib/actions/portal';
+	import { popOut } from '$lib/motion';
 	import { onMount, type Snippet } from 'svelte';
 
 	interface Props {
@@ -18,6 +19,7 @@
 	let el: HTMLDivElement | undefined = $state();
 	let top = $state(0);
 	let left = $state(0);
+	let above = $state(false);
 
 	function place() {
 		if (!el) return;
@@ -25,7 +27,8 @@
 		const margin = 8;
 		const h = el.offsetHeight;
 		const w = el.offsetWidth;
-		top = a.bottom + 4 + h > window.innerHeight - margin ? Math.max(margin, a.top - h - 4) : a.bottom + 4;
+		above = a.bottom + 4 + h > window.innerHeight - margin;
+		top = above ? Math.max(margin, a.top - h - 4) : a.bottom + 4;
 		left = Math.min(Math.max(margin, a.left), window.innerWidth - w - margin);
 	}
 
@@ -63,7 +66,8 @@
 	use:portal
 	bind:this={el}
 	class="k-menu fixed z-[120]"
-	style="top: {top}px; left: {left}px; width: {width}; max-width: calc(100vw - 16px);"
+	style="top: {top}px; left: {left}px; width: {width}; max-width: calc(100vw - 16px); --pop-origin: {above ? 'bottom' : 'top'} left;"
+	out:popOut|global
 	role="dialog"
 	aria-label={label}
 >

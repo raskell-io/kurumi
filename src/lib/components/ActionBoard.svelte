@@ -164,7 +164,7 @@
 		border-radius: var(--radius-lg, 10px);
 		background: var(--color-bg-secondary);
 		padding: 0.5rem;
-		transition: border-color 120ms ease, background 120ms ease;
+		transition: border-color var(--motion-fast) var(--ease-enter), background var(--motion-fast) var(--ease-enter);
 	}
 
 	.board-col.drop-target {

@@ -3,6 +3,7 @@
 </script>
 
 <script lang="ts">
+	import { fadeOut } from '$lib/motion';
 	import { untrack } from 'svelte';
 	import {
 		meetingSeries,
@@ -61,7 +62,7 @@
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-<div use:portal class="k-dialog-backdrop" onclick={() => onDone(null)} role="presentation">
+<div use:portal class="k-dialog-backdrop" out:fadeOut|global onclick={() => onDone(null)} role="presentation">
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<form
 		class="k-dialog grid gap-3 p-5"

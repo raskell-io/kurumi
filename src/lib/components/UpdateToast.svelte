@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { fadeOut } from '$lib/motion';
 	import { RefreshCw, X } from 'lucide-svelte';
 	import { isDesktopApp } from '$lib/pwa';
 
@@ -34,7 +35,7 @@
 </script>
 
 {#if needRefresh || offlineReady}
-	<div class="update-toast" role="status" aria-live="polite">
+	<div class="update-toast" role="status" aria-live="polite" out:fadeOut>
 		<span class="label">{needRefresh ? 'A new version of Kurumi is ready' : 'Kurumi now works offline'}</span>
 		{#if needRefresh}
 			<button class="reload-btn" onclick={() => update?.(true)}>
@@ -55,6 +56,7 @@
 		bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
 		left: 50%;
 		transform: translateX(-50%);
+		animation: slideUpFadeIn var(--motion-base) var(--ease-enter);
 		z-index: 200;
 		display: flex;
 		align-items: center;

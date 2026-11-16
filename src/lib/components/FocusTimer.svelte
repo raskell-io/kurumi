@@ -117,7 +117,7 @@
 		box-shadow: var(--shadow-sm);
 		font-size: 0.75rem;
 		color: var(--color-text);
-		animation: fadeIn 150ms var(--ease-out);
+		animation: fadeIn var(--motion-base) var(--ease-enter);
 	}
 
 	.focus-pill.complete {

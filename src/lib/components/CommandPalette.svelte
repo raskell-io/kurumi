@@ -722,6 +722,9 @@
 	}
 </script>
 
+<!-- Arrives with a short fade; leaves at once. A fade out kept the closed
+     palette in the page for a moment, and one reopened in that moment came
+     back without its focus (⌘O, Enter, ⌘O). -->
 <div
 	class="animate-backdrop fixed inset-0 z-50 flex items-stretch justify-center bg-black/30 p-0 backdrop-blur-[1px] md:items-start md:p-4 md:pt-[12vh]"
 	onclick={onClose}
@@ -734,6 +737,7 @@
 >
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
+		style="--pop-origin: top center"
 		class="animate-modal flex h-full w-full max-w-none flex-col overflow-hidden rounded-none bg-[var(--color-bg)] shadow-[var(--shadow-lg)] md:h-auto md:max-w-[40rem] md:rounded-xl md:border md:border-[var(--color-border)]"
 		onclick={(e) => e.stopPropagation()}
 		onkeydown={(e) => e.stopPropagation()}

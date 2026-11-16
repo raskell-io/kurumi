@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { autofocus } from '$lib/actions/autofocus';
+	import { collapse } from '$lib/motion';
 	import { portal } from '$lib/actions/portal';
 	import VaultIcon from './VaultIcon.svelte';
 	import NoteIcon from './NoteIcon.svelte';
@@ -1102,7 +1103,7 @@
 						aria-expanded={isExpanded}
 						tabindex="-1"
 					>
-						<ChevronRight class="h-3 w-3 transition-transform duration-150 {isExpanded ? 'rotate-90' : ''}" />
+						<ChevronRight class="h-3 w-3 k-chevron {isExpanded ? 'rotate-90' : ''}" />
 					</button>
 					{#if databaseFolderIds.has(folder.id)}
 						<button
@@ -1166,6 +1167,8 @@
 
 			<!-- Folder contents -->
 			{#if isExpanded}
+				<!-- Long folders open at once: only short ones animate. -->
+				<div class="k-collapse" transition:collapse={{ skip: subfolders.length + folderMemories.length > 40 }}>
 				<div class="tree-children">
 					<!-- New folder input inside this folder -->
 					{#if creatingFolderIn === folder.id}
@@ -1197,6 +1200,7 @@
 						{@render renderNote(memory)}
 					{/each}
 					{@render showMore(folderMemories.length, folder.id)}
+				</div>
 				</div>
 			{/if}
 		</div>
@@ -1533,7 +1537,12 @@
 {/if}
 
 <style>
-	/* Drag and drop styles */
+	/* Drag and drop styles. The tint fades in and out; the outline is there at once. */
+	.folder-row,
+	.folder-tree {
+		transition: background-color var(--motion-fast) var(--ease-enter);
+	}
+
 	.drop-target {
 		background-color: color-mix(in srgb, var(--color-accent) 20%, transparent);
 		outline: 2px dashed var(--color-accent);
@@ -1618,20 +1627,20 @@
 	.note-row,
 	.folder-row {
 		will-change: transform;
-		transition: transform 0.2s ease-out;
+		transition: transform var(--motion-base) var(--ease-enter);
 	}
 
 	.delete-action {
-		transition: opacity 0.15s ease-out;
+		transition: opacity var(--motion-fast) var(--ease-enter);
 	}
 
 	/* Delete animation */
 	.deleting {
-		animation: deleteSlide 0.25s ease-out forwards;
+		animation: deleteSlide var(--motion-base) var(--ease-enter) forwards;
 	}
 
 	.folder-item.deleting {
-		animation: deleteSlide 0.25s ease-out forwards;
+		animation: deleteSlide var(--motion-base) var(--ease-enter) forwards;
 	}
 
 	@keyframes deleteSlide {

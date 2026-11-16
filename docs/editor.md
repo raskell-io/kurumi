@@ -14,7 +14,10 @@ Solarized, Rosé Pine or Plain, each light and dark), the accent colour, the
 editor font, its size, and the content width: Narrow, Wide (the default) or
 Full. Each device keeps its own. A **CSS snippet** there styles anything
 else: `:root { --color-bg: #fcfcf9; }` changes a theme colour, any selector
-works, and you can load a `.css` file.
+works, and you can load a `.css` file. The interface's transitions are short
+and follow three variables: `:root { --motion-scale: 0; }` turns them off
+(as does your system's "reduce motion" setting), `0.5` halves them; `--motion-fast`
+and `--motion-base` set the two durations directly.
 
 **Vim mode** (Settings → Keyboard shortcuts) gives the editor Normal, Insert
 and Visual modes: motions (`h j k l`, `w b e`, `0 ^ $`, `gg G`, with counts),

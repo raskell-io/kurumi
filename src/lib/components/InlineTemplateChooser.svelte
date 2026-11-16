@@ -92,7 +92,7 @@
 <style>
 	.inline-chooser {
 		padding: 0.75rem 0 1rem;
-		animation: fadeIn 150ms var(--ease-out);
+		animation: fadeIn var(--motion-base) var(--ease-enter);
 	}
 
 	.hint {

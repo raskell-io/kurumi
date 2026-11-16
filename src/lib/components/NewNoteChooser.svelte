@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { fadeOut } from '$lib/motion';
 	import {
 		templates,
 		addMemoryObject,
@@ -106,7 +107,7 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
-	class="k-dialog-backdrop"
+	class="k-dialog-backdrop" out:fadeOut|global
 	onclick={onClose}
 	role="dialog"
 	aria-modal="true"

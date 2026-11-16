@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { fadeOut } from '$lib/motion';
 	import { autofocus } from '$lib/actions/autofocus';
 	import ShortcutSettings from '$lib/components/ShortcutSettings.svelte';
 	import AboutKurumi from '$lib/components/AboutKurumi.svelte';
@@ -3002,7 +3003,7 @@
 <!-- Import Modal -->
 {#if showImportModal && importAnalysis}
 	<div
-		class="k-dialog-backdrop"
+		class="k-dialog-backdrop" out:fadeOut|global
 		onclick={closeImportModal}
 		onkeydown={(e) => e.key === 'Escape' && closeImportModal()}
 		role="dialog"
@@ -3083,7 +3084,7 @@
 <!-- Clear Data Confirmation Step 1 -->
 {#if showClearConfirm1}
 	<div
-		class="k-dialog-backdrop"
+		class="k-dialog-backdrop" out:fadeOut|global
 		onclick={cancelClear}
 		onkeydown={(e) => e.key === 'Escape' && cancelClear()}
 		role="dialog"
@@ -3112,7 +3113,7 @@
 <!-- Clear Data Confirmation Step 2 -->
 {#if showClearConfirm2}
 	<div
-		class="k-dialog-backdrop"
+		class="k-dialog-backdrop" out:fadeOut|global
 		onclick={cancelClear}
 		onkeydown={(e) => e.key === 'Escape' && cancelClear()}
 		role="dialog"
@@ -3528,7 +3529,7 @@
 		background: var(--color-active);
 		appearance: none;
 		cursor: pointer;
-		transition: background 120ms var(--ease-out);
+		transition: background var(--motion-fast) var(--ease-enter);
 	}
 
 	.switch::before {
@@ -3541,7 +3542,7 @@
 		border-radius: 999px;
 		background: var(--color-bg);
 		box-shadow: var(--shadow-sm);
-		transition: transform 120ms var(--ease-out);
+		transition: transform var(--motion-fast) var(--ease-enter);
 	}
 
 	.switch:checked,
@@ -3590,7 +3591,7 @@
 	}
 
 	.set-disclosure :global(.disclosure-chevron) {
-		transition: transform 120ms var(--ease-out);
+		transition: transform var(--motion-fast) var(--ease-enter);
 	}
 
 	.set-disclosure[open] :global(.disclosure-chevron) {
@@ -3668,7 +3669,7 @@
 		border: 2px solid var(--color-bg);
 		box-shadow: 0 0 0 1px var(--color-border);
 		cursor: pointer;
-		transition: transform 0.12s ease, box-shadow 0.12s ease;
+		transition: transform var(--motion-fast) var(--ease-enter), box-shadow var(--motion-fast) var(--ease-enter);
 	}
 
 	:global(:root.dark) .accent-swatch {

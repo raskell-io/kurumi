@@ -1710,7 +1710,7 @@
 		display: flex;
 		height: 100%;
 		flex-shrink: 0;
-		transition: opacity 0.1s;
+		transition: opacity var(--motion-fast) var(--ease-enter);
 	}
 
 	/* Invisible grab strip straddling the border; accent line on hover/drag */
@@ -1730,7 +1730,7 @@
 		width: 2px;
 		height: 100%;
 		background: transparent;
-		transition: background-color 0.15s;
+		transition: background-color var(--motion-fast) var(--ease-enter);
 	}
 
 	.resize-handle:hover .resize-bar,
@@ -1749,12 +1749,6 @@
 		height: 100%;
 		border-left: 1px solid var(--color-border);
 		background: var(--color-bg);
-		animation: paneIn 160ms var(--ease-out);
-	}
-
-	@keyframes paneIn {
-		from { transform: translateX(12px); opacity: 0; }
-		to { transform: translateX(0); opacity: 1; }
 	}
 
 	/* --- Header --- */
@@ -1840,7 +1834,7 @@
 		height: 100%;
 		background: var(--color-accent);
 		opacity: 0.6;
-		transition: width 0.3s;
+		transition: width var(--motion-base) var(--ease-enter);
 	}
 
 	.token-fill.warn {
@@ -2024,7 +2018,7 @@
 		box-shadow: var(--shadow-sm);
 		font-size: 0.8125rem;
 		color: var(--color-text);
-		animation: slideDownFadeIn 150ms var(--ease-out);
+		animation: slideDownFadeIn var(--motion-base) var(--ease-enter);
 	}
 
 	.saved-text {
@@ -2169,7 +2163,7 @@
 		font-size: 0.6875rem;
 		color: var(--color-text-faint);
 		opacity: 0;
-		transition: opacity 0.12s;
+		transition: opacity var(--motion-fast) var(--ease-enter);
 	}
 
 	.stream-speed {
@@ -2180,7 +2174,7 @@
 		display: flex;
 		gap: 0.125rem;
 		opacity: 0;
-		transition: opacity 0.12s;
+		transition: opacity var(--motion-fast) var(--ease-enter);
 	}
 
 	.msg:hover .msg-actions,
@@ -2468,7 +2462,7 @@
 		border-radius: var(--radius-md);
 		background: var(--color-accent);
 		color: #fff;
-		transition: background-color 120ms var(--ease-out);
+		transition: background-color var(--motion-fast) var(--ease-enter);
 	}
 
 	:global(:root.dark) .send-btn {

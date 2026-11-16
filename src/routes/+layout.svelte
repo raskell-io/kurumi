@@ -3,6 +3,8 @@
 	import { pwaInfo } from 'virtual:pwa-info';
 	import { onMount } from 'svelte';
 	import { afterNavigate } from '$app/navigation';
+	import { flip } from 'svelte/animate';
+	import { armMotion, collapse, flipParams, pageEnter, panelSlide, popOut, tabIn } from '$lib/motion';
 	import {
 		initDB,
 		memoryObjects,
@@ -252,6 +254,7 @@
 
 	// Split view sits next to a note. Opening the split's note in the main
 	// pane closes the split, so one note is never edited in two places.
+	let showTabBar = $derived(!$focusMode && !isMobile && ($openTabs.length > 0 || sidebarCollapsed));
 	let showSplit = $derived(!!$splitNoteId && !!editNoteId && !isMobile && !$focusMode);
 	$effect(() => {
 		if ($splitNoteId && $splitNoteId === editNoteId) closeSplit();
@@ -494,7 +497,23 @@
 	let cleanupHashRouter: (() => void) | null = null;
 	let cleanupPwa: (() => void) | null = null;
 
-	afterNavigate(({ to }) => {
+	// Motion ($lib/motion.ts) starts once the app stands as it was left: the
+	// database is open and the page from the address is shown. Until then
+	// nothing animates (restored tabs, split note, sidebar groups).
+	let pageEl: HTMLElement | undefined = $state();
+	let armTimer: ReturnType<typeof setTimeout> | undefined;
+	function armMotionWhenSettled() {
+		if (!initialized) return;
+		const wanted = location.hash.replace(/^#/, '').split('?')[0];
+		if (wanted && wanted !== '/' && !wanted.startsWith('/clip/') && wanted !== location.pathname) return; // the boot navigation is still on its way
+		clearTimeout(armTimer);
+		armTimer = setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(armMotion)), 120);
+	}
+
+	afterNavigate(({ from, to }) => {
+		armMotionWhenSettled();
+		// A page or note arriving: its inside fades in (not the chrome).
+		if (from?.url && to?.url && from.url.pathname !== to.url.pathname) pageEnter(pageEl);
 		if (to?.url?.pathname) {
 			updateHashFromPath(to.url.pathname);
 			// Track recently-opened memories for the tab bar.
@@ -571,6 +590,7 @@
 			setupVisibilitySync();
 			setupAutoSync();
 			initialized = true;
+			armMotionWhenSettled();
 			// Persistent storage, icon badge, notification actions, opened files
 			cleanupPwa = bootPwa();
 			// Start the notification loop if the user previously opted in.
@@ -830,9 +850,10 @@
 		<!-- Sidebar -->
 		<aside
 			class="sidebar fixed inset-y-0 left-0 z-50 flex w-[85vw] max-w-[340px] flex-col md:relative md:z-auto md:max-w-none {sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}"
-			class:hidden={($focusMode || sidebarCollapsed) && !isMobile}
+			class:sidebar-away={($focusMode || sidebarCollapsed) && !isMobile}
 			class:shadow-2xl={isMobile && sidebarOpen}
-			style="transition: transform 250ms cubic-bezier(0.4, 0, 0.2, 1); width: {isMobile ? undefined : `${sidebarWidth}px`};"
+			inert={($focusMode || sidebarCollapsed) && !isMobile}
+			style="width: {isMobile ? undefined : `${sidebarWidth}px`}; --sidebar-width: {sidebarWidth}px;"
 			role="navigation"
 			aria-label="Main navigation"
 		>
@@ -897,13 +918,14 @@
 					{#if $currentVaultCaps.records}
 						{@const moreOpen = showMoreNav || moreNav.some((item) => isActive(item.href))}
 						<button onclick={toggleMoreNav} class="nav-row w-full" aria-expanded={moreOpen} aria-controls="more-nav">
-							<ChevronRight class="nav-icon transition-transform {moreOpen ? 'rotate-90' : ''}" aria-hidden="true" />
+							<ChevronRight class="nav-icon k-chevron {moreOpen ? 'rotate-90' : ''}" aria-hidden="true" />
 							<span class="flex-1 truncate text-left">More</span>
 							{#if !moreOpen && moreCount > 0}
 								<span class="nav-count nav-count-warn" title="Waiting in Proposals">{moreCount > 99 ? '99+' : moreCount}</span>
 							{/if}
 						</button>
 						{#if moreOpen}
+							<div class="k-collapse" transition:collapse>
 							<div id="more-nav" class="space-y-px">
 							{#each moreNav as item (item.href)}
 								{@const count = item.count?.() ?? 0}
@@ -923,6 +945,7 @@
 								</a>
 							{/each}
 							</div>
+							</div>
 						{/if}
 					{/if}
 				</div>
@@ -935,10 +958,11 @@
 						aria-expanded={showWork}
 						aria-controls="work-nav"
 					>
-						<ChevronRight class="h-3 w-3 transition-transform {showWork ? 'rotate-90' : ''}" aria-hidden="true" />
+						<ChevronRight class="h-3 w-3 k-chevron {showWork ? 'rotate-90' : ''}" aria-hidden="true" />
 						Work
 					</button>
 					{#if showWork}
+						<div class="k-collapse" transition:collapse>
 						<div id="work-nav">
 							{#each workNav as item (item.href)}
 								{@const count = item.count?.() ?? 0}
@@ -956,6 +980,7 @@
 								</a>
 							{/each}
 						</div>
+						</div>
 					{/if}
 				</div>
 
@@ -968,10 +993,11 @@
 							aria-expanded={showFavorites}
 							aria-controls="favorites-list"
 						>
-							<ChevronRight class="h-3 w-3 transition-transform {showFavorites ? 'rotate-90' : ''}" aria-hidden="true" />
+							<ChevronRight class="h-3 w-3 k-chevron {showFavorites ? 'rotate-90' : ''}" aria-hidden="true" />
 							Favorites
 						</button>
 						{#if showFavorites}
+							<div class="k-collapse" transition:collapse>
 							<div id="favorites-list">
 								{#each $favoriteMemoryObjects as fav (fav.id)}
 									<a
@@ -986,6 +1012,7 @@
 									</a>
 								{/each}
 							</div>
+							</div>
 						{/if}
 					</div>
 				{/if}
@@ -999,10 +1026,11 @@
 							aria-expanded={showLabs}
 							aria-controls="labs-list"
 						>
-							<ChevronRight class="h-3 w-3 transition-transform {showLabs ? 'rotate-90' : ''}" aria-hidden="true" />
+							<ChevronRight class="h-3 w-3 k-chevron {showLabs ? 'rotate-90' : ''}" aria-hidden="true" />
 							Labs
 						</button>
 						{#if showLabs}
+							<div class="k-collapse" transition:collapse>
 							<div id="labs-list">
 								{#each LAB_PAGES as lab (lab.href)}
 									<a
@@ -1017,6 +1045,7 @@
 									</a>
 								{/each}
 							</div>
+							</div>
 						{/if}
 					</div>
 				{/if}
@@ -1030,10 +1059,11 @@
 							aria-expanded={showTags}
 							aria-controls="tags-list"
 						>
-							<ChevronRight class="h-3 w-3 transition-transform {showTags ? 'rotate-90' : ''}" aria-hidden="true" />
+							<ChevronRight class="h-3 w-3 k-chevron {showTags ? 'rotate-90' : ''}" aria-hidden="true" />
 							Tags
 						</button>
 						{#if showTags}
+							<div class="k-collapse" transition:collapse>
 							<div id="tags-list" class="flex flex-wrap gap-1 px-1.5 pb-1 pt-1">
 								{#each allTags.slice(0, 16) as { tag, count }}
 									<a
@@ -1050,6 +1080,7 @@
 										All tags →
 									</a>
 								{/if}
+							</div>
 							</div>
 						{/if}
 					</div>
@@ -1142,7 +1173,7 @@
 				{#if showFooterMenu}
 					<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 					<div class="fixed inset-0 z-40" onclick={() => (showFooterMenu = false)}></div>
-					<div class="k-menu absolute bottom-full right-2 z-50 mb-1 w-56" role="menu">
+					<div class="k-menu absolute bottom-full right-2 z-50 mb-1 w-56" style="--pop-origin: bottom right" role="menu" out:popOut>
 						{#each footerNav.filter((item) => item.href !== '/settings' && ($currentVaultCaps.records || item.href !== '/trash')) as item (item.label)}
 							<a
 								href={item.href}
@@ -1186,7 +1217,10 @@
 		     raised panels (the page; beside it the split note and the assistant). -->
 		<div class="shell-stage flex min-w-0 flex-1 flex-col">
 			<!-- Tab bar (recently-opened memories) -->
-			{#if !$focusMode && !isMobile && ($openTabs.length > 0 || sidebarCollapsed)}
+			{#if showTabBar}
+				<!-- The strip has a fixed height, which a grid row can't shrink below: hence the plain div between. -->
+				<div class="k-collapse shrink-0" transition:collapse>
+				<div>
 				<div class="tab-bar">
 					{#if sidebarCollapsed}
 						<button
@@ -1206,6 +1240,8 @@
 							class:tab-pinned={tab.pinned}
 							class:tab-group-end={tab.pinned && !$openTabs[i + 1]?.pinned && i < $openTabs.length - 1}
 							draggable="true"
+							animate:flip={flipParams()}
+							in:tabIn
 							title={tab.pinned ? `${tab.title} (pinned; right-click to unpin)` : undefined}
 							ondragstart={(e) => { e.dataTransfer?.setData('text/plain', tab.id); e.dataTransfer!.effectAllowed = 'move'; }}
 							ondragover={(e) => e.preventDefault()}
@@ -1246,9 +1282,11 @@
 						</a>
 					{/each}
 				</div>
+				</div>
+				</div>
 			{/if}
 
-		<div class="shell-panels flex min-h-0 flex-1">
+		<div class="shell-panels flex min-h-0 flex-1" class:shell-no-tabs={!showTabBar}>
 		<!-- Main Content -->
 		<main class="shell-panel relative flex min-w-0 flex-1 flex-col" class:overflow-hidden={!isReadMode} aria-label="Main content">
 			<!-- Mobile header (hidden in read mode, on notes — which have their
@@ -1303,7 +1341,7 @@
 			<FocusTimer />
 			<!-- Pages that manage their own scrolling (notes, graph, canvas) are
 			     h-full and never overflow this; everything else scrolls here. -->
-			<div class="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+			<div bind:this={pageEl} class="min-h-0 flex-1 overflow-y-auto overscroll-contain">
 				{#if !$currentVaultCaps.records && isRecordPage(currentPath)}
 					<LinkedVaultNotice />
 				{:else}
@@ -1315,7 +1353,7 @@
 		{#if showSplit && $splitNoteId}
 			<!-- Loaded when first opened: it carries the editor, which most pages don't need -->
 			{#await import('$lib/components/SplitPane.svelte') then { default: SplitPane }}
-				<div class="shell-panel shell-panel-side flex min-w-0 flex-1">
+				<div class="shell-panel shell-panel-side flex min-w-0 flex-1" transition:panelSlide|global>
 					<SplitPane noteId={$splitNoteId} />
 				</div>
 			{/await}
@@ -1323,7 +1361,7 @@
 
 		{#if showAgentPane}
 			{#await loadAgentPane() then { default: AgentPane }}
-				<div class="shell-panel shell-panel-side shell-panel-agent flex">
+				<div class="shell-panel shell-panel-side shell-panel-agent flex" transition:panelSlide|global>
 					<AgentPane onClose={() => (showAgentPane = false)} />
 				</div>
 			{/await}
@@ -1386,7 +1424,7 @@
 <style>
 	/* Boot screen: only reveal after a beat so fast boots don't flash */
 	.boot-screen {
-		animation: fadeIn 300ms var(--ease-out) 150ms both;
+		animation: fadeIn var(--motion-base) var(--ease-enter) var(--motion-base) both;
 	}
 
 	.boot-bar {
@@ -1507,7 +1545,7 @@
 		}
 
 		/* No tab strip above (no tabs open): the panel keeps its distance from the top too. */
-		.shell-panels:first-child {
+		.shell-panels.shell-no-tabs {
 			padding-top: var(--shell-gutter);
 		}
 
@@ -1534,10 +1572,39 @@
 		}
 	}
 
-	@media (prefers-reduced-motion: no-preference) {
-		.shell-panels {
-			transition: padding 160ms ease;
+	/* A side panel sliding in or out passes the right edge; that must not scroll. */
+	.shell-panels {
+		overflow: hidden;
+		transition: padding var(--motion-base) var(--ease-enter);
+	}
+
+	/* The sidebar. Phones: it slides over the page. Wider: collapsing moves it
+	   out to the left by its own width (a margin, so its inside never
+	   reflows) while the stage takes the room and the panel's left gutter
+	   grows, all on the same clock. Hidden for real once it is out. */
+	.sidebar {
+		flex-shrink: 0;
+		transition: transform var(--motion-base) var(--ease-enter);
+	}
+
+	@media (min-width: 768px) {
+		.sidebar {
+			transition:
+				margin-left var(--motion-base) var(--ease-enter),
+				visibility 0s;
 		}
+
+		.sidebar.sidebar-away {
+			margin-left: calc(-1 * var(--sidebar-width));
+			visibility: hidden;
+			transition:
+				margin-left var(--motion-base) var(--ease-exit),
+				visibility 0s linear var(--motion-base);
+		}
+	}
+
+	.tab-bar {
+		transition: padding var(--motion-base) var(--ease-enter);
 	}
 
 	.tab-bar {

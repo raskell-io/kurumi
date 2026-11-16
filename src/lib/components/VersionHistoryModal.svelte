@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { fadeOut } from '$lib/motion';
 	/**
 	 * Per-note version history, reconstructed from the Automerge change log.
 	 * Lists every point where the note's title/body/tags changed; selecting one
@@ -84,7 +85,7 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
-	class="k-dialog-backdrop history-backdrop"
+	class="k-dialog-backdrop history-backdrop" out:fadeOut|global
 	onclick={() => onClose?.()}
 	role="dialog"
 	aria-modal="true"

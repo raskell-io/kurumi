@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { fadeOut } from '$lib/motion';
 	/**
 	 * A linked note changed in its folder on the same lines as in Kurumi
 	 * ($lib/linked/backend, `linkedSaveIssues`): show both, and write what
@@ -30,7 +31,7 @@
 
 <div
 	use:portal
-	class="k-dialog-backdrop"
+	class="k-dialog-backdrop" out:fadeOut|global
 	onclick={onclose}
 	onkeydown={(e) => e.key === 'Escape' && onclose()}
 	role="dialog"

@@ -955,7 +955,7 @@
 		display: flex;
 		align-items: center;
 		gap: 1px;
-		transition: opacity 120ms ease;
+		transition: opacity var(--motion-fast) var(--ease-enter);
 	}
 
 	/* A read-only note has nothing to add, move or turn into */
@@ -1025,7 +1025,7 @@
 		text-decoration-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
 		text-underline-offset: 0.2em;
 		text-decoration-thickness: 1px;
-		transition: background-color 0.12s ease, text-decoration-color 0.12s ease;
+		transition: background-color var(--motion-fast) var(--ease-enter), text-decoration-color var(--motion-fast) var(--ease-enter);
 	}
 
 	/* [[Note|text]] reads [[text]] unless the cursor is in it (editor/wikilink.ts) */
@@ -1054,7 +1054,7 @@
 		font-size: 0.92em;
 		line-height: 1.5;
 		cursor: pointer;
-		transition: background-color 0.12s ease;
+		transition: background-color var(--motion-fast) var(--ease-enter);
 	}
 
 	:global(.milkdown .date-reference:hover),
@@ -1297,7 +1297,7 @@
 		font: inherit;
 		cursor: pointer;
 		opacity: 0;
-		transition: opacity 0.15s;
+		transition: opacity var(--motion-fast) var(--ease-enter);
 	}
 
 	:global(.milkdown .kurumi-code:is(:hover, :focus-within) .kurumi-code-lang::placeholder) {
@@ -1339,7 +1339,7 @@
 		background: var(--color-bg-secondary);
 		cursor: pointer;
 		overflow-x: auto;
-		transition: border-color 0.15s ease;
+		transition: border-color var(--motion-fast) var(--ease-enter);
 	}
 
 	:global(.milkdown .kurumi-mermaid-preview:hover),
@@ -1385,7 +1385,7 @@
 		padding: 0.25rem 0.5rem;
 		border-radius: var(--radius-md);
 		outline: 1px dashed transparent;
-		transition: outline-color 0.15s;
+		transition: outline-color var(--motion-fast) var(--ease-enter);
 	}
 
 	:global(.milkdown .kurumi-columns:hover .kurumi-column),
@@ -1421,7 +1421,7 @@
 		mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='m9 6 6 6-6 6' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 0.875rem no-repeat;
 		opacity: 0;
 		transform: rotate(90deg);
-		transition: opacity 0.15s, transform 0.15s;
+		transition: opacity var(--motion-fast) var(--ease-enter), transform var(--motion-fast) var(--ease-enter);
 		cursor: pointer;
 	}
 
@@ -1610,7 +1610,7 @@
 		cursor: pointer;
 		overflow-x: auto;
 		text-align: center;
-		transition: border-color 0.15s ease;
+		transition: border-color var(--motion-fast) var(--ease-enter);
 	}
 
 	:global(.milkdown .kurumi-math-preview:hover),
@@ -1841,7 +1841,7 @@
 		cursor: pointer;
 		position: relative;
 		top: -0.075em;
-		transition: all 0.15s;
+		transition: all var(--motion-fast) var(--ease-enter);
 		background: transparent;
 	}
 
@@ -1888,7 +1888,7 @@
 		border: 2px solid var(--color-text-muted);
 		border-radius: 0.3em;
 		cursor: pointer;
-		transition: background 0.15s, border-color 0.15s;
+		transition: background var(--motion-fast) var(--ease-enter), border-color var(--motion-fast) var(--ease-enter);
 	}
 
 	:global(.milkdown li[data-item-type='task']:hover::before) {
@@ -1929,7 +1929,7 @@
 		border-radius: 0.3em;
 		vertical-align: middle;
 		cursor: pointer;
-		transition: all 0.15s;
+		transition: all var(--motion-fast) var(--ease-enter);
 		font-size: 0;
 		color: transparent;
 		position: relative;

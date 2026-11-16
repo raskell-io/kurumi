@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { fadeOut } from '$lib/motion';
 	import { gitSyncState, clearGitConflicts, type MemoryConflict } from '$lib/git/status';
 	import { updateMemoryObject } from '$lib/db';
 	import { sync } from '$lib/sync';
@@ -70,7 +71,7 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
-		class="k-dialog-backdrop conflict-backdrop"
+		class="k-dialog-backdrop conflict-backdrop" out:fadeOut|global
 		onclick={skip}
 		role="dialog"
 		aria-modal="true"

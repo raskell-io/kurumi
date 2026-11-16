@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { fadeOut } from '$lib/motion';
 	import {
 		RealtimeSession,
 		realtimeStatus,
@@ -78,7 +79,7 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
-	class="k-dialog-backdrop realtime-backdrop"
+	class="k-dialog-backdrop realtime-backdrop" out:fadeOut|global
 	onclick={handleClose}
 	role="dialog"
 	aria-modal="true"

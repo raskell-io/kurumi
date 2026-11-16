@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { fadeOut } from '$lib/motion';
 	import VoiceRecorder, { type RecorderState } from './VoiceRecorder.svelte';
 	import {
 		addVoiceMemo,
@@ -166,7 +167,7 @@
 {#if open}
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div
-		class="k-dialog-backdrop"
+		class="k-dialog-backdrop" out:fadeOut|global
 		onclick={handleBackdropClick}
 		role="dialog"
 		aria-modal="true"

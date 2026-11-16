@@ -1007,7 +1007,7 @@
 		font-weight: 600;
 		text-align: center;
 		text-decoration: none;
-		transition: background 0.15s;
+		transition: background var(--motion-fast) var(--ease-enter);
 	}
 	:global(.markdown-content sup .ask-citation:hover) {
 		background: color-mix(in srgb, var(--color-accent) 35%, transparent);

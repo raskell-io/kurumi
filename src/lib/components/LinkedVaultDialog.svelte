@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { fadeOut } from '$lib/motion';
 	/**
 	 * Linking a folder as a vault, and the settings of one that is linked
 	 * ($lib/linked): a folder of Markdown notes the desktop app reads where it
@@ -179,7 +180,7 @@
 
 <div
 	use:portal
-	class="k-dialog-backdrop"
+	class="k-dialog-backdrop" out:fadeOut|global
 	onclick={onclose}
 	onkeydown={(e) => e.key === 'Escape' && onclose()}
 	role="dialog"

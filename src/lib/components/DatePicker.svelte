@@ -177,7 +177,7 @@
 		display: flex;
 		flex-direction: column;
 		overflow: hidden;
-		animation: slideDownFadeIn 120ms var(--ease-out);
+		animation: slideDownFadeIn var(--motion-fast) var(--ease-enter);
 	}
 
 	.header {

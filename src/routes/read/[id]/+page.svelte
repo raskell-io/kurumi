@@ -540,7 +540,7 @@
 		color: var(--color-text-muted);
 		box-shadow: var(--shadow-md);
 		cursor: pointer;
-		animation: fadeIn 150ms var(--ease-out);
+		animation: fadeIn var(--motion-base) var(--ease-enter);
 	}
 
 	.back-to-top:hover {

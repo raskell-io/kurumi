@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { autofocus } from '$lib/actions/autofocus';
+	import { fadeOut, popOut } from '$lib/motion';
 	import { portal } from '$lib/actions/portal';
 	import { vaults, currentVault, currentVaultId, setCurrentVault, addVault, updateVault, deleteVault } from '$lib/db';
 	import { goto } from '$app/navigation';
@@ -232,7 +233,7 @@
 
 	<!-- Dropdown Menu -->
 	{#if showDropdown}
-		<div class="k-menu absolute left-0 top-full z-50 mt-1 w-60" role="menu">
+		<div class="k-menu absolute left-0 top-full z-50 mt-1 w-60" style="--pop-origin: top left" role="menu" out:popOut>
 			<div class="k-menu-label">Vaults</div>
 			<div class="max-h-[300px] overflow-y-auto">
 				{#each $vaults as vault (vault.id)}
@@ -301,7 +302,7 @@
 {#if showCreateModal || showEditModal}
 	<div
 		use:portal
-		class="k-dialog-backdrop"
+		class="k-dialog-backdrop" out:fadeOut|global
 		onclick={closeModals}
 		onkeydown={(e) => e.key === 'Escape' && closeModals()}
 		role="dialog"

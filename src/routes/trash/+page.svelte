@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { fadeOut } from '$lib/motion';
 	import { autofocus } from '$lib/actions/autofocus';
 	import {
 		trashedMemoryObjects,
@@ -206,7 +207,7 @@
 {#if showDeleteConfirm && itemToDelete}
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
-		class="k-dialog-backdrop"
+		class="k-dialog-backdrop" out:fadeOut|global
 		onclick={() => (showDeleteConfirm = false)}
 		onkeydown={(e) => e.key === 'Escape' && (showDeleteConfirm = false)}
 		role="dialog"
@@ -235,7 +236,7 @@
 {#if showEmptyConfirm}
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
-		class="k-dialog-backdrop"
+		class="k-dialog-backdrop" out:fadeOut|global
 		onclick={() => (showEmptyConfirm = false)}
 		onkeydown={(e) => e.key === 'Escape' && (showEmptyConfirm = false)}
 		role="dialog"

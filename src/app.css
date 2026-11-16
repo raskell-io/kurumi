@@ -598,11 +598,41 @@ article,
    SMOOTH ANIMATIONS & TRANSITIONS
    ======================================== */
 
-/* Standard easing - Material Design standard */
+/* Motion tokens ($lib/motion.ts reads the same ones for Svelte transitions).
+   Two durations and two easings for everything that moves:
+     --motion-fast   hover, press, menus, tooltips, toggles, anything leaving
+     --motion-base   panels, collapses, tabs, dialogs, a page arriving
+     --ease-enter    decelerating: things arriving or opening
+     --ease-exit     accelerating: things leaving
+   A theme or CSS snippet may set any of them. `--motion-scale: 0` turns all
+   motion off (so does the system's "reduce motion"); 0.5 halves it. */
 :root {
-	--ease-out: cubic-bezier(0.4, 0, 0.2, 1);
-	--ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
-	--ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+	--motion-scale: 1;
+	--motion-fast: calc(100ms * var(--motion-scale));
+	--motion-base: calc(160ms * var(--motion-scale));
+	--ease-enter: cubic-bezier(0.2, 0, 0, 1);
+	--ease-exit: cubic-bezier(0.4, 0, 1, 1);
+
+	/* Older names, kept for components and snippets that use them. */
+	--ease-out: var(--ease-enter);
+	--ease-in-out: var(--ease-enter);
+	--ease-spring: var(--ease-enter);
+
+	/* Tailwind's `transition-*` utilities follow the tokens too. */
+	--default-transition-duration: var(--motion-fast);
+	--default-transition-timing-function: var(--ease-enter);
+}
+
+/* Nothing moves on first paint or while the app restores itself after a
+   reload: the layout adds .motion-ready once that is done (armMotion). */
+:root:not(.motion-ready) {
+	--motion-scale: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	:root {
+		--motion-scale: 0;
+	}
 }
 
 /* Global transition for interactive elements */
@@ -613,12 +643,12 @@ input,
 textarea,
 select {
 	transition:
-		background-color 150ms var(--ease-out),
-		border-color 150ms var(--ease-out),
-		color 150ms var(--ease-out),
-		transform 150ms var(--ease-out),
-		box-shadow 150ms var(--ease-out),
-		opacity 150ms var(--ease-out);
+		background-color var(--motion-fast) var(--ease-enter),
+		border-color var(--motion-fast) var(--ease-enter),
+		color var(--motion-fast) var(--ease-enter),
+		transform var(--motion-fast) var(--ease-enter),
+		box-shadow var(--motion-fast) var(--ease-enter),
+		opacity var(--motion-fast) var(--ease-enter);
 }
 
 /* Keyframe Animations */
@@ -672,36 +702,43 @@ select {
 	}
 }
 
+/* Menus, popovers, dialogs and toasts arrive the same way: a fade, from
+   very slightly smaller. `scale`/`translate` (not `transform`), so an
+   element positioned with a transform keeps its place. The origin is the
+   trigger where the component knows it (--pop-origin). */
+@keyframes popIn {
+	from {
+		opacity: 0;
+		scale: 0.98;
+	}
+}
+
 @keyframes scaleIn {
 	from {
 		opacity: 0;
-		transform: scale(0.95);
+		scale: 0.98;
 	}
-	to {
-		opacity: 1;
-		transform: scale(1);
+}
+
+/* A dialog inside a backdrop that is fading in itself: only the size
+   moves, or the two fades multiply and the page shows through twice. */
+@keyframes popInNested {
+	from {
+		scale: 0.98;
 	}
 }
 
 @keyframes slideUpFadeIn {
 	from {
 		opacity: 0;
-		transform: translateY(8px);
-	}
-	to {
-		opacity: 1;
-		transform: translateY(0);
+		translate: 0 4px;
 	}
 }
 
 @keyframes slideDownFadeIn {
 	from {
 		opacity: 0;
-		transform: translateY(-8px);
-	}
-	to {
-		opacity: 1;
-		transform: translateY(0);
+		translate: 0 -4px;
 	}
 }
 
@@ -717,29 +754,32 @@ select {
 
 /* Backdrop animation class */
 .animate-backdrop {
-	animation: fadeIn 200ms var(--ease-out);
+	animation: fadeIn var(--motion-base) var(--ease-enter);
 }
 
 /* Modal/dialog animation class */
 .animate-modal {
-	animation: scaleIn 200ms var(--ease-out);
+	transform-origin: var(--pop-origin, center);
+	animation: popIn var(--motion-base) var(--ease-enter);
 }
 
-/* Dropdown animation class */
-.animate-dropdown {
-	animation: slideDownFadeIn 150ms var(--ease-out);
+.animate-backdrop > .animate-modal,
+.k-dialog-backdrop > .k-dialog {
+	animation-name: popInNested;
 }
 
-/* Menu animation class */
+/* Dropdown and menu animation classes */
+.animate-dropdown,
 .animate-menu {
-	animation: slideUpFadeIn 150ms var(--ease-out);
+	transform-origin: var(--pop-origin, top center);
+	animation: popIn var(--motion-fast) var(--ease-enter);
 }
 
 /* Hover lift effect for cards and interactive items */
 .hover-lift {
 	transition:
-		transform 200ms var(--ease-out),
-		box-shadow 200ms var(--ease-out);
+		transform var(--motion-base) var(--ease-enter),
+		box-shadow var(--motion-base) var(--ease-enter);
 }
 
 .hover-lift:hover {
@@ -756,14 +796,28 @@ select {
 :focus-visible {
 	outline: 2px solid var(--color-accent);
 	outline-offset: 2px;
-	transition: outline-offset 150ms var(--ease-out);
+	transition: outline-offset var(--motion-fast) var(--ease-enter);
 }
 
-/* Smooth accordion/expand animations */
+/* Height open and shut without measuring (transition:collapse in
+   $lib/motion.ts): a one-row grid whose row goes 0fr ↔ 1fr. The one child
+   holds the content. */
+.k-collapse {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	grid-template-rows: 1fr;
+}
+
+.k-collapse > * {
+	min-width: 0;
+	min-height: 0;
+}
+
+/* The same for content that stays mounted: toggle .expanded. */
 .accordion-content {
 	display: grid;
 	grid-template-rows: 0fr;
-	transition: grid-template-rows 250ms var(--ease-out);
+	transition: grid-template-rows var(--motion-base) var(--ease-enter);
 }
 
 .accordion-content.expanded {
@@ -774,9 +828,12 @@ select {
 	overflow: hidden;
 }
 
-/* Chevron rotation */
-.chevron {
-	transition: transform 200ms var(--ease-out);
+/* Chevron rotation (.k-chevron beside Tailwind's rotate-90, which sets `rotate`) */
+.chevron,
+.k-chevron {
+	transition:
+		transform var(--motion-base) var(--ease-enter),
+		rotate var(--motion-base) var(--ease-enter);
 }
 
 .chevron.expanded {
@@ -868,7 +925,8 @@ textarea {
 		border-radius: var(--radius-md);
 		background: var(--color-bg);
 		box-shadow: var(--shadow-lg);
-		animation: slideDownFadeIn 120ms var(--ease-out);
+		transform-origin: var(--pop-origin, top center);
+		animation: popIn var(--motion-fast) var(--ease-enter);
 	}
 
 	.k-menu-item {
@@ -1245,7 +1303,7 @@ textarea {
 		border-radius: var(--radius-lg);
 		background: var(--color-bg);
 		box-shadow: var(--shadow-md);
-		animation: slideDownFadeIn 120ms var(--ease-out);
+		animation: slideDownFadeIn var(--motion-fast) var(--ease-enter);
 	}
 
 	/* Modal dialog shell: backdrop + panel */
@@ -1259,7 +1317,7 @@ textarea {
 		padding: 1rem;
 		background: rgb(0 0 0 / 0.4);
 		backdrop-filter: blur(2px);
-		animation: fadeIn 150ms var(--ease-out);
+		animation: fadeIn var(--motion-base) var(--ease-enter);
 	}
 
 	@media (min-width: 768px) {
@@ -1278,7 +1336,8 @@ textarea {
 		border-radius: var(--radius-lg);
 		background: var(--color-bg);
 		box-shadow: var(--shadow-lg);
-		animation: scaleIn 160ms var(--ease-out);
+		transform-origin: var(--pop-origin, center);
+		animation: popIn var(--motion-base) var(--ease-enter);
 	}
 }
 

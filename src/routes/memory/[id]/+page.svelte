@@ -1639,7 +1639,7 @@
 
 	@media (prefers-reduced-motion: no-preference) {
 		.crumb-in {
-			animation: crumb-in 140ms ease-out;
+			animation: crumb-in var(--motion-base) var(--ease-enter);
 		}
 	}
 
@@ -1712,7 +1712,7 @@
 	@media (hover: hover) {
 		.insert-bar {
 			opacity: 0;
-			transition: opacity 150ms var(--ease-out);
+			transition: opacity var(--motion-fast) var(--ease-enter);
 		}
 
 		:global(.group\/title:hover) .insert-bar,
@@ -1775,7 +1775,7 @@
 
 	.link-section summary :global(.chev) {
 		color: var(--color-text-faint);
-		transition: transform 150ms var(--ease-out);
+		transition: transform var(--motion-fast) var(--ease-enter);
 	}
 
 	.link-section[open] summary :global(.chev) {

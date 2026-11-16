@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { undoHead, undoLast, dismissUndo } from '$lib/stores/undo';
+	import { fadeOut } from '$lib/motion';
 	import { Undo2, X } from 'lucide-svelte';
 
 	// Each time a new undo head appears we start an auto-dismiss timer.
@@ -37,7 +38,7 @@
 </script>
 
 {#if $undoHead && visibleId === $undoHead.id}
-	<div class="undo-toast" role="status" aria-live="polite">
+	<div class="undo-toast" role="status" aria-live="polite" out:fadeOut>
 		<span class="label">{$undoHead.label}</span>
 		<button class="undo-btn" onclick={handleUndo} title="Undo (⌘Z)">
 			<Undo2 class="h-3.5 w-3.5" />
@@ -66,7 +67,7 @@
 		border-radius: var(--radius-md);
 		box-shadow: var(--shadow-lg);
 		max-width: calc(100vw - 2rem);
-		animation: slide-up 0.18s var(--ease-out);
+		animation: slideUpFadeIn var(--motion-base) var(--ease-enter);
 	}
 
 	.label {
@@ -111,16 +112,5 @@
 	.close-btn:hover {
 		opacity: 1;
 		background: color-mix(in srgb, var(--color-bg) 14%, transparent);
-	}
-
-	@keyframes slide-up {
-		from {
-			opacity: 0;
-			transform: translate(-50%, 0.5rem);
-		}
-		to {
-			opacity: 1;
-			transform: translate(-50%, 0);
-		}
 	}
 </style>

@@ -422,7 +422,7 @@
 	.record-btn {
 		background: var(--color-danger);
 		box-shadow: var(--shadow-md);
-		transition: filter 120ms var(--ease-out);
+		transition: filter var(--motion-fast) var(--ease-enter);
 	}
 
 	.record-btn:hover {

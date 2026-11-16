@@ -220,7 +220,7 @@
 		z-index: 300;
 		background: rgb(10 10 14 / 0.92);
 		color: #e6e6ef;
-		animation: viewer-in 120ms ease-out;
+		animation: viewer-in var(--motion-fast) var(--ease-enter);
 	}
 
 	@keyframes viewer-in {

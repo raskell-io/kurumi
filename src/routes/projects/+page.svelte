@@ -164,7 +164,7 @@
 		font-size: 0.9375rem;
 		color: var(--color-text);
 		text-decoration: none;
-		transition: border-color 120ms ease;
+		transition: border-color var(--motion-fast) var(--ease-enter);
 	}
 
 	.project-card:hover {

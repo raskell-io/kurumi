@@ -220,7 +220,7 @@
 		background: var(--color-bg);
 		box-shadow: var(--shadow-lg);
 		font-family: var(--font-sans);
-		animation: slideDownFadeIn 120ms var(--ease-out);
+		animation: slideDownFadeIn var(--motion-fast) var(--ease-enter);
 	}
 
 	.popup-header {

@@ -817,7 +817,7 @@
 		border-radius: var(--radius-lg);
 		background: var(--color-bg);
 		box-shadow: var(--shadow-lg);
-		animation: fadeIn 120ms var(--ease-out);
+		animation: fadeIn var(--motion-fast) var(--ease-enter);
 		cursor: grab;
 		user-select: none;
 		touch-action: none; /* Enable custom touch handling */

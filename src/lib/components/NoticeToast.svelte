@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { notice } from '$lib/stores/notice';
+	import { fadeOut } from '$lib/motion';
 	import { X } from 'lucide-svelte';
 
 	// Shows the latest notice for a few seconds.
@@ -12,7 +13,7 @@
 </script>
 
 {#if $notice}
-	<div class="notice-toast" role="status" aria-live="polite">
+	<div class="notice-toast" role="status" aria-live="polite" out:fadeOut>
 		<span class="label">{$notice.text}</span>
 		<button class="close-btn" onclick={() => notice.set(null)} aria-label="Dismiss">
 			<X class="h-3.5 w-3.5" />
@@ -27,6 +28,7 @@
 		bottom: calc(6.75rem + env(safe-area-inset-bottom, 0px));
 		left: 50%;
 		transform: translateX(-50%);
+		animation: slideUpFadeIn var(--motion-base) var(--ease-enter);
 		z-index: 200;
 		display: flex;
 		align-items: center;

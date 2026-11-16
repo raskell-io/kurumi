@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { fadeOut } from '$lib/motion';
 	import { processAndStoreImage } from '$lib/utils/image';
 	import { X, SwitchCamera, Loader2 } from 'lucide-svelte';
 	import { onDestroy } from 'svelte';
@@ -149,7 +150,7 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
-		class="k-dialog-backdrop camera-backdrop"
+		class="k-dialog-backdrop camera-backdrop" out:fadeOut|global
 		onclick={close}
 		role="dialog"
 		aria-modal="true"
@@ -207,7 +208,7 @@
 	</div>
 {:else if processing || error}
 	<!-- Mobile: processing / error card after the native camera returns -->
-	<div class="k-dialog-backdrop camera-backdrop" role={error ? 'alertdialog' : 'status'} aria-modal={error ? 'true' : undefined}>
+	<div class="k-dialog-backdrop camera-backdrop" out:fadeOut|global role={error ? 'alertdialog' : 'status'} aria-modal={error ? 'true' : undefined}>
 		<div class="k-dialog processing-card">
 			{#if error}
 				<span class="text-[var(--color-danger)]">{error}</span>
@@ -315,7 +316,7 @@
 		height: 2.5rem;
 		border-radius: 50%;
 		background: var(--color-text);
-		transition: transform 100ms var(--ease-out);
+		transition: transform var(--motion-fast) var(--ease-enter);
 	}
 
 	.shutter-btn:hover:not(:disabled) .shutter-inner {

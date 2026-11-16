@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { fadeOut } from '$lib/motion';
 	import {
 		people,
 		mergePeople,
@@ -291,7 +292,7 @@
 {#if confirmingMerge && mergeSource && mergeTarget}
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="k-dialog-backdrop" onclick={cancelMerge}>
+	<div class="k-dialog-backdrop" out:fadeOut|global onclick={cancelMerge}>
 		<div
 			class="k-dialog"
 			role="dialog"
