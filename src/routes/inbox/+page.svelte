@@ -10,13 +10,18 @@
 		type ActionItem
 	} from '$lib/db';
 	import { pushUndo } from '$lib/stores/undo';
+	import { formatRelative } from '$lib/dates/format';
+	import { collapse } from '$lib/motion';
+	import DoneToggle from '$lib/components/ui/DoneToggle.svelte';
+	import DueChip from '$lib/components/ui/DueChip.svelte';
+	import KeyHints from '$lib/components/ui/KeyHints.svelte';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import {
 		Inbox,
 		Bell,
 		Calendar,
-		Circle,
+		ChevronRight,
 		FileText,
 		Mail,
 		Tag
@@ -89,37 +94,12 @@
 		$draftProposals.filter((d) => d.status === 'pending')
 	);
 
-	// Total attention count
-	let totalCount = $derived(
-		unsummarized.length +
-		untagged.length +
-		overdue.length +
-		dueToday.length +
-		pendingProposals.length +
-		pendingDrafts.length
-	);
-
-	function relativeDate(ts: number): string {
-		const diff = Math.floor((now - ts) / 1000);
-		if (diff < 60) return 'just now';
-		if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-		if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-		return `${Math.floor(diff / 86400)}d ago`;
-	}
-
-	function shortDate(iso: string): string {
-		const date = new Date(iso + 'T00:00:00');
-		if (Number.isNaN(date.getTime())) return iso;
-		const days = Math.round((date.getTime() - new Date(today + 'T00:00:00').getTime()) / oneDayMs);
-		if (days === 0) return 'Today';
-		if (days === 1) return 'Tomorrow';
-		if (days === -1) return 'Yesterday';
-		return date.toLocaleDateString(undefined, {
-			month: 'short',
-			day: 'numeric',
-			year: date.getFullYear() === new Date().getFullYear() ? undefined : 'numeric'
-		});
-	}
+	// What needs you: something with a date, or a suggestion to decide on.
+	let totalCount = $derived(overdue.length + dueToday.length + pendingProposals.length + pendingDrafts.length);
+	// Housekeeping (recordings without a summary, new notes without a tag) is
+	// offered, folded away under "Tidy up", and not counted as needing you.
+	let tidyCount = $derived(unsummarized.length + untagged.length);
+	let showTidy = $state(false);
 
 	// Quick-complete from the inbox, with the same undo semantics as
 	// the /actions page.
@@ -141,8 +121,8 @@
 		...dueToday.map((a) => ({ id: `a:${a.id}`, href: '/actions' })),
 		...pendingProposals.slice(0, 5).map((p) => ({ id: `p:${p.id}`, href: '/proposals' })),
 		...pendingDrafts.slice(0, 3).map((d) => ({ id: `d:${d.id}`, href: '/drafts' })),
-		...unsummarized.map((m) => ({ id: `m:${m.id}`, href: `/memory/${m.id}` })),
-		...untagged.map((m) => ({ id: `m:${m.id}`, href: `/memory/${m.id}` }))
+		...(showTidy ? unsummarized.map((m) => ({ id: `m:${m.id}`, href: `/memory/${m.id}` })) : []),
+		...(showTidy ? untagged.map((m) => ({ id: `m:${m.id}`, href: `/memory/${m.id}` })) : [])
 	]);
 
 	let focusIndex = $state(-1);
@@ -215,20 +195,16 @@
 	</h2>
 {/snippet}
 
-{#snippet actionRow(item: ActionItem, tone: 'danger' | 'warn')}
+{#snippet actionRow(item: ActionItem)}
 	<li class="k-row item" class:focused={focusedId === `a:${item.id}`} data-row-id="a:{item.id}">
-		<button class="check" onclick={() => markDone(item)} title="Mark done" aria-label="Mark done">
-			<Circle class="h-4 w-4" />
-		</button>
+		<DoneToggle onclick={() => markDone(item)} label="Mark done" />
 		<a class="row-link" href="/actions">
 			<span class="text">{item.text}</span>
 			{#if item.assignee}
 				<span class="meta">@{item.assignee}</span>
 			{/if}
 			{#if item.dueDate}
-				<span class="k-badge" class:k-badge-danger={tone === 'danger'} class:k-badge-warn={tone === 'warn'}>
-					{shortDate(item.dueDate)}
-				</span>
+				<DueChip date={item.dueDate} {today} />
 			{/if}
 		</a>
 	</li>
@@ -240,34 +216,35 @@
 			<h1 class="k-page-title">Inbox</h1>
 			<p class="k-page-subtitle">
 				{#if totalCount > 0}
-					{totalCount} {totalCount === 1 ? 'item needs' : 'items need'} your attention
+					{totalCount} {totalCount === 1 ? 'thing needs' : 'things need'} you: to-dos that are due, and suggestions to review
 				{:else}
-					Items that need your attention
+					To-dos that are due, and suggestions to review
 				{/if}
 			</p>
-			{#if totalCount > 0}
-				<div class="k-hints">
-					<span><kbd class="k-kbd">j</kbd> <kbd class="k-kbd">k</kbd> navigate</span>
-					<span><kbd class="k-kbd">↵</kbd> open</span>
-				</div>
-			{/if}
 		</div>
+		{#if totalCount + tidyCount > 0}
+			<KeyHints>
+				<span><kbd class="k-kbd">j</kbd> <kbd class="k-kbd">k</kbd> next, previous</span>
+				<span><kbd class="k-kbd">↵</kbd> open</span>
+			</KeyHints>
+		{/if}
 	</header>
 
 	{#if totalCount === 0}
 		<div class="k-empty">
 			<Inbox />
 			<p class="k-empty-title">All clear</p>
-			<p>Nothing needs your attention right now.</p>
+			<p>Nothing needs you right now.</p>
 		</div>
-	{:else}
+	{/if}
+	{#if totalCount > 0}
 		<!-- Overdue action items -->
 		{#if overdue.length > 0}
 			<section>
 				{@render sectionHeader('Overdue', overdue.length, '/actions')}
 				<ul class="items">
 					{#each overdue.slice(0, 5) as item (item.id)}
-						{@render actionRow(item, 'danger')}
+						{@render actionRow(item)}
 					{/each}
 				</ul>
 				{#if overdue.length > 5}
@@ -282,7 +259,7 @@
 				{@render sectionHeader('Due today', dueToday.length, '/actions')}
 				<ul class="items">
 					{#each dueToday as item (item.id)}
-						{@render actionRow(item, 'warn')}
+						{@render actionRow(item)}
 					{/each}
 				</ul>
 			</section>
@@ -291,14 +268,14 @@
 		<!-- Pending proposals -->
 		{#if pendingProposals.length > 0}
 			<section>
-				{@render sectionHeader('Reminder proposals', pendingProposals.length, '/proposals')}
+				{@render sectionHeader('Suggested reminders', pendingProposals.length, '/proposals')}
 				<ul class="items">
 					{#each pendingProposals.slice(0, 5) as p (p.id)}
 						<li>
 							<a class="k-row item" class:focused={focusedId === `p:${p.id}`} data-row-id="p:{p.id}" href="/proposals">
 								<Bell class="icon h-4 w-4" />
 								<span class="text">{p.text}</span>
-								<span class="k-badge">{shortDate(p.suggestedDate)}</span>
+								<DueChip date={p.suggestedDate} active={false} {today} />
 							</a>
 						</li>
 					{/each}
@@ -334,41 +311,59 @@
 			</section>
 		{/if}
 
-		<!-- Unsummarized voice memos/meetings -->
-		{#if unsummarized.length > 0}
-			<section>
-				{@render sectionHeader('Needs summary', unsummarized.length)}
-				<ul class="items">
-					{#each unsummarized as m (m.id)}
-						<li>
-							<a class="k-row item" class:focused={focusedId === `m:${m.id}`} data-row-id="m:{m.id}" href="/memory/{m.id}">
-								<FileText class="icon h-4 w-4" />
-								<span class="text">{m.title || 'Untitled'}</span>
-								<span class="meta">{relativeDate(m.createdAt)}</span>
-							</a>
-						</li>
-					{/each}
-				</ul>
-			</section>
-		{/if}
+	{/if}
 
-		<!-- Untagged recent notes -->
-		{#if untagged.length > 0}
-			<section>
-				{@render sectionHeader('Untagged notes', untagged.length)}
-				<ul class="items">
-					{#each untagged as m (m.id)}
-						<li>
-							<a class="k-row item" class:focused={focusedId === `m:${m.id}`} data-row-id="m:{m.id}" href="/memory/{m.id}">
-								<Tag class="icon h-4 w-4" />
-								<span class="text">{m.title || 'Untitled'}</span>
-								<span class="meta">{relativeDate(m.createdAt)}</span>
-							</a>
-						</li>
-					{/each}
-				</ul>
-			</section>
-		{/if}
+	<!-- Housekeeping, folded away: never counted as needing you. -->
+	{#if tidyCount > 0}
+		<section class="tidy">
+			<button type="button" class="tidy-toggle" aria-expanded={showTidy} aria-controls="inbox-tidy" onclick={() => (showTidy = !showTidy)}>
+				<ChevronRight class="h-3.5 w-3.5 k-chevron {showTidy ? 'rotate-90' : ''}" aria-hidden="true" />
+				Tidy up
+				<span class="tabular-nums font-normal">{tidyCount}</span>
+			</button>
+			{#if showTidy}
+				<div id="inbox-tidy" class="k-collapse" transition:collapse>
+					<div>
+				<!-- Unsummarized voice memos/meetings -->
+				{#if unsummarized.length > 0}
+					<section>
+						{@render sectionHeader('Needs summary', unsummarized.length)}
+						<ul class="items">
+							{#each unsummarized as m (m.id)}
+								<li>
+									<a class="k-row item" class:focused={focusedId === `m:${m.id}`} data-row-id="m:{m.id}" href="/memory/{m.id}">
+										<FileText class="icon h-4 w-4" />
+										<span class="text">{m.title || 'Untitled'}</span>
+										<span class="meta">{formatRelative(m.createdAt)}</span>
+									</a>
+								</li>
+							{/each}
+						</ul>
+					</section>
+				{/if}
+
+				<!-- Untagged recent notes -->
+				{#if untagged.length > 0}
+					<section>
+						{@render sectionHeader('Untagged notes', untagged.length)}
+						<ul class="items">
+							{#each untagged as m (m.id)}
+								<li>
+									<a class="k-row item" class:focused={focusedId === `m:${m.id}`} data-row-id="m:{m.id}" href="/memory/{m.id}">
+										<Tag class="icon h-4 w-4" />
+										<span class="text">{m.title || 'Untitled'}</span>
+										<span class="meta">{formatRelative(m.createdAt)}</span>
+									</a>
+								</li>
+							{/each}
+						</ul>
+					</section>
+				{/if}
+
+					</div>
+				</div>
+			{/if}
+		</section>
 	{/if}
 </div>
 
@@ -383,22 +378,29 @@
 		scroll-margin: 1rem 0;
 	}
 
-	.item :global(.icon),
-	.check {
+	.item :global(.icon) {
 		flex-shrink: 0;
 		color: var(--color-text-faint);
 	}
 
-	.check {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 1.25rem;
-		height: 1.25rem;
+	.tidy {
+		margin-top: 2rem;
 	}
 
-	.check:hover {
-		color: var(--color-accent);
+	.tidy-toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		padding: 0.25rem;
+		border-radius: var(--radius-sm);
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--color-text-faint);
+	}
+
+	.tidy-toggle:hover {
+		background: var(--color-hover);
+		color: var(--color-text-muted);
 	}
 
 	/* Action rows hold a button + a link, so the link fills the row. */

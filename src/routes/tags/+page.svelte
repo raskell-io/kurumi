@@ -1,4 +1,6 @@
 <script lang="ts">
+	import KeyHints from '$lib/components/ui/KeyHints.svelte';
+	import { collapse } from '$lib/motion';
 	import { autofocus } from '$lib/actions/autofocus';
 	import {
 		memoryObjects,
@@ -12,7 +14,7 @@
 	import { pushUndo } from '$lib/stores/undo';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { Tag, GitMerge, ArrowRight, Pencil, Check, X } from 'lucide-svelte';
+	import { Tag, GitMerge, ArrowRight, Pencil, Check, X, ChevronRight } from 'lucide-svelte';
 
 	// Re-derive every time memory objects change (edits to bodyMarkdown).
 	let allTags = $derived.by(() => {
@@ -31,6 +33,7 @@
 	});
 
 	// Rename in-place state. Only one tag can be edited at a time.
+	let showTidy = $state(false);
 	let renamingTag = $state<string | null>(null);
 	let renameValue = $state('');
 
@@ -155,59 +158,15 @@
 			<p class="k-page-subtitle">
 				{allTags.length} {allTags.length === 1 ? 'tag' : 'tags'} in use
 			</p>
-			{#if allTags.length > 0}
-				<div class="k-hints">
-					<span><kbd class="k-kbd">j</kbd> <kbd class="k-kbd">k</kbd> navigate</span>
-					<span><kbd class="k-kbd">↵</kbd> open</span>
-					<span><kbd class="k-kbd">r</kbd> rename</span>
-				</div>
-			{/if}
 		</div>
+		{#if allTags.length > 0}
+			<KeyHints>
+				<span><kbd class="k-kbd">j</kbd> <kbd class="k-kbd">k</kbd> next, previous</span>
+				<span><kbd class="k-kbd">↵</kbd> open</span>
+				<span><kbd class="k-kbd">r</kbd> rename</span>
+			</KeyHints>
+		{/if}
 	</header>
-
-	{#if proposals.length > 0}
-		<section class="mb-6">
-			<h2 class="k-section-title !mt-0">
-				<GitMerge class="h-3.5 w-3.5" />
-				Possible duplicates
-				<span class="k-badge">{proposals.length}</span>
-			</h2>
-			<ul class="merge-group">
-				{#each proposals as { source, target } (source + target)}
-					<li class="k-row">
-						<span class="min-w-0 truncate text-[var(--color-text-muted)]">#{source}</span>
-						<ArrowRight class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)]" />
-						<span class="min-w-0 flex-1 truncate font-medium">#{target}</span>
-						<button
-							class="k-btn k-btn-primary k-btn-sm"
-							onclick={() => handleMerge(source, target)}
-							title="Rewrite every #{source} to #{target}"
-						>
-							Merge
-						</button>
-					</li>
-				{/each}
-			</ul>
-		</section>
-	{/if}
-
-	{#if lowValue.length > 0}
-		<section class="mb-6">
-			<h2 class="k-section-title">
-				Used once
-				<span class="k-badge">{lowValue.length}</span>
-			</h2>
-			<p class="mb-2.5 px-1 text-xs leading-relaxed text-[var(--color-text-muted)]">
-				Each of these appears in a single note. Rename them into a shared tag,
-				or drop them if the category isn't useful.
-			</p>
-			<div class="flex flex-wrap gap-1.5 px-1">
-				{#each lowValue as { tag } (tag)}
-					<a href="/read/tag/{encodeURIComponent(tag)}" class="k-badge hover:!text-[var(--color-text)]">#{tag}</a>
-				{/each}
-			</div>
-		</section>
-	{/if}
 
 	{#if allTags.length === 0}
 		<div class="k-empty">
@@ -217,9 +176,6 @@
 		</div>
 	{:else}
 		<section>
-			{#if proposals.length > 0 || lowValue.length > 0}
-				<h2 class="k-section-title">All tags</h2>
-			{/if}
 			<ul>
 				{#each allTags as { tag, count }, i (tag)}
 					<li class="k-row" class:focused={focusIndex === i} data-row-index={i}>
@@ -272,6 +228,66 @@
 			</ul>
 		</section>
 	{/if}
+
+	<!-- Clean-up suggestions after the tags themselves, folded away. -->
+	{#if proposals.length > 0 || lowValue.length > 0}
+		<section class="tidy">
+			<button type="button" class="tidy-toggle" aria-expanded={showTidy} aria-controls="tags-tidy" onclick={() => (showTidy = !showTidy)}>
+				<ChevronRight class="h-3.5 w-3.5 k-chevron {showTidy ? 'rotate-90' : ''}" aria-hidden="true" />
+				Tidy up
+				<span class="tabular-nums font-normal">{proposals.length + lowValue.length}</span>
+			</button>
+			{#if showTidy}
+				<div id="tags-tidy" class="k-collapse" transition:collapse>
+					<div>
+				{#if proposals.length > 0}
+					<section class="mb-6">
+						<h2 class="k-section-title">
+							<GitMerge class="h-3.5 w-3.5" />
+							Possible duplicates
+							<span class="k-badge">{proposals.length}</span>
+						</h2>
+						<ul class="merge-group">
+							{#each proposals as { source, target } (source + target)}
+								<li class="k-row">
+									<span class="min-w-0 truncate text-[var(--color-text-muted)]">#{source}</span>
+									<ArrowRight class="h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)]" />
+									<span class="min-w-0 flex-1 truncate font-medium">#{target}</span>
+									<button
+										class="k-btn k-btn-primary k-btn-sm"
+										onclick={() => handleMerge(source, target)}
+										title="Rewrite every #{source} to #{target}"
+									>
+										Merge
+									</button>
+								</li>
+							{/each}
+						</ul>
+					</section>
+				{/if}
+
+				{#if lowValue.length > 0}
+					<section class="mb-6">
+						<h2 class="k-section-title">
+							Used once
+							<span class="k-badge">{lowValue.length}</span>
+						</h2>
+						<p class="mb-2.5 px-1 text-xs leading-relaxed text-[var(--color-text-muted)]">
+							Each of these appears in a single note. Rename them into a shared tag,
+							or drop them if the category isn't useful.
+						</p>
+						<div class="flex flex-wrap gap-1.5 px-1">
+							{#each lowValue as { tag } (tag)}
+								<a href="/read/tag/{encodeURIComponent(tag)}" class="k-badge hover:!text-[var(--color-text)]">#{tag}</a>
+							{/each}
+						</div>
+					</section>
+				{/if}
+					</div>
+				</div>
+			{/if}
+		</section>
+	{/if}
 </div>
 
 <style>
@@ -282,8 +298,36 @@
 		background: var(--color-bg-secondary);
 	}
 
-	/* Row actions appear on hover/focus (always visible on touch) */
+	.tidy {
+		margin-top: 2rem;
+	}
+
+	.tidy-toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		padding: 0.25rem;
+		border-radius: var(--radius-sm);
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--color-text-faint);
+	}
+
+	.tidy-toggle:hover {
+		background: var(--color-hover);
+		color: var(--color-text-muted);
+	}
+
+	/* Row actions appear on hover/focus over the row's end, so the count
+	   sits at the page's edge (always visible on touch) */
+	li.k-row {
+		position: relative;
+	}
+
 	.row-action {
+		position: absolute;
+		right: 0.375rem;
+		background: color-mix(in srgb, var(--color-text) 6%, var(--color-bg));
 		opacity: 0;
 	}
 
@@ -295,6 +339,7 @@
 
 	@media (hover: none) {
 		.row-action {
+			position: static;
 			opacity: 1;
 		}
 	}
