@@ -1288,8 +1288,11 @@
 		margin: 1em 0;
 	}
 
+	/* Room above the code for its language and Copy, as Read mode's header
+	   row: long lines scroll under nothing */
 	:global(.milkdown .kurumi-code > pre) {
 		margin: 0;
+		padding-top: 2.25em;
 	}
 
 	:global(.milkdown .kurumi-code > pre[data-language]::after) {
@@ -1701,8 +1704,11 @@
 	}
 
 	:global(.milkdown .kurumi-toggle-caret) {
+		font-size: inherit;
 		position: absolute;
-		top: 0.5em;
+		/* centred on the title's first line, whatever its height (touch targets are taller) */
+		top: calc(0.375em + (var(--line-height-editor, 1.75) - 0.05) * 0.5em);
+		transform: translateY(-50%);
 		left: 0.5em;
 		display: flex;
 		align-items: center;
@@ -1738,7 +1744,6 @@
 
 	:global(.milkdown .kurumi-toggle-summary) {
 		font-weight: 500;
-		font-size: calc((var(--font-size-editor-base, 1.0625rem) - 0.0625rem) * var(--font-editor-scale, 1));
 		line-height: calc(var(--line-height-editor, 1.75) - 0.05);
 	}
 
@@ -1827,6 +1832,7 @@
 	}
 
 	:global(.milkdown .callout-icon) {
+		font-size: inherit;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
