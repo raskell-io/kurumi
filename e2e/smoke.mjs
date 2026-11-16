@@ -2783,6 +2783,94 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
+	async 'top bar: the note\'s controls beside the tabs, and tabs that stack'(browser) {
+		const { page, errors } = await freshPage(browser);
+		await page.setViewport({ width: 1280, height: 800 });
+		const titles = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot', 'Golf', 'Hotel', 'India'];
+		const ids = await db(page, `return ${JSON.stringify(titles)}.map((t) => db.addMemoryObject(t, 'some words here').id);`);
+		for (const id of ids) {
+			await page.goto(`${BASE}/#/memory/${id}`, { waitUntil: 'load' });
+			await page.waitForSelector('main .ProseMirror');
+		}
+		await noteShown(page, 'India', { errors });
+		const bar = () =>
+			page.evaluate(() => {
+				const box = (el) => el?.getBoundingClientRect();
+				const tabs = [...document.querySelectorAll('.tab-strip .tab-item')];
+				const controls = box(document.querySelector('.note-bar-slot'));
+				return {
+					shown: tabs.map((t) => t.querySelector('.truncate').textContent),
+					active: document.querySelector('.tab-item.tab-active .truncate')?.textContent ?? null,
+					stacked: [...document.querySelectorAll('.tab-stack-item')].map((t) => t.textContent.trim()),
+					more: document.querySelector('.tab-stack')?.getAttribute('aria-label') ?? null,
+					// No tab reaches under the stack control or the note's controls.
+					overlap: tabs.some((t) => box(t).right > (box(document.querySelector('.tab-stack'))?.left ?? controls.left) + 0.5) || (box(document.querySelector('.tab-stack'))?.right ?? 0) > controls.left + 0.5,
+					narrowest: Math.min(...tabs.map((t) => Math.round(box(t).width))),
+					controlsInBar: !!document.querySelector('.tab-bar .note-bar-slot button[aria-label="More actions"]'),
+					noteRow: document.querySelector('.note-top')?.getClientRects().length ?? 0,
+					barHeight: document.querySelector('.tab-bar').offsetHeight,
+					edited: !!document.querySelector('.note-edited')?.getClientRects().length,
+					words: !!document.querySelector('.note-words')?.getClientRects().length
+				};
+			});
+		// The controls are in the top bar, not in a row of the note.
+		let now = await bar();
+		assert.ok(now.controlsInBar, 'the note controls are not in the top bar');
+		assert.equal(now.noteRow, 0, 'the note still shows its own header row');
+		// Nine tabs don't fit beside them: the last ones are stacked, the open note's tab is not.
+		assert.match(now.more ?? '', /^\d+ more tabs?$/, JSON.stringify(now));
+		assert.equal(now.active, 'India', JSON.stringify(now));
+		assert.equal(now.overlap, false, JSON.stringify(now));
+		assert.ok(now.narrowest >= 88, `a tab is ${now.narrowest}px wide`);
+		const shownBefore = now.shown.length;
+		// The stack lists the rest; arrow keys move, Enter opens, and the chosen tab is shown.
+		await page.click('.tab-stack');
+		await page.waitForSelector('.tab-stack-item');
+		now = await bar();
+		assert.equal(now.shown.length + now.stacked.length, titles.length, JSON.stringify(now));
+		assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('tab-stack-item')), true, 'focus did not move into the stack');
+		const second = now.stacked[1];
+		await page.keyboard.press('ArrowDown');
+		await page.keyboard.press('Enter');
+		await noteShown(page, second, { errors });
+		now = await bar();
+		assert.equal(now.active, second, JSON.stringify(now));
+		assert.equal(now.shown.length, shownBefore);
+		assert.equal(now.overlap, false, JSON.stringify(now));
+		// Delete in the stack closes that tab.
+		await page.click('.tab-stack');
+		await page.waitForSelector('.tab-stack-item');
+		const gone = (await bar()).stacked[0];
+		await page.keyboard.press('Delete');
+		await sleep(300);
+		now = await bar();
+		assert.ok(!now.stacked.includes(gone) && !now.shown.includes(gone), `${gone} is still open`);
+		await page.keyboard.press('Escape');
+		await sleep(200);
+		assert.equal(await page.$('.tab-stack-item'), null);
+		// A narrower window: more are stacked, the text of the controls gives way, the icons stay.
+		const height = now.barHeight;
+		await page.setViewport({ width: 900, height: 800 });
+		await sleep(400);
+		now = await bar();
+		assert.equal(now.overlap, false, JSON.stringify(now));
+		assert.equal(now.edited, false, 'the edited time still shows on a narrow bar');
+		assert.ok(now.controlsInBar);
+		assert.ok(now.shown.length < shownBefore, JSON.stringify(now));
+		assert.equal(now.active, second);
+		// A wide one: everything fits again, with the word count and the edited time.
+		await page.setViewport({ width: 1900, height: 800 });
+		await sleep(400);
+		now = await bar();
+		assert.equal(now.more, null, JSON.stringify(now));
+		assert.ok(now.edited && now.words, JSON.stringify(now));
+		// Another page: no note controls, and the bar keeps its height.
+		await page.goto(`${BASE}/#/actions`, { waitUntil: 'load' });
+		await page.waitForFunction(() => !document.querySelector('.note-bar-slot button'));
+		assert.equal(await page.$eval('.tab-bar', (el) => el.offsetHeight), height);
+		assert.deepEqual(errors, []);
+	},
+
 	async 'living notes: follow a topic, rewrite from its notes'(browser) {
 		const { page, errors } = await freshPage(browser);
 		const mod = (path) => `performance.getEntriesByType('resource').map((e) => e.name).find((n) => n.includes('/src/lib/db/store.ts')).replace('/db/store.ts', '${path}')`;

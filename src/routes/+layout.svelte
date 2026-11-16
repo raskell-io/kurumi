@@ -4,6 +4,7 @@
 	import { onMount, tick } from 'svelte';
 	import { afterNavigate } from '$app/navigation';
 	import { flip } from 'svelte/animate';
+	import { fitTabs } from '$lib/tab-strip';
 	import { armMotion, collapse, flipParams, pageEnter, panelSlide, popOut, tabIn } from '$lib/motion';
 	import {
 		initDB,
@@ -58,6 +59,7 @@
 		unpinTab,
 		togglePinTab,
 		moveTabTo,
+		noteBarSlot,
 		touchTab,
 		touchRecent,
 		closeTab,
@@ -121,7 +123,8 @@
 		Sun,
 		Moon,
 		Monitor,
-		Pin
+		Pin,
+		Layers
 	} from 'lucide-svelte';
 	import {
 		showNewNoteSnackbar,
@@ -254,7 +257,98 @@
 
 	// Split view sits next to a note. Opening the split's note in the main
 	// pane closes the split, so one note is never edited in two places.
-	let showTabBar = $derived(!$focusMode && !isMobile && ($openTabs.length > 0 || sidebarCollapsed));
+	// The top bar: tabs, and on a note its controls. There whenever it has
+	// something to hold, so its height never comes and goes between a note
+	// and another page while tabs are open.
+	let showTabBar = $derived(!$focusMode && !isMobile && ($openTabs.length > 0 || sidebarCollapsed || !!editNoteId));
+
+	// Tabs that fit, and the ones stacked behind the "N more" control.
+	let tabArea: HTMLElement | undefined = $state();
+	let tabAreaWidth = $state(0);
+	$effect(() => {
+		const el = tabArea;
+		if (!el) return;
+		// Sidebar, split note, assistant, window, or the controls beside the tabs changing width.
+		const observer = new ResizeObserver(() => (tabAreaWidth = el.clientWidth));
+		observer.observe(el);
+		tabAreaWidth = el.clientWidth;
+		return () => observer.disconnect();
+	});
+	let fitted = $derived(fitTabs($openTabs, editNoteId, tabAreaWidth));
+
+	function folderNames(folderId: string | null): string[] {
+		const names: string[] = [];
+		let id = folderId;
+		for (let depth = 0; id && depth < 32; depth++) {
+			const folder = $folders.find((f) => f.id === id);
+			if (!folder) break;
+			names.unshift(folder.name);
+			id = folder.parentId;
+		}
+		return names;
+	}
+	/** "Folder / Sub" of a tab's note, for the stack list. */
+	const tabFolder = (tab: { folderId: string | null }) => folderNames(tab.folderId).join(' / ');
+	/** A tab's tooltip: where the note is, then its title. */
+	const tabPath = (tab: { title: string; folderId: string | null }) => [...folderNames(tab.folderId), tab.title || 'Untitled'].join(' / ');
+
+	// The note's controls give way on a narrow bar: folder first, then the word count, then "Edited …".
+	let barWidth = $state(0);
+
+	let showTabStack = $state(false);
+	let stackButton: HTMLButtonElement | undefined = $state();
+	let stackMenu: HTMLElement | undefined = $state();
+	const stackItems = () => [...(stackMenu?.querySelectorAll<HTMLElement>('.tab-stack-item') ?? [])];
+	function openTabStack() {
+		showTabStack = true;
+		// Focus goes in at once, not after the menu has arrived.
+		tick().then(() => stackItems()[0]?.focus());
+	}
+	function closeTabStack(refocus = true) {
+		showTabStack = false;
+		if (refocus) stackButton?.focus();
+	}
+	function closeStackedTab(id: string) {
+		const items = stackItems();
+		const at = items.findIndex((el) => el.dataset.tabId === id);
+		closeTab(id);
+		tick().then(() => {
+			const left = stackItems();
+			if (left.length === 0) closeTabStack();
+			else left[Math.min(at, left.length - 1)]?.focus();
+		});
+	}
+	function stackKeydown(e: KeyboardEvent) {
+		const items = stackItems();
+		const at = items.indexOf(document.activeElement as HTMLElement);
+		if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+			e.preventDefault();
+			const next = e.key === 'ArrowDown' ? (at + 1) % items.length : (at - 1 + items.length) % items.length;
+			items[next]?.focus();
+		} else if (e.key === 'Home' || e.key === 'End') {
+			e.preventDefault();
+			items[e.key === 'Home' ? 0 : items.length - 1]?.focus();
+		} else if ((e.key === 'Delete' || e.key === 'Backspace') && at >= 0) {
+			e.preventDefault();
+			closeStackedTab(items[at].dataset.tabId!);
+		} else if (e.key === 'Escape') {
+			e.preventDefault();
+			e.stopPropagation();
+			closeTabStack();
+		} else if (e.key === 'Tab') {
+			closeTabStack(false);
+		}
+	}
+	$effect(() => {
+		if (fitted.stacked.length === 0 && showTabStack) showTabStack = false;
+	});
+
+	// Where the open note's controls go (see noteBarSlot in stores/workspace.ts).
+	let noteBarEl: HTMLElement | undefined = $state();
+	$effect(() => {
+		noteBarSlot.set(noteBarEl ?? null);
+		return () => noteBarSlot.set(null);
+	});
 	let showSplit = $derived(!!$splitNoteId && !!editNoteId && !isMobile && !$focusMode);
 	$effect(() => {
 		if ($splitNoteId && $splitNoteId === editNoteId) closeSplit();
@@ -397,7 +491,7 @@
 	}
 	$effect(() => {
 		// Whatever can change which row is current, or bring it into being.
-		void [currentPath, initialized, sidebarCollapsed, isMobile, sidebarOpen, $focusMode, $currentVaultCaps, $openTabs];
+		void [currentPath, initialized, sidebarCollapsed, isMobile, sidebarOpen, $focusMode, $currentVaultCaps];
 		tick().then(() => placeIndicator(true));
 	});
 	$effect(() => {
@@ -1274,34 +1368,42 @@
 
 		<!-- The stage: the tab strip on the chrome, and under it the content as
 		     raised panels (the page; beside it the split note and the assistant). -->
-		<div class="shell-stage flex min-w-0 flex-1 flex-col">
-			<!-- Tab bar (recently-opened memories) -->
+		<div class="shell-stage flex min-w-0 flex-1">
+		<div class="shell-panels flex min-h-0 min-w-0 flex-1">
+		<!-- The main column: the top bar (tabs, and the open note's controls) and the page under it.
+		     The split note and the assistant stand beside this column at full height, so what is
+		     in the top bar visibly belongs to the page below it and to nothing else. -->
+		<div class="shell-main flex min-w-0 flex-1 flex-col" class:shell-no-tabs={!showTabBar}>
 			{#if showTabBar}
 				<!-- The strip has a fixed height, which a grid row can't shrink below: hence the plain div between. -->
 				<div class="k-collapse shrink-0" transition:collapse>
 				<div>
-				<div class="tab-bar">
+				<div class="tab-bar" class:bar-no-path={barWidth > 0 && barWidth < 980} class:bar-no-words={barWidth > 0 && barWidth < 860} class:bar-no-edited={barWidth > 0 && barWidth < 720} bind:clientWidth={barWidth}>
 					{#if sidebarCollapsed}
 						<button
 							onclick={toggleSidebar}
-							class="k-icon-btn my-auto mr-1"
+							class="k-icon-btn my-auto mr-1 shrink-0"
 							title={'Expand sidebar (' + modKey + '\\)'}
 							aria-label="Expand sidebar"
 						>
 							<PanelLeftOpen class="h-4 w-4" />
 						</button>
 					{/if}
-					{#each $openTabs as tab, i (tab.id)}
+					<!-- The tabs get the width the controls leave. They shrink evenly to a minimum; what
+					     still doesn't fit is stacked behind one control ($lib/tab-strip.ts). -->
+					<div class="tab-area" bind:this={tabArea}>
+					<div class="tab-strip" class:tab-strip-tight={fitted.tight}>
+					{#each fitted.visible as tab, i (tab.id)}
 						<a
 							href="/memory/{tab.id}"
 							class="tab-item"
 							class:tab-active={currentPath === `/memory/${tab.id}`}
 							class:tab-pinned={tab.pinned}
-							class:tab-group-end={tab.pinned && !$openTabs[i + 1]?.pinned && i < $openTabs.length - 1}
+							class:tab-group-end={tab.pinned && !fitted.visible[i + 1]?.pinned && i < fitted.visible.length - 1}
 							draggable="true"
 							animate:flip={flipParams()}
 							in:tabIn
-							title={tab.pinned ? `${tab.title} (pinned; right-click to unpin)` : undefined}
+							title={tabPath(tab) + (tab.pinned ? ' (pinned; right-click to unpin)' : '')}
 							ondragstart={(e) => { e.dataTransfer?.setData('text/plain', tab.id); e.dataTransfer!.effectAllowed = 'move'; }}
 							ondragover={(e) => e.preventDefault()}
 							ondrop={(e) => { e.preventDefault(); const from = e.dataTransfer?.getData('text/plain'); if (from) moveTabTo(from, tab.id); }}
@@ -1309,7 +1411,7 @@
 							oncontextmenu={(e) => { e.preventDefault(); togglePinTab(tab.id); }}
 						>
 							{#if tab.icon}
-								<NoteIcon icon={tab.icon} class="h-3.5 w-3.5" />
+								<NoteIcon icon={tab.icon} class="h-3.5 w-3.5 shrink-0" />
 							{/if}
 							<span class="truncate">{tab.title || 'Untitled'}</span>
 							{#if tab.pinned}
@@ -1340,12 +1442,77 @@
 							{/if}
 						</a>
 					{/each}
+					</div>
+					{#if fitted.stacked.length > 0}
+						<div class="relative shrink-0">
+							<button
+								bind:this={stackButton}
+								class="tab-stack"
+								class:tab-stack-open={showTabStack}
+								onclick={() => (showTabStack ? closeTabStack() : openTabStack())}
+								onkeydown={(e) => { if (e.key === 'ArrowDown') { e.preventDefault(); openTabStack(); } }}
+								aria-haspopup="menu"
+								aria-expanded={showTabStack}
+								aria-label="{fitted.stacked.length} more {fitted.stacked.length === 1 ? 'tab' : 'tabs'}"
+								title="{fitted.stacked.length} more {fitted.stacked.length === 1 ? 'tab' : 'tabs'}"
+							>
+								<Layers class="h-3.5 w-3.5" aria-hidden="true" />
+								<span class="tabular-nums">{fitted.stacked.length}</span>
+							</button>
+							{#if showTabStack}
+								<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+								<div class="fixed inset-0 z-40" onclick={() => closeTabStack(false)}></div>
+								<div
+									bind:this={stackMenu}
+									tabindex="-1"
+									class="k-menu tab-stack-menu absolute right-0 top-full z-50 mt-1"
+									style="--pop-origin: top right"
+									role="menu"
+									aria-label="More tabs"
+									onkeydown={stackKeydown}
+									out:popOut
+								>
+									<div class="k-menu-label">More tabs</div>
+									{#each fitted.stacked as tab (tab.id)}
+										<div class="tab-stack-row">
+											<a
+												href="/memory/{tab.id}"
+												class="k-menu-item tab-stack-item no-underline"
+												role="menuitem"
+												data-tab-id={tab.id}
+												onclick={() => closeTabStack(false)}
+											>
+												{#if tab.icon}<NoteIcon icon={tab.icon} class="h-3.5 w-3.5 shrink-0" />{:else if tab.pinned}<Pin class="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />{/if}
+												<span class="min-w-0 flex-1">
+													<span class="block truncate">{tab.title || 'Untitled'}</span>
+													{#if tabFolder(tab)}<span class="block truncate text-xs text-[var(--color-text-faint)]">{tabFolder(tab)}</span>{/if}
+												</span>
+											</a>
+											<button
+												class="k-icon-btn tab-stack-close"
+												tabindex="-1"
+												onclick={() => closeStackedTab(tab.id)}
+												aria-label="Close {tab.title || 'Untitled'}"
+												title="Close tab"
+											>
+												<X class="h-3.5 w-3.5" />
+											</button>
+										</div>
+									{/each}
+									<div class="k-menu-sep"></div>
+									<div class="px-2 pb-1 pt-0.5 text-xs text-[var(--color-text-faint)]">↑↓ to move · Enter to open · Delete to close</div>
+								</div>
+							{/if}
+						</div>
+					{/if}
+					</div>
+					<!-- The open note's controls: the note page moves them in here ($lib/actions/dock). -->
+					<div class="note-bar-slot" bind:this={noteBarEl}></div>
 				</div>
 				</div>
 				</div>
 			{/if}
 
-		<div class="shell-panels flex min-h-0 flex-1" class:shell-no-tabs={!showTabBar}>
 		<!-- Main Content -->
 		<main class="shell-panel relative flex min-w-0 flex-1 flex-col" class:overflow-hidden={!isReadMode} aria-label="Main content">
 			<!-- Mobile header (hidden in read mode, on notes — which have their
@@ -1408,6 +1575,7 @@
 				{/if}
 			</div>
 		</main>
+		</div>
 
 		{#if showSplit && $splitNoteId}
 			<!-- Loaded when first opened: it carries the editor, which most pages don't need -->
@@ -1633,9 +1801,14 @@
 			padding: 0 var(--shell-gutter) var(--shell-gutter) 0;
 		}
 
-		/* No tab strip above (no tabs open): the panel keeps its distance from the top too. */
-		.shell-panels.shell-no-tabs {
+		/* No top bar above (no tabs, not a note): the panel keeps its distance from the top too. */
+		.shell-main.shell-no-tabs {
 			padding-top: var(--shell-gutter);
+		}
+
+		/* The split note and the assistant stand beside the main column at full height. */
+		.shell-panel-side {
+			margin-top: var(--shell-gutter);
 		}
 
 		/* Sidebar collapsed or focus mode: the panel has the window to its left. */
@@ -1692,27 +1865,98 @@
 		}
 	}
 
-	.tab-bar {
+	.shell-main {
 		transition: padding var(--motion-base) var(--ease-enter);
 	}
 
+	/* The top bar: [expand sidebar] [tabs … stack] [the note's controls]. One
+	   fixed height whatever it holds. Nothing here scrolls or clips except
+	   the strip of tabs itself, so menus can hang out of it. */
 	.tab-bar {
 		display: flex;
 		align-items: center;
-		gap: 0.125rem;
+		gap: 0.25rem;
 		height: 2.5rem;
 		flex-shrink: 0;
-		overflow-x: auto;
-		padding: 0 var(--shell-gutter) 0 0.125rem;
-		scrollbar-width: none;
+		padding: 0 0.125rem;
 	}
 
-	.shell-no-sidebar .tab-bar {
-		padding-left: var(--shell-gutter);
+	.tab-area {
+		display: flex;
+		flex: 1 1 0;
+		align-items: center;
+		gap: 0.125rem;
+		min-width: 0;
+		height: 100%;
 	}
 
-	.tab-bar::-webkit-scrollbar {
-		display: none;
+	.tab-strip {
+		display: flex;
+		flex: 0 1 auto;
+		align-items: center;
+		gap: 2px; /* TAB_GAP */
+		min-width: 0;
+		height: 100%;
+		overflow: hidden;
+	}
+
+	.note-bar-slot {
+		display: flex;
+		flex: none;
+		align-items: center;
+		min-width: 0;
+	}
+
+	/* The stack: tabs that don't fit, behind one control that says how many. */
+	.tab-stack {
+		display: inline-flex;
+		flex: none;
+		align-items: center;
+		gap: 0.25rem;
+		height: 1.75rem;
+		min-width: 0;
+		min-height: 0;
+		padding: 0 0.5rem;
+		border: 1px solid transparent;
+		border-radius: var(--radius-md);
+		font-size: 0.75rem;
+		color: var(--color-text-muted);
+	}
+
+	.tab-stack:hover,
+	.tab-stack-open {
+		background: var(--color-hover);
+		color: var(--color-text);
+	}
+
+	.tab-stack-menu {
+		width: 18rem;
+		max-width: calc(100vw - 2rem);
+		max-height: min(28rem, calc(100vh - 5rem));
+		overflow-y: auto;
+	}
+
+	.tab-stack-row {
+		position: relative;
+		display: flex;
+		align-items: center;
+	}
+
+	.tab-stack-item {
+		min-width: 0;
+		flex: 1;
+		padding-right: 2rem;
+	}
+
+	.tab-stack-close {
+		position: absolute;
+		right: 0.25rem;
+		opacity: 0;
+	}
+
+	.tab-stack-row:hover .tab-stack-close,
+	.tab-stack-row:focus-within .tab-stack-close {
+		opacity: 1;
 	}
 
 	.tab-item {
@@ -1720,8 +1964,9 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 0.375rem;
+		flex: 0 1 auto;
 		max-width: 200px;
-		min-width: 0;
+		min-width: 5.5rem; /* TAB_MIN: an icon and a few characters */
 		padding: 0 0.375rem 0 0.75rem;
 		font-size: 0.75rem;
 		color: var(--color-text-muted);
@@ -1753,8 +1998,10 @@
 		color: var(--color-accent);
 	}
 
-	/* The open note's tab: a piece of the panel's surface on the chrome. */
+	/* The open note's tab: a piece of the panel's surface on the chrome. It
+	   keeps more of its title than the others when they are squeezed. */
 	.tab-item.tab-active {
+		min-width: 8rem;
 		color: var(--color-text);
 		background: var(--shell-panel);
 		border-color: var(--shell-panel-border);
@@ -1784,6 +2031,15 @@
 	.tab-close:hover {
 		background: var(--color-active);
 		color: var(--color-text);
+	}
+
+	/* Tabs narrower than they'd like: the pin button comes on hover only, so the title keeps the room. */
+	.tab-strip-tight .tab-pin:not(.is-pinned) {
+		display: none;
+	}
+
+	.tab-strip-tight .tab-item:hover .tab-pin {
+		display: flex;
 	}
 
 	/* A newer Kurumi saved this vault: ask for the update (store.ts canReadDocument) */

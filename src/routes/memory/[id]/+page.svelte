@@ -40,7 +40,8 @@
 	import { NO_NEW_NOTES } from '$lib/linked/capabilities';
 	import { showNotice } from '$lib/stores/notice';
 	import { pushUndo } from '$lib/stores/undo';
-	import { openInSplit } from '$lib/stores/workspace';
+	import { noteBarSlot, openInSplit } from '$lib/stores/workspace';
+	import { dock } from '$lib/actions/dock';
 	import { get } from 'svelte/store';
 	import Editor from '$lib/components/Editor.svelte';
 	import { stashEdit } from '$lib/unsaved';
@@ -159,19 +160,8 @@
 	}
 	let titleInput: HTMLInputElement | undefined = $state();
 	let scrollArea: HTMLDivElement | undefined = $state();
-	// Whether the title has scrolled out of view: the header row then carries it.
-	let titleOut = $state(false);
-	$effect(() => {
-		const input = titleInput;
-		const root = scrollArea;
-		if (!input || !root) return;
-		const observer = new IntersectionObserver(([entry]) => (titleOut = !entry.isIntersecting), { root });
-		observer.observe(input);
-		return () => {
-			observer.disconnect();
-			titleOut = false;
-		};
-	});
+	// The controls are shown in the top bar while there is one (wide window, not focus mode).
+	let docked = $derived(!!$noteBarSlot);
 
 	// Ticks every 30s so the "Edited …" label stays fresh.
 	let now = $state(Date.now());
@@ -944,8 +934,11 @@
 
 {#if memory}
 	<div class="relative flex h-full flex-col">
-		<!-- Note header: location, freshness, actions -->
-		<div class="note-header flex min-h-11 shrink-0 items-center gap-1 border-b border-[var(--color-border)] px-2 safe-top md:border-b-0 md:px-4 md:pt-0">
+		<!-- The note's own top row. On a wide window it holds nothing: the
+		     controls sit in the top bar beside the tabs (docked, below), and
+		     the row is not shown. On phones and in focus mode, where there is
+		     no top bar, it is the note's header as before. -->
+		<div class="note-top flex min-h-11 shrink-0 items-center gap-1 border-b border-[var(--color-border)] px-2 safe-top md:border-b-0 md:px-4 md:pt-0" class:note-top-docked={docked}>
 			<!-- Mobile: this bar replaces the global top bar -->
 			<button
 				onclick={() => window.dispatchEvent(new Event('kurumi-open-sidebar'))}
@@ -957,22 +950,23 @@
 			<span class="min-w-0 flex-1 truncate text-sm font-medium text-[var(--color-text)] md:hidden">
 				{folderPath.length > 0 ? `${folderPath[folderPath.length - 1].name} / ` : ''}{isDefaultTitle(title) ? 'Untitled' : title}
 			</span>
-			<nav class="hidden min-w-0 flex-1 items-center gap-1 text-[0.8125rem] text-[var(--color-text-muted)] md:flex" aria-label="Breadcrumb">
-				<!-- Where the note is. Its title is right below, large: it joins the
-				     path here only once that has scrolled out of view (a linked
-				     note's filename always shows: it isn't the title). -->
-				{#each folderPath as folder, i (folder.id)}
-					{#if i > 0}<span class="text-[var(--color-text-faint)]">/</span>{/if}
-					<a href="/read/folder/{folder.id}" class="max-w-40 truncate rounded px-1 py-0.5 hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]">{folder.name}</a>
-				{/each}
-				{#if linkedInfo || titleOut}
-					{#if folderPath.length > 0}<span class="crumb-in text-[var(--color-text-faint)]">/</span>{/if}
-					<span class="crumb-in flex min-w-0 items-center gap-1.5 px-1 text-[var(--color-text)]" title={linkedInfo?.relPath}>
-						{#if memory.icon}<NoteIcon icon={memory.icon} class="h-3.5 w-3.5" />{/if}
-						<span class="truncate">{linkedInfo ? linkedInfo.relPath.slice(linkedInfo.relPath.lastIndexOf('/') + 1) : title && title !== 'Untitled' ? title : 'Untitled'}</span>
-					</span>
-				{/if}
-			</nav>
+			<span class="hidden flex-1 md:block"></span>
+
+			<!-- Location, freshness, actions: one cluster, docked in the top bar when there is one. -->
+			<div class="note-header flex min-w-0 items-center gap-1" use:dock={$noteBarSlot}>
+			<!-- Where the note is, quietly: its folder (the whole path on hover; the
+			     tab carries the title). A linked note shows its file name instead:
+			     that isn't the title. -->
+			{#if linkedInfo}
+				<span class="note-path hidden max-w-48 truncate px-1 text-xs text-[var(--color-text-faint)] md:inline" title={linkedInfo.relPath}>{linkedInfo.relPath.slice(linkedInfo.relPath.lastIndexOf('/') + 1)}</span>
+			{:else if folderPath.length > 0}
+				<a
+					href="/read/folder/{folderPath[folderPath.length - 1].id}"
+					class="note-path hidden max-w-40 truncate rounded px-1 py-0.5 text-xs text-[var(--color-text-faint)] no-underline hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] md:inline"
+					title={folderPath.map((f) => f.name).join(' / ')}
+					aria-label="Folder: {folderPath.map((f) => f.name).join(' / ')}"
+				>{folderPath[folderPath.length - 1].name}</a>
+			{/if}
 
 			{#if linked}
 				<span
@@ -996,11 +990,11 @@
 			{/if}
 
 			{#if wordCount > 0}
-				<span class="hidden shrink-0 px-1 text-xs tabular-nums text-[var(--color-text-faint)] lg:inline">
+				<span class="note-words hidden shrink-0 px-1 text-xs tabular-nums text-[var(--color-text-faint)] lg:inline">
 					{wordCount.toLocaleString()} {wordCount === 1 ? 'word' : 'words'}
 				</span>
 			{/if}
-			<span class="hidden shrink-0 px-1 text-xs text-[var(--color-text-faint)] sm:inline" title="Last modified {formatDate(memory.updatedAt)}">
+			<span class="note-edited hidden shrink-0 px-1 text-xs tabular-nums text-[var(--color-text-faint)] sm:inline" title="Last modified {formatDate(memory.updatedAt)}">
 				{formatEdited(memory.updatedAt, now)}
 			</span>
 
@@ -1108,6 +1102,7 @@
 						{/if}
 					</div>
 				{/if}
+			</div>
 			</div>
 		</div>
 
@@ -1637,19 +1632,6 @@
 		background: var(--color-hover);
 	}
 
-	@media (prefers-reduced-motion: no-preference) {
-		.crumb-in {
-			animation: crumb-in var(--motion-base) var(--ease-enter);
-		}
-	}
-
-	@keyframes crumb-in {
-		from {
-			opacity: 0;
-			transform: translateY(2px);
-		}
-	}
-
 	.linked-props {
 		display: grid;
 		grid-template-columns: max-content minmax(0, 1fr);
@@ -1736,8 +1718,33 @@
 		color: var(--color-text-muted);
 	}
 
-	.note-header {
+	.note-top {
 		background: var(--color-bg);
+	}
+
+	/* The controls are in the top bar: the row has nothing left to show. */
+	.note-top-docked {
+		display: none;
+	}
+
+	/* In the top bar the widths that change while you work are reserved, so
+	   the tabs beside them never shift: the count as it grows, "Edited just
+	   now" turning into "Edited 3m ago". Text is set against the icons. */
+	:global(.note-bar-slot) .note-words {
+		min-width: 5.25rem;
+		text-align: right;
+	}
+
+	:global(.note-bar-slot) .note-edited {
+		min-width: 7.75rem;
+		text-align: right;
+	}
+
+	/* A narrow bar: the folder goes first, then the count, then "Edited …"; the icons stay. */
+	:global(.bar-no-path) .note-path,
+	:global(.bar-no-words) .note-words,
+	:global(.bar-no-edited) .note-edited {
+		display: none;
 	}
 
 	.recording-pill span {

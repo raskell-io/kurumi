@@ -78,7 +78,10 @@ back.
   reorder, middle-click to close. **Pin** the ones you're working on (the
   pin on a tab, right-click, or ⌘K *Pin this note as a tab*): pinned tabs
   stay on the left, come back after a restart and are never pushed out
-  by newer tabs. Pins are kept per device.
+  by newer tabs. Pins are kept per device. Tabs share the top bar with the
+  open note's controls (word count, edited time, favourite, history, menu);
+  when they no longer fit, the rest wait behind a small stack with a count:
+  click it, or press ↓ on it, for the list.
 
 ## Tags, people and topics
 

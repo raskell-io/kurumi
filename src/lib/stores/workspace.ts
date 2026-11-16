@@ -172,14 +172,23 @@ export function closeTab(memoryId: string): void {
 /** Derived store that resolves tab IDs to MemoryObject + title pairs
  *  so the UI can render them, pinned tabs first. Dead refs (deleted
  *  memories) are automatically dropped. */
-export const openTabs: Readable<Array<{ id: string; title: string; icon?: string; pinned: boolean }>> = derived(
+export const openTabs: Readable<Array<{ id: string; title: string; icon?: string; pinned: boolean; folderId: string | null }>> = derived(
 	[pinnedTabIds, openTabIds, memoryObjects],
 	([$pinned, $ids, $memories]) => {
 		const byId = new Map($memories.map((m) => [m.id, m]));
 		const resolve = (id: string, pinned: boolean) => {
 			const memory = byId.get(id);
-			return memory && !memory.deletedAt ? [{ id, title: memory.title || 'Untitled', icon: memory.icon, pinned }] : [];
+			return memory && !memory.deletedAt ? [{ id, title: memory.title || 'Untitled', icon: memory.icon, pinned, folderId: memory.folderId ?? null }] : [];
 		};
 		return [...$pinned.flatMap((id) => resolve(id, true)), ...$ids.filter((id) => !$pinned.includes(id)).flatMap((id) => resolve(id, false))];
 	}
 );
+
+// --- The top bar's note controls ---------------------------------------------
+//
+// On a wide window the open note's controls (word count, edited, favourite,
+// history, menu) sit at the right end of the tab strip, not in a row of the
+// note. The layout owns that place and publishes it here; the note page moves
+// its controls in (`dock` in $lib/actions/dock) and back out when there is no
+// such place (phones, focus mode).
+export const noteBarSlot = writable<HTMLElement | null>(null);
