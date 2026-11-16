@@ -88,6 +88,9 @@ const checks = {
 	},
 
 	async 'manifest: share target with files, shortcuts, file handlers'(page) {
+		// The link is added by the layout when the app starts (svelte:head, client
+		// rendered), which can be after the `load` the previous check's reload waited for.
+		await page.waitForSelector('link[rel="manifest"]', { timeout: 20_000 });
 		const href = await page.$eval('link[rel="manifest"]', (l) => l.href);
 		const manifest = await page.evaluate((href) => fetch(href).then((r) => r.json()), href);
 		assert.equal(manifest.share_target.method, 'POST');
