@@ -753,6 +753,11 @@
 					type="text"
 					class="command-input h-14 w-full bg-transparent text-base text-[var(--color-text)]"
 					aria-label="Search notes or run an action"
+					role="combobox"
+					aria-expanded={results.length > 0}
+					aria-controls="command-results"
+					aria-autocomplete="list"
+					aria-activedescendant={results.length > 0 ? `command-option-${selectedIndex}` : undefined}
 					onkeydown={handleKeydown}
 				/>
 				{#if !query}
@@ -777,14 +782,19 @@
 					No matches for “{query}”
 				</div>
 			{:else}
-				<ul class="p-1.5" bind:this={listRef} role="listbox">
+				<!-- The field drives the list (aria-activedescendant): options hold no buttons of their own. -->
+				<ul class="p-1.5" bind:this={listRef} role="listbox" id="command-results" aria-label={query.startsWith('>') ? 'Actions' : 'Results'}>
 					{#each results as item, i}
-						<li role="option" aria-selected={i === selectedIndex}>
-							<button
-								type="button"
-								onclick={(e) => { e.preventDefault(); e.stopPropagation(); item.action(); }}
-								onmousemove={() => { if (selectedIndex !== i) selectedIndex = i; }}
-								class="flex w-full items-center gap-3 rounded-[var(--radius-md)] px-2.5 py-2 text-left"
+						<!-- svelte-ignore a11y_click_events_have_key_events -->
+						<li
+							role="option"
+							id="command-option-{i}"
+							aria-selected={i === selectedIndex}
+							onclick={(e) => { e.preventDefault(); e.stopPropagation(); item.action(); }}
+							onmousemove={() => { if (selectedIndex !== i) selectedIndex = i; }}
+						>
+							<div
+								class="flex w-full cursor-pointer items-center gap-3 rounded-[var(--radius-md)] px-2.5 py-2 text-left"
 								class:bg-[var(--color-hover)]={i === selectedIndex}
 							>
 								<div
@@ -823,7 +833,7 @@
 								{:else if typeLabels[item.type]}
 									<span class="shrink-0 text-xs text-[var(--color-text-faint)]">{typeLabels[item.type]}</span>
 								{/if}
-							</button>
+							</div>
 						</li>
 					{/each}
 				</ul>

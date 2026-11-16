@@ -1045,8 +1045,7 @@
 			class:shadow-2xl={isMobile && sidebarOpen}
 			inert={($focusMode || sidebarCollapsed) && !isMobile}
 			style="width: {isMobile ? undefined : `${sidebarWidth}px`}; --sidebar-width: {sidebarWidth}px;"
-			role="navigation"
-			aria-label="Main navigation"
+			aria-label="Sidebar"
 			bind:this={asideEl}
 		>
 			<span

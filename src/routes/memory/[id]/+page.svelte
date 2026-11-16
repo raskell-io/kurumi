@@ -1221,7 +1221,8 @@
 						<span class="ml-1 hidden text-xs text-[var(--color-text-faint)] md:inline">Type / in the editor for more</span>
 					</div>
 
-					<!-- Title -->
+					<!-- Title. The page's heading for screen readers is the title as text. -->
+					<h1 class="sr-only">{isDefaultTitle(title) ? 'Untitled' : title}</h1>
 					<input
 						bind:this={titleInput}
 						type="text"

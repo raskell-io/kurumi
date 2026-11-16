@@ -1191,6 +1191,7 @@
 						class="tree-chevron"
 						aria-label={isExpanded ? 'Collapse folder' : 'Expand folder'}
 						aria-expanded={isExpanded}
+						aria-hidden="true"
 						tabindex="-1"
 					>
 						<ChevronRight class="h-3 w-3 k-chevron {isExpanded ? 'rotate-90' : ''}" />
@@ -1806,7 +1807,11 @@
 		opacity: 0.8;
 	}
 
+	/* A pointer convenience: keyboards and screen readers open folders on the
+	   row itself (arrow keys, aria-expanded), so it is hidden from them. Its
+	   hit area is 24 px, larger than it looks. */
 	.tree-chevron {
+		position: relative;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
@@ -1818,6 +1823,12 @@
 		min-width: 0;
 		min-height: 0;
 	}
+	button.tree-chevron::after {
+		content: '';
+		position: absolute;
+		inset: -0.25rem;
+	}
+
 
 	button.tree-chevron:hover {
 		background: var(--color-active);

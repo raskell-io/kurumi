@@ -1197,6 +1197,10 @@
 <div class="h-full overflow-y-auto overscroll-contain" bind:this={scrollEl}>
 	<div class="k-page settings-page">
 		<div class="settings-layout" class:show-index={!section}>
+			{#if section}
+				<!-- The page's heading for screen readers; the section's own title is its h2. -->
+				<h1 class="sr-only">Settings</h1>
+			{/if}
 			<!-- Section nav: a sidebar on wide screens, the index page on narrow ones -->
 			<nav class="settings-nav" aria-label="Settings sections">
 				<h1 class="settings-index-title">Settings</h1>

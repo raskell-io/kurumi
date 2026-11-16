@@ -105,6 +105,7 @@
 	{#if !project}
 		<NotFound title="Project not found" detail="It may have been deleted, or it is in another vault." />
 	{:else}
+		<h1 class="sr-only">{project.name}</h1>
 		<input
 			class="project-title"
 			value={project.name}

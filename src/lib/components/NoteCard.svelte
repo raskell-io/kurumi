@@ -8,9 +8,11 @@
 	interface Props {
 		memory: MemoryObject;
 		showFolder?: boolean;
+		/** Its heading's level: 2 under a page title, 3 under a section. */
+		level?: 2 | 3;
 	}
 
-	let { memory, showFolder = true }: Props = $props();
+	let { memory, showFolder = true, level = 2 }: Props = $props();
 
 	// Get folder name if memory is in a folder
 	let folderName = $derived.by(() => {
@@ -45,7 +47,7 @@
 </script>
 
 <a href="/read/{memory.id}" class="note-entry">
-	<h3 class="note-title">{memory.title || 'Untitled'}</h3>
+	<svelte:element this={`h${level}`} class="note-title">{memory.title || 'Untitled'}</svelte:element>
 
 	{#if preview}
 		<p class="note-preview">{preview}</p>

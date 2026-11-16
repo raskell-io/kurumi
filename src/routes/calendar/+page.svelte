@@ -165,11 +165,12 @@
 					class:other-month={!cell.isCurrentMonth}
 					class:today={cell.isToday}
 					onclick={() => openDay(cell.iso)}
-					aria-label={cellLabel(cell)}
 					aria-current={cell.isToday ? 'date' : undefined}
 				>
-					<span class="cell-date">{cell.date}</span>
-					<span class="cell-pills">
+					<!-- The full name for screen readers; the visible number is part of it. -->
+					<span class="sr-only">{cellLabel(cell)}</span>
+					<span class="cell-date" aria-hidden="true">{cell.date}</span>
+					<span class="cell-pills" aria-hidden="true">
 						{#if cell.meetings > 0}
 							<span class="pill">
 								<span class="pill-dot"></span>
