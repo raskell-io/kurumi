@@ -499,24 +499,30 @@
 		if (!navScroller || !navContent) return;
 		const follow = () => placeIndicator();
 		navScroller.addEventListener('scroll', follow, { passive: true });
-		// Groups and folders opening, rows arriving, the window resizing. The
-		// sections are watched one by one: while the list is shorter than the
-		// sidebar its own box keeps its size whatever opens inside it.
-		const content = navContent;
-		const observer = new ResizeObserver(follow);
-		const watch = () => {
-			observer.disconnect();
-			observer.observe(navScroller!);
-			for (const section of content.children) observer.observe(section);
+		// Rows arriving and leaving (groups and folders opening, notes added):
+		// the selected row moves without anything changing size that could be
+		// watched (the list is usually shorter than the sidebar, and its
+		// sections stretch). So: on any such change, follow now and for as
+		// long as an opening or closing takes.
+		let until = 0;
+		let frame = 0;
+		const track = () => {
 			follow();
+			frame = performance.now() < until ? requestAnimationFrame(track) : 0;
 		};
-		const sections = new MutationObserver(watch);
-		sections.observe(content, { childList: true });
-		watch();
+		const rows = new MutationObserver(() => {
+			until = performance.now() + 400;
+			if (!frame) frame = requestAnimationFrame(track);
+		});
+		rows.observe(navContent, { childList: true, subtree: true });
+		// The window or the sidebar resizing.
+		const observer = new ResizeObserver(follow);
+		observer.observe(navScroller);
 		return () => {
 			navScroller?.removeEventListener('scroll', follow);
 			observer.disconnect();
-			sections.disconnect();
+			rows.disconnect();
+			cancelAnimationFrame(frame);
 		};
 	});
 

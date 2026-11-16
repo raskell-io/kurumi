@@ -111,8 +111,8 @@
 		color: var(--color-text-muted);
 		cursor: pointer;
 		transition:
-			background-color 120ms var(--ease-out),
-			border-color 120ms var(--ease-out);
+			background-color var(--motion-fast) var(--ease-enter),
+			border-color var(--motion-fast) var(--ease-enter);
 	}
 
 	/* The agent pane's composer (and send button) owns the bottom-right

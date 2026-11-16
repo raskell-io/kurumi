@@ -432,8 +432,8 @@
 
 	.place-link {
 		transition:
-			border-color 0.15s,
-			background 0.15s;
+			border-color var(--motion-fast) var(--ease-enter),
+			background var(--motion-fast) var(--ease-enter);
 	}
 
 	.place-link:hover {

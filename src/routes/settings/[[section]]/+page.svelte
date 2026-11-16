@@ -3449,8 +3449,8 @@
 		border-radius: 10px;
 		color: inherit;
 		transition:
-			border-color 0.15s,
-			background 0.15s;
+			border-color var(--motion-fast) var(--ease-enter),
+			background var(--motion-fast) var(--ease-enter);
 	}
 
 	.desktop-download:hover {

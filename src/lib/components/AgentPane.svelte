@@ -2376,8 +2376,8 @@
 		background: var(--color-bg);
 		box-shadow: var(--shadow-sm);
 		transition:
-			border-color 120ms var(--ease-out),
-			box-shadow 120ms var(--ease-out);
+			border-color var(--motion-fast) var(--ease-enter),
+			box-shadow var(--motion-fast) var(--ease-enter);
 	}
 
 	.composer:focus-within {
