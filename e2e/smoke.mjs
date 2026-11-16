@@ -913,6 +913,40 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
+	async 'undo toast: shown once, gone after its time and on another page, ⌘Z still works'(browser) {
+		const { page, errors } = await freshPage(browser);
+		await db(page, `db.addActionItem({ text: 'Book venue' }); db.addActionItem({ text: 'Draft brief' });`);
+		await page.goto(`${BASE}/actions`, { waitUntil: 'load' });
+		await page.waitForFunction(() => document.querySelector('main')?.innerText.includes('Book venue'));
+		const toast = () => page.evaluate(() => document.querySelector('.undo-toast .label')?.textContent ?? null);
+		const remove = (text) =>
+			page.evaluate((text) => {
+				const row = [...document.querySelectorAll('main li, main .item, main [data-row-id]')].find((r) => r.textContent.includes(text) && r.querySelector('button[aria-label="Delete"]'));
+				row.querySelector('button[aria-label="Delete"]').click();
+			}, text);
+		await remove('Book venue');
+		await page.waitForFunction(() => !!document.querySelector('.undo-toast'));
+		assert.match(await toast(), /Deleted "Book venue"/);
+		// Six seconds, then it is gone, and stays gone.
+		const shown = Date.now();
+		await page.waitForFunction(() => !document.querySelector('.undo-toast'), { timeout: 10000 });
+		assert.ok(Date.now() - shown > 4500, `gone after ${Date.now() - shown}ms`);
+		await sleep(1500);
+		assert.equal(await toast(), null, 'the toast came back');
+		// The deletion can still be undone from the keyboard.
+		await page.click('main h1, main');
+		await press(page, MOD, 'z');
+		await page.waitForFunction(() => document.querySelector('main')?.innerText.includes('Book venue'), { timeout: 5000 });
+		// A new entry shows; going to another page takes it away at once.
+		await remove('Draft brief');
+		await page.waitForFunction(() => !!document.querySelector('.undo-toast'));
+		await page.click('aside a[href="/inbox"]');
+		await page.waitForFunction(() => !document.querySelector('.undo-toast'), { timeout: 2000 });
+		await sleep(600);
+		assert.equal(await toast(), null);
+		assert.deepEqual(errors, []);
+	},
+
 	async 'shortcuts can be rebound; Labs toggles its section'(browser) {
 		const { page, errors } = await freshPage(browser);
 		await page.goto(`${BASE}/settings/shortcuts`, { waitUntil: 'load' });
