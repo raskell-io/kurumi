@@ -121,7 +121,11 @@ async function freshPage(browser, setup) {
 		if (frame === page.mainFrame()) pageEvents.push(`${stamp()} main frame now at ${frame.url()}`);
 	});
 	page.on('console', (msg) => {
-		if (msg.text().includes('[vite]')) pageEvents.push(`${stamp()} console: ${msg.text().slice(0, 200)}`);
+		if (msg.text().includes('[vite]') || msg.type() === 'error' || msg.type() === 'warn') pageEvents.push(`${stamp()} console ${msg.type()}: ${msg.text().slice(0, 200)}`);
+	});
+	page.on('requestfailed', (req) => pageEvents.push(`${stamp()} request failed: ${req.url().slice(0, 160)} ${req.failure()?.errorText ?? ''}`));
+	page.on('response', (res) => {
+		if (res.status() >= 400) pageEvents.push(`${stamp()} ${res.status()} ${res.url().slice(0, 160)}`);
 	});
 	// The automatic daily digest would add a note 5 s after start, in the
 	// middle of a scenario: mark today's as done.
