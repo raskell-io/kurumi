@@ -32,11 +32,18 @@ const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDat
 
 /**
  * A moment, by when it was: "Today 10:47", "Yesterday 18:02", "Nov 12, 10:47",
- * "Nov 12, 2025, 10:47" (words and order from the locale).
+ * "Nov 12, 2025, 10:47" (words and order from the locale); with `seconds`,
+ * to tell apart two moments in one minute.
  */
-export function formatMoment(time: number | Date, now = new Date(), locales: string | string[] | undefined = locale()): string {
+export function formatMoment(
+	time: number | Date,
+	now = new Date(),
+	locales: string | string[] | undefined = locale(),
+	{ seconds = false }: { seconds?: boolean } = {}
+): string {
 	const date = new Date(time);
-	const clock = new Intl.DateTimeFormat(locales, { hour: 'numeric', minute: '2-digit' }).format(date);
+	const sec = seconds ? ({ second: '2-digit' } as const) : {};
+	const clock = new Intl.DateTimeFormat(locales, { hour: 'numeric', minute: '2-digit', ...sec }).format(date);
 	const days = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000);
 	if (days === 0 || days === 1) {
 		const word = new Intl.RelativeTimeFormat(locales, { numeric: 'auto' }).format(-days, 'day');
@@ -48,6 +55,7 @@ export function formatMoment(time: number | Date, now = new Date(), locales: str
 		day: 'numeric',
 		...(sameYear ? {} : { year: 'numeric' }),
 		hour: 'numeric',
-		minute: '2-digit'
+		minute: '2-digit',
+		...sec
 	}).format(date);
 }

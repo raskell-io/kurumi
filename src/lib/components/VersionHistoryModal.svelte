@@ -6,7 +6,9 @@
 	 * previews it and offers a Restore (applied as a normal forward edit).
 	 */
 	import { getMemoryHistory, restoreMemoryVersion, type MemoryVersion } from '$lib/db';
-	import { X, RotateCcw } from 'lucide-svelte';
+	import { X, RotateCcw, Code } from 'lucide-svelte';
+	import { formatMoment } from '$lib/format-date';
+	import MarkdownRenderer from './MarkdownRenderer.svelte';
 	import { onMount } from 'svelte';
 
 	interface Props {
@@ -51,22 +53,22 @@
 	// Land keyboard focus on the version list so arrows work immediately
 	onMount(() => focusEntry(0));
 
-	function relativeTime(ts: number): string {
-		if (!ts) return 'unknown time';
-		const diff = Date.now() - ts;
-		const min = Math.round(diff / 60000);
-		if (min < 1) return 'just now';
-		if (min < 60) return `${min}m ago`;
-		const hr = Math.round(min / 60);
-		if (hr < 24) return `${hr}h ago`;
-		const days = Math.round(hr / 24);
-		if (days < 30) return `${days}d ago`;
-		return new Date(ts).toLocaleDateString();
-	}
+	// When, as people say it: "Today 10:47", "Yesterday 18:02", "Nov 12, 10:47".
+	const when = (ts: number) => (ts ? formatMoment(ts) : 'Unknown time');
+	// Two versions in one minute are told apart by their seconds.
+	const labels = $derived(
+		versions.map((v, i) => {
+			const label = when(v.time);
+			const same = (j: number) => versions[j] && v.time && when(versions[j].time) === label;
+			return same(i - 1) || same(i + 1) ? formatMoment(v.time, new Date(), undefined, { seconds: true }) : label;
+		})
+	);
 
-	function fullTime(ts: number): string {
-		return ts ? new Date(ts).toLocaleString() : '';
-	}
+	// A version's title is worth showing only where it isn't the note's title now.
+	const currentTitle = $derived(versions[0]?.title ?? '');
+
+	// The preview reads like Read mode; the Markdown is one click away.
+	let showSource = $state(false);
 
 	function doRestore() {
 		if (!selected) return;
@@ -115,11 +117,13 @@
 								aria-current={i === selectedIndex}
 								onclick={() => (selectedIndex = i)}
 							>
-								<span class="entry-title">{version.title || 'Untitled'}</span>
-								<span class="entry-time">
+								<span class="entry-title">
+									{labels[i]}
 									{#if i === 0}<span class="k-badge k-badge-accent">Current</span>{/if}
-									<span title={fullTime(version.time)}>{relativeTime(version.time)}</span>
 								</span>
+								{#if version.title !== currentTitle}
+									<span class="entry-time">Titled “{version.title || 'Untitled'}”</span>
+								{/if}
 							</button>
 						</li>
 					{/each}
@@ -127,12 +131,36 @@
 
 				<div class="preview">
 					{#if selected}
-						<div class="preview-title">{selected.title || 'Untitled'}</div>
-						<div class="preview-meta">
-							{fullTime(selected.time)}
-							{#each selected.tags as tag}<span class="tag">#{tag}</span>{/each}
+						<div class="preview-head">
+							<div class="min-w-0">
+								<div class="preview-title">{selected.title || 'Untitled'}</div>
+								<div class="preview-meta">
+									{labels[selectedIndex]}
+									{#each selected.tags as tag}<span class="tag">#{tag}</span>{/each}
+								</div>
+							</div>
+							<button
+								type="button"
+								class="k-btn k-btn-ghost source-toggle"
+								aria-pressed={showSource}
+								onclick={() => (showSource = !showSource)}
+								title={showSource ? 'Show it as in Read mode' : 'Show the Markdown'}
+							>
+								<Code class="h-3.5 w-3.5" /> Markdown
+							</button>
 						</div>
-						<pre class="body">{selected.bodyMarkdown || '(empty)'}</pre>
+						{#if !selected.bodyMarkdown?.trim()}
+							<p class="body-empty">Empty</p>
+						{:else if showSource}
+							<pre class="body">{selected.bodyMarkdown}</pre>
+						{:else}
+							<!-- A preview: nothing in it is a way out of the dialog -->
+							<div class="body rendered" inert>
+								{#key selected.hash || selected.index}
+									<MarkdownRenderer content={selected.bodyMarkdown} />
+								{/key}
+							</div>
+						{/if}
 					{/if}
 				</div>
 			</div>
@@ -249,7 +277,8 @@
 		color: var(--color-text-faint);
 	}
 
-	.entry-time .k-badge {
+	.entry-title .k-badge {
+		margin-left: 0.375rem;
 		height: 1rem;
 		font-size: 0.625rem;
 	}
@@ -260,6 +289,35 @@
 		min-width: 0;
 		padding: 1rem 1.25rem;
 		overflow: hidden;
+	}
+
+	.preview-head {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 0.75rem;
+	}
+
+	.source-toggle {
+		flex-shrink: 0;
+		font-size: 0.75rem;
+	}
+
+	.source-toggle[aria-pressed='true'] {
+		background: var(--color-active, var(--color-hover));
+		color: var(--color-text);
+	}
+
+	.body-empty {
+		font-size: 0.875rem;
+		font-style: italic;
+		color: var(--color-text-faint);
+	}
+
+	.body.rendered {
+		font-family: inherit;
+		font-size: 0.9375rem;
+		white-space: normal;
 	}
 
 	.preview-title {

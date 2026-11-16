@@ -144,5 +144,7 @@ describe('dates for people', () => {
 		expect(formatMoment(new Date(2026, 10, 16, 10, 47), new Date(2026, 10, 16, 12), 'en-US')).toBe('Today 10:47 AM');
 		expect(formatMoment(new Date(2026, 10, 15, 18, 2), new Date(2026, 10, 16, 12), 'en-GB')).toBe('Yesterday 18:02');
 		expect(formatMoment(new Date(2026, 10, 12, 9, 5), new Date(2026, 10, 16, 12), 'en-GB')).toBe('12 Nov, 9:05');
+		expect(formatMoment(new Date(2026, 10, 16, 10, 47, 3), new Date(2026, 10, 16, 12), 'en-GB', { seconds: true })).toBe('Today 10:47:03');
+		expect(formatMoment(new Date(2025, 0, 2, 8, 0), new Date(2026, 10, 16, 12), 'en-US')).toBe('Jan 2, 2025, 8:00 AM');
 	});
 });
