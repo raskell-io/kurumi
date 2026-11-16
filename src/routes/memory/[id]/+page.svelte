@@ -159,6 +159,19 @@
 	}
 	let titleInput: HTMLInputElement | undefined = $state();
 	let scrollArea: HTMLDivElement | undefined = $state();
+	// Whether the title has scrolled out of view: the header row then carries it.
+	let titleOut = $state(false);
+	$effect(() => {
+		const input = titleInput;
+		const root = scrollArea;
+		if (!input || !root) return;
+		const observer = new IntersectionObserver(([entry]) => (titleOut = !entry.isIntersecting), { root });
+		observer.observe(input);
+		return () => {
+			observer.disconnect();
+			titleOut = false;
+		};
+	});
 
 	// Ticks every 30s so the "Edited …" label stays fresh.
 	let now = $state(Date.now());
@@ -945,14 +958,20 @@
 				{folderPath.length > 0 ? `${folderPath[folderPath.length - 1].name} / ` : ''}{isDefaultTitle(title) ? 'Untitled' : title}
 			</span>
 			<nav class="hidden min-w-0 flex-1 items-center gap-1 text-[0.8125rem] text-[var(--color-text-muted)] md:flex" aria-label="Breadcrumb">
-				{#each folderPath as folder (folder.id)}
+				<!-- Where the note is. Its title is right below, large: it joins the
+				     path here only once that has scrolled out of view (a linked
+				     note's filename always shows: it isn't the title). -->
+				{#each folderPath as folder, i (folder.id)}
+					{#if i > 0}<span class="text-[var(--color-text-faint)]">/</span>{/if}
 					<a href="/read/folder/{folder.id}" class="max-w-40 truncate rounded px-1 py-0.5 hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]">{folder.name}</a>
-					<span class="text-[var(--color-text-faint)]">/</span>
 				{/each}
-				<span class="flex min-w-0 items-center gap-1.5 px-1 text-[var(--color-text)]" title={linkedInfo?.relPath}>
-					{#if memory.icon}<NoteIcon icon={memory.icon} class="h-3.5 w-3.5" />{/if}
-					<span class="truncate">{linkedInfo ? linkedInfo.relPath.slice(linkedInfo.relPath.lastIndexOf('/') + 1) : title && title !== 'Untitled' ? title : 'Untitled'}</span>
-				</span>
+				{#if linkedInfo || titleOut}
+					{#if folderPath.length > 0}<span class="crumb-in text-[var(--color-text-faint)]">/</span>{/if}
+					<span class="crumb-in flex min-w-0 items-center gap-1.5 px-1 text-[var(--color-text)]" title={linkedInfo?.relPath}>
+						{#if memory.icon}<NoteIcon icon={memory.icon} class="h-3.5 w-3.5" />{/if}
+						<span class="truncate">{linkedInfo ? linkedInfo.relPath.slice(linkedInfo.relPath.lastIndexOf('/') + 1) : title && title !== 'Untitled' ? title : 'Untitled'}</span>
+					</span>
+				{/if}
 			</nav>
 
 			{#if linked}
@@ -1616,6 +1635,19 @@
 <style>
 	.page-icon:hover {
 		background: var(--color-hover);
+	}
+
+	@media (prefers-reduced-motion: no-preference) {
+		.crumb-in {
+			animation: crumb-in 140ms ease-out;
+		}
+	}
+
+	@keyframes crumb-in {
+		from {
+			opacity: 0;
+			transform: translateY(2px);
+		}
 	}
 
 	.linked-props {

@@ -946,7 +946,7 @@
 					</div>
 				{/if}
 			{:else}
-				<div class="flex flex-col gap-3 rounded-xl border border-dashed border-[var(--color-border)] p-4 text-sm text-[var(--color-text-muted)] sm:flex-row sm:items-center">
+				<div class="flex flex-col gap-3 rounded-xl bg-[var(--color-bg-secondary)] p-4 text-sm text-[var(--color-text-muted)] sm:flex-row sm:items-center">
 					<p class="flex-1">
 						Add an OpenAI API key to ask questions across your memories, with citations.
 					</p>
@@ -1088,9 +1088,27 @@
 		background: var(--color-accent-hover, var(--color-accent));
 	}
 
+	/* Wider than a phone: the page's own surface instead of a box in a box,
+	   and a primary button of ordinary size (a phone keeps the full-width one). */
 	@media (min-width: 640px) {
+		.capture {
+			padding: 0;
+			border: 0;
+			background: transparent;
+		}
+
 		.capture-primary {
-			flex: 1 1 auto;
+			flex: 0 0 auto;
+			min-height: 2.25rem;
+			padding: 0 0.875rem;
+			gap: 0.375rem;
+			font-size: 0.875rem;
+			box-shadow: none;
+		}
+
+		.capture-primary :global(svg) {
+			width: 1rem;
+			height: 1rem;
 		}
 	}
 
@@ -1116,8 +1134,10 @@
 			flex: 0 0 auto;
 			flex-direction: row;
 			gap: 0.375rem;
-			min-height: 2.75rem;
-			padding: 0 0.875rem;
+			min-height: 2.25rem;
+			padding: 0 0.75rem;
+			border-color: transparent;
+			background: transparent;
 		}
 	}
 
@@ -1127,11 +1147,11 @@
 	}
 
 	/* To do card */
+	/* A tint, no outline: one border fewer on the page. */
 	.todo {
 		padding: 0.875rem 1rem;
-		border: 1px solid color-mix(in srgb, var(--color-accent) 30%, var(--color-border));
 		border-radius: var(--radius-lg, 12px);
-		background: color-mix(in srgb, var(--color-accent) 5%, transparent);
+		background: color-mix(in srgb, var(--color-accent) 6%, transparent);
 	}
 
 	.todo-row {
