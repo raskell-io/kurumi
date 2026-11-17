@@ -93,9 +93,56 @@ jobs:
         run: cargo test
         working-directory: desktop/src-tauri
 
+      # Developer ID signing and notarization, once the secrets are set
+      # (desktop/README.md → Signing). Without them the app is ad-hoc signed.
+      # Only set variables are exported: Tauri treats an empty one as set.
+      - name: macOS signing setup
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          if [ -z "$APPLE_CERTIFICATE" ] || [ -z "$APPLE_SIGNING_IDENTITY" ]; then
+            echo "::notice::No Developer ID secrets: the Mac app is ad-hoc signed."
+            exit 0
+          fi
+          if [ -z "$APPLE_API_KEY" ] || [ -z "$APPLE_API_ISSUER" ] || [ -z "$APPLE_API_KEY_P8" ]; then
+            echo "::error::APPLE_CERTIFICATE is set but the notarization secrets (APPLE_API_KEY, APPLE_API_ISSUER, APPLE_API_KEY_P8) aren't: a signed app that isn't notarized is still blocked."
+            exit 1
+          fi
+          key="$RUNNER_TEMP/AuthKey_$APPLE_API_KEY.p8"
+          printf '%s\n' "$APPLE_API_KEY_P8" > "$key"
+          printf '{"bundle":{"macOS":{"signingIdentity":%s}}}' "$(jq -Rn --arg v "$APPLE_SIGNING_IDENTITY" '$v')" > "$RUNNER_TEMP/signing.json"
+          {
+            echo "APPLE_CERTIFICATE<<KURUMI_EOF"
+            echo "$APPLE_CERTIFICATE"
+            echo "KURUMI_EOF"
+            echo "APPLE_CERTIFICATE_PASSWORD=$APPLE_CERTIFICATE_PASSWORD"
+            echo "APPLE_API_KEY=$APPLE_API_KEY"
+            echo "APPLE_API_ISSUER=$APPLE_API_ISSUER"
+            echo "APPLE_API_KEY_PATH=$key"
+            echo "SIGN_ARGS=--config $RUNNER_TEMP/signing.json"
+            echo "MAC_SIGNED=1"
+          } >> "$GITHUB_ENV"
+
       - name: Build
-        run: npm run dist -- ${{ matrix.args }}
+        shell: bash
+        run: npm run dist -- ${{ matrix.args }} $SIGN_ARGS
         working-directory: desktop
+
+      - name: Check signature and notarization
+        if: runner.os == 'macOS' && env.MAC_SIGNED == '1'
+        shell: bash
+        run: |
+          app=desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/Kurumi.app
+          codesign --verify --deep --strict --verbose=2 "$app"
+          spctl --assess --type execute --verbose=4 "$app"
+          xcrun stapler validate "$app"
 
       - name: Self-test
         shell: bash
@@ -122,21 +169,34 @@ jobs:
           merge-multiple: true
           path: dist/
 
+      # The first-launch steps are only listed for what isn't signed.
+      - name: Release notes
+        shell: bash
+        env:
+          MAC_SIGNED: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_SIGNING_IDENTITY != '' }}
+        run: |
+          {
+            echo '## Download'
+            echo
+            echo '| | File |'
+            echo '|---|---|'
+            echo '| Mac (Apple Silicon and Intel) | `Kurumi_*_universal.dmg` |'
+            echo '| Windows | `Kurumi_*_x64-setup.exe` |'
+            echo '| Linux | `Kurumi_*_amd64.AppImage` |'
+            echo
+            if [ "$MAC_SIGNED" = true ]; then
+              echo 'The Mac app is signed and notarized. The Windows installer isn'"'"'t signed yet: SmartScreen warns; choose *More info* → *Run anyway*.'
+            else
+              echo 'The builds aren'"'"'t signed yet:'
+              echo '- **Mac:** open the app once, then System Settings → Privacy & Security → *Open Anyway*.'
+              echo '- **Windows:** SmartScreen warns; choose *More info* → *Run anyway*.'
+            fi
+            echo
+            echo 'The desktop app keeps its own notes, separate from the browser'"'"'s. Use sync or a backup to move them over. Kurumi also runs at https://kurumi.raskell.io.'
+          } > notes.md
+
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
           generate_release_notes: true
-          body: |
-            ## Download
-
-            | | File |
-            |---|---|
-            | Mac (Apple Silicon and Intel) | `Kurumi_*_universal.dmg` |
-            | Windows | `Kurumi_*_x64-setup.exe` |
-            | Linux | `Kurumi_*_amd64.AppImage` |
-
-            The builds aren't signed yet:
-            - **Mac:** open the app once, then System Settings → Privacy & Security → *Open Anyway*.
-            - **Windows:** SmartScreen warns; choose *More info* → *Run anyway*.
-
-            The desktop app keeps its own notes, separate from the browser's. Use sync or a backup to move them over. Kurumi also runs at https://kurumi.raskell.io.
+          body_path: notes.md

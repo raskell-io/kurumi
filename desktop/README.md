@@ -72,11 +72,44 @@ of it is active. `cargo test` in `src-tauri` covers `folders.rs` and
 
 ## Signing
 
-Builds aren't signed with a developer certificate yet:
+**macOS** is signed with a Developer ID and notarized in CI once the secrets
+below are set on the GitHub repository (Settings → Secrets and variables →
+Actions). Without them the app is ad-hoc signed (`signingIdentity: "-"`):
+the first launch is refused, and users open System Settings → Privacy &
+Security → *Open Anyway* (or run `xattr -dr com.apple.quarantine
+/Applications/Kurumi.app`). The release notes say which applies.
 
-- **macOS:** ad-hoc signed (`signingIdentity: "-"`). The first launch is
-  refused; open System Settings → Privacy & Security → *Open Anyway* (or
-  run `xattr -dr com.apple.quarantine /Applications/Kurumi.app`). A
-  Developer ID and notarization remove that step.
-- **Windows:** SmartScreen warns (*More info* → *Run anyway*) until the
-  installer is signed.
+Setup (needs the paid Apple Developer Program):
+
+1. **Certificate.** In Xcode → Settings → Accounts → *Manage Certificates*,
+   add a **Developer ID Application** certificate (an *Apple Development* one
+   can't distribute). In Keychain Access, export it with its private key as a
+   `.p12` with a password.
+2. **Notarization key.** App Store Connect → Users and Access → Integrations
+   → App Store Connect API → *Team Keys*: generate a key with the *Developer*
+   role and download the `.p8` (once only).
+3. **Secrets:**
+
+   | Secret | Value |
+   |--------|-------|
+   | `APPLE_CERTIFICATE` | `base64 -i cert.p12 \| pbcopy` |
+   | `APPLE_CERTIFICATE_PASSWORD` | the `.p12` password |
+   | `APPLE_SIGNING_IDENTITY` | the certificate's name, e.g. `Developer ID Application: Your Name (TEAMID)` (`security find-identity -v -p codesigning`) |
+   | `APPLE_API_KEY` | the key ID |
+   | `APPLE_API_ISSUER` | the issuer ID (above the keys list) |
+   | `APPLE_API_KEY_P8` | the contents of `AuthKey_<ID>.p8` |
+
+   With `gh`: `gh secret set APPLE_CERTIFICATE < <(base64 -i cert.p12)`,
+   `gh secret set APPLE_API_KEY_P8 < AuthKey_XXXX.p8`, and so on.
+
+The workflow (`desktop.yml`, *macOS signing setup*) hands them to Tauri,
+which imports the certificate into a temporary keychain, signs with the
+hardened runtime, notarizes and staples. *Check signature and notarization*
+then runs `codesign --verify`, `spctl --assess` and `stapler validate`. A
+certificate without the notarization secrets fails the build: signed but not
+notarized is still blocked by Gatekeeper.
+
+**Windows:** not signed yet; SmartScreen warns (*More info* → *Run
+anyway*) until the installer is signed.
+
+**Linux:** AppImages aren't signed.
