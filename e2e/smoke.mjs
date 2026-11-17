@@ -822,6 +822,9 @@ const scenarios = {
 		await page.reload({ waitUntil: 'load' });
 		await page.waitForSelector('#favorites-list');
 		assert.match(await page.$eval('#favorites-list', (el) => el.textContent), /🚀\s*Alpha/);
+		// The note page arrives a moment after the sidebar: until then the
+		// switcher doesn't know which note we're on.
+		await noteShown(page, 'Alpha', { errors });
 
 		// Cmd+O opens the switcher: recently opened notes first, minus the
 		// one we're on, so Enter goes back to the previous note.
