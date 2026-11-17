@@ -548,7 +548,7 @@
 		{#if selectedNode || selectedEdge}
 			<div class="canvas-inspector" role="toolbar" aria-label="Selected item">
 				<Palette class="h-3.5 w-3.5 text-[var(--color-text-faint)]" />
-				<button type="button" class="swatch swatch-none" class:is-on={!(selectedNode ?? selectedEdge)?.color} onclick={() => setColor(undefined)} aria-label="No colour" title="No colour"></button>
+				<button type="button" class="swatch swatch-none" class:is-on={!(selectedNode ?? selectedEdge)?.color} onclick={() => setColor(undefined)} aria-label="No color" title="No color"></button>
 				{#each CANVAS_COLORS as c (c.id)}
 					<button type="button" class="swatch" class:is-on={(selectedNode ?? selectedEdge)?.color === c.id} style="background: {c.value}" onclick={() => setColor(c.id)} aria-label={c.label} title={c.label}></button>
 				{/each}

@@ -224,7 +224,7 @@ With *Allow editing* on:
 ### What a linked folder doesn't have
 
 - To-dos, projects, decisions, questions, meetings, people records, databases,
-  canvases, templates, favourites, page icons, version history and trash: they
+  canvases, templates, favorites, page icons, version history and trash: they
   live in Kurumi's database, so in your Kurumi vaults. Checkbox lines in linked
   notes stay plain Markdown. Those pages show a way back to a Kurumi vault.
 - Recordings, uploads, imports, the daily digest, weekly reviews, living notes

@@ -150,7 +150,7 @@
 			{ key: 'open', label: 'Open', status: 'open', items: open },
 			{ key: 'in_progress', label: 'In progress', status: 'in_progress', items: inProgress },
 			{ key: 'done', label: 'Done', status: 'done', items: done },
-			{ key: 'cancelled', label: 'Cancelled', status: 'cancelled', items: cancelled }
+			{ key: 'cancelled', label: 'Canceled', status: 'cancelled', items: cancelled }
 		];
 		if (filter === 'active') return all.slice(0, 2);
 		if (filter === 'closed') return all.slice(2);
@@ -272,7 +272,7 @@
 	}
 
 	function cancelItem(item: ActionItem) {
-		changeStatus(item, 'cancelled', 'Cancelled to-do');
+		changeStatus(item, 'cancelled', 'Canceled to-do');
 	}
 
 	function reopenItem(item: ActionItem) {
@@ -316,7 +316,7 @@
 			updateActionItemStatus(target.id, 'cancelled');
 		}
 		pushUndo({
-			label: `Cancelled ${targets.length} items`,
+			label: `Canceled ${targets.length} items`,
 			undo: () => {
 				for (const s of snapshots) updateActionItemStatus(s.id, s.status);
 			}
@@ -708,10 +708,10 @@
 			<p class="k-empty-title">{filter === 'active' ? 'All caught up' : 'Nothing here'}</p>
 			<p>
 				{filter === 'active'
-					? 'Every to-do is done, cancelled, or with someone else.'
+					? 'Every to-do is done, canceled, or with someone else.'
 					: filter === 'waiting'
 						? 'Open items assigned to other people show up here. Set your own name in Settings → Profile.'
-						: 'Completed and cancelled items will show up here.'}
+						: 'Completed and canceled items will show up here.'}
 			</p>
 		</div>
 	{:else}

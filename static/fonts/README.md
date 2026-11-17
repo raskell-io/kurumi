@@ -1,6 +1,6 @@
 # Fonts
 
-Every face Kurumi ships is under the SIL Open Font License 1.1; the licence
+Every face Kurumi ships is under the SIL Open Font License 1.1; the license
 texts are in `licenses/`. None is fetched from a font service at runtime.
 
 | Face | Used for | Files | Source | Version |

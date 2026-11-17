@@ -102,7 +102,7 @@
 				recorderState = 'error';
 				errorMessage =
 					err instanceof Error && err.name === 'NotAllowedError'
-						? 'Tab/window audio permission denied or cancelled.'
+						? 'Tab/window audio permission denied or canceled.'
 						: 'Could not capture tab/window audio.';
 				return;
 			}

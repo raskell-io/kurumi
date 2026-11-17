@@ -61,7 +61,7 @@ the side that changed them last winning.
 
 A canvas is a board for thinking spatially: ⌘K → *New canvas*, or a folder's
 menu → *New canvas*. Double-click the board for a text card (Markdown), or add
-a note, a link or a group from the toolbar. Select a card to resize or colour
+a note, a link or a group from the toolbar. Select a card to resize or color
 it, and drag one of its side dots onto another card to connect them; a
 connection can have a label and an arrow. Drag the board to pan, scroll or
 pinch to zoom. Canvases use Obsidian's open JSON Canvas format: Obsidian's
@@ -79,7 +79,7 @@ back.
   pin on a tab, right-click, or ⌘K *Pin this note as a tab*): pinned tabs
   stay on the left, come back after a restart and are never pushed out
   by newer tabs. Pins are kept per device. Tabs share the top bar with the
-  open note's controls (word count, edited time, favourite, history, menu);
+  open note's controls (word count, edited time, favorite, history, menu);
   when they no longer fit, the rest wait behind a small stack with a count:
   click it, or press ↓ on it, for the list.
 

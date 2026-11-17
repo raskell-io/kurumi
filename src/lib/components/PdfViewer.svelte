@@ -370,7 +370,7 @@
 						<span class="tabular-nums text-[var(--color-text-faint)]">{highlights.length}</span>
 					</div>
 					{#if highlights.length === 0}
-						<p class="pdf-list-empty">Select text in the PDF, then pick a colour to highlight it.</p>
+						<p class="pdf-list-empty">Select text in the PDF, then pick a color to highlight it.</p>
 					{:else}
 						<div class="pdf-list-actions">
 							<button type="button" class="k-btn k-btn-ghost" onclick={() => copy(highlights.map(quote).join('\n\n'))}><Copy class="h-3.5 w-3.5" />Copy all</button>

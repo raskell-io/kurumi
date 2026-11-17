@@ -332,7 +332,7 @@
 	// The default follows the colour theme (each has its own accent); the
 	// others are the same everywhere. Shades as in app.css (accent-*).
 	const ACCENTS = [
-		{ id: 'theme', label: 'Theme colour', light: 'var(--theme-accent)', dark: 'var(--theme-accent)' },
+		{ id: 'theme', label: 'Theme color', light: 'var(--theme-accent)', dark: 'var(--theme-accent)' },
 		{ id: 'lavender', label: 'Lavender', light: '#2f4efc', dark: '#b4befe' },
 		{ id: 'blue', label: 'Blue', light: '#0b57ee', dark: '#89b4fa' },
 		{ id: 'sapphire', label: 'Sapphire', light: '#166f7f', dark: '#74c7ec' },
@@ -1269,8 +1269,8 @@
 
 						<div class="set-row">
 							<div class="set-row-text">
-								<div class="set-row-label" id="palette-label">Colour theme</div>
-								<p class="set-row-help">Background and text colours, each with a light and a dark version. On this device.</p>
+								<div class="set-row-label" id="palette-label">Color theme</div>
+								<p class="set-row-help">Background and text colors, each with a light and a dark version. On this device.</p>
 							</div>
 							<div class="palette-options" role="radiogroup" aria-labelledby="palette-label">
 								{#each PALETTES as option (option.id)}
@@ -1291,8 +1291,8 @@
 
 						<div class="set-row">
 							<div class="set-row-text">
-								<div class="set-row-label" id="accent-label">Accent colour</div>
-								<p class="set-row-help">Buttons, links and the touches of colour in notes. The first follows the colour theme. On this device.</p>
+								<div class="set-row-label" id="accent-label">Accent color</div>
+								<p class="set-row-help">Buttons, links and the touches of color in notes. The first follows the color theme. On this device.</p>
 							</div>
 							<div class="accent-swatches" role="radiogroup" aria-labelledby="accent-label">
 								{#each ACCENTS as option (option.id)}
@@ -1408,7 +1408,7 @@
 				{#if current === 'profile'}
 				<section id="profile" class="set-section" aria-labelledby="profile-title">
 					<h2 id="profile-title" class="set-section-title">Profile</h2>
-					<p class="set-section-desc">How Kurumi recognises you. Saved on this device.</p>
+					<p class="set-section-desc">How Kurumi recognizes you. Saved on this device.</p>
 					<div class="set-rows">
 						<div class="set-row">
 							<div class="set-row-text">

@@ -155,7 +155,7 @@ function init(dir, flags) {
 	} else {
 		mkdirSync(dir, { recursive: true });
 		if (!isRepo(dir)) {
-			log(`Initialising a git repo in ${dir}`);
+			log(`Initializing a git repo in ${dir}`);
 			git(dir, ['init', '-b', branch]);
 		}
 		if (remote) {

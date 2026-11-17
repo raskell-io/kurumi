@@ -94,7 +94,7 @@
 		{#if editingId !== null}
 			<form class="editor" onsubmit={(e) => { e.preventDefault(); save(); }}>
 				<input class="k-input" bind:value={draft.name} placeholder="Name, e.g. Monday planning" aria-label="Workflow name" />
-				<textarea class="k-input instructions" bind:value={draft.instructions} rows="5" aria-label="Instructions" placeholder="What should it do? e.g. Look at last week's meetings, propose the to-dos that came out of them, and summarise where each project stands."></textarea>
+				<textarea class="k-input instructions" bind:value={draft.instructions} rows="5" aria-label="Instructions" placeholder="What should it do? e.g. Look at last week's meetings, propose the to-dos that came out of them, and summarize where each project stands."></textarea>
 				<div class="row">
 					<select class="k-input" bind:value={draft.schedule.kind} aria-label="How often">
 						<option value="manual">Only when I run it</option>

@@ -10,7 +10,7 @@ command-palette entries.
 | **Flashcards** (`/flashcards`) | Spaced repetition (SM-2). Write cards, or have AI generate questions and answers from a note. Review with `Space` to reveal and `1`–`4` to grade |
 | **Timeline** (`/timeline`) | Everything you captured, grouped by date, filterable by type, person and tag |
 | **Smart folders** (`/smart-folders`) | Saved searches that stay up to date, using the [search filters](organize-and-recall.md#search-filters) |
-| **Workflows** (`/workflows`) | Instructions in plain words that the assistant carries out on a schedule (daily, weekly, monthly, or when you run it) and writes up as a note, e.g. "every Monday: look at last week's meetings, propose the to-dos that came out of them by project, and summarise where each project stands". See below |
+| **Workflows** (`/workflows`) | Instructions in plain words that the assistant carries out on a schedule (daily, weekly, monthly, or when you run it) and writes up as a note, e.g. "every Monday: look at last week's meetings, propose the to-dos that came out of them by project, and summarize where each project stands". See below |
 
 ## Workflows
 

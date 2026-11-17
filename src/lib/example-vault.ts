@@ -87,7 +87,7 @@ export function createExampleVault(): string {
 				'2. SSO is a must for anyone over 50 seats.',
 				'3. Sample data helped people more than the tour video.',
 				'',
-				'> The empty dashboard made me think it was broken. (Ana\'s favourite quote)',
+				'> The empty dashboard made me think it was broken. (Ana\'s favorite quote)',
 				'',
 				'Feeds into the [[Falcon launch brief]]. #research #falcon'
 			].join('\n'),

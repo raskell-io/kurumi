@@ -64,7 +64,7 @@ Paste or drop any file into a note:
 
 - **images** appear inline (click to enlarge);
 - **audio** becomes a player;
-- **PDFs** open in Kurumi's viewer: select text and pick a colour to
+- **PDFs** open in Kurumi's viewer: select text and pick a color to
   highlight it. The highlights list (top right) jumps to each one, takes a
   comment, copies it as a quote with a link to its page, or adds them all to
   the note. Highlights belong to the file, so every note linking it sees

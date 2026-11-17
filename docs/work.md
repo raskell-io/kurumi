@@ -26,7 +26,7 @@ suggested at the top of `/projects`.
 
 `/actions` (`Cmd/Ctrl+Shift+A`). To-dos come from meeting summaries,
 approved suggested reminders, or you. Each has a status (open, in
-progress, done, cancelled), an optional due date, recurrence and
+progress, done, canceled), an optional due date, recurrence and
 assignee. Add one with `@Name` in the text to assign it.
 
 - **Tabs:** Active, Waiting for, Completed, All.

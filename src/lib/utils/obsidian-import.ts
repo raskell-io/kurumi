@@ -117,7 +117,7 @@ export async function importObsidianVault(): Promise<ObsidianImportResult> {
 				foldersCreated: 0,
 				notesCreated: 0,
 				skipped: [],
-				error: 'Import cancelled'
+				error: 'Import canceled'
 			};
 		}
 

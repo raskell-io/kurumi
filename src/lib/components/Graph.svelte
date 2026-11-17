@@ -746,7 +746,7 @@
 	<div bind:this={containerRef} class="h-full w-full"></div>
 
 	{#if legend.items.length > 1}
-		<ul class="graph-legend" aria-label="Colours: the folder a note is in">
+		<ul class="graph-legend" aria-label="Colors: the folder a note is in">
 			{#each legend.items as item (item.id)}
 				<li><span class="legend-dot" style="background: {item.color}"></span>{item.name}</li>
 			{/each}

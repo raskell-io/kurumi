@@ -1338,7 +1338,7 @@
 					</label>
 				{:else if editor.type === 'rollup'}
 					{#if relationProps.length === 0}
-						<p class="db-help">A rollup summarises a relation. Add a relation property first.</p>
+						<p class="db-help">A rollup summarizes a relation. Add a relation property first.</p>
 					{:else}
 						<label class="db-field">
 							<span>Relation</span>
