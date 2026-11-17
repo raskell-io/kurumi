@@ -13,8 +13,21 @@ export function autogrow(el: HTMLTextAreaElement, _value?: unknown) {
 	};
 	fit();
 	el.addEventListener('input', fit);
+	// A narrower or wider field wraps its text to more or fewer rows.
+	let width = el.clientWidth;
+	const resized = new ResizeObserver(() => {
+		if (el.clientWidth === width) return;
+		width = el.clientWidth;
+		fit();
+	});
+	resized.observe(el);
+	// The editor font arriving after the first measure changes the line height.
+	document.fonts?.ready.then(fit).catch(() => {});
 	return {
 		update: () => fit(),
-		destroy: () => el.removeEventListener('input', fit)
+		destroy: () => {
+			el.removeEventListener('input', fit);
+			resized.disconnect();
+		}
 	};
 }

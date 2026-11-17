@@ -125,7 +125,7 @@ const checks = {
 			form.submit();
 		});
 		await page.waitForFunction(() => location.hash.startsWith('#/memory/'), { timeout: 20_000 });
-		await page.waitForFunction(() => document.querySelector('input[aria-label="Note title"]')?.value === 'Shared from phone', { timeout: 10_000 });
+		await page.waitForFunction(() => document.querySelector('[aria-label="Note title"]')?.value === 'Shared from phone', { timeout: 10_000 });
 		// The PDF is an attachment chip in that note
 		await page.waitForFunction(() => document.querySelector('main .ProseMirror a[href^="blob:"]')?.textContent === 'contract.pdf', { timeout: 10_000 });
 		await page.goto(`${BASE}/#/read`, { waitUntil: 'load' });
@@ -267,8 +267,8 @@ const checks = {
 			await page.waitForFunction(() => (document.querySelector('main')?.innerText.length ?? 0) > 20, { timeout: 20_000 });
 		}
 		await page.goto(`${BASE}/?new=note`, { waitUntil: 'load' });
-		await page.waitForSelector('input[aria-label="Note title"]', { timeout: 20_000 });
-		await page.click('input[aria-label="Note title"]', { clickCount: 3 });
+		await page.waitForSelector('[aria-label="Note title"]', { timeout: 20_000 });
+		await page.click('[aria-label="Note title"]', { clickCount: 3 });
 		await page.keyboard.type('Written offline');
 		// Deliberate: time for the autosave (the built app's store can't be
 		// asked from here). The check after the reload waits for the result.

@@ -366,7 +366,7 @@ const vaultTitles = (page) => db(page, `let ms; db.memoryObjects.subscribe((v) =
 // Open a note from the tree and wait for its editor.
 async function openTreeNote(page, title) {
 	await clickText(page, '.note-row', title);
-	await page.waitForFunction((title) => document.querySelector('input[aria-label="Note title"]')?.value === title, { timeout: 15000 }, title);
+	await page.waitForFunction((title) => document.querySelector('[aria-label="Note title"]')?.value === title, { timeout: 15000 }, title);
 	await page.waitForSelector('main .ProseMirror');
 	// Deliberate: the editor finishes setting up before a scenario types or
 	// clicks in it. Nothing is read here.
@@ -480,9 +480,9 @@ async function newNote(page, title) {
 	await page.keyboard.down(MOD);
 	await page.keyboard.press('n');
 	await page.keyboard.up(MOD);
-	await page.waitForSelector('input[aria-label="Note title"]');
+	await page.waitForSelector('[aria-label="Note title"]');
 	await sleep(400);
-	await page.click('input[aria-label="Note title"]');
+	await page.click('[aria-label="Note title"]');
 	await page.keyboard.type(title);
 	await sleep(600);
 }
@@ -538,7 +538,7 @@ async function savedBody(page, title, pattern, timeout = 8000) {
 	}
 	const seen = await page.evaluate(() => ({
 		editor: document.querySelector('main .ProseMirror')?.textContent ?? null,
-		title: document.querySelector('input[aria-label="Note title"]')?.value ?? null,
+		title: document.querySelector('[aria-label="Note title"]')?.value ?? null,
 		stash: localStorage.getItem('kurumi-unsaved-edits'),
 		url: location.href
 	}));
@@ -559,7 +559,7 @@ const pageState = (page) =>
 		const options = [...document.querySelectorAll('[role="option"]')];
 		return {
 			url: location.href,
-			titleField: document.querySelector('input[aria-label="Note title"]')?.value ?? null,
+			titleField: document.querySelector('[aria-label="Note title"]')?.value ?? null,
 			editorNote: document.querySelector('main [data-note-id]')?.getAttribute('data-note-id') ?? null,
 			focus: describe(active),
 			focusInSwitcher: !!active?.closest?.('[aria-label="Command palette"]'),
@@ -576,7 +576,7 @@ const pageState = (page) =>
 // exist, and the page errors so far.
 async function noteShown(page, title, { before = null, errors = [], timeout = 30000 } = {}) {
 	try {
-		await page.waitForFunction((title) => document.querySelector('input[aria-label="Note title"]')?.value === title, { timeout }, title);
+		await page.waitForFunction((title) => document.querySelector('[aria-label="Note title"]')?.value === title, { timeout }, title);
 	} catch {
 		const now = await pageState(page);
 		const notes = await db(page, `let ms; db.allMemoryObjects.subscribe((v) => (ms = v))(); return ms.map((m) => ({ id: m.id, title: m.title, vault: m.vaultId }));`).catch((err) => `unreadable: ${err.message}`);
@@ -868,7 +868,7 @@ const scenarios = {
 			await page.waitForSelector('#favorites-list');
 			await press(page, MOD, 'o');
 			await page.waitForSelector('[role="listbox"]');
-			await page.waitForFunction(() => document.querySelector('input[aria-label="Note title"]')?.value === 'Alpha', { timeout: 20000 });
+			await page.waitForFunction(() => document.querySelector('[aria-label="Note title"]')?.value === 'Alpha', { timeout: 20000 });
 			// Deliberate: the focus must still be in the switcher a moment after
 			// the note page arrived (it used to be taken right then).
 			await sleep(300);
@@ -921,12 +921,72 @@ const scenarios = {
 		assert.deepEqual(errors, []);
 	},
 
+	async 'note title: a long one wraps on a phone and a desktop, Enter goes into the note, a pasted one is one line'(browser) {
+		const { page, errors } = await freshPage(browser);
+		await newNote(page, 'Short');
+		const TITLE = '[aria-label="Note title"]';
+		const storedTitle = () => db(page, `const id = decodeURIComponent((location.hash || location.pathname).match(/\\/memory\\/([^/?#]+)/)[1]); return db.getMemoryObject(id).title;`);
+		const look = () =>
+			page.$eval('[aria-label="Note title"]', (el) => {
+				const cs = getComputedStyle(el);
+				return {
+					tag: el.tagName,
+					value: el.value,
+					height: Math.round(el.getBoundingClientRect().height),
+					line: parseFloat(cs.lineHeight),
+					// A hidden line, not a rounding pixel.
+					clipped: el.scrollHeight - el.clientHeight >= parseFloat(cs.lineHeight) / 2,
+					ellipsis: cs.textOverflow === 'ellipsis',
+					resize: cs.resize
+				};
+			});
+		const short = await look();
+		assert.equal(short.tag, 'TEXTAREA', JSON.stringify(short));
+		assert.ok(short.height < short.line * 1.5, `a short title takes more than a line: ${JSON.stringify(short)}`);
+		assert.equal(short.resize, 'none');
+
+		// A long title: more lines, all of it shown, on a desktop and on a phone.
+		const long = 'Short notes on the quarterly planning meeting with the whole design and engineering team, and what came of it';
+		await page.click(TITLE, { clickCount: 3 });
+		await page.keyboard.type(long);
+		assert.equal(await settled(storedTitle, (t) => t === long), long);
+		for (const width of [1400, 390]) {
+			await page.setViewport({ width, height: 844 });
+			const seen = await settled(look, (l) => l.height >= l.line * 2 && !l.clipped);
+			assert.ok(seen.height >= seen.line * 2, `${width}px: the title didn't wrap: ${JSON.stringify(seen)}`);
+			assert.equal(seen.clipped, false, `${width}px: part of the title is hidden: ${JSON.stringify(seen)}`);
+			assert.equal(seen.ellipsis, false);
+			assert.equal(seen.value, long);
+		}
+		await page.setViewport({ width: 1400, height: 900 });
+
+		// Enter: no new line, the cursor goes into the note.
+		await page.focus(TITLE);
+		await press(page, MOD, 'End');
+		await page.keyboard.press('Enter');
+		assert.equal(await settled(() => page.evaluate(() => !!document.activeElement?.closest('main .ProseMirror')), (inNote) => inNote), true, 'Enter did not move into the note');
+		assert.equal((await look()).value, long);
+
+		// A two-line title pasted in becomes one line.
+		await page.focus(TITLE);
+		await page.evaluate(() => {
+			const field = document.querySelector('[aria-label="Note title"]');
+			field.select();
+			const data = new DataTransfer();
+			data.setData('text/plain', 'First line\nSecond line');
+			field.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+		});
+		assert.equal((await look()).value, 'First line Second line');
+		assert.equal(await settled(storedTitle, (t) => t === 'First line Second line'), 'First line Second line');
+		assert.deepEqual(errors, []);
+	},
+
 	async 'note lifecycle: create, rename, trash, restore, search'(browser) {
 		const { page, errors } = await freshPage(browser);
 		await newNote(page, 'Quarterly plan');
 		await typeInEditor(page, 'Budget for Falcon');
 		// Rename through the title field
-		await page.click('input[aria-label="Note title"]', { clickCount: 3 });
+		await page.click('[aria-label="Note title"]', { clickCount: 3 });
 		await page.keyboard.type('Q3 plan');
 		assert.ok((await settled(() => treeRowText(page), (rows) => rows.includes('Q3 plan'))).includes('Q3 plan'), 'rename not reflected in the tree');
 		// Search finds it
@@ -1052,7 +1112,7 @@ const scenarios = {
 		await page.click('main .ProseMirror');
 		await page.keyboard.type('typed and gone');
 		await press(page, MOD, 'n'); // no pause: straight on to a new note
-		await page.waitForFunction(() => document.querySelector('input[aria-label="Note title"]')?.value === '', { timeout: 15000 });
+		await page.waitForFunction(() => document.querySelector('[aria-label="Note title"]')?.value === '', { timeout: 15000 });
 		assert.equal(await savedBody(page, 'Quick', 'typed and gone\n'), 'typed and gone\n');
 		assert.deepEqual(errors, []);
 	},
@@ -1343,7 +1403,7 @@ const scenarios = {
 		assert.ok((await rows()).some((r) => r.startsWith('Standup notes') && r.includes('Tomorrow')), 'next occurrence missing');
 		// The big New note button opens a note
 		await page.click('.capture-primary');
-		await page.waitForSelector('input[aria-label="Note title"]');
+		await page.waitForSelector('[aria-label="Note title"]');
 		assert.deepEqual(errors, []);
 	},
 
@@ -1498,7 +1558,7 @@ const scenarios = {
 		await page.waitForSelector('.series-title');
 		await quickAdd('Add something to discuss', 'Hiring plan');
 		await clickText(page, 'button', 'Start meeting');
-		await page.waitForSelector('input[aria-label="Note title"]');
+		await page.waitForSelector('[aria-label="Note title"]');
 		const body = await settled(
 			() => db(page, `let ms; db.memoryObjects.subscribe((v) => (ms = v))(); return ms.find((m) => m.title.startsWith('1:1 with Sam'))?.bodyMarkdown ?? '';`),
 			(b) => /## Agenda\n\n- Hiring plan/.test(b) && /Send the deck \(@Sam\)/.test(b) && /Who owns the budget\? \(@Sam\)/.test(b)
@@ -1754,7 +1814,7 @@ const scenarios = {
 		const { page, errors } = await freshPage(browser);
 		await page.waitForFunction(() => document.querySelector('main').innerText.includes('Welcome to Kurumi'));
 		await clickText(page, 'main button', 'explore an example');
-		await page.waitForFunction(() => document.querySelector('input[aria-label="Note title"]')?.value === 'Start here', { timeout: 15_000 });
+		await page.waitForFunction(() => document.querySelector('[aria-label="Note title"]')?.value === 'Start here', { timeout: 15_000 });
 		const counts = await db(page, `
 			let v; db.vaults.subscribe((x) => (v = x))();
 			let cur; db.currentVaultId.subscribe((x) => (cur = x))();
@@ -3628,7 +3688,7 @@ const scenarios = {
 		// while the cursor is in a link); a link to nothing stays as written.
 		const shown = await page.$eval('main .ProseMirror', (el) => el.innerText);
 		assert.ok(shown.includes('Needs Bar plan and Nowhere note.') && !shown.includes('project.bar'), shown);
-		assert.equal(await page.$eval('input[aria-label="Note title"]', (el) => el.disabled), true);
+		assert.equal(await page.$eval('[aria-label="Note title"]', (el) => el.disabled), true);
 		assert.equal(await page.$eval('main .ProseMirror', (el) => el.getAttribute('contenteditable')), 'false');
 
 		// Typing changes nothing, on screen or in the file.
@@ -3641,7 +3701,7 @@ const scenarios = {
 
 		// [[project.bar]] is the note whose frontmatter id is project.bar.
 		await page.click('main .ProseMirror .wikilink[data-wikilink-title="project.bar"]');
-		await page.waitForFunction(() => document.querySelector('input[aria-label="Note title"]')?.value === 'Bar plan', { timeout: 15000 });
+		await page.waitForFunction(() => document.querySelector('[aria-label="Note title"]')?.value === 'Bar plan', { timeout: 15000 });
 		await page.waitForSelector('main .ProseMirror');
 		// And it knows who links to it.
 		await page.waitForFunction(() => [...document.querySelectorAll('.link-section')].some((s) => s.textContent.includes('Foo launch')), { timeout: 10000 });
@@ -3654,7 +3714,7 @@ const scenarios = {
 		await page.click('main .ProseMirror .wikilink[data-wikilink-title="Nowhere note"]');
 		// Deliberate: a new note would have opened in this time.
 		await sleep(500);
-		assert.equal(await page.$eval('input[aria-label="Note title"]', (el) => el.value), 'Foo launch');
+		assert.equal(await page.$eval('[aria-label="Note title"]', (el) => el.value), 'Foo launch');
 
 		// Nothing but scanning ever reached the folder.
 		assert.deepEqual([...new Set(await folderCalls(page))].sort(), ['fs_open', 'folder_pick', 'linked_close', 'linked_open'].sort());
@@ -3714,15 +3774,15 @@ const scenarios = {
 
 		// The title is a frontmatter field here: changing it changes that line.
 		await openTreeNote(page, 'Foo launch');
-		assert.equal(await page.$eval('input[aria-label="Note title"]', (el) => el.disabled), false);
-		await page.click('input[aria-label="Note title"]');
+		assert.equal(await page.$eval('[aria-label="Note title"]', (el) => el.disabled), false);
+		await page.click('[aria-label="Note title"]');
 		await press(page, MOD, 'End');
 		await page.keyboard.type(' 2');
 		const retitled = corpus['a-frontmatter.md'].replace('EDIT HERE', 'EDIT HERE now').replace('title: Foo launch', 'title: Foo launch 2');
 		assert.equal(await settled(() => folderFile(page, 'a-frontmatter.md'), (f) => f === retitled), retitled);
 		// Where it comes from a heading it can't be changed here.
 		await openTreeNote(page, 'Table');
-		assert.equal(await page.$eval('input[aria-label="Note title"]', (el) => el.disabled), true);
+		assert.equal(await page.$eval('[aria-label="Note title"]', (el) => el.disabled), true);
 
 		// A table cell: its row comes back padded, the other rows stay.
 		await caretAfter(page, '1');
@@ -3848,7 +3908,7 @@ const scenarios = {
 
 		// One that is left untouched never becomes a file.
 		await press(page, MOD, 'n');
-		await page.waitForFunction(() => document.querySelector('input[aria-label="Note title"]')?.value === '', { timeout: 15000 });
+		await page.waitForFunction(() => document.querySelector('[aria-label="Note title"]')?.value === '', { timeout: 15000 });
 		assert.deepEqual(await settled(() => vaultTitles(page), (t) => t.length === 3), ['Foo launch', 'Untitled', 'Untitled']);
 		await openTreeNote(page, 'Foo launch');
 		assert.deepEqual(await vaultTitles(page), ['Foo launch', 'Untitled']);
@@ -3856,7 +3916,7 @@ const scenarios = {
 
 		// A link to a note that doesn't exist makes it, named after the link.
 		await page.click('main .ProseMirror .wikilink[data-wikilink-title="Nowhere note"]');
-		await page.waitForFunction(() => document.querySelector('input[aria-label="Note title"]')?.value === 'Nowhere note', { timeout: 15000 });
+		await page.waitForFunction(() => document.querySelector('[aria-label="Note title"]')?.value === 'Nowhere note', { timeout: 15000 });
 		await page.waitForFunction(() => window.__folder.read('inbox/Nowhere note.md') !== null, { timeout: 10000 });
 		assert.equal(await folderFile(page, 'inbox/Nowhere note.md'), '---\nid: note.nowhere-note\ntitle: Nowhere note\n---\n');
 		assert.equal(await folderFile(page, 'foo.md'), LINKED_FOO);
@@ -3882,7 +3942,7 @@ const scenarios = {
 		await page.waitForSelector('[data-testid="linked-file-gone"]', { timeout: 10000 });
 		assert.match(await page.$eval('[data-testid="linked-file-gone"]', (el) => el.textContent), /deleted outside Kurumi/);
 		assert.ok((await editor()).includes('Line one. Kept.'));
-		assert.equal(await page.$eval('input[aria-label="Note title"]', (el) => el.value), 'Foo launch');
+		assert.equal(await page.$eval('[aria-label="Note title"]', (el) => el.value), 'Foo launch');
 		assert.deepEqual(await vaultTitles(page), ['Bar plan']);
 		// More typing is not written anywhere, and not lost either.
 		await caretAfter(page, 'Line two.');

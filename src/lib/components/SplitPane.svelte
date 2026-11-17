@@ -9,6 +9,8 @@
 	import { closeSplit, openInSplit } from '$lib/stores/workspace';
 	import Editor from './Editor.svelte';
 	import NoteIcon from './NoteIcon.svelte';
+	import { autogrow } from '$lib/actions/autogrow';
+	import { singleLine } from '$lib/actions/single-line';
 	import { ArrowUpLeft, X } from 'lucide-svelte';
 
 	// Second note next to the main one (split view). A compact editor:
@@ -122,16 +124,25 @@
 
 	{#if memory}
 		<div class="split-scroll" onkeydowncapture={() => (lastKeyAt = Date.now())} role="presentation">
-			<input
-				type="text"
+			<!-- Like the main title: one line that wraps and grows. -->
+			<textarea
+				rows="1"
 				bind:value={title}
+				use:singleLine
+				use:autogrow={title}
 				oninput={scheduleSave}
+				onkeydown={(e) => {
+					// Enter goes into the note, as in the main pane.
+					if (e.key !== 'Enter' || e.isComposing) return;
+					e.preventDefault();
+					(e.currentTarget.parentElement?.querySelector('.ProseMirror') as HTMLElement | null)?.focus();
+				}}
 				placeholder="Untitled"
 				disabled={readOnly}
 				aria-label="Split note title"
-				class="split-title"
+				class="split-title k-autogrow"
 				style="font-family: var(--font-editor);"
-			/>
+			></textarea>
 			{#key `${memory.id}-${revision}`}
 				{#if loadedFor === memory.id}
 				<Editor
@@ -179,6 +190,7 @@
 	.split-title,
 	.split-title:focus,
 	.split-title:focus-visible {
+		display: block;
 		width: 100%;
 		margin-bottom: 1rem;
 		border: none !important;
@@ -186,6 +198,8 @@
 		color: var(--color-text);
 		font-size: 1.75rem;
 		font-weight: 700;
+		line-height: 1.2;
+		overflow-wrap: break-word;
 		outline: none !important;
 		box-shadow: none !important;
 	}

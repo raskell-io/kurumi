@@ -48,6 +48,8 @@
 	import { noteBarSlot, openInSplit } from '$lib/stores/workspace';
 	import { dock } from '$lib/actions/dock';
 	import { menu } from '$lib/actions/overlay';
+	import { autogrow } from '$lib/actions/autogrow';
+	import { oneLine, singleLine } from '$lib/actions/single-line';
 	import { popOut } from '$lib/motion';
 	import { get } from 'svelte/store';
 	import Editor from '$lib/components/Editor.svelte';
@@ -170,7 +172,7 @@
 		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
 		iconPickerAnchor = { left: rect.left, top: rect.top, bottom: rect.bottom };
 	}
-	let titleInput: HTMLInputElement | undefined = $state();
+	let titleInput: HTMLTextAreaElement | undefined = $state();
 	let scrollArea: HTMLDivElement | undefined = $state();
 	// The outline shows on windows wide enough for it beside the note (NoteOutline).
 	let outlineFits = $state(false);
@@ -721,9 +723,11 @@
 
 	function handleTitleChange(e: Event) {
 		if (readOnly || titleLocked) return;
-		const target = e.target as HTMLInputElement;
+		const target = e.target as HTMLTextAreaElement;
 		// Keep the stored default so links, sync and exports still have a name;
 		// the input shows an empty field with an "Untitled" placeholder instead.
+		// One line, whatever got in (single-line.ts keeps line breaks out of the field).
+		if (/[\r\n]/.test(target.value)) target.value = oneLine(target.value);
 		title = target.value || 'Untitled';
 		hasLocalEdits = true;
 		debouncedSave();
@@ -921,7 +925,13 @@
 	}
 
 	function handleTitleKeydown(e: KeyboardEvent) {
-		if (e.key === 'Enter' || e.key === 'ArrowDown') {
+		// ↓ on a title that wraps moves down a line first; from its last line
+		// (the end of the text), into the note.
+		const field = e.currentTarget as HTMLTextAreaElement;
+		const rows = field.scrollHeight / (parseFloat(getComputedStyle(field).lineHeight) || field.scrollHeight);
+		const atEnd = field.selectionStart === field.value.length && field.selectionEnd === field.value.length;
+		if (e.key === 'ArrowDown' && rows >= 1.5 && !atEnd) return;
+		if ((e.key === 'Enter' && !e.isComposing) || e.key === 'ArrowDown') {
 			e.preventDefault();
 			// Focus the editor
 			const editor = document.querySelector('.ProseMirror') as HTMLElement;
@@ -1247,19 +1257,23 @@
 
 					<!-- Title. The page's heading for screen readers is the title as text. -->
 					<h1 class="sr-only">{isDefaultTitle(title) ? 'Untitled' : title}</h1>
-					<input
+					<!-- A textarea, so a long title wraps instead of being cut off; it
+					     holds one line (use:singleLine) and grows with it (use:autogrow). -->
+					<textarea
 						bind:this={titleInput}
-						type="text"
+						rows="1"
 						value={isDefaultTitle(title) ? '' : title}
+						use:singleLine
+						use:autogrow={title}
 						oninput={handleTitleChange}
 						onkeydown={handleTitleKeydown}
 						placeholder="Untitled"
 						disabled={readOnly || titleLocked}
 						title={titleLocked && !readOnly ? "This note's title comes from its heading or filename: change it there" : undefined}
 						aria-label="Note title"
-						class="title-input mb-3 w-full bg-transparent font-bold text-[var(--color-text)] md:mb-5"
+						class="title-input k-autogrow mb-3 w-full bg-transparent font-bold text-[var(--color-text)] md:mb-5"
 						style="font-family: var(--font-editor);"
-					/>
+					></textarea>
 					{#if linkedInfo}
 						<!-- Properties from the file: its frontmatter, shown and never changed -->
 						{#if Object.keys(linkedInfo.frontmatter).length > 0}
@@ -1698,16 +1712,17 @@
 		color: #d99a16;
 	}
 
-	/* On a phone: smaller, and an ellipsis when the title is longer than the
-	   line (it was cut mid-character). The whole title is in the top bar. */
+	/* Smaller on a phone. A long title wraps onto more lines. */
 	.title-input {
+		display: block;
+		padding: 0;
 		border: none !important;
 		outline: none !important;
 		box-shadow: none !important;
 		-webkit-appearance: none;
 		appearance: none;
 		font-size: 1.625rem !important;
-		text-overflow: ellipsis;
+		overflow-wrap: break-word;
 		line-height: 1.2;
 		letter-spacing: -0.015em;
 	}

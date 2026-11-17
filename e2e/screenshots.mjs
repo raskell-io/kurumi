@@ -166,12 +166,12 @@ async function designSet(page) {
 	await go(page, '/');
 	await mainIncludes(page, 'Welcome to Kurumi');
 	await clickText(page, 'main button', 'explore an example');
-	await page.waitForFunction(() => document.querySelector('input[aria-label="Note title"]')?.value === 'Start here', { timeout: 15_000 });
+	await page.waitForFunction(() => document.querySelector('[aria-label="Note title"]')?.value === 'Start here', { timeout: 15_000 });
 	if (FONT) {
 		// As Settings → Appearance → Editor font does.
 		await page.evaluate((font) => localStorage.setItem('kurumi-editor-font', font), FONT);
 		await page.reload({ waitUntil: 'load' });
-		await page.waitForFunction(() => document.querySelector('input[aria-label="Note title"]')?.value === 'Start here', { timeout: 15_000 });
+		await page.waitForFunction(() => document.querySelector('[aria-label="Note title"]')?.value === 'Start here', { timeout: 15_000 });
 	}
 	await sleep(1500);
 	await shot(page, 'note');
@@ -261,7 +261,7 @@ async function docsSet(page) {
 	await shot(page, 'welcome');
 
 	await clickText(page, 'main button', 'explore an example');
-	await page.waitForFunction(() => document.querySelector('input[aria-label="Note title"]')?.value === 'Start here', { timeout: 15_000 });
+	await page.waitForFunction(() => document.querySelector('[aria-label="Note title"]')?.value === 'Start here', { timeout: 15_000 });
 	await sleep(1500);
 	await shot(page, 'note');
 

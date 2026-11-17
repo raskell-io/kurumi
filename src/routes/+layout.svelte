@@ -945,7 +945,7 @@
 	// Skip link: the note's title or editor if there is one, else the page itself.
 	function focusMain() {
 		const main = document.getElementById('main-content');
-		const target = main?.querySelector<HTMLElement>('input[aria-label="Note title"], .ProseMirror, h1, [autofocus]');
+		const target = main?.querySelector<HTMLElement>('[aria-label="Note title"], .ProseMirror, h1, [autofocus]');
 		if (target) {
 			if (target.matches('h1')) target.tabIndex = -1;
 			target.focus();
