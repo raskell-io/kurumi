@@ -56,8 +56,8 @@
 		// The tree is drawn again when the vault is read again: a row found
 		// just before that is gone when clicked, so click until the note is open.
 		let clicks = 0;
-		await need(`the note "${title}" (clicked its row ${clicks} times; the page shows "${document.querySelector('input[aria-label="Note title"]')?.value}")`, () => {
-			if (document.querySelector('input[aria-label="Note title"]')?.value === title) return true;
+		await need(`the note "${title}" (clicked its row ${clicks} times; the page shows "${document.querySelector('textarea[aria-label="Note title"]')?.value}")`, () => {
+			if (document.querySelector('textarea[aria-label="Note title"]')?.value === title) return true;
 			byText('.note-row', title)?.click();
 			clicks++;
 			return false;
@@ -171,7 +171,7 @@
 			if (!shown.includes('Line one.') || shown.includes('project.foo')) throw new Error(`editor shows: ${shown.slice(0, 200)}`);
 			// [[project.bar]] is the note whose frontmatter says id: project.bar.
 			mouse(await need('the link', () => document.querySelector('main .ProseMirror .wikilink[data-wikilink-title="project.bar"]')));
-			await need('the note "Bar plan"', () => document.querySelector('input[aria-label="Note title"]')?.value === 'Bar plan');
+			await need('the note "Bar plan"', () => document.querySelector('textarea[aria-label="Note title"]')?.value === 'Bar plan');
 		});
 
 		await step('linked: files changed outside show up through the watcher', async () => {
@@ -311,7 +311,7 @@
 			button.click();
 			// Listed as "Untitled", with an empty title field and an empty editor.
 			await need('it in the tree', () => hasRow('Untitled'));
-			await need('the new note', () => document.querySelector('input[aria-label="Note title"]')?.value === '');
+			await need('the new note', () => document.querySelector('textarea[aria-label="Note title"]')?.value === '');
 			const editor = await need('its editor', () => (editorText() === '' ? document.querySelector('main .ProseMirror[contenteditable="true"]') : null));
 			// Shown, but not in the folder: left like this it would leave nothing behind.
 			await sleep(1500);
