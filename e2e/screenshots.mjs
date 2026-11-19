@@ -314,7 +314,7 @@ async function docsSet(page) {
 	await page.keyboard.press('Escape');
 
 	await go(page, '/settings/sync');
-	await mainIncludes(page, 'Kurumi server');
+	await mainIncludes(page, 'Use Kurumi on another device');
 	await shot(page, 'settings-sync');
 
 	await go(page, '/settings/offline');
